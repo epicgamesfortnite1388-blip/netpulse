@@ -16,6 +16,7 @@ import { loadConfig } from './config';
 import { openDb } from './db/client';
 import { RetentionService, RETENTION_INTERVAL_MS } from './db/retention';
 import { enrichNodeGeoBatch, scrubAnycastGeo } from './services/nodeGeoService';
+import { defaultGeoOverridePath, geoOverrideError, setGeoOverrideFile } from './services/geoGuard';
 import { NodeTestScheduler } from './services/nodeTestScheduler';
 import { createRepositories } from './db/repositories';
 import { registerHealthRoutes } from './routes/health';
@@ -542,11 +543,17 @@ export async function buildApp(opts: BuildOptions = {}) {
       log.warn({ err }, 'initial retention sweep failed (continuing)');
     }
     nodeTestScheduler.start();
-    // One-time boot scrub: anycast hosts (1.1.1.1 etc.) must never carry the
-    // fabricated GeoIP cities an earlier lookup may have written.
+    // User geo overrides: <dataDir>/geo-overrides.json is hot-reloaded by the
+    // guard; register its path before the scrub so user corrections apply to
+    // this boot immediately.
+    setGeoOverrideFile(defaultGeoOverridePath(config.dataDir));
+    // One-time boot scrub: anycast hosts (1.1.1.1 etc.) and edge-fabric ASNs
+    // must never carry the fabricated GeoIP cities an earlier lookup wrote.
     try {
       const scrubbed = scrubAnycastGeo(repos.publicNodes);
       if (scrubbed > 0) log.info({ scrubbed }, 'anycast geo scrub complete');
+      const overrideErr = geoOverrideError();
+      if (overrideErr) log.warn({ err: overrideErr }, 'geo-overrides.json is malformed — overrides from it are ignored until fixed');
     } catch (err) {
       log.warn({ err }, 'anycast geo scrub failed (continuing)');
     }

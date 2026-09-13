@@ -7,6 +7,7 @@ import {
   Download,
   Flag,
   Globe2,
+  Info,
   Loader2,
   Shield,
   ShieldCheck,
@@ -57,6 +58,50 @@ const PROTOCOL_LABELS: Record<string, string> = {
   wireguard: 'WireGuard',
   unknown: 'Unknown',
 };
+
+const GEO_STATUS_EXPLANATIONS: Record<NonNullable<NodeWebDTO['geoStatusReason']>, { title: string; detail: string }> = {
+  known: {
+    title: 'Location from IP evidence',
+    detail: 'City-level GeoIP estimate from this node\u2019s resolved public IP — approximate, never exact.',
+  },
+  anycast: {
+    title: 'No single location (anycast IP)',
+    detail: 'This IP is announced from many datacenters worldwide at once, so it has no single true location. GeoIP answers for it are artifacts — the node is shown as Unknown instead of a confident lie.',
+  },
+  edge_fabric: {
+    title: 'No location shown (global edge network)',
+    detail: 'This IP belongs to a provider\u2019s worldwide edge fabric (Cloudflare, Google, AWS, Azure…). GeoIP would report the provider\u2019s registration office, not where your traffic actually exits.',
+  },
+  lookup_failed: {
+    title: 'Location could not be determined',
+    detail: 'A geolocation attempt ran but no location could be established for this node\u2019s IP. Unknown is shown rather than a guess; the geo worker retries periodically.',
+  },
+  pending: {
+    title: 'Location lookup pending',
+    detail: 'This node has not been geolocated yet — new nodes are resolved in bounded background batches, oldest first.',
+  },
+};
+
+/**
+ * Explains WHY a node shows Unknown (anycast / edge fabric / failed lookup)
+ * instead of a location, so the empty field reads as honesty, not missing data.
+ */
+function GeoStatusNote({ node }: { node: NodeWebDTO }) {
+  const reason = node.geoStatusReason ?? (node.lat != null ? 'known' : 'pending');
+  if (reason === 'known') return null; // a location exists — nothing to explain
+  const x = GEO_STATUS_EXPLANATIONS[reason];
+  return (
+    <Card className="mb-6">
+      <CardBody className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+        <Info size={15} className="mt-0.5 shrink-0 text-accent" />
+        <div>
+          <p className="font-medium text-text">{x.title}</p>
+          <p className="mt-0.5">{x.detail}</p>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
 
 const TRANSPORT_LABELS: Record<string, string> = {
   tcp: 'TCP',
@@ -259,7 +304,7 @@ export default function NodeDetailPage() {
               <div className="flex items-center gap-3 p-3 rounded-lg bg-base-200/50">
                 <Flag size={20} className="text-muted" />
                 <div>
-                  <p className="text-sm font-medium">{node.country || 'Unknown country'}</p>
+                  <p className="text-sm font-medium">{node.country || 'Unknown location'}</p>
                   {node.city && <p className="text-xs text-muted">{node.city}</p>}
                   {node.asn && <p className="text-xs text-muted">AS{node.asn}</p>}
                   {node.isp && <p className="text-xs text-muted">{node.isp}</p>}
@@ -275,6 +320,8 @@ export default function NodeDetailPage() {
             </div>
           </CardBody>
         </Card>
+
+        <GeoStatusNote node={node} />
 
         {/* Technical details */}
         <Card className="mb-6">

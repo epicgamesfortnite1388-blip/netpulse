@@ -233,9 +233,33 @@ code, 4 intentional patterns documented with `eslint-disable` + justification co
   edge-fabric ASNs (Cloudflare 1.1.1.1/1.0.0.1, Google 8.8.8.8, major cloud
   front doors) are refused a city pin — GeoIP fabricates locations for them
   (1.1.1.1 answered "Brisbane, AU" from an Iranian vantage); a boot scrub
-  clears fabricated pins written before the guard existed. Remaining limits:
-  ipwho.is rate/accuracy, CDN-fronted hosts geolocate to the edge, not the
-  origin server.
+  clears fabricated pins written before the guard existed. **Guard dataset +
+  user overrides (2026-09-13):** the curated classes live in `geoGuard.ts`
+  (~30 anycast hosts: public DNS resolvers; ~20 edge-fabric ASNs: Cloudflare,
+  Google, AWS, Azure, Fastly, Akamai, GCore, Bunny, DDoS-guard networks…).
+  Users can correct future cases without a release via
+  `<dataDir>/geo-overrides.json` (hot-reloaded on change, malformed files
+  reported and skipped, prior overrides kept):
+
+  ```json
+  {
+    "version": 1,
+    "overrides": {
+      "1.2.3.4":   { "class": "anycast" },
+      "AS64512":   { "class": "edge_fabric" },
+      "104.17.147.22": { "class": "unicast", "force": { "lat": -33.87, "lon": 151.21, "country": "AU", "city": "Sydney" },
+                         "note": "dedicated (non-edge) IP confirmed with provider" }
+    }
+  }
+  ```
+
+  Overrides beat the curated data in both directions: refuse a normally
+  pin-able IP, or vouch a refused one back with exact coordinates (written
+  with `high` confidence by the next enrichment tick). Node detail shows WHY
+  a location is absent (`geoStatusReason`: anycast / edge_fabric /
+  lookup_failed / pending; vouched nodes read pending, never failed).
+  Remaining limits: ipwho.is rate/accuracy, CDN-fronted hosts geolocate to
+  the edge, not the origin server.
 - **History** — 14-day retention (bounded sweeper); payloads only in detail view.
 - **Logs** — 512 KB rotating cap (`.log` → `.log.1`).
 - **Node sources** — built-in catalog entries cannot be deleted (can be disabled); fetched configs are

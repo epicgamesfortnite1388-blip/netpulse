@@ -58,6 +58,8 @@ interface NodeWebDTO {
   lat: number | null;
   lon: number | null;
   geoSourceCount: number;
+  /** why the node has (or lacks) a location — surfaced on the detail page */
+  geoStatusReason: 'known' | 'anycast' | 'edge_fabric' | 'lookup_failed' | 'pending';
   userNotes: string | null;
   score: number;
   reliabilityPct: number;
@@ -95,6 +97,7 @@ import type { NodeSecretVault } from './nodeSecretVault';
 import { fetchAndImportSource, hashContent, type FetchContext } from './nodeSourceRegistry';
 import type { PublicNodeRow, RawDocumentsRepository, SourceFetchesRepository } from '../db/repositories';
 import type { AppSettings, PublicSource } from '@netpulse/shared';
+import { geoStatusReasonFor } from './nodeGeoService';
 import { validateNodeHost, normalizeNodePort, familyOfIp, resolveTarget } from '../util/targetGuard';
 import type { Logger } from '../logger';
 import type { RealtimeBus } from '../realtime/bus';
@@ -304,6 +307,7 @@ export class NodesService {
         lat: null,
         lon: null,
         geoSourceCount: 0,
+        geoStatusReason: 'pending',
         tags: [],
         favorite: false,
         userNotes: null,
@@ -450,6 +454,12 @@ export class NodesService {
       organization: nodeRow.organization,
       lat: nodeRow.lat,
       lon: nodeRow.lon,
+      geoStatusReason: geoStatusReasonFor({
+        host: nodeRow.host,
+        lat: nodeRow.lat,
+        asn: nodeRow.asn,
+        geoLastAttempt: nodeRow.geoLastAttempt,
+      }),
       score: nodeRow.score,
       reliabilityPct: nodeRow.reliabilityPct,
       medianProxyMs: nodeRow.medianProxyMs,
@@ -1927,6 +1937,8 @@ export class NodesService {
     country: string | null;
     city: string | null;
     asn: number | null;
+    /** last geolocation attempt (epoch ms) — needed to derive geoStatusReason */
+    geoLastAttempt: number | null;
     isp: string | null;
     organization: string | null;
     lat: number | null;
@@ -2002,6 +2014,12 @@ export class NodesService {
       lat: node.lat,
       lon: node.lon,
       geoSourceCount: node.geoSourceCount,
+      geoStatusReason: geoStatusReasonFor({
+        host: node.host,
+        lat: node.lat,
+        asn: node.asn,
+        geoLastAttempt: node.geoLastAttempt,
+      }),
       tags: node.tags,
       favorite: node.favorite,
       userNotes: node.userNotes,

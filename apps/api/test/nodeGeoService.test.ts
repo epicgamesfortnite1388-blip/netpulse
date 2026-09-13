@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { enrichNodeGeoBatch, clearGeoIpCacheForTests } from '../src/services/nodeGeoService';
+import { enrichNodeGeoBatch, clearGeoIpCacheForTests, scrubAnycastGeo, geoStatusReasonFor } from '../src/services/nodeGeoService';
 
 import type { PublicNodeRow, PublicNodesRepository } from '../src/db/repositories';
 import type { Logger } from '../src/logger';
@@ -125,6 +125,23 @@ function fakeRepo() {
   };
 }
 
+describe('geoStatusReasonFor', () => {
+  it('says known when coordinates exist', () => {
+    expect(geoStatusReasonFor({ host: '188.42.89.157', lat: 52.37, asn: 60781, geoLastAttempt: Date.now() })).toBe('known');
+  });
+  it('says anycast for well-known anycast hosts (1.1.1.1 shows Unknown with a reason)', () => {
+    expect(geoStatusReasonFor({ host: '1.1.1.1', lat: null, asn: 13335, geoLastAttempt: Date.now() })).toBe('anycast');
+  });
+  it('says edge_fabric for Cloudflare/GCP/AWS ASNs without coords', () => {
+    expect(geoStatusReasonFor({ host: '104.17.147.22', lat: null, asn: 13335, geoLastAttempt: Date.now() })).toBe('edge_fabric');
+    expect(geoStatusReasonFor({ host: '34.11.22.33', lat: null, asn: 15169, geoLastAttempt: Date.now() })).toBe('edge_fabric');
+  });
+  it('says lookup_failed after a failed attempt and pending before one', () => {
+    expect(geoStatusReasonFor({ host: 'dead.example', lat: null, asn: null, geoLastAttempt: Date.now() })).toBe('lookup_failed');
+    expect(geoStatusReasonFor({ host: 'new.example', lat: null, asn: null, geoLastAttempt: null })).toBe('pending');
+  });
+});
+
 describe('nodeGeoService', () => {
   it('resolves geo from the public IP and never from the node name/remark', async () => {
     clearGeoIpCacheForTests();
@@ -246,6 +263,31 @@ describe('nodeGeoService', () => {
     // ISP/ASN facts are still recorded (they ARE real evidence).
     expect(geo.asn).toBe(13335);
     expect(geo.isp).toBe('Cloudflare, Inc.');
+  });
+
+  it('boot scrub clears fabricated coords from edge-fabric ASN rows (pre-guard builds)', async () => {
+    // Rows enriched before the anycast guard shipped carry registry-HQ pins
+    // (e.g. every Cloudflare IP geolocating to "San Francisco"). The scrub
+    // must clear them too, not only exact anycast host IPs.
+    const { repo, geoWrites } = fakeRepo();
+    const rows = [
+      row({ id: 'cf1', host: '104.17.147.22', asn: 13335, isp: 'Cloudflare, Inc.', country: 'US', city: 'San Francisco', lat: 37.77, lon: -122.42 }),
+      row({ id: 'gcp1', host: '34.11.22.33', asn: 15169, country: 'US', city: 'Mountain View', lat: 37.44, lon: -122.08 }),
+      row({ id: 'clean1', host: '188.42.89.157', asn: 60781, country: 'NL', city: 'Amsterdam', lat: 52.37, lon: 4.89 }),
+      row({ id: 'anycast1', host: '1.1.1.1', asn: 13335, country: 'AU', city: 'Brisbane', lat: -27.4, lon: 153.06 }),
+    ];
+    repo.list = vi.fn(() => ({ rows })) as unknown as PublicNodesRepository['list'];
+    const scrubbed = scrubAnycastGeo(repo);
+    const scrubbedIds = geoWrites.map((w) => w.id);
+    expect(scrubbed).toBe(3);
+    expect(scrubbedIds).toContain('cf1');
+    expect(scrubbedIds).toContain('gcp1');
+    expect(scrubbedIds).toContain('anycast1');
+    expect(scrubbedIds).not.toContain('clean1'); // legit unicast stays
+    for (const w of geoWrites) {
+      expect(w.geo.lat).toBeNull();
+      expect(w.geo.country).toBeNull();
+    }
   });
 
   it('serializes passes — a running pass is not re-entered', async () => {

@@ -2,6 +2,7 @@ import dns from 'node:dns/promises';
 
 import { fetchIpWhoIs } from '../providers/ipinfo/ipwhoIs';
 import { familyOfIp, isPrivateIp } from '../util/targetGuard';
+import { classifyGeoTarget, geoForcedLocation, geoVouchedByOverride } from './geoGuard';
 
 import type { PublicNodeRow, PublicNodesRepository } from '../db/repositories';
 import type { Logger } from '../logger';
@@ -36,10 +37,30 @@ const LOOKUP_TIMEOUT_MS = 6_000;
 /** Never look up more than this many distinct hosts per pass. */
 const MAX_HOSTS_PER_PASS = 20;
 
-/** Anycast ranges: a GeoIP answer for these is an artifact, not evidence. */
-const ANYCAST_V4 = new Set(['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9', '149.112.112.112', '208.67.222.222', '208.67.220.220', '185.228.168.9', '185.228.169.9', '94.140.14.14', '94.140.15.15', '76.76.10.0']);
-/** Provider ASNs whose IPs are globally distributed edge/PoP fabric. */
-const EDGE_ASN = new Set([13335, 15169, 16509, 8075, 13379, 14618, 19551, 209242, 24429]);
+/**
+ * Why a node has (or lacks) a map location. Surfaced on the node detail page
+ * so "Unknown" is explained instead of looking like missing data.
+ */
+export type GeoStatusReason = 'known' | 'anycast' | 'edge_fabric' | 'lookup_failed' | 'pending';
+
+export function geoStatusReasonFor(row: {
+  host: string;
+  lat: number | null;
+  asn: number | null;
+  geoLastAttempt: number | null;
+}): GeoStatusReason {
+  if (row.lat != null) return 'known';
+  // Classification (anycast hosts, edge-fabric ASNs, user overrides) lives in
+  // geoGuard.ts so the curated data and the per-user override file stay in
+  // one place and are shared by the enrichment path and the boot scrub.
+  const cls = classifyGeoTarget(row.host, row.asn);
+  if (cls === 'anycast') return 'anycast';
+  if (cls === 'edge_fabric') return 'edge_fabric';
+  // A user-vouched IP awaits its forced pin — 'lookup_failed' would be a lie.
+  if (geoVouchedByOverride(row.host, row.asn)) return 'pending';
+  if (row.geoLastAttempt != null) return 'lookup_failed';
+  return 'pending';
+}
 
 export interface GeoEnrichmentOutcome {
   attempted: number;
@@ -67,10 +88,8 @@ const IP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Serialized execution guard — one enrichment pass at a time, ever. */
 let running = false;
 
-function isAnycastIp(ip: string, asn: number | null): boolean {
-  if (ANYCAST_V4.has(ip)) return true;
-  if (asn != null && EDGE_ASN.has(asn)) return true;
-  return false;
+function isRefusedByGuard(ip: string, asn: number | null): boolean {
+  return classifyGeoTarget(ip, asn) !== 'unicast';
 }
 
 /** All candidate public IPs for a node row (explicit fields first). */
@@ -120,7 +139,7 @@ async function geoForIp(ip: string): Promise<GeoVerdict | null> {
       }
       // Anycast/edge-fabric guard: keep the ASN/ISP facts, drop the fabricated
       // geography. A pin at "nearest Google/Cloudflare PoP" is a lie.
-      if (verdict.lat != null && isAnycastIp(ip, verdict.asn)) {
+      if (verdict.lat != null && isRefusedByGuard(ip, verdict.asn)) {
         verdict.lat = null;
         verdict.lon = null;
         verdict.city = null;
@@ -185,9 +204,35 @@ export async function enrichNodeGeoBatch(
         continue;
       }
 
-      // Anycast IP (exact match) → refuse entirely: record ISP/ASN facts but
-      // no geography at all. The node honestly shows Unknown on the map.
-      if (isAnycastIp(publicIp, null) && verdict.lat == null) {
+      // User override with class "unicast" + force coordinates: the user has
+      // vouched this IP/ASN is a real server at a known place — pin it as
+      // given, skipping the lookup entirely. Highest precedence.
+      const forced = geoForcedLocation(publicIp, verdict?.asn ?? null);
+      if (forced) {
+        for (const row of group) {
+          nodesRepo.updateGeo(row.id, {
+            country: forced.country,
+            city: forced.city ?? null,
+            asn: verdict?.asn ?? null,
+            isp: verdict?.isp ?? null,
+            organization: verdict?.organization ?? null,
+            lat: forced.lat,
+            lon: forced.lon,
+            confidence: 'high', // user-attested, stronger than any GeoIP guess
+            geoSourceCount: 1,
+          });
+        }
+        outcome.resolved += group.length;
+        continue;
+      }
+
+      // Guard-refused target (anycast host, edge-fabric ASN, or a user
+      // refuse-override) → record ISP/ASN facts but no geography at all —
+      // for these networks even the COUNTRY in a GeoIP answer is an
+      // artifact. The node honestly shows Unknown on the map. (A normal IP
+      // whose lookup yielded country-only evidence falls through to the
+      // normal write below, keeping country + 'low' confidence.)
+      if (isRefusedByGuard(publicIp, verdict.asn)) {
         for (const row of group) {
           nodesRepo.updateGeo(row.id, {
             country: null,
@@ -237,10 +282,12 @@ export function clearGeoIpCacheForTests(): void {
 }
 
 /**
- * One-time boot scrub: nodes whose HOST is a well-known anycast IP must not
- * carry coordinates from an earlier build's GeoIP answer (e.g. 1.1.1.1
- * "Brisbane, AU"). Clears the fabricated geography, keeps ASN/ISP facts.
- * Returns how many rows were scrubbed.
+ * One-time boot scrub: nodes the guard refuses (anycast hosts, edge-fabric
+ * ASNs, user overrides) must not carry coordinates from an earlier build's
+ * GeoIP answer (e.g. 1.1.1.1 "Brisbane, AU", Cloudflare IPs "San Francisco").
+ * Clears the fabricated geography, keeps ASN/ISP facts. A user override with
+ * class "unicast" + force coordinates re-pins a node instead.
+ * Returns how many rows were touched.
  */
 export function scrubAnycastGeo(nodesRepo: {
   list(opts: { limit: number }): { rows: PublicNodeRow[] };
@@ -249,7 +296,8 @@ export function scrubAnycastGeo(nodesRepo: {
   let scrubbed = 0;
   try {
     for (const row of nodesRepo.list({ limit: 5000 }).rows) {
-      if (!ANYCAST_V4.has(row.host)) continue;
+      const cls = classifyGeoTarget(row.host, row.asn);
+      if (cls === 'unicast') continue;
       if (row.lat == null && row.lon == null && row.country == null) continue;
       nodesRepo.updateGeo(row.id, {
         country: null,
@@ -263,7 +311,7 @@ export function scrubAnycastGeo(nodesRepo: {
       scrubbed += 1;
     }
   } catch {
-    // scrub is best-effort; the geo worker refuses anycast pins going forward
+    // scrub is best-effort; the geo worker refuses refused-classes going forward
   }
   return scrubbed;
 }

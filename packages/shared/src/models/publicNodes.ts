@@ -348,6 +348,13 @@ export interface PublicNode {
   lon: number | null;
   /** number of sources that claimed a geo for this node */
   geoSourceCount: number;
+  /**
+   * Why the node has (or lacks) a location: known = city-level GeoIP
+   * evidence; anycast = multi-site IP, no single true location; edge_fabric =
+   * GeoIP would return the provider's registry HQ, not the server;
+   * lookup_failed = tried, no location established; pending = not attempted.
+   */
+  geoStatusReason: 'known' | 'anycast' | 'edge_fabric' | 'lookup_failed' | 'pending';
   /** user tags (favorite + custom tags) */
   tags: string[];
   /** star indicator */
