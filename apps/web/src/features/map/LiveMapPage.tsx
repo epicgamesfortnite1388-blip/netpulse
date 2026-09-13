@@ -34,8 +34,11 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { api } from '@/lib/api';
 import { GEO_STATUS_COPY, GeoTooltipBody, geoReasonOf } from '@/lib/geoStatus';
 import { fmtMs, fmtPct, timeAgo } from '@/lib/format';
+import { usePersistentState } from '@/lib/usePersistentState';
 import { useWsTestProgress } from '@/lib/ws';
 import { MapCanvas } from './MapCanvas';
+import { ConfidenceRingGlyph, confidenceMeetsThreshold } from './MapCanvas';
+import type { ConfidenceThreshold } from './MapCanvas';
 
 import type { MapArc, MapNode, MapPath } from './MapCanvas';
 import type { GeoConfidenceLevel, MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
@@ -139,6 +142,7 @@ function portLabel(obs: MapObservation): string {
 export default function LiveMapPage() {
   const [searchParams] = useSearchParams();
   const [filter, setFilter] = useState<FilterKey>((searchParams.get('mode') as FilterKey) || 'all');
+  const [minConfidence, setMinConfidence] = usePersistentState<ConfidenceThreshold>('map-min-confidence', 'show all');
   const [metric, setMetric] = useState<MetricKey>('latency');
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('live');
   const [privacy, setPrivacy] = useState(() => localStorage.getItem('map-privacy') === '1');
@@ -151,6 +155,7 @@ export default function LiveMapPage() {
 
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(searchParams.get('target'));
   const [observations, setObservations] = useState<Map<string, MapObservation>>(new Map());
+  const filteredOutCountRef = useRef(0);
   const [playback, setPlayback] = useState<MapObservation | null>(null);
   const [progress, setProgress] = useState<{ targetId: string; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -357,12 +362,19 @@ export default function LiveMapPage() {
   const nodes: MapNode[] = useMemo(() => {
     const list: MapNode[] = [];
     if (youNode) list.push(youNode);
+    let hiddenCount = 0;
     for (const obs of observations.values()) {
       const t = obs.target;
       const targetType = typeForFilter(filter);
       if (targetType !== 'all' && targetType !== 'route' && t.type !== targetType) continue;
       const geo = destinationGeo(obs);
       if (!geo) continue;
+      // Confidence filter: below-threshold pins are hidden entirely, and
+      // their arcs disappear with them (arcs re-derive from the same geo).
+      if (!confidenceMeetsThreshold(geo.confidence, minConfidence)) {
+        hiddenCount++;
+        continue;
+      }
       const isPlayback = playback?.id === obs.id;
       list.push({
         id: obs.target.id,
@@ -375,10 +387,16 @@ export default function LiveMapPage() {
         latencyMs: primaryLatency(obs),
         geoConfidence: geo.confidence,
         historical: isPlayback,
+        // Drives the canvas's selected-pin emphasis + confidence pulse.
+        selected: obs.target.id === selectedTargetId,
       });
     }
+    filteredOutCountRef.current = hiddenCount;
     return list;
-  }, [youNode, observations, filter, hidden, playback]);
+  }, [youNode, observations, filter, hidden, playback, minConfidence, selectedTargetId]);
+
+  /** Pins hidden by the confidence filter (computed during node building). */
+  const hiddenByConfidence = filteredOutCountRef.current;
 
   const arcs: MapArc[] = useMemo(() => {
     if (!youNode) return [];
@@ -387,6 +405,7 @@ export default function LiveMapPage() {
       if (playback && playback.id === obs.id) continue; // rendered by the dedicated block below
       const geo = destinationGeo(obs);
       if (!geo) continue;
+      if (!confidenceMeetsThreshold(geo.confidence, minConfidence)) continue; // pin hidden → arc hidden
       out.push({
         id: obs.id,
         from: { lat: youNode.lat, lon: youNode.lon },
@@ -412,7 +431,7 @@ export default function LiveMapPage() {
       }
     }
     return out;
-  }, [youNode, observations, playback, selectedTargetId]);
+  }, [youNode, observations, playback, selectedTargetId, minConfidence]);
 
   const paths: MapPath[] = useMemo(() => {
     if (!obsForMap) return [];
@@ -569,6 +588,18 @@ export default function LiveMapPage() {
             ))}
           </div>
           <div className="mx-1 h-5 w-px bg-line" />
+          <Select value={minConfidence} onChange={(e) => setMinConfidence(e.target.value as ConfidenceThreshold)} className="h-8 w-36 text-xs" title="Hide pins whose location is not known well enough">
+            <option value="show all">Confidence: show all</option>
+            <option value="high">Confidence: measured only</option>
+            <option value="medium">Confidence: medium+</option>
+            <option value="low">Confidence: low+</option>
+          </Select>
+          {hiddenByConfidence > 0 && (
+            <span className="text-[11px] text-faint">
+              {hiddenByConfidence} low-confidence pin{hiddenByConfidence === 1 ? '' : 's'} hidden
+            </span>
+          )}
+          <div className="mx-1 h-5 w-px bg-line" />
           <Select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)} className="h-8 w-28 text-xs">
             <option value="latency">Latency</option>
             <option value="jitter">Jitter</option>
@@ -720,7 +751,21 @@ export default function LiveMapPage() {
                     // evidence) instead of a bare Unknown.
                     const withGeo = selectedObs.hops.filter((h) => h.geo);
                     const geo = withGeo[withGeo.length - 1]?.geo;
-                    if (geo) return <Row label="Location" value={`${geo.confidence.label} (${geo.confidence.confidence})`} />;
+                    if (geo) {
+                      // Same ring encoding as the map pins (shared table),
+                      // so the panel and the canvas read as one system.
+                      return (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[11px] uppercase tracking-wider text-faint">Location</span>
+                          <span className="flex items-center gap-1.5 text-right text-muted">
+                            <ConfidenceRingGlyph level={geo.confidence.confidence} />
+                            <span className="text-xs">
+                              {geo.confidence.label} <span className="text-faint">({geo.confidence.confidence})</span>
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    }
                     if (selectedObs.destGeoReason != null) {
                       const reason = geoReasonOf(selectedObs.destGeoReason, false);
                       const copy = GEO_STATUS_COPY[reason];

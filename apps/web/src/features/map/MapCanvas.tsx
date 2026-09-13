@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 
 import { worldLandRings } from '@netpulse/shared';
 
+import type { GeoConfidenceLevel } from '@netpulse/shared';
+
 /* ------------------------------ data model -------------------------------- */
 
 export interface MapNode {
@@ -69,6 +71,67 @@ export const CONFIDENCE_RING: Record<NonNullable<MapNode['geoConfidence']>, { ra
   low: { radiusFactor: 2.3, dash: [2, 4], alpha: 0.45 },
   unknown: { radiusFactor: 2.3, dash: [1, 5], alpha: 0.3 },
 };
+
+/** Minimum pin trust shown on the map. 'show all' disables filtering. */
+export type ConfidenceThreshold = 'show all' | GeoConfidenceLevel;
+
+/**
+ * Panel-side ring style derived from CONFIDENCE_RING — the destination
+ * panel's Location row shows the same glyph encoding as the pins, so the
+ * two can never drift apart.
+ */
+export function ringGlyphStyle(level: NonNullable<MapNode['geoConfidence']>): { dashArray?: string; opacity: number } {
+  const ring = CONFIDENCE_RING[level];
+  return { dashArray: ring.dash.length > 0 ? ring.dash.join(' ') : undefined, opacity: ring.alpha };
+}
+
+/**
+ * Selected-pin ripple: one expanding, fading ring per ~1.6 s cycle that
+ * grows out of the confidence ring to draw the eye. Pure so the geometry
+ * is testable; `t` is the phase in [0,1).
+ */
+export function ringPulse(baseRadiusFactor: number, t: number): { radiusFactor: number; alpha: number } {
+  const phase = t - Math.floor(t); // wrap
+  return {
+    radiusFactor: baseRadiusFactor + phase * 0.9,
+    alpha: 0.5 * (1 - phase) ** 1.5,
+  };
+}
+
+/** Inline SVG ring matching the canvas pin encoding for one confidence level. */
+export function ConfidenceRingGlyph({ level, size = 11 }: { level: NonNullable<MapNode['geoConfidence']>; size?: number }) {
+  const { dashArray, opacity } = ringGlyphStyle(level);
+  const r = size / 2 - 1;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="inline-block shrink-0 align-[-1px]" aria-hidden>
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeDasharray={dashArray}
+        opacity={opacity}
+      />
+    </svg>
+  );
+}
+
+/** Strictly ordered trust levels, lowest first — the filter hierarchy. */
+const CONFIDENCE_ORDER: readonly GeoConfidenceLevel[] = ['unknown', 'low', 'medium', 'high'];
+
+/**
+ * True when a pin's confidence meets the user's minimum-trust threshold.
+ * Unlocated pins (no confidence) are always shown — the filter hides pins
+ * whose PLACE is shaky, not pins that honestly have no place at all.
+ * 'show all' passes everything.
+ */
+export function confidenceMeetsThreshold(confidence: GeoConfidenceLevel | undefined, min: ConfidenceThreshold): boolean {
+  if (min === 'show all') return true;
+  if (confidence == null) return true;
+  return CONFIDENCE_ORDER.indexOf(confidence) >= CONFIDENCE_ORDER.indexOf(min);
+}
 
 interface Camera {
   cx: number; // center longitude
@@ -400,12 +463,26 @@ export function MapCanvas({ nodes, arcs, paths, focus, focusKey, privacy, reduce
       // = placement evidence unknown. Skipped for 'you' — it's the user.
       if (node.geoConfidence && node.geoConfidence !== 'unknown' && node.kind !== 'you') {
         const ring = CONFIDENCE_RING[node.geoConfidence];
+        // Selected pins ripple: an expanding fading ring seeded from the
+        // confidence ring's radius, cycling ~1.6 s. Reduced-motion users get
+        // a steady double-thick confidence ring instead — emphasis without
+        // animation.
+        if (node.selected && !reducedRef.current) {
+          const pulse = ringPulse(ring.radiusFactor, timeMs / 1600);
+          ctx.beginPath();
+          ctx.setLineDash([]);
+          ctx.arc(p.x, p.y, r * pulse.radiusFactor, 0, Math.PI * 2);
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = pulse.alpha;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+        }
         ctx.beginPath();
         ctx.setLineDash(ring.dash);
         ctx.arc(p.x, p.y, r * ring.radiusFactor, 0, Math.PI * 2);
         ctx.strokeStyle = color;
-        ctx.globalAlpha = ring.alpha;
-        ctx.lineWidth = 1.2;
+        ctx.globalAlpha = node.selected ? Math.min(1, ring.alpha + 0.25) : ring.alpha;
+        ctx.lineWidth = node.selected ? 2 : 1.2;
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
