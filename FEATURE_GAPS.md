@@ -258,6 +258,12 @@ code, 4 intentional patterns documented with `eslint-disable` + justification co
   with `high` confidence by the next enrichment tick). Node detail shows WHY
   a location is absent (`geoStatusReason`: anycast / edge_fabric /
   lookup_failed / pending; vouched nodes read pending, never failed).
+  **Runtime plausibility gate (2026-09-13):** every lookup verdict is also
+  asserted against per-country bounding boxes (`inCountryBox`) before it can
+  be cached or written — a GeoIP answer whose coordinates contradict its
+  claimed country (registry HQ, wrong continent, swapped lat/lon) is stripped
+  to facts-only and counted as refused, and the boot scrub heals legacy rows
+  with the same rule. Verified by `apps/api/test/mapPlausibility.test.ts`.
   Remaining limits: ipwho.is rate/accuracy, CDN-fronted hosts geolocate to
   the edge, not the origin server.
 - **History** — 14-day retention (bounded sweeper); payloads only in detail view.

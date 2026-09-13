@@ -1,5 +1,7 @@
 import dns from 'node:dns/promises';
 
+import { hasCountryBox, inCountryBox } from '@netpulse/shared';
+
 import { fetchIpWhoIs, fetchGeoJs } from '../providers/ipinfo/ipwhoIs';
 import { familyOfIp, isPrivateIp } from '../util/targetGuard';
 import { classifyGeoTarget, geoForcedLocation, geoVouchedByOverride } from './geoGuard';
@@ -83,13 +85,45 @@ interface GeoVerdict {
 }
 
 /** In-process cache keyed by IP: identical hosts across nodes share one answer. */
-const ipCache = new Map<string, { verdict: GeoVerdict | null; at: number }>();
+const ipCache = new Map<string, { result: GeoLookup; at: number }>();
 const IP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Serialized execution guard — one enrichment pass at a time, ever. */
 let running = false;
 
 function isRefusedByGuard(ip: string, asn: number | null): boolean {
   return classifyGeoTarget(ip, asn) !== 'unicast';
+}
+
+/**
+ * Runtime bounding-box assertion — the production enforcement of the
+ * map-plausibility regression. A verdict that claims country X but places
+ * the point outside X's box is an artifact (registry HQ, wrong continent,
+ * swapped lat/lon): the coordinates are stripped and the country nullified,
+ * so nothing implausible can reach a pin. Missing/unknown countries and
+ * coordinate-less verdicts pass untouched; guard refusals run first and
+ * user-vouched overrides bypass this (the user attested the place).
+ */
+function stripImplausibleGeo(verdict: GeoVerdict, log?: Logger): GeoVerdict | null {
+  if (verdict.lat == null || verdict.lon == null || verdict.countryCode == null) return verdict;
+  if (!hasCountryBox(verdict.countryCode)) {
+    // Coverage flag, not a refusal: without a box we cannot judge, so the
+    // verdict passes — but the gap must surface from live data instead of
+    // silently degrading to "no box, no claim".
+    log?.warn({ country: verdict.countryCode }, 'geo: no bounding box for country — plausibility gate skipped');
+    return verdict;
+  }
+  if (inCountryBox(verdict.countryCode, verdict.lat, verdict.lon)) return verdict;
+  return {
+    country: null,
+    countryCode: null,
+    city: null,
+    region: null,
+    lat: null,
+    lon: null,
+    asn: verdict.asn,
+    isp: verdict.isp,
+    organization: verdict.organization,
+  };
 }
 
 /** All candidate public IPs for a node row (explicit fields first). */
@@ -112,11 +146,22 @@ async function resolveHostIps(host: string): Promise<string[]> {
   }
 }
 
-/** Query ipwho.is for one IP; returns null when it cannot be geolocated. */
-async function geoForIp(ip: string): Promise<GeoVerdict | null> {
+/**
+ * Result of one provider lookup: the verdict, plus whether the runtime
+ * plausibility gate stripped its geography (provider answered, but the
+ * coordinates contradicted the claimed country — nothing trustworthy).
+ */
+interface GeoLookup {
+  verdict: GeoVerdict | null;
+  stripped: boolean;
+}
+
+/** Query the geo providers for one IP, applying every refusal gate. */
+async function geoForIp(ip: string, log?: Logger): Promise<GeoLookup> {
   const cached = ipCache.get(ip);
-  if (cached && Date.now() - cached.at < IP_CACHE_TTL_MS) return cached.verdict;
+  if (cached && Date.now() - cached.at < IP_CACHE_TTL_MS) return cached.result;
   let verdict: GeoVerdict | null = null;
+  let stripped = false;
   try {
     // Primary + fallback: ipwho.is rate-limits aggressively; geojs.io covers
     // the gap so a lookup degrades to a second provider, not to Unknown.
@@ -148,12 +193,20 @@ async function geoForIp(ip: string): Promise<GeoVerdict | null> {
         verdict.city = null;
         verdict.region = null;
       }
+      // Bounding-box plausibility: refuse coordinates that contradict the
+      // claimed country before they can be cached or written anywhere.
+      const clean = stripImplausibleGeo(verdict, log);
+      if (clean !== verdict) {
+        verdict = clean;
+        stripped = true;
+      }
     }
   } catch {
     verdict = null;
   }
-  ipCache.set(ip, { verdict, at: Date.now() });
-  return verdict;
+  const result: GeoLookup = { verdict, stripped };
+  ipCache.set(ip, { result, at: Date.now() });
+  return result;
 }
 
 /**
@@ -201,7 +254,7 @@ export async function enrichNodeGeoBatch(
         continue;
       }
 
-      const verdict = await geoForIp(publicIp);
+      const { verdict, stripped } = await geoForIp(publicIp, log);
       if (!verdict) {
         outcome.failed += group.length;
         continue;
@@ -232,10 +285,10 @@ export async function enrichNodeGeoBatch(
       // Guard-refused target (anycast host, edge-fabric ASN, or a user
       // refuse-override) → record ISP/ASN facts but no geography at all —
       // for these networks even the COUNTRY in a GeoIP answer is an
-      // artifact. The node honestly shows Unknown on the map. (A normal IP
-      // whose lookup yielded country-only evidence falls through to the
-      // normal write below, keeping country + 'low' confidence.)
-      if (isRefusedByGuard(publicIp, verdict.asn)) {
+      // artifact. The node honestly shows Unknown on the map. A verdict
+      // whose geography the plausibility gate stripped joins this bucket:
+      // the provider answered, but nothing trustworthy was established.
+      if (stripped || isRefusedByGuard(publicIp, verdict.asn)) {
         for (const row of group) {
           nodesRepo.updateGeo(row.id, {
             country: null,
@@ -317,7 +370,7 @@ export async function recheckNodeGeo(
 
     // Fresh verdict: drop any cached answer for this IP first.
     ipCache.delete(publicIp);
-    const verdict = await geoForIp(publicIp);
+    const { verdict, stripped } = await geoForIp(publicIp, log);
     if (!verdict) return { outcome: 'failed', reason: 'lookup_failed' };
 
     // User-attested coordinates win, same as the batch worker.
@@ -336,6 +389,11 @@ export async function recheckNodeGeo(
       });
       return { outcome: 'vouched', reason: 'known' };
     }
+
+    // The lookup answered but its geography was implausible for the claimed
+    // country → nothing trustworthy was established. Honest failure: no
+    // write at all, so a re-check can never add or keep bad coordinates.
+    if (stripped) return { outcome: 'failed', reason: 'lookup_failed' };
 
     // Guard refusal → keep ASN/ISP facts, no geography (identical to batch).
     if (isRefusedByGuard(publicIp, verdict.asn)) {
@@ -357,10 +415,12 @@ export async function recheckNodeGeo(
     }
 
     // Normal write: coordinates when the verdict carries them, else
-    // country-only at low confidence — never invent a pin.
+    // country-only at low confidence — never invent a pin. Country is
+    // written as the ISO code when known (the same normalization as the
+    // batch worker): a full name would slip past every code-keyed guard.
     const hasCoords = verdict.lat != null && verdict.lon != null;
     nodesRepo.updateGeo(row.id, {
-      country: verdict.country ?? null,
+      country: verdict.countryCode ?? verdict.country ?? null,
       city: verdict.city ?? null,
       asn: verdict.asn ?? null,
       isp: verdict.isp ?? null,
@@ -380,12 +440,14 @@ export async function recheckNodeGeo(
 }
 
 /**
- * One-time boot scrub: nodes the guard refuses (anycast hosts, edge-fabric
- * ASNs, user overrides) must not carry coordinates from an earlier build's
- * GeoIP answer (e.g. 1.1.1.1 "Brisbane, AU", Cloudflare IPs "San Francisco").
- * Clears the fabricated geography, keeps ASN/ISP facts. A user override with
- * class "unicast" + force coordinates re-pins a node instead.
- * Returns how many rows were touched.
+ * One-time boot scrub: nodes must not carry geography that is either
+ * guard-refused (anycast hosts, edge-fabric ASNs, user overrides — e.g.
+ * 1.1.1.1 "Brisbane, AU", Cloudflare IPs "San Francisco") or implausible
+ * for the country they claim (outside the country's bounding box — the
+ * runtime assertion applied to rows written before it existed). Clears the
+ * bad geography, keeps ASN/ISP facts; a normal row is re-attempted by the
+ * geo worker on its normal schedule. A user override with class "unicast"
+ * + force coordinates re-pins a node instead. Returns rows touched.
  */
 export function scrubAnycastGeo(nodesRepo: {
   list(opts: { limit: number }): { rows: PublicNodeRow[] };
@@ -395,7 +457,7 @@ export function scrubAnycastGeo(nodesRepo: {
   try {
     for (const row of nodesRepo.list({ limit: 5000 }).rows) {
       const cls = classifyGeoTarget(row.host, row.asn);
-      if (cls === 'unicast') continue;
+      if (cls === 'unicast' && inCountryBox(row.country, row.lat, row.lon)) continue;
       if (row.lat == null && row.lon == null && row.country == null) continue;
       nodesRepo.updateGeo(row.id, {
         country: null,

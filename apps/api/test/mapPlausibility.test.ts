@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { COUNTRY_BBOX, inCountryBox } from '@netpulse/shared';
+import { COUNTRY_BBOX, inCountryBox, hasCountryBox, LIVE_COUNTRIES } from '@netpulse/shared';
 
-import { enrichNodeGeoBatch, clearGeoIpCacheForTests, scrubAnycastGeo } from '../src/services/nodeGeoService';
+import { enrichNodeGeoBatch, clearGeoIpCacheForTests, scrubAnycastGeo, recheckNodeGeo } from '../src/services/nodeGeoService';
 
 import type { PublicNodeRow, PublicNodesRepository } from '../src/db/repositories';
 import type { Logger } from '../src/logger';
@@ -190,6 +190,32 @@ describe('COUNTRY_BBOX data', () => {
     expect(inCountryBox('XX', 0, 0)).toBe(true);
     expect(inCountryBox('DE', null, null)).toBe(true);
   });
+
+  it('sub-national region boxes accept real places outside the main box', () => {
+    // Alaska and Hawaii (legit US GeoIP answers), Malaysian Borneo,
+    // the Azores, and Chukotka west of the antimeridian.
+    expect(inCountryBox('US', 64.2, -149.5)).toBe(true); // Fairbanks, AK
+    expect(inCountryBox('US', 21.31, -157.86)).toBe(true); // Honolulu, HI
+    expect(inCountryBox('MY', 3.14, 113.08)).toBe(true); // Bintulu, Sarawak
+    expect(inCountryBox('PT', 38.72, -27.22)).toBe(true); // Ponta Delgada, Azores
+    expect(inCountryBox('RU', 66.0, -172.0)).toBe(true); // Chukotka
+    // ...while out-of-region claims still fail.
+    expect(inCountryBox('US', 21.31, 157.86)).toBe(false); // Hawaii mirrored east
+    expect(inCountryBox('MY', 3.14, 113.08 - 40)).toBe(false);
+  });
+
+  it('hasCountryBox flags exactly the countries the table can judge', () => {
+    expect(hasCountryBox('DE')).toBe(true);
+    expect(hasCountryBox('MY')).toBe(true); // region-only would still count
+    expect(hasCountryBox('NG')).toBe(false);
+    expect(hasCountryBox(null)).toBe(false);
+    expect(hasCountryBox('xx')).toBe(false);
+  });
+
+  it('coverage: every live-data country has a box (add a box or an override when this fails)', () => {
+    const unboxed = LIVE_COUNTRIES.filter((cc) => !hasCountryBox(cc));
+    expect(unboxed, `countries without boxes: ${unboxed.join(', ')}`).toEqual([]);
+  });
 });
 
 /* ------------------- write-path plausibility enforcement ------------------ */
@@ -269,5 +295,107 @@ describe('geoForIp verdict guard', () => {
     // geoForIp is not exported; the batch path covers it. This test documents
     // the invariant at the verdict level via a unicast contrast instead.
     expect(inCountryBox('AU', -27.47, 153.02)).toBe(true); // Brisbane IS in AU — the problem was the CLAIM, not the box
+  });
+});
+
+/* -------------------- runtime plausibility gate (production) ------------------- */
+
+describe('runtime bounding-box gate', () => {
+  it('an implausible verdict (coords outside the claimed country) is refused at write time', async () => {
+    clearGeoIpCacheForTests();
+    // A poisoned GeoIP answer: claims DE but places the point in Japan.
+    mockFetch.mockResolvedValue(verdict({ country: 'Germany', countryCode: 'DE', city: 'Nowhere', latitude: 35.68, longitude: 139.69, asn: 24940, isp: 'Hetzner' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'bad1', ipv4: ['85.10.20.30'] })]);
+    const out = await enrichNodeGeoBatch(repo, [{ ...row({ id: 'bad1', ipv4: ['85.10.20.30'] }) }], log);
+    // The gate strips the geography; the row keeps only facts → counted as
+    // anycastRefused (the 'refused' write bucket), never as a resolved pin.
+    expect(out.resolved).toBe(0);
+    expect(out.anycastRefused).toBe(1);
+    const g = geoWrites[0]!.geo;
+    expect(g.lat).toBeNull();
+    expect(g.lon).toBeNull();
+    expect(g.country).toBeNull();
+  });
+
+  it('a lookup whose every geography was stripped keeps ISP/ASN facts (honest Unknown, not lost row)', async () => {
+    clearGeoIpCacheForTests();
+    mockFetch.mockResolvedValue(verdict({ country: 'Japan', countryCode: 'JP', city: 'Phantom', latitude: 8.68, longitude: 50.11, asn: 4713, isp: 'NTT' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'bad2', ipv4: ['126.10.20.30'] })]);
+    await enrichNodeGeoBatch(repo, [{ ...row({ id: 'bad2', ipv4: ['126.10.20.30'] }) }], log);
+    const g = geoWrites[0]!.geo;
+    expect(g.lat).toBeNull();
+    expect(g.country).toBeNull();
+    expect(g.asn).toBe(4713); // facts survive the refusal
+    expect(g.isp).toBe('NTT');
+  });
+
+  it('a re-check of an implausible verdict resolves honestly as lookup_failed, writing nothing geographic', async () => {
+    clearGeoIpCacheForTests();
+    mockFetch.mockResolvedValue(verdict({ country: 'Netherlands', countryCode: 'NL', city: 'Ghost', latitude: 35.68, longitude: 139.69, asn: 60781, isp: 'LeaseWeb' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'bad3', host: '198.7.58.1', ipv4: ['198.7.58.1'] })]);
+    const result = await recheckNodeGeo(repo, { ...row({ id: 'bad3', host: '198.7.58.1', ipv4: ['198.7.58.1'] }) }, log);
+    expect(result.outcome).toBe('failed');
+    expect((result as { outcome: 'failed'; reason: string }).reason).toBe('lookup_failed');
+    expect(geoWrites).toHaveLength(0); // nothing implausible written
+  });
+
+  it('legit verdicts near box edges survive (margin covers offshore islands)', async () => {
+    clearGeoIpCacheForTests();
+    // Honolulu: outside the US mainland box, inside the Hawaii region box.
+    mockFetch.mockResolvedValue(verdict({ country: 'United States', countryCode: 'US', city: 'Honolulu', latitude: 21.31, longitude: -157.86, asn: 6939, isp: 'Hurricane Electric' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'hi1', ipv4: ['72.52.100.10'] })]);
+    const out = await enrichNodeGeoBatch(repo, [{ ...row({ id: 'hi1', ipv4: ['72.52.100.10'] }) }], log);
+    expect(out.resolved).toBe(1);
+    const g = geoWrites[0]!.geo;
+    expect(g.lat).toBeCloseTo(21.31);
+    expect(g.country).toBe('US');
+    expect(inCountryBox('US', g.lat as number, g.lon as number)).toBe(true);
+  });
+
+  it('a re-check of a unicast node writes the ISO country code, never the full name', async () => {
+    clearGeoIpCacheForTests();
+    // Provider answered with both name and code; the DB must carry 'CN' so
+    // code-keyed guards (boxes, facets, the gate itself) see it. Regression:
+    // recheckNodeGeo once wrote the full name ('China'), which slipped past
+    // every code-keyed check.
+    mockFetch.mockResolvedValue(verdict({ country: 'China', countryCode: 'CN', city: 'Zhengzhou', latitude: 34.75, longitude: 113.62, asn: 24415, isp: 'Tencent' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'cn1', host: '167.179.34.31', ipv4: ['167.179.34.31'] })]);
+    const result = await recheckNodeGeo(repo, { ...row({ id: 'cn1', host: '167.179.34.31', ipv4: ['167.179.34.31'] }) }, log);
+    expect(result.outcome).toBe('resolved');
+    expect(geoWrites).toHaveLength(1);
+    expect(geoWrites[0]!.geo.country).toBe('CN');
+  });
+
+  it('a verdict for a country with no box still passes (coverage flag, not refusal)', async () => {
+    clearGeoIpCacheForTests();
+    // NG is not in the table: the gate cannot judge it, so the verdict must
+    // PASS (no box, no claim) — and the coverage warn must fire so the gap
+    // surfaces from live data instead of being silently ignored.
+    mockFetch.mockResolvedValue(verdict({ country: 'Nigeria', countryCode: 'NG', city: 'Lagos', latitude: 6.52, longitude: 3.38, asn: 37282, isp: 'MainOne' }));
+    const { repo, geoWrites } = fakeRepo([row({ id: 'ng1', ipv4: ['105.112.59.10'] })]);
+    const out = await enrichNodeGeoBatch(repo, [{ ...row({ id: 'ng1', ipv4: ['105.112.59.10'] }) }], log);
+    expect(out.resolved).toBe(1);
+    expect(geoWrites[0]!.geo.country).toBe('NG');
+    expect(geoWrites[0]!.geo.lat).toBeCloseTo(6.52);
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ country: 'NG' }), 'geo: no bounding box for country — plausibility gate skipped');
+  });
+
+  it('boot scrub also heals legacy rows whose country contradicts their coordinates', () => {
+    const rows = [
+      // Legacy poison: claims DE, coordinates in Japan.
+      row({ id: 'legacy1', host: '85.10.20.30', asn: 24940, country: 'DE', city: 'Frankfurt', lat: 35.68, lon: 139.69 }),
+      // Legit row: untouched.
+      row({ id: 'ok1', host: '85.10.20.31', asn: 24940, country: 'DE', city: 'Frankfurt', lat: 50.11, lon: 8.68 }),
+    ];
+    const { repo, geoWrites } = fakeRepo(rows);
+    const n = scrubAnycastGeo(repo);
+    expect(n).toBe(1);
+    expect(geoWrites.map((w) => w.id)).toEqual(['legacy1']);
+    const finalRows = [...(repo.list({ limit: 5000 }) as { rows: PublicNodeRow[] }).rows];
+    for (const r of finalRows) {
+      if (r.lat != null) {
+        expect(inCountryBox(r.country, r.lat, r.lon), `${r.id}`).toBe(true);
+      }
+    }
   });
 });

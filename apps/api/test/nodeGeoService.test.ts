@@ -326,7 +326,9 @@ describe('recheckNodeGeo', () => {
     const r = await recheckNodeGeo(repo, row({ ipv4: ['95.90.100.5'] }), log);
     expect(r).toEqual({ outcome: 'resolved', reason: 'known' });
     expect(geoWrites).toHaveLength(1);
-    expect(geoWrites[0]!.geo).toMatchObject({ country: 'Germany', city: 'Frankfurt', lat: 50.11, confidence: 'medium' });
+    // ISO code is written (never the provider's full name) so code-keyed
+    // guards — bounding boxes, facets, the plausibility gate — see it.
+    expect(geoWrites[0]!.geo).toMatchObject({ country: 'DE', city: 'Frankfurt', lat: 50.11, confidence: 'medium' });
     expect(attempts).toHaveLength(1);
   });
 
