@@ -1,0 +1,1 @@
+ALTER TABLE `dns_benchmarks` ADD COLUMN `vpn_active` integer NOT NULL DEFAULT 0;

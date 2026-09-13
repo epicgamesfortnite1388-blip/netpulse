@@ -1,0 +1,51 @@
+[package]
+name = "netpulse-desktop"
+version = "0.2.0"
+description = "NetPulse — VPN & Network Intelligence Platform (desktop)"
+authors = ["NetPulse"]
+edition = "2021"
+rust-version = "1.77"
+
+# NetPulse desktop core.
+#
+# The Rust layer owns everything OS-sensitive:
+#   - sidecar lifecycle (supervised Node/TypeScript backend on a private loopback port)
+#   - ephemeral daemon token generation (never persisted to disk)
+#   - single-instance enforcement
+#   - system tray
+#   - native application-data paths
+#   - capability reporting
+#
+# The React frontend talks to the sidecar over loopback HTTP/WS with the
+# ephemeral token; the token is delivered to the webview only through typed
+# Tauri IPC (bootstrap command), never through disk or a public channel.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+# Elevation broker: descriptor integrity (SHA-256 of the staged tunnel config)
+# and loopback-only HTTP to the sidecar for the pending-op handshake.
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
+
+
+[features]
+# this feature is used for production builds or when `devPath` points to the
+# filesystem and the built-in dev server is disabled.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

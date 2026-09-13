@@ -1,0 +1,1 @@
+ALTER TABLE `network_tests` ADD COLUMN `result` text;

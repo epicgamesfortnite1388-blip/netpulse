@@ -1,0 +1,45 @@
+{
+  "name": "netpulse",
+  "private": true,
+  "version": "0.2.0",
+  "description": "VPN & Network Intelligence Platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:api": "npm run dev -w @netpulse/api",
+    "dev:web": "npm run dev -w @netpulse/web",
+    "build": "npm run build -w @netpulse/api && npm run build -w @netpulse/web",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint packages/shared/src apps/api/src apps/web/src",
+    "format": "prettier --write \"packages/**/src/**/*.{ts,tsx,css}\" \"apps/**/src/**/*.{ts,tsx,css}\"",
+    "db:generate": "npm run db:generate -w @netpulse/api",
+    "desktop:dev": "npm run build:desktop-backend && tauri dev",
+    "desktop:package": "node scripts/desktop-package.mjs",
+    "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "release:version": "node scripts/release.mjs",
+    "build:desktop-backend": "npm run build -w @netpulse/api && node scripts/prepare-desktop.mjs",
+    "desktop:build": "npm run release:version && npm run build:desktop-backend && tauri build",
+    "desktop:verify": "node scripts/verify-desktop-pipeline.mjs",
+    "desktop:sign": "node scripts/sign-release.mjs",
+    "e2e": "node scripts/e2e-desktop.mjs",
+    "test:release": "node scripts/release-distribution.test.mjs",
+    "test:deploy": "node scripts/deploy-battery.mjs",
+    "audit:ci": "bash scripts/audit-ci.sh",
+    "audit:tabs": "node scripts/audit-tab-persistence.mjs",
+    "stress:nodes": "tsx scripts/stress-nodes.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "depcheck": "^1.4.7",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "madge": "^8.0.0",
+    "ts-prune": "^0.10.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}
