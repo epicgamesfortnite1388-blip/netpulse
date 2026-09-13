@@ -305,3 +305,68 @@ describe('nodeGeoService', () => {
     expect(r1.attempted).toBe(1);
   });
 });
+
+/* ------------------------------ geo recheck ------------------------------- */
+// POST /nodes/:id/geo-recheck → recheckNodeGeo: bypasses cache + spacing for
+// ONE node, honors user vouches, keeps guard refusals honest.
+
+import { recheckNodeGeo } from '../src/services/nodeGeoService';
+import { resetGeoGuardForTests, setGeoOverridesForTest } from '../src/services/geoGuard';
+import { afterEach } from 'vitest';
+
+afterEach(() => resetGeoGuardForTests());
+
+describe('recheckNodeGeo', () => {
+  it('resolves coordinates for a plain unicast IP (fresh lookup)', async () => {
+    mockFetch.mockResolvedValue({
+      countryCode: 'DE', country: 'Germany', city: 'Frankfurt', region: 'HE',
+      latitude: 50.11, longitude: 8.68, asn: 24940, isp: 'Hetzner', org: 'Hetzner Online',
+    });
+    const { repo, geoWrites, attempts } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ ipv4: ['95.90.100.5'] }), log);
+    expect(r).toEqual({ outcome: 'resolved', reason: 'known' });
+    expect(geoWrites).toHaveLength(1);
+    expect(geoWrites[0]!.geo).toMatchObject({ country: 'Germany', city: 'Frankfurt', lat: 50.11, confidence: 'medium' });
+    expect(attempts).toHaveLength(1);
+  });
+
+  it('refuses an anycast IP honestly: no coordinates, refusal outcome', async () => {
+    mockFetch.mockResolvedValue({
+      countryCode: 'US', country: 'United States', city: 'Brisbane', region: 'CA',
+      latitude: -27.64, longitude: 153.03, asn: 13335, isp: 'Cloudflare', org: 'Cloudflare',
+    });
+    const { repo, geoWrites } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ host: '1.1.1.1', ipv4: ['1.1.1.1'] }), log);
+    expect(r).toEqual({ outcome: 'refused', reason: 'anycast' });
+    expect(geoWrites[0]!.geo).toMatchObject({ country: null, lat: null, confidence: 'refused', asn: 13335 });
+  });
+
+  it('a user vouch override wins: forced coordinates at high confidence', async () => {
+    setGeoOverridesForTest(new Map([
+      ['1.1.1.1', { class: 'unicast', force: { lat: -33.87, lon: 151.21, country: 'Australia', city: 'Sydney' }, note: 'attested' }],
+    ]));
+    mockFetch.mockResolvedValue({
+      countryCode: 'US', country: 'United States', city: 'Brisbane', region: 'CA',
+      latitude: -27.64, longitude: 153.03, asn: 13335, isp: 'Cloudflare', org: 'Cloudflare',
+    });
+    const { repo, geoWrites } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ host: '1.1.1.1', ipv4: ['1.1.1.1'] }), log);
+    expect(r).toEqual({ outcome: 'vouched', reason: 'known' });
+    expect(geoWrites[0]!.geo).toMatchObject({ country: 'Australia', city: 'Sydney', lat: -33.87, confidence: 'high' });
+  });
+
+  it('a failed lookup reports lookup_failed and writes no geography', async () => {
+    mockFetch.mockResolvedValue(null);
+    const { repo, geoWrites } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ ipv4: ['95.90.100.9'] }), log);
+    expect(r).toEqual({ outcome: 'failed', reason: 'lookup_failed' });
+    expect(geoWrites).toHaveLength(0);
+  });
+
+  it('private-only nodes are reported, never geolocated', async () => {
+    const { repo, geoWrites } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ ipv4: ['192.168.1.10'] }), log);
+    expect(r).toEqual({ outcome: 'failed', reason: 'private_only' });
+    expect(geoWrites).toHaveLength(0);
+  });
+});

@@ -1,6 +1,6 @@
 import dns from 'node:dns/promises';
 
-import { fetchIpWhoIs } from '../providers/ipinfo/ipwhoIs';
+import { fetchIpWhoIs, fetchGeoJs } from '../providers/ipinfo/ipwhoIs';
 import { familyOfIp, isPrivateIp } from '../util/targetGuard';
 import { classifyGeoTarget, geoForcedLocation, geoVouchedByOverride } from './geoGuard';
 
@@ -118,7 +118,10 @@ async function geoForIp(ip: string): Promise<GeoVerdict | null> {
   if (cached && Date.now() - cached.at < IP_CACHE_TTL_MS) return cached.verdict;
   let verdict: GeoVerdict | null = null;
   try {
-    const d = await fetchIpWhoIs(ip, LOOKUP_TIMEOUT_MS);
+    // Primary + fallback: ipwho.is rate-limits aggressively; geojs.io covers
+    // the gap so a lookup degrades to a second provider, not to Unknown.
+    let d = await fetchIpWhoIs(ip, LOOKUP_TIMEOUT_MS);
+    if (!d) d = await fetchGeoJs(ip, LOOKUP_TIMEOUT_MS);
     if (d && d.countryCode) {
       verdict = {
         country: d.country ?? null,
@@ -279,6 +282,101 @@ export async function enrichNodeGeoBatch(
 /** Test hook: clear the module-level IP cache. */
 export function clearGeoIpCacheForTests(): void {
   ipCache.clear();
+}
+
+export type GeoRecheckResult =
+  | { outcome: 'resolved'; reason: 'known' | 'pending' }
+  | { outcome: 'refused'; reason: 'anycast' | 'edge_fabric' }
+  | { outcome: 'failed'; reason: 'lookup_failed' | 'no_public_ip' | 'private_only' }
+  | { outcome: 'vouched'; reason: 'known' }
+  | { outcome: 'busy'; reason: 'pending' };
+
+/**
+ * Force an immediate geolocation re-check for ONE node: bypasses the IP
+ * cache (fresh ipwho.is query), the 60 s attempt spacing, and the batch
+ * scheduler queue. Runs the same guard logic as the background worker — a
+ * refused IP stays Unknown, now with a fresh verdict behind it. Never
+ * throws; the outcome explains what happened.
+ */
+export async function recheckNodeGeo(
+  nodesRepo: PublicNodesRepository,
+  row: PublicNodeRow,
+  log: Logger,
+): Promise<GeoRecheckResult> {
+  if (running) return { outcome: 'busy', reason: 'pending' };
+  running = true;
+  try {
+    const now = Date.now();
+    nodesRepo.markGeoAttempt(row.id, now);
+
+    let ips = candidateIps(row);
+    if (ips.length === 0) ips = await resolveHostIps(row.host);
+    const publicIp = ips.find((ip) => !isPrivateIp(ip));
+    if (ips.length === 0) return { outcome: 'failed', reason: 'no_public_ip' };
+    if (!publicIp) return { outcome: 'failed', reason: 'private_only' };
+
+    // Fresh verdict: drop any cached answer for this IP first.
+    ipCache.delete(publicIp);
+    const verdict = await geoForIp(publicIp);
+    if (!verdict) return { outcome: 'failed', reason: 'lookup_failed' };
+
+    // User-attested coordinates win, same as the batch worker.
+    const forced = geoForcedLocation(publicIp, verdict.asn ?? null);
+    if (forced) {
+      nodesRepo.updateGeo(row.id, {
+        country: forced.country,
+        city: forced.city ?? null,
+        asn: verdict.asn ?? null,
+        isp: verdict.isp ?? null,
+        organization: verdict.organization ?? null,
+        lat: forced.lat,
+        lon: forced.lon,
+        confidence: 'high',
+        geoSourceCount: 1,
+      });
+      return { outcome: 'vouched', reason: 'known' };
+    }
+
+    // Guard refusal → keep ASN/ISP facts, no geography (identical to batch).
+    if (isRefusedByGuard(publicIp, verdict.asn)) {
+      const cls = classifyGeoTarget(publicIp, verdict.asn);
+      nodesRepo.updateGeo(row.id, {
+        country: null,
+        city: null,
+        asn: verdict.asn ?? null,
+        isp: verdict.isp ?? null,
+        organization: verdict.organization ?? null,
+        lat: null,
+        lon: null,
+        confidence: 'refused',
+        geoSourceCount: 0,
+      });
+      return cls === 'anycast'
+        ? { outcome: 'refused', reason: 'anycast' }
+        : { outcome: 'refused', reason: 'edge_fabric' };
+    }
+
+    // Normal write: coordinates when the verdict carries them, else
+    // country-only at low confidence — never invent a pin.
+    const hasCoords = verdict.lat != null && verdict.lon != null;
+    nodesRepo.updateGeo(row.id, {
+      country: verdict.country ?? null,
+      city: verdict.city ?? null,
+      asn: verdict.asn ?? null,
+      isp: verdict.isp ?? null,
+      organization: verdict.organization ?? null,
+      lat: verdict.lat ?? null,
+      lon: verdict.lon ?? null,
+      confidence: hasCoords ? 'medium' : 'low',
+      geoSourceCount: 1,
+    });
+    return { outcome: 'resolved', reason: hasCoords ? 'known' : 'pending' };
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : String(err) }, 'geo recheck failed');
+    return { outcome: 'failed', reason: 'lookup_failed' };
+  } finally {
+    running = false;
+  }
 }
 
 /**

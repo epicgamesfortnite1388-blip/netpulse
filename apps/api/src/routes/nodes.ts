@@ -7,6 +7,7 @@ import { AppError } from '../util/appError';
 import type { AppContext } from './context';
 import type { NodesService } from '../services/nodesService';
 import { getKnownSources, createSourceFromInput, isValidSourceUrl } from '../services/nodeSourceRegistry';
+import { recheckNodeGeo } from '../services/nodeGeoService';
 import type { NodeProtocol, NodeSecurity, NodeSort, NodeStatus, PublicSource } from '@netpulse/shared';
 import { proxyEngineStatus } from '../services/proxyEngineRunner';
 
@@ -263,6 +264,20 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   // Set favorite
+  // Force an immediate geolocation re-check for one node — bypasses the IP
+  // cache and the background scheduler's spacing. The response explains the
+  // outcome (resolved / refused by anycast-edge guard / failed) so the UI can
+  // show exactly why the location looks the way it does now.
+  app.post('/api/v1/nodes/:id/geo-recheck', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
+    const { id } = req.params as { id: string };
+    const row = ctx.repos.publicNodes.get(id);
+    if (!row) return reply.status(404).send({ error: 'node not found' });
+    const result = await recheckNodeGeo(ctx.repos.publicNodes, row, ctx.log);
+    const fresh = nodesService.getNode(id);
+    return { result, node: fresh };
+  });
+
   app.post('/api/v1/nodes/:id/favorite', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 

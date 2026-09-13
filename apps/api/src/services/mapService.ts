@@ -34,6 +34,7 @@ import { parseCymruOrigin } from '../util/traceParse';
 import { processNamesForPids } from '../util/processNames';
 import { familyOfIp, pickIp, resolveTarget } from '../util/targetGuard';
 import { DNS_PROVIDER_GROUPS, primaryResolvers } from './dnsResolverCatalog';
+import { classifyGeoTarget } from './geoGuard';
 import type { IpInfoService } from './ipInfoService';
 import type { RouteService } from './routeService';
 import type { EventService } from './eventService';
@@ -479,6 +480,10 @@ export class MapService {
       // The destination is the resolved IP (or, when the CDN never answers ICMP,
       // the deepest hop actually reached) — never an arbitrary transit router.
       const destIp = trace?.resolvedIp ?? [...(trace?.hops ?? [])].reverse().find((h) => h.ip)?.ip ?? null;
+      // Written by awaitDestinationGeo when the destination pin is refused
+      // (anycast / edge fabric) or when no geo evidence exists at all — read
+      // after the hop pass and surfaced on the observation for the UI.
+      let destGeoReasonRef: 'anycast' | 'edge_fabric' | 'lookup_failed' | null = null;
       const hops: MapHop[] = await Promise.all((trace?.hops ?? []).map(async (h, i) => {
         let geo: MapGeo | null = null;
         if (h.ip != null) {
@@ -530,8 +535,20 @@ export class MapService {
             // fall through to country estimate
           }
         }
+        // Geo guard: an anycast IP or global edge-fabric ASN has no single true
+        // location — the registry country (Team Cymru / trace hop) would pin the
+        // provider's HQ, not where traffic exits. Refuse the pin and remember
+        // why so the UI can say Unknown *with a reason*.
+        const hopAsn = tr?.hops.find((h) => h.ip === destIpAddr)?.asn ?? null;
+        const geoClass = classifyGeoTarget(destIpAddr, hopAsn);
+        if (geoClass !== 'unicast') {
+          destGeoReasonRef = geoClass;
+          return null;
+        }
         const country = tr?.hops.find((h) => h.ip === destIpAddr)?.country ?? (await cymruCountry(destIpAddr));
-        return countryCentroidGeo(country);
+        const centroid = countryCentroidGeo(country);
+        if (centroid == null) destGeoReasonRef = 'lookup_failed';
+        return centroid;
       }
 
       async function cymruCountry(ipAddr: string): Promise<string | null> {
@@ -608,6 +625,7 @@ export class MapService {
         statusLabel,
         note: analysisNote,
         insights: [],
+        destGeoReason: destGeoReasonRef,
       };
 
       const diff = diffObservations(observation, previousObservation);
@@ -995,7 +1013,17 @@ export class MapService {
         base.status = 'poor';
         base.statusLabel = 'Poor';
       }
-      base.country = await cymruCountryOf(ip);
+      // A registry country for an anycast/edge-fabric IP is a HQ artifact
+      // (the Cloudflare-in-Australia class of bug) — refuse it and say why.
+      // Check the guard BEFORE the Cymru DNS lookup: refused pins need no
+      // registry country at all.
+      const geoClass = classifyGeoTarget(ip, null);
+      if (geoClass !== 'unicast') {
+        base.country = null;
+        base.geoStatusReason = geoClass;
+      } else {
+        base.country = await cymruCountryOf(ip);
+      }
       return base;
     } catch (err) {
       base.status = 'unreachable';

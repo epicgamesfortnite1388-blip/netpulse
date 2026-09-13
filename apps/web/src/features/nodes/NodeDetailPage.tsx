@@ -9,6 +9,7 @@ import {
   Globe2,
   Info,
   Loader2,
+  RefreshCw,
   Shield,
   ShieldCheck,
   ShieldX,
@@ -26,6 +27,7 @@ import { Tabs, TabPanel } from '@/components/ui/Tabs';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
+import { GEO_STATUS_COPY, geoReasonOf } from '@/lib/geoStatus';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { diagnoseFailure } from '@/lib/failureIntelligence';
 import { fmtMs, fmtPct, fmtDateTime } from '@/lib/format';
@@ -59,44 +61,28 @@ const PROTOCOL_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-const GEO_STATUS_EXPLANATIONS: Record<NonNullable<NodeWebDTO['geoStatusReason']>, { title: string; detail: string }> = {
-  known: {
-    title: 'Location from IP evidence',
-    detail: 'City-level GeoIP estimate from this node\u2019s resolved public IP — approximate, never exact.',
-  },
-  anycast: {
-    title: 'No single location (anycast IP)',
-    detail: 'This IP is announced from many datacenters worldwide at once, so it has no single true location. GeoIP answers for it are artifacts — the node is shown as Unknown instead of a confident lie.',
-  },
-  edge_fabric: {
-    title: 'No location shown (global edge network)',
-    detail: 'This IP belongs to a provider\u2019s worldwide edge fabric (Cloudflare, Google, AWS, Azure…). GeoIP would report the provider\u2019s registration office, not where your traffic actually exits.',
-  },
-  lookup_failed: {
-    title: 'Location could not be determined',
-    detail: 'A geolocation attempt ran but no location could be established for this node\u2019s IP. Unknown is shown rather than a guess; the geo worker retries periodically.',
-  },
-  pending: {
-    title: 'Location lookup pending',
-    detail: 'This node has not been geolocated yet — new nodes are resolved in bounded background batches, oldest first.',
-  },
-};
-
 /**
  * Explains WHY a node shows Unknown (anycast / edge fabric / failed lookup)
  * instead of a location, so the empty field reads as honesty, not missing data.
+ * Copy lives in lib/geoStatus.ts — shared with explorer rows and the map panel.
  */
-function GeoStatusNote({ node }: { node: NodeWebDTO }) {
-  const reason = node.geoStatusReason ?? (node.lat != null ? 'known' : 'pending');
+function GeoStatusNote({ node, onRecheck, checking }: { node: NodeWebDTO; onRecheck: () => void; checking: boolean }) {
+  const reason = geoReasonOf(node.geoStatusReason, node.lat != null);
   if (reason === 'known') return null; // a location exists — nothing to explain
-  const x = GEO_STATUS_EXPLANATIONS[reason];
+  const x = GEO_STATUS_COPY[reason];
   return (
     <Card className="mb-6">
       <CardBody className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
         <Info size={15} className="mt-0.5 shrink-0 text-accent" />
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-medium text-text">{x.title}</p>
           <p className="mt-0.5">{x.detail}</p>
+          {reason !== 'anycast' && reason !== 'edge_fabric' && (
+            <Button variant="ghost" size="sm" className="mt-2" onClick={onRecheck} loading={checking}>
+              <RefreshCw size={12} />
+              Re-check location
+            </Button>
+          )}
         </div>
       </CardBody>
     </Card>
@@ -152,6 +138,32 @@ export default function NodeDetailPage() {
   }, [id]);
 
   useEffect(() => { void loadNode(); }, [loadNode]);
+
+  // In-flight geo re-check (survives tab switches like pendingTest does not
+  // need persistence: the POST is short-lived and the result is a node refetch).
+  const [geoChecking, setGeoChecking] = useState(false);
+  const recheckGeo = useCallback(async () => {
+    if (!id || geoChecking) return;
+    setGeoChecking(true);
+    try {
+      const res = await api.post<{ result: { outcome: string; reason: string }; node: NodeWebDTO | null }>(`/nodes/${id}/geo-recheck`, {});
+      if (res.node) setNode(res.node);
+      const r = res.result;
+      if (r.outcome === 'resolved' || r.outcome === 'vouched') {
+        toast('ok', 'Location updated', r.outcome === 'vouched' ? 'User-attested coordinates applied.' : 'Fresh GeoIP lookup completed.');
+      } else if (r.outcome === 'refused') {
+        toast('warn', 'No location available', r.reason === 'anycast' ? 'This IP is anycast — GeoIP answers for it are artifacts, so it stays Unknown.' : 'This IP belongs to a global edge network — GeoIP would report a registry office, not a location.');
+      } else if (r.outcome === 'busy') {
+        toast('warn', 'Geo worker busy', 'A background lookup is running — this node is queued. Try again in a moment.');
+      } else {
+        toast('error', 'Lookup failed', r.reason === 'private_only' ? 'Node has only private addresses — nothing to geolocate.' : 'The geolocation service did not answer. It retries in the background.');
+      }
+    } catch (err) {
+      toast('error', 'Re-check failed', err instanceof Error ? err.message : undefined);
+    } finally {
+      setGeoChecking(false);
+    }
+  }, [id, geoChecking, toast]);
 
   const runTest = useCallback(async (type: 'tcp' | 'tls' | 'proxy' | 'icmp') => {
     if (!id) return;
@@ -303,12 +315,16 @@ export default function NodeDetailPage() {
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-base-200/50">
                 <Flag size={20} className="text-muted" />
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{node.country || 'Unknown location'}</p>
                   {node.city && <p className="text-xs text-muted">{node.city}</p>}
                   {node.asn && <p className="text-xs text-muted">AS{node.asn}</p>}
                   {node.isp && <p className="text-xs text-muted">{node.isp}</p>}
                 </div>
+                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => void recheckGeo()} loading={geoChecking} title="Force a fresh geolocation lookup for this node">
+                  <RefreshCw size={12} />
+                  Re-check
+                </Button>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-base-200/50">
                 <Network size={20} className="text-muted" />
@@ -321,7 +337,7 @@ export default function NodeDetailPage() {
           </CardBody>
         </Card>
 
-        <GeoStatusNote node={node} />
+        <GeoStatusNote node={node} onRecheck={() => void recheckGeo()} checking={geoChecking} />
 
         {/* Technical details */}
         <Card className="mb-6">

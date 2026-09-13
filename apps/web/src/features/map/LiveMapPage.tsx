@@ -11,6 +11,7 @@ import {
   Globe,
   History,
   Map as MapIcon,
+  MapPinOff,
   Maximize2,
   Play,
   Radar,
@@ -29,7 +30,9 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { EmptyState } from '@/components/ui/States';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { api } from '@/lib/api';
+import { GEO_STATUS_COPY, GeoTooltipBody, geoReasonOf } from '@/lib/geoStatus';
 import { fmtMs, fmtPct, timeAgo } from '@/lib/format';
 import { useWsTestProgress } from '@/lib/ws';
 import { MapCanvas } from './MapCanvas';
@@ -118,9 +121,13 @@ function primaryLoss(obs: MapObservation): number | null {
 }
 
 function destinationGeo(obs: MapObservation): { lat: number; lon: number } | null {
-  const withGeo = obs.hops.filter((h) => h.geo);
-  const last = withGeo[withGeo.length - 1];
-  return last?.geo ? { lat: last.geo.lat, lon: last.geo.lon } : null;
+  // The pin must be the DESTINATION's own geo — never a transit hop's.
+  // Anycast / edge-fabric destinations are refused geo by the backend, so
+  // they get no pin at all (the destination panel explains why); falling
+  // back to the last geo-tagged transit hop painted a pin that was not the
+  // destination (the Cloudflare-in-the-wrong-continent class of lie).
+  const dest = obs.resolvedIp != null ? obs.hops.find((h) => h.ip === obs.resolvedIp) : undefined;
+  return dest?.geo ? { lat: dest.geo.lat, lon: dest.geo.lon } : null;
 }
 
 function portLabel(obs: MapObservation): string {
@@ -197,7 +204,9 @@ export default function LiveMapPage() {
     if (list.length === 0) return;
     setObservations((prev) => {
       const next = new Map(prev);
-      for (const obs of list) next.set(obs.target.id, obs);
+      // The list is newest-first; keep the FIRST (newest) row per target —
+      // a later row would silently resurrect stale observations.
+      for (const obs of list) if (!next.has(obs.target.id)) next.set(obs.target.id, obs);
       return next;
     });
   }, [observationsQuery.data]);
@@ -703,11 +712,28 @@ export default function LiveMapPage() {
                   <Row label="Resolved IP" value={hidden ? maskIp(selectedObs.resolvedIp) : selectedObs.resolvedIp} mono />
                   {(() => {
                     // Destination geo confidence — the map never shows false
-                    // precision: surface HOW we know where this pin is.
+                    // precision: surface HOW we know where this pin is, and
+                    // when there is no pin, WHY (anycast / edge fabric / no
+                    // evidence) instead of a bare Unknown.
                     const withGeo = selectedObs.hops.filter((h) => h.geo);
                     const geo = withGeo[withGeo.length - 1]?.geo;
-                    if (!geo) return <Row label="Location" value="Unknown — no geolocation evidence" />;
-                    return <Row label="Location" value={`${geo.confidence.label} (${geo.confidence.confidence})`} />;
+                    if (geo) return <Row label="Location" value={`${geo.confidence.label} (${geo.confidence.confidence})`} />;
+                    if (selectedObs.destGeoReason != null) {
+                      const reason = geoReasonOf(selectedObs.destGeoReason, false);
+                      const copy = GEO_STATUS_COPY[reason];
+                      return (
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-[11px] uppercase tracking-wider text-faint">Location</span>
+                          <Tooltip content={<GeoTooltipBody reason={reason} />}>
+                            <span className="flex cursor-help items-center gap-1 text-right text-warn">
+                              <MapPinOff size={11} className="shrink-0" />
+                              <span className="text-xs">{copy.title}</span>
+                            </span>
+                          </Tooltip>
+                        </div>
+                      );
+                    }
+                    return <Row label="Location" value="Unknown — no geolocation evidence" />;
                   })()}
                   <Row label="Protocol / Port" value={portLabel(selectedObs)} mono />
                   <Row label="Address family" value={`IPv${selectedObs.family}`} />

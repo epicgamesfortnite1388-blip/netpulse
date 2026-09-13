@@ -95,6 +95,13 @@ export interface MapObservation {
   statusLabel: string;
   note: string | null;
   insights: string[];
+  /**
+   * Why the destination pin is unplaced, when it is: anycast / edge_fabric
+   * IPs are refused a location by the geo guard (a GeoIP answer would be a
+   * registry artifact); lookup_failed = no evidence at all. Absent/null =
+   * either placed or simply unknown.
+   */
+  destGeoReason?: 'anycast' | 'edge_fabric' | 'lookup_failed' | null;
 }
 
 /* ------------------------------- helpers --------------------------------- */
@@ -260,6 +267,12 @@ export interface MapSweepRow {
   statusLabel: string;
   /** Server-side country of the resolved IP (Team Cymru), null when unknown. */
   country: string | null;
+  /**
+   * Set when the country cell is deliberately blank: the resolved IP is anycast
+   * or belongs to a global edge fabric, so a registry country would be an
+   * artifact (e.g. Cloudflare IPs registered in AU), not a location.
+   */
+  geoStatusReason?: 'anycast' | 'edge_fabric' | null;
   error?: string | null;
 }
 

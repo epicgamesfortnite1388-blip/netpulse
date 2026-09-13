@@ -27,6 +27,7 @@ import { Field } from '@/components/ui/Field';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
+import { GeoStatusBadge, geoReasonOf } from '@/lib/geoStatus';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { fmtMs, fmtPct } from '@/lib/format';
 
@@ -816,13 +817,17 @@ export default function NodeExplorerPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <Flag size={12} className="text-muted" />
-                      <span className="text-xs">{node.country || '—'}</span>
-                      {node.city && (
-                        <span className="text-[10px] text-muted">{node.city}</span>
-                      )}
-                    </div>
+                    {node.country ? (
+                      <div className="flex items-center gap-1.5">
+                        <Flag size={12} className="text-muted" />
+                        <span className="text-xs">{node.country}</span>
+                        {node.city && <span className="text-[10px] text-muted">{node.city}</span>}
+                      </div>
+                    ) : (
+                      // Refused / unresolved geo: show WHY instead of a bare
+                      // dash that reads as missing data.
+                      <GeoStatusBadge reason={geoReasonOf(node.geoStatusReason, node.lat != null)} />
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
