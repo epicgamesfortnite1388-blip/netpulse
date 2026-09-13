@@ -124,7 +124,13 @@ A complete Authenticode pipeline ships in the repo:
   bundle type info **after** `beforeBundleCommand`, so signing there alone is
   not enough. This script signs the patched exe, rebuilds the NSIS installer
   from the generated `installer.nsi` (embedding the signed exe), promotes
-  `nsis-output.exe` to the bundle path, and signs the installer.
+  `nsis-output.exe` to the bundle path, and signs the installer. The rebuild
+  also injects the uninstaller signing command (`!uninstfinalize`) so the
+  generated `uninstall.exe` is signed during compilation — NSIS 3.11 does not
+  append the path; the command must carry a `%1` placeholder (quotes escaped
+  as `$"` in the define, `%` left bare — `$%` leaks a literal `$`). The
+  helper is `scripts/sign-uninstall.ps1` (same identity resolution).
+  Verified: installed `uninstall.exe` carries the release signature.
 - **Build wiring** — `npm run desktop:build` = web + backend bundle +
   `tauri build`; signing happens **after** the build via
   `scripts/package-signed.mjs` (part of `npm run desktop:package`). Do NOT
