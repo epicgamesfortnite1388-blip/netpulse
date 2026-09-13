@@ -38,7 +38,7 @@ import { useWsTestProgress } from '@/lib/ws';
 import { MapCanvas } from './MapCanvas';
 
 import type { MapArc, MapNode, MapPath } from './MapCanvas';
-import type { MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
+import type { GeoConfidenceLevel, MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
 import type { WsTestMessage } from '@/lib/ws';
 
 interface TargetsResponse {
@@ -120,14 +120,14 @@ function primaryLoss(obs: MapObservation): number | null {
   return obs.measurements.find((m) => m.method === 'tcp')?.lossPct ?? obs.measurements[0]?.lossPct ?? null;
 }
 
-function destinationGeo(obs: MapObservation): { lat: number; lon: number } | null {
+function destinationGeo(obs: MapObservation): { lat: number; lon: number; confidence: GeoConfidenceLevel } | null {
   // The pin must be the DESTINATION's own geo — never a transit hop's.
   // Anycast / edge-fabric destinations are refused geo by the backend, so
   // they get no pin at all (the destination panel explains why); falling
   // back to the last geo-tagged transit hop painted a pin that was not the
   // destination (the Cloudflare-in-the-wrong-continent class of lie).
   const dest = obs.resolvedIp != null ? obs.hops.find((h) => h.ip === obs.resolvedIp) : undefined;
-  return dest?.geo ? { lat: dest.geo.lat, lon: dest.geo.lon } : null;
+  return dest?.geo ? { lat: dest.geo.lat, lon: dest.geo.lon, confidence: dest.geo.confidence.confidence } : null;
 }
 
 function portLabel(obs: MapObservation): string {
@@ -373,6 +373,7 @@ export default function LiveMapPage() {
         kind: t.type === 'vpn' ? 'vpn' : 'target',
         status: obs.status,
         latencyMs: primaryLatency(obs),
+        geoConfidence: geo.confidence,
         historical: isPlayback,
       });
     }
@@ -646,6 +647,8 @@ export default function LiveMapPage() {
               )}
               <div className="absolute bottom-3 left-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-[10px] leading-relaxed text-faint backdrop-blur">
                 <span className="text-accent">●</span> measured · <span className="text-warn">●</span> through VPN · <span className="text-faint">●</span> historical
+                <br />
+                <span title="Ring = how well the location is known">◎</span> solid ring known endpoint · ◌ dashed GeoIP estimate · ﹒sparse rough guess
                 <br />
                 Node positions: known endpoints (Cloudflare colo) vs country-level GeoIP estimates — never exact router locations.
               </div>

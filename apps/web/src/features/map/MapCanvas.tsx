@@ -13,6 +13,8 @@ export interface MapNode {
   kind: 'you' | 'target' | 'vpn' | 'hop' | 'known';
   status: 'excellent' | 'good' | 'fair' | 'poor' | 'unreachable' | 'unknown';
   latencyMs: number | null;
+  /** How well this pin's location is actually known (drives the ring style). */
+  geoConfidence?: 'high' | 'medium' | 'low' | 'unknown';
   historical?: boolean;
   selected?: boolean;
 }
@@ -57,6 +59,15 @@ const ARC_COLOR: Record<MapArc['kind'], string> = {
   normal: 'rgba(34,211,238,0.75)',
   vpn: 'rgba(251,191,36,0.85)',
   historical: 'rgba(148,163,184,0.55)',
+};
+
+/** Confidence ring styles: solid = measured fact, dashed = estimate, faint
+ *  dashes = rough guess. The ring is drawn just outside the pin. */
+export const CONFIDENCE_RING: Record<NonNullable<MapNode['geoConfidence']>, { radiusFactor: number; dash: number[]; alpha: number }> = {
+  high: { radiusFactor: 1.9, dash: [], alpha: 0.85 },
+  medium: { radiusFactor: 1.9, dash: [3, 3], alpha: 0.7 },
+  low: { radiusFactor: 2.3, dash: [2, 4], alpha: 0.45 },
+  unknown: { radiusFactor: 2.3, dash: [1, 5], alpha: 0.3 },
 };
 
 interface Camera {
@@ -382,6 +393,22 @@ export function MapCanvas({ nodes, arcs, paths, focus, focusKey, privacy, reduce
         ctx.beginPath();
         ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // Geo-confidence ring: solid = known endpoint (high), dashed = GeoIP
+      // estimate (medium), faint sparse dashes = rough guess (low), ghost ring
+      // = placement evidence unknown. Skipped for 'you' — it's the user.
+      if (node.geoConfidence && node.geoConfidence !== 'unknown' && node.kind !== 'you') {
+        const ring = CONFIDENCE_RING[node.geoConfidence];
+        ctx.beginPath();
+        ctx.setLineDash(ring.dash);
+        ctx.arc(p.x, p.y, r * ring.radiusFactor, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = ring.alpha;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
       }
     };
 
