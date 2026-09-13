@@ -13,6 +13,7 @@ export * from './models/gaming';
 export * from './models/diagnostics';
 export * from './models/map';
 export * from './geo/worldLandDecode';
+export * from './geo/countryBoxes';
 export * from './models/iran';
 export * from './models/publicNodes';
 export * from './models/proxyEngine';
