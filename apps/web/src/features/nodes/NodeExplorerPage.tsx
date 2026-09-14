@@ -9,6 +9,7 @@ import {
   Flag,
   Globe2,
   Info,
+  LocateFixed,
   RefreshCw,
   Search,
   Shield,
@@ -523,6 +524,36 @@ export default function NodeExplorerPage() {
     }
   }, [loadData, toast]);
 
+  // Per-row geo re-check (same endpoint + outcome-honest toasts as the detail
+  // page, so the action works without navigating away from the list). Only the
+  // re-checked row refreshes — swapping the whole table on every lookup would
+  // reset scroll position and in-flight row states.
+  const [geoCheckingId, setGeoCheckingId] = useState<string | null>(null);
+  const handleGeoRecheck = useCallback(async (nodeId: string) => {
+    if (geoCheckingId) return;
+    setGeoCheckingId(nodeId);
+    try {
+      const res = await api.post<{ result: { outcome: string; reason: string }; node: PublicNode | null }>(`/nodes/${nodeId}/geo-recheck`, {});
+      if (res.node) {
+        setNodes((prev) => prev.map((n) => (n.id === nodeId ? res.node! : n)));
+      }
+      const r = res.result;
+      if (r.outcome === 'resolved' || r.outcome === 'vouched') {
+        toast('ok', 'Location updated', r.outcome === 'vouched' ? 'User-attested coordinates applied.' : 'Fresh GeoIP lookup completed.');
+      } else if (r.outcome === 'refused') {
+        toast('warn', 'No location available', r.reason === 'anycast' ? 'This IP is anycast — GeoIP answers for it are artifacts, so it stays Unknown.' : 'This IP belongs to a global edge network — GeoIP would report a registry office, not a location.');
+      } else if (r.outcome === 'busy') {
+        toast('warn', 'Geo worker busy', 'A background lookup is running — this node is queued. Try again in a moment.');
+      } else {
+        toast('error', 'Lookup failed', r.reason === 'private_only' ? 'Node has only private addresses — nothing to geolocate.' : 'The geolocation service did not answer. It retries in the background.');
+      }
+    } catch (err) {
+      toast('error', 'Re-check failed', err instanceof Error ? err.message : undefined);
+    } finally {
+      setGeoCheckingId(null);
+    }
+  }, [geoCheckingId, toast]);
+
   const handleExport = useCallback(async (format: 'uri' | 'plaintext' | 'base64' | 'json' | 'clash' | 'singbox') => {
     try {
       const nodeIds = filteredNodes.map((n) => n.id).join(',');
@@ -869,6 +900,16 @@ export default function NodeExplorerPage() {
                         title="Test TCP"
                       >
                         <Wifi size={14} />
+                      </button>
+                      <button
+                        className="text-muted hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                        onClick={() => void handleGeoRecheck(node.id)}
+                        disabled={geoCheckingId != null}
+                        title={node.country || node.lat != null ? 'Re-check location (fresh GeoIP lookup)' : 'Look up location now'}
+                      >
+                        {geoCheckingId === node.id
+                          ? <RefreshCw size={14} className="animate-spin" />
+                          : <LocateFixed size={14} />}
                       </button>
                       <a
                         href={`/nodes/${node.id}`}

@@ -123,7 +123,7 @@ function primaryLoss(obs: MapObservation): number | null {
   return obs.measurements.find((m) => m.method === 'tcp')?.lossPct ?? obs.measurements[0]?.lossPct ?? null;
 }
 
-function destinationGeo(obs: MapObservation): { lat: number; lon: number; confidence: GeoConfidenceLevel } | null {
+export function destinationGeo(obs: MapObservation): { lat: number; lon: number; confidence: GeoConfidenceLevel } | null {
   // The pin must be the DESTINATION's own geo — never a transit hop's.
   // Anycast / edge-fabric destinations are refused geo by the backend, so
   // they get no pin at all (the destination panel explains why); falling
@@ -749,8 +749,15 @@ export default function LiveMapPage() {
                     // precision: surface HOW we know where this pin is, and
                     // when there is no pin, WHY (anycast / edge fabric / no
                     // evidence) instead of a bare Unknown.
-                    const withGeo = selectedObs.hops.filter((h) => h.geo);
-                    const geo = withGeo[withGeo.length - 1]?.geo;
+                    // Only the destination's own geo counts — mirroring
+                    // destinationGeo() on the canvas. The last geo'd hop may
+                    // be a transit router, and presenting its position as the
+                    // destination's location is the transit-router lie the
+                    // canvas already refuses.
+                    const destHop = selectedObs.resolvedIp != null
+                      ? selectedObs.hops.find((h) => h.ip === selectedObs.resolvedIp)
+                      : undefined;
+                    const geo = destHop?.geo ?? null;
                     if (geo) {
                       // Same ring encoding as the map pins (shared table),
                       // so the panel and the canvas read as one system.
