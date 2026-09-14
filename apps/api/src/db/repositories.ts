@@ -1114,6 +1114,8 @@ export class PublicNodesRepository {
     minScore?: number;
     maxLatency?: number;
     minReliability?: number;
+    /** only nodes whose last proxy test ran through this core ('xray' | 'sing-box') */
+    engine?: string;
     sortField?: string;
     sortDir?: 'asc' | 'desc';
   } = {}): { rows: PublicNodeRow[]; total: number } {
@@ -1133,6 +1135,7 @@ export class PublicNodesRepository {
     if (opts.minScore != null) conditions.push(gte(publicNodes.score, opts.minScore));
     if (opts.maxLatency != null) conditions.push(lte(publicNodes.medianProxyMs, opts.maxLatency));
     if (opts.minReliability != null) conditions.push(gte(publicNodes.reliabilityPct, opts.minReliability));
+    if (opts.engine) conditions.push(eq(publicNodes.lastEngine, opts.engine));
 
     // Fetch all matching rows (with a reasonable cap for client-side search)
     const qb = this.handle.db.select().from(publicNodes);

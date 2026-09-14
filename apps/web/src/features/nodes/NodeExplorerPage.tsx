@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
+import { EngineBadge as SharedEngineBadge } from '@/components/EngineBadge';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
 import { GeoStatusBadge, geoReasonOf } from '@/lib/geoStatus';
@@ -105,6 +106,12 @@ const FRESHNESS_OPTIONS: { value: string; label: string }[] = [
   { value: 'stale', label: 'Stale (>24h)' },
 ];
 
+const ENGINE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All runtimes' },
+  { value: 'xray', label: 'xray' },
+  { value: 'sing-box', label: 'sing-box' },
+];
+
 const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortDir }[] = [
   { value: 'score', label: 'Score', defaultDir: 'desc' },
   { value: 'proxyLatency', label: 'Proxy latency', defaultDir: 'asc' },
@@ -176,18 +183,8 @@ function FreshnessDot({ freshness }: { freshness: string }) {
 }
 
 /** Local core that produced the node's most recent proxy measurement. */
-function EngineBadge({ engine }: { engine: 'xray' | 'sing-box' }) {
-  const style = engine === 'xray'
-    ? 'text-sky-400 bg-sky-500/10'
-    : 'text-fuchsia-400 bg-fuchsia-500/10';
-  return (
-    <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${style}`}
-      title={`Last proxy test ran through the ${engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`}
-    >
-      {engine}
-    </span>
-  );
+function EngineBadge(props: { engine: 'xray' | 'sing-box' }) {
+  return <SharedEngineBadge engine={props.engine} title={`Last proxy test ran through the ${props.engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`} />;
 }
 
 function buildFilters(opts: {
@@ -463,6 +460,7 @@ export default function NodeExplorerPage() {
   const [transport, setTransport] = usePersistentState<string>('nodes.transport', 'all');
   const [security, setSecurity] = usePersistentState<string>('nodes.security', 'all');
   const [freshness, setFreshness] = usePersistentState<string>('nodes.freshness', 'all');
+  const [engine, setEngine] = usePersistentState<string>('nodes.engine', 'all');
   const [sortField, setSortField] = usePersistentState<NodeSortField>('nodes.sortField', 'score');
   const [sortDir, setSortDir] = usePersistentState<NodeSortDir>('nodes.sortDir', 'desc');
   const [minScore] = useState<number | undefined>(undefined);
@@ -477,7 +475,7 @@ export default function NodeExplorerPage() {
 
       const [statsRes, nodesRes, enginesRes] = await Promise.all([
         api.get<NodesStatsSummary>('/nodes/stats'),
-        api.get<{ nodes: PublicNode[]; total: number }>(`/nodes?limit=${pageSize}&offset=${page * pageSize}${protocol === 'all' ? '' : `&protocol=${encodeURIComponent(protocol)}`}${status === 'all' ? '' : `&status=${encodeURIComponent(status)}`}${transport === 'all' ? '' : `&transport=${encodeURIComponent(transport)}`}${security === 'all' ? '' : `&security=${encodeURIComponent(security)}`}${freshness === 'all' ? '' : `&freshness=${encodeURIComponent(freshness)}`}${search ? `&search=${encodeURIComponent(search)}` : ''}${minScore ? `&minScore=${minScore}` : ''}${maxLatency ? `&maxLatency=${maxLatency}` : ''}${minReliability ? `&minReliability=${minReliability}` : ''}${sortField ? `&sortField=${sortField}` : ''}${sortDir ? `&sortDir=${sortDir}` : ''}`),
+        api.get<{ nodes: PublicNode[]; total: number }>(`/nodes?limit=${pageSize}&offset=${page * pageSize}${protocol === 'all' ? '' : `&protocol=${encodeURIComponent(protocol)}`}${status === 'all' ? '' : `&status=${encodeURIComponent(status)}`}${transport === 'all' ? '' : `&transport=${encodeURIComponent(transport)}`}${security === 'all' ? '' : `&security=${encodeURIComponent(security)}`}${freshness === 'all' ? '' : `&freshness=${encodeURIComponent(freshness)}`}${engine === 'all' ? '' : `&engine=${encodeURIComponent(engine)}`}${search ? `&search=${encodeURIComponent(search)}` : ''}${minScore ? `&minScore=${minScore}` : ''}${maxLatency ? `&maxLatency=${maxLatency}` : ''}${minReliability ? `&minReliability=${minReliability}` : ''}${sortField ? `&sortField=${sortField}` : ''}${sortDir ? `&sortDir=${sortDir}` : ''}`),
         api.get<ProxyEngineStatus>('/nodes/engines').catch(() => null),
       ]);
 
@@ -490,7 +488,7 @@ export default function NodeExplorerPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, protocol, status, transport, security, freshness, search, sortField, sortDir, minScore, maxLatency, minReliability]);
+  }, [page, pageSize, protocol, status, transport, security, freshness, engine, search, sortField, sortDir, minScore, maxLatency, minReliability]);
 
   useEffect(() => {
     void loadData();
@@ -756,6 +754,19 @@ export default function NodeExplorerPage() {
                   className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {FRESHNESS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Runtime">
+                <select
+                  value={engine}
+                  onChange={(e) => { setEngine(e.target.value); setPage(0); }}
+                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  title="Show only nodes whose last proxy test ran through this core"
+                >
+                  {ENGINE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>

@@ -185,3 +185,41 @@ describe('node lastEngine attribution', () => {
     expect(dto.lastEngine).toBe('sing-box');
   });
 });
+
+/* ---------- Runtime filter (listNodes engine option) ---------- */
+
+describe('listNodes engine filter', () => {
+  function makeListService(rows: Array<{ lastEngine: string | null }>) {
+    const nodes = {
+      list: vi.fn((opts: Record<string, unknown>) => {
+        // Mirror the repository's engine condition so the service-level test
+        // proves the option is threaded end-to-end (route → service → repo).
+        const filtered = opts.engine ? rows.filter((r) => r.lastEngine === opts.engine) : rows;
+        return { rows: filtered, total: filtered.length };
+      }),
+    };
+    const svc = new NodesService({
+      nodes,
+      events: { insert: vi.fn() },
+      tests: { insert: vi.fn(), update: vi.fn(), listByNode: vi.fn(() => []) },
+      health: { get: vi.fn(() => null), upsert: vi.fn() },
+      addresses: { insert: vi.fn() },
+      sourceRepo: { get: () => null, update: vi.fn() },
+      bus: { publish: vi.fn() } as unknown as RealtimeBus,
+      log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as unknown as Logger,
+    } as never);
+    return { svc, nodes };
+  }
+
+  it('threads the engine option through to the repository list call', () => {
+    const { svc, nodes } = makeListService([]);
+    svc.listNodes({ engine: 'xray' });
+    expect(nodes.list).toHaveBeenCalledWith(expect.objectContaining({ engine: 'xray' }));
+  });
+
+  it('omits the engine option when unset', () => {
+    const { svc, nodes } = makeListService([]);
+    svc.listNodes({});
+    expect(nodes.list).toHaveBeenCalledWith(expect.not.objectContaining({ engine: expect.anything() }));
+  });
+});

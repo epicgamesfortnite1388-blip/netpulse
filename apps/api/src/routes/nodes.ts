@@ -91,6 +91,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       minScore?: string;
       maxLatency?: string;
       minReliability?: string;
+      engine?: string;
       sortField?: string;
       sortDir?: string;
     };
@@ -117,6 +118,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       minScore: q.minScore ? Number(q.minScore) : undefined,
       maxLatency: q.maxLatency ? Number(q.maxLatency) : undefined,
       minReliability: q.minReliability ? Number(q.minReliability) : undefined,
+      engine: q.engine || undefined,
       sort: sort as NodeSort | undefined,
     });
 
@@ -775,6 +777,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         family: t.family,
         probedIp: t.probedIp,
         testEndpoint: t.testEndpoint,
+        engine: t.engine,
       })),
       total: tests.length,
     };

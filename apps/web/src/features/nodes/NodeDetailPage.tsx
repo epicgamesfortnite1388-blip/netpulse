@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
+import { EngineBadge } from '@/components/EngineBadge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';
@@ -563,6 +564,7 @@ export default function NodeDetailPage() {
                           <Badge tone={test.status === 'done' ? 'ok' : 'danger'}>
                             {test.type.toUpperCase()}
                           </Badge>
+                          <EngineBadge engine={test.engine} title={`This measurement was produced by the ${test.engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`} />
                           {test.latencyMs != null && (
                             <span className="font-mono">{test.latencyMs != null ? fmtMs(test.latencyMs) : '—'}</span>
                           )}

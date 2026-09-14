@@ -1147,6 +1147,8 @@ export class NodesService {
     minScore?: number;
     maxLatency?: number;
     minReliability?: number;
+    /** only nodes whose last proxy test ran through this core ('xray' | 'sing-box') */
+    engine?: string;
     sort?: NodeSort;
   } = {}): { nodes: NodeWebDTO[]; total: number } {
     const { rows, total } = this.deps.nodes.list({
@@ -1164,6 +1166,7 @@ export class NodesService {
       minScore: options.minScore,
       maxLatency: options.maxLatency,
       minReliability: options.minReliability,
+      engine: options.engine,
       sortField: options.sort?.field,
       sortDir: options.sort?.dir,
     });
