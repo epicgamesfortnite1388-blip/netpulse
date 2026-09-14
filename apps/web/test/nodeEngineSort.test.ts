@@ -40,3 +40,23 @@ describe('applySort by engine', () => {
     expect(ids.indexOf('xray-2')).toBeLessThan(ids.indexOf('xray-1'));
   });
 });
+
+describe('v2ray engine UI surface', () => {
+  it('ranks v2ray between sing-box and untested in the runtime sort', async () => {
+    const { applySort } = await import('../src/features/nodes/NodeExplorerPage');
+    const input = [
+      { id: 'none', lastEngine: null, score: 0 },
+      { id: 'v2', lastEngine: 'v2ray', score: 5 },
+      { id: 'sb', lastEngine: 'sing-box', score: 7 },
+      { id: 'xr', lastEngine: 'xray', score: 3 },
+    ] as never[];
+    const ids = applySort(input as never, { field: 'engine', dir: 'asc' as never }).map((n: { id: string }) => n.id);
+    expect(ids).toEqual(['xr', 'sb', 'v2', 'none']);
+  });
+
+  it('EngineBadge renders v2ray with its own style', async () => {
+    const { engineLabel } = await import('../src/components/EngineBadge');
+    expect(engineLabel('v2ray')).toBe('v2ray');
+    expect(engineLabel('legacy-unknown')).toBeNull();
+  });
+});

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
-import { EngineBadge } from '@/components/EngineBadge';
+import { EngineBadge, ENGINE_LABELS } from '@/components/EngineBadge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Tabs, TabPanel } from '@/components/ui/Tabs';
@@ -523,7 +523,7 @@ export default function NodeDetailPage() {
                   <p className="text-muted">Latency: {testResult.latencyMs != null ? fmtMs(testResult.latencyMs) : '—'}</p>
                 )}
                 {testResult.engine && (
-                  <p className="text-muted text-xs">measured via {testResult.engine === 'xray' ? 'Xray-core' : 'sing-box'}</p>
+                  <p className="text-muted text-xs">measured via {ENGINE_LABELS[testResult.engine as keyof typeof ENGINE_LABELS] ?? testResult.engine}</p>
                 )}
                 {testResult.error && (() => {
                   const dx = diagnoseFailure(testResult.error);
@@ -564,7 +564,7 @@ export default function NodeDetailPage() {
                           <Badge tone={test.status === 'done' ? 'ok' : 'danger'}>
                             {test.type.toUpperCase()}
                           </Badge>
-                          <EngineBadge engine={test.engine} title={`This measurement was produced by the ${test.engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`} />
+                          <EngineBadge engine={test.engine} title={`This measurement was produced by the ${ENGINE_LABELS[test.engine as keyof typeof ENGINE_LABELS] ?? test.engine} runtime`} />
                           {test.latencyMs != null && (
                             <span className="font-mono">{test.latencyMs != null ? fmtMs(test.latencyMs) : '—'}</span>
                           )}

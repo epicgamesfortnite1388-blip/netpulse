@@ -5,12 +5,15 @@ import path from 'node:path';
 
 import {
   buildSingboxConfig,
+  buildV2rayConfig,
   buildXrayConfig,
   buildXrayOutbound,
   configIsTestable,
   engineSupports,
+  engineSupportsConfig,
   findEngineBinary,
 } from '../src/services/proxyCores';
+import { engineOrder } from '../src/services/proxyEngineRunner';
 import { NodeSecretVault } from '../src/services/nodeSecretVault';
 
 import type { ParsedNodeConfig } from '@netpulse/shared';
@@ -233,5 +236,62 @@ describe('engine coverage for real-world v2ray-family configs', () => {
   it('neither engine claims shadowsocksr anymore (was falsely advertised)', () => {
     expect(engineSupports('sing-box', 'shadowsocksr')).toBe(false);
     expect(engineSupports('xray', 'shadowsocksr')).toBe(false);
+  });
+});
+
+/* ---------------- v2ray (v2fly) core support ---------------- */
+
+describe('v2ray core support', () => {
+  it('buildV2rayConfig emits the same schema as xray for a plain node', () => {
+    const c = cfg();
+    const v2 = buildV2rayConfig(c, 'sec-1', 18080);
+    const xr = buildXrayConfig(c, 'sec-1', 18080);
+    expect(v2).toEqual(xr);
+    const outbounds = (v2 as { outbounds: Array<{ protocol: string }> }).outbounds;
+    expect(outbounds[0].protocol).toBe('vless');
+  });
+
+  it('engineSupports: v2ray dials the v2ray family but not hy2/tuic/ssr', () => {
+    for (const p of ['vless', 'vmess', 'trojan', 'shadowsocks']) {
+      expect(engineSupports('v2ray', p)).toBe(true);
+    }
+    expect(engineSupports('v2ray', 'hysteria2')).toBe(false);
+    expect(engineSupports('v2ray', 'tuic')).toBe(false);
+    expect(engineSupports('v2ray', 'shadowsocksr')).toBe(false);
+  });
+
+  it('engineSupportsConfig refuses Reality and xhttp for v2ray only', () => {
+    expect(engineSupportsConfig('v2ray', cfg({ security: 'reality', realityPublicKey: 'k' }))).toEqual({
+      ok: false,
+      error: 'v2ray-core does not support Reality (use xray or sing-box for this node)',
+    });
+    expect(engineSupportsConfig('v2ray', cfg({ transport: 'xhttp' }))).toEqual({
+      ok: false,
+      error: 'v2ray-core does not support the xhttp transport (use xray for this node)',
+    });
+    expect(engineSupportsConfig('v2ray', cfg()).ok).toBe(true);
+    expect(engineSupportsConfig('xray', cfg({ security: 'reality', realityPublicKey: 'k' })).ok).toBe(true);
+  });
+
+  it('engineOrder puts the preferred engine first and never repeats it', () => {
+    expect(engineOrder('auto')).toEqual(['xray', 'sing-box', 'v2ray']);
+    expect(engineOrder('v2ray')[0]).toBe('v2ray');
+    expect(new Set(engineOrder('sing-box')).size).toBe(3);
+  });
+
+  it('findEngineBinary locates a v2ray drop-in', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'np-cores-v2-'));
+    const coresDir = path.join(tmp, 'cores');
+    fs.mkdirSync(coresDir);
+    const fake = path.join(coresDir, process.platform === 'win32' ? 'v2ray.exe' : 'v2ray');
+    fs.writeFileSync(fake, 'existence check only');
+    try {
+      process.env['NETPULSE_DATA_DIR'] = tmp;
+      delete process.env['NETPULSE_CORES_DIR'];
+      expect(findEngineBinary('v2ray')).toBe(fake);
+    } finally {
+      delete process.env['NETPULSE_DATA_DIR'];
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

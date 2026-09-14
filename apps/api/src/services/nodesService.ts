@@ -76,7 +76,7 @@ interface NodeWebDTO {
   tags: string[];
   favorite: boolean;
   lastProxyMs: number | null;
-  lastEngine: 'xray' | 'sing-box' | null;
+  lastEngine: 'xray' | 'sing-box' | 'v2ray' | null;
   lastTcpMs: number | null;
   lastTlsMs: number | null;
   testCount: number;
@@ -486,7 +486,7 @@ export class NodesService {
       tags: nodeRow.tags,
       favorite: nodeRow.favorite ? true : false,
       lastProxyMs: nodeRow.lastProxyMs,
-      lastEngine: (nodeRow.lastEngine as 'xray' | 'sing-box' | null) ?? null,
+      lastEngine: (['xray', 'sing-box', 'v2ray'].includes(nodeRow.lastEngine as string) ? nodeRow.lastEngine : null) as 'xray' | 'sing-box' | 'v2ray' | null,
       geoLastAttempt: nodeRow.geoLastAttempt ?? null,
       lastTcpMs: nodeRow.lastTcpMs,
       lastTlsMs: nodeRow.lastTlsMs,
@@ -895,7 +895,7 @@ export class NodesService {
    * Which core to prefer for proxy tests. Reads the live setting each call
    * (cheap: settings are cached); 'auto' lets the runner pick xray first.
    */
-  private proxyEnginePreference(): 'auto' | 'sing-box' | 'xray' {
+  private proxyEnginePreference(): 'auto' | 'sing-box' | 'xray' | 'v2ray' {
     try {
       const s = this.deps.settings?.get();
       return s?.proxyEngine?.preferred ?? 'auto';
@@ -970,7 +970,7 @@ export class NodesService {
       status: newStatus,
       confidence: newConfidence,
       lastProxyMs: type === 'proxy' ? result.latencyMs : node.lastProxyMs,
-      lastEngine: type === 'proxy' ? (result.engine as 'xray' | 'sing-box' | null) : node.lastEngine,
+      lastEngine: type === 'proxy' ? (result.engine as 'xray' | 'sing-box' | 'v2ray' | null) : node.lastEngine,
       lastTcpMs: type === 'tcp' ? result.latencyMs : node.lastTcpMs,
       lastTlsMs: type === 'tls' ? result.latencyMs : node.lastTlsMs,
       testCount: totalTests,
@@ -1147,7 +1147,7 @@ export class NodesService {
     minScore?: number;
     maxLatency?: number;
     minReliability?: number;
-    /** only nodes whose last proxy test ran through this core ('xray' | 'sing-box') */
+    /** only nodes whose last proxy test ran through this core ('xray' | 'sing-box' | 'v2ray') */
     engine?: string;
     sort?: NodeSort;
   } = {}): { nodes: NodeWebDTO[]; total: number } {

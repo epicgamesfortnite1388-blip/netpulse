@@ -1,27 +1,37 @@
-/** Local proxy-core runtime that produced a measurement (xray / sing-box). */
-export type ProxyEngine = 'xray' | 'sing-box';
+/** Local proxy-core runtime that produced a measurement (xray / sing-box / v2ray). */
+export type ProxyEngine = 'xray' | 'sing-box' | 'v2ray';
+
+export const ENGINE_LABELS: Record<ProxyEngine, string> = {
+  xray: 'Xray-core',
+  'sing-box': 'sing-box',
+  v2ray: 'V2Ray-core',
+};
 
 /** Runtime display label for a raw engine value; null → unknown/untested. */
-export function engineLabel(engine: string | null | undefined): string | null {
-  if (engine === 'xray') return 'xray';
-  if (engine === 'sing-box') return 'sing-box';
+export function engineLabel(engine: string | null | undefined): ProxyEngine | null {
+  if (engine === 'xray' || engine === 'sing-box' || engine === 'v2ray') return engine;
   return null;
 }
 
+const ENGINE_STYLES: Record<ProxyEngine, string> = {
+  xray: 'text-sky-400 bg-sky-500/10',
+  'sing-box': 'text-fuchsia-400 bg-fuchsia-500/10',
+  v2ray: 'text-emerald-400 bg-emerald-500/10',
+};
+
 /**
- * Colored badge naming the local core (Xray-core / sing-box) that produced a
- * measurement. Renders nothing when no engine is recorded — a never-tested or
- * non-proxy measurement must not be labeled with a runtime that didn't run.
+ * Colored badge naming the local core (Xray-core / sing-box / V2Ray-core)
+ * that produced a measurement. Renders nothing when no engine is recorded —
+ * a never-tested or non-proxy measurement must not be labeled with a runtime
+ * that didn't run.
  */
 export function EngineBadge({ engine, title }: { engine: string | null | undefined; title?: string }) {
   const label = engineLabel(engine);
   if (!label) return null;
-  const style = label === 'xray' ? 'text-sky-400 bg-sky-500/10' : 'text-fuchsia-400 bg-fuchsia-500/10';
-  const name = label === 'xray' ? 'Xray-core' : 'sing-box';
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${style}`}
-      title={title ?? `Measured through the ${name} runtime`}
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${ENGINE_STYLES[label]}`}
+      title={title ?? `Measured through the ${ENGINE_LABELS[label]} runtime`}
     >
       {label}
     </span>

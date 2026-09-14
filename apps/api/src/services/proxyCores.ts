@@ -25,7 +25,7 @@ import type { ParsedNodeConfig, ProxyEngineId } from '@netpulse/shared';
 /* ============================ config generation ============================ */
 
 /**
- * Legacy SS ciphers neither core accepts for AEAD-style configs — running
+ * Legacy SS ciphers none of the cores accepts for AEAD-style configs — running
  * them produces cryptic core exit codes instead of an honest error.
  */
 const LEGACY_SS_CIPHERS = new Set(['rc4', 'rc4-md5', 'des-cfb', 'table', 'bf-cfb', 'chacha20', 'chacha20-ietf']);
@@ -33,18 +33,23 @@ const LEGACY_SS_CIPHERS = new Set(['rc4', 'rc4-md5', 'des-cfb', 'table', 'bf-cfb
 /** True when a node's protocol/transport combination is engine-testable. */
 export function configIsTestable(config: ParsedNodeConfig): { ok: true } | { ok: false; error: string } {
   if (config.protocol === 'shadowsocksr') {
-    return { ok: false, error: 'shadowsocksr is not supported by xray or sing-box (use a shadowsocks/vless/trojan node)' };
+    return { ok: false, error: 'shadowsocksr is not supported by xray, sing-box or v2ray (use a shadowsocks/vless/trojan node)' };
   }
   if (config.protocol === 'shadowsocks' && config.encryption && LEGACY_SS_CIPHERS.has(config.encryption.toLowerCase())) {
-    return { ok: false, error: `shadowsocks cipher "${config.encryption}" is legacy and unsupported by xray/sing-box (use an AEAD cipher, e.g. aes-256-gcm or chacha20-ietf-poly1305)` };
+    return { ok: false, error: `shadowsocks cipher "${config.encryption}" is legacy and unsupported by xray/sing-box/v2ray (use an AEAD cipher, e.g. aes-256-gcm or chacha20-ietf-poly1305)` };
   }
   return { ok: true };
 }
 
 /**
- * Xray outbound for a node. Follows the V2Ray/Xray outbound schema
- * (protocol + settings + streamSettings), which differs from sing-box's
- * flat format.
+ * V2Ray-family outbound for a node (Xray-core AND v2ray-core share the
+ * outbound schema; buildXrayConfig serves both — `buildV2rayConfig` is an
+ * alias so intent is explicit at call sites).
+ *
+ * Reality and the xhttp transport are Xray-only extensions: when the caller
+ * routes a Reality node to v2ray-core, the public key has nowhere to go, so
+ * engineSupports() refuses that combination upstream — this builder still
+ * emits plain TLS for it rather than a silently wrong config.
  */
 export function buildXrayOutbound(config: ParsedNodeConfig, secret: string | null): Record<string, unknown> {
   const proto = config.protocol;
@@ -151,6 +156,9 @@ export function buildXrayConfig(config: ParsedNodeConfig, secret: string | null,
     outbounds: [buildXrayOutbound(config, secret)],
   };
 }
+
+/** v2ray-core uses the same JSON schema as Xray-core (it is the upstream). */
+export const buildV2rayConfig = buildXrayConfig;
 
 /**
  * sing-box config (same shape proxyProbe already used, extracted so both
@@ -267,9 +275,8 @@ export interface ResolvedEngine {
  *   3. PATH
  */
 export function findEngineBinary(id: ProxyEngineId): string | null {
-  const names = id === 'xray'
-    ? (process.platform === 'win32' ? ['xray.exe'] : ['xray'])
-    : (process.platform === 'win32' ? ['sing-box.exe'] : ['sing-box']);
+  const base = id === 'xray' ? 'xray' : id === 'sing-box' ? 'sing-box' : 'v2ray';
+  const names = process.platform === 'win32' ? [`${base}.exe`] : [base];
   const dirs: string[] = [];
   if (process.env['NETPULSE_CORES_DIR']) dirs.push(process.env['NETPULSE_CORES_DIR']);
   if (process.env['NETPULSE_DATA_DIR']) dirs.push(path.join(process.env['NETPULSE_DATA_DIR'], 'cores'));
@@ -327,9 +334,9 @@ export async function startCore(
   const inboundPort = await reservePort();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-core-'));
   const cfgPath = path.join(tmpDir, 'core.json');
-  const cfgJson = engine.id === 'xray'
-    ? buildXrayConfig(config, secret, inboundPort)
-    : buildSingboxConfig(config, secret, inboundPort);
+  const cfgJson = engine.id === 'sing-box'
+    ? buildSingboxConfig(config, secret, inboundPort)
+    : buildXrayConfig(config, secret, inboundPort); // xray + v2ray share the schema
   fs.writeFileSync(cfgPath, JSON.stringify(cfgJson));
 
   const child = spawn(engine.bin, [...engine.args, '-c', cfgPath], {
@@ -393,12 +400,28 @@ export async function startCore(
 }
 
 /**
- * Which engines can dial a protocol. Honest matrix: xray has no hysteria2/
- * tuic outbounds; NEITHER core supports shadowsocksr (it was removed from
- * sing-box and never existed in xray) — advertising it made the UI offer a
- * test that can only fail.
+ * Which engines can dial a protocol. Honest matrix: xray/v2ray have no
+ * hysteria2/tuic outbounds; NO core supports shadowsocksr (it was removed
+ * from sing-box and never existed in xray/v2ray) — advertising it made the
+ * UI offer a test that can only fail.
  */
 export function engineSupports(engine: ProxyEngineId, protocol: string): boolean {
-  if (engine === 'xray') return ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol);
-  return ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(protocol);
+  if (engine === 'sing-box') return ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(protocol);
+  return ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol); // xray, v2ray
+}
+
+/**
+ * v2ray-core lacks Xray-only extensions. A config carrying them must not be
+ * routed to v2ray — the core would reject it with a cryptic startup error
+ * (or worse, ignore the field) instead of an honest routing decision.
+ */
+export function engineSupportsConfig(engine: ProxyEngineId, config: ParsedNodeConfig): { ok: true } | { ok: false; error: string } {
+  if (engine !== 'v2ray') return { ok: true };
+  if (config.security === 'reality' || config.realityPublicKey) {
+    return { ok: false, error: 'v2ray-core does not support Reality (use xray or sing-box for this node)' };
+  }
+  if (config.transport === 'xhttp') {
+    return { ok: false, error: 'v2ray-core does not support the xhttp transport (use xray for this node)' };
+  }
+  return { ok: true };
 }

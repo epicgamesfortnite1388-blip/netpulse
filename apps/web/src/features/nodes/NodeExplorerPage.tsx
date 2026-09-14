@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
-import { EngineBadge as SharedEngineBadge } from '@/components/EngineBadge';
+import { EngineBadge as SharedEngineBadge, ENGINE_LABELS } from '@/components/EngineBadge';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
 import { GeoStatusBadge, geoReasonOf } from '@/lib/geoStatus';
@@ -110,6 +110,7 @@ const ENGINE_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: 'All runtimes' },
   { value: 'xray', label: 'xray' },
   { value: 'sing-box', label: 'sing-box' },
+  { value: 'v2ray', label: 'v2ray' },
 ];
 
 const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortDir }[] = [
@@ -184,8 +185,8 @@ function FreshnessDot({ freshness }: { freshness: string }) {
 }
 
 /** Local core that produced the node's most recent proxy measurement. */
-function EngineBadge(props: { engine: 'xray' | 'sing-box' }) {
-  return <SharedEngineBadge engine={props.engine} title={`Last proxy test ran through the ${props.engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`} />;
+function EngineBadge(props: { engine: 'xray' | 'sing-box' | 'v2ray' }) {
+  return <SharedEngineBadge engine={props.engine} title={`Last proxy test ran through the ${ENGINE_LABELS[props.engine]} runtime`} />;
 }
 
 function buildFilters(opts: {
@@ -403,11 +404,11 @@ export function applySort(nodes: PublicNode[], sort: NodeSort): PublicNode[] {
         // — fixed group order in both directions (reversing would float the
         // untested block to the top). Direction flips only the within-group
         // score ordering: asc = best score first.
-        const rankOf = (e: string | null | undefined) => (e === 'xray' ? 0 : e === 'sing-box' ? 1 : 2);
+        const rankOf = (e: string | null | undefined) => (e === 'xray' ? 0 : e === 'sing-box' ? 1 : e === 'v2ray' ? 2 : 3);
         const ar = rankOf(a.lastEngine);
         const br = rankOf(b.lastEngine);
         if (ar !== br) return ar - br;
-        if (ar === 2) return 0; // untested keep input order
+        if (ar === 3) return 0; // untested keep input order
         return (b.score - a.score) * multiplier;
       }
       case 'ipv4':
@@ -627,12 +628,11 @@ export default function NodeExplorerPage() {
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${e.available ? 'bg-status-ok' : 'bg-gray-500'}`} />
               {e.label}
             </span>
-          ))}
-          <span className="text-gray-500">
-            {engines.effective
-              ? `proxy tests will use ${engines.effective === 'xray' ? 'Xray-core' : 'sing-box'}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
-              : 'install xray or sing-box to enable proxy tests'}
-          </span>
+          ))}            <span className="text-gray-500">
+              {engines.effective
+                ? `proxy tests will use ${ENGINE_LABELS[engines.effective]}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
+                : 'install xray, sing-box or v2ray to enable proxy tests'}
+            </span>
         </div>
       )}
 

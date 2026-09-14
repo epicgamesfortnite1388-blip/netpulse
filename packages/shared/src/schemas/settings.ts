@@ -108,7 +108,7 @@ export const SettingsSchema = z.object({
     ipv6Behavior: z.enum(['block', 'allow', 'auto']),
   }),
   proxyEngine: z.object({
-    preferred: z.enum(['auto', 'sing-box', 'xray']),
+    preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray']),
   }),
   geoProvider: z.object({
     /** 'auto' = ipwho.is first (richer verdicts) with geojs.io failover. */

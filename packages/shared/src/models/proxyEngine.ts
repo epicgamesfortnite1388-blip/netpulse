@@ -1,15 +1,17 @@
 /**
  * Proxy-test core engines.
  *
- * Public node configs are V2Ray/Xray-flavored; two local cores can dial them:
- *   - sing-box: universal (vless/vmess/trojan/ss/ssr + hy2/tuic)
- *   - xray:     the reference V2Ray core (vless/vmess/trojan/ss, best Reality
+ * Public node configs are V2Ray/Xray-flavored; three local cores can dial them:
+ *   - xray:     the modern reference core (vless/vmess/trojan/ss, best Reality
  *               and XTLS support)
+ *   - sing-box: universal (vless/vmess/trojan/ss + hy2/tuic)
+ *   - v2ray:    the original V2Ray core (v2fly); some legacy vmess/vless
+ *               configs only run on it
  * The engine used for a proxy test is recorded on the result so measurements
  * are attributable.
  */
 
-export type ProxyEngineId = 'sing-box' | 'xray';
+export type ProxyEngineId = 'sing-box' | 'xray' | 'v2ray';
 
 export const PROXY_ENGINES: ReadonlyArray<{
   id: ProxyEngineId;
@@ -18,15 +20,21 @@ export const PROXY_ENGINES: ReadonlyArray<{
   protocols: string[];
 }> = [
   {
-    id: 'sing-box',
-    label: 'sing-box',
-    binaries: ['sing-box.exe', 'sing-box'],
-    protocols: ['vless', 'vmess', 'trojan', 'shadowsocks', 'shadowsocksr', 'hysteria2', 'tuic'],
-  },
-  {
     id: 'xray',
     label: 'Xray-core',
     binaries: ['xray.exe', 'xray'],
+    protocols: ['vless', 'vmess', 'trojan', 'shadowsocks'],
+  },
+  {
+    id: 'sing-box',
+    label: 'sing-box',
+    binaries: ['sing-box.exe', 'sing-box'],
+    protocols: ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'],
+  },
+  {
+    id: 'v2ray',
+    label: 'V2Ray-core',
+    binaries: ['v2ray.exe', 'v2ray'],
     protocols: ['vless', 'vmess', 'trojan', 'shadowsocks'],
   },
 ];

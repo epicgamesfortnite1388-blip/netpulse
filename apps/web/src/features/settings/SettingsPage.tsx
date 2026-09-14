@@ -198,7 +198,21 @@ export default function SettingsPage() {
                   <option value="geojs.io">geojs.io first (ipwho.is failover)</option>
                 </Select>
               </Field>
-              <Button variant="primary" loading={saving} onClick={() => void save({ network: draft.network, geoProvider: draft.geoProvider })}>
+              <Field
+                label="Preferred proxy core"
+                hint="Which local runtime runs proxy tests — the installed alternatives remain as failover"
+              >
+                <Select
+                  value={draft.proxyEngine.preferred}
+                  onChange={(e) => patch('proxyEngine', { preferred: e.target.value as AppSettings['proxyEngine']['preferred'] })}
+                >
+                  <option value="auto">Automatic (Xray-core → sing-box → V2Ray-core)</option>
+                  <option value="xray">Xray-core first</option>
+                  <option value="sing-box">sing-box first</option>
+                  <option value="v2ray">V2Ray-core first</option>
+                </Select>
+              </Field>
+              <Button variant="primary" loading={saving} onClick={() => void save({ network: draft.network, geoProvider: draft.geoProvider, proxyEngine: draft.proxyEngine })}>
                 <Save size={14} /> Save network
               </Button>
             </CardBody>

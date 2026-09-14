@@ -9,7 +9,7 @@
  */
 import type { ParsedNodeConfig, ProxyEngineId, ProxyEngineStatus } from '@netpulse/shared';
 
-import { configIsTestable, engineSupports, findEngineBinary, startCore, type CoreRun, type ResolvedEngine } from './proxyCores';
+import { configIsTestable, engineSupports, engineSupportsConfig, findEngineBinary, startCore, type CoreRun, type ResolvedEngine } from './proxyCores';
 
 /** HTTPS-through-CONNECT probe (shared with the legacy single-engine path). */
 const httpsViaConnect = (
@@ -42,24 +42,31 @@ export interface EngineProbeResult {
   error: string | null;
 }
 
+/** Failover order: user preference first, then the rest by capability. */
+const ALL_ENGINES: readonly ProxyEngineId[] = ['xray', 'sing-box', 'v2ray'];
+
+export function engineOrder(preferred: 'auto' | ProxyEngineId): ProxyEngineId[] {
+  const rest = ALL_ENGINES.filter((e) => e !== preferred);
+  return preferred === 'auto' ? [...ALL_ENGINES] : [preferred as ProxyEngineId, ...rest];
+}
+
 /** Enumerate local core availability (cheap: PATH existence checks). */
 export function proxyEngineStatus(preferred: 'auto' | ProxyEngineId): ProxyEngineStatus {
   const engines: ProxyEngineStatus['engines'] = [];
   let effective: ProxyEngineId | null = null;
 
-  const order: ProxyEngineId[] = preferred === 'auto' ? ['xray', 'sing-box'] : [preferred, preferred === 'xray' ? 'sing-box' : 'xray'];
-  for (const id of order) {
+  for (const id of engineOrder(preferred)) {
     const bin = findEngineBinary(id);
     const available = bin !== null;
     engines.push({
       id,
-      label: id === 'xray' ? 'Xray-core' : 'sing-box',
+      label: id === 'xray' ? 'Xray-core' : id === 'sing-box' ? 'sing-box' : 'V2Ray-core',
       available,
       path: bin,
       version: null, // version spawn is deferred to the health page probe
-      protocols: id === 'xray'
-        ? ['vless', 'vmess', 'trojan', 'shadowsocks']
-        : ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'],
+      protocols: id === 'sing-box'
+        ? ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic']
+        : ['vless', 'vmess', 'trojan', 'shadowsocks'],
     });
     if (effective === null && available) effective = id;
   }
@@ -103,11 +110,19 @@ export async function proxyProbeWithEngine(
     };
   }
 
-  // ---- engine selection: preference ∩ availability ∩ protocol support ----
+  // ---- engine selection: preference ∩ availability ∩ protocol+config support ----
   const status = proxyEngineStatus(opts.preferred);
-  const usable = status.engines.filter((e) => e.available && engineSupports(e.id, config.protocol));
+  const usable = status.engines.filter((e) => {
+    if (!e.available || !engineSupports(e.id, config.protocol)) return false;
+    return engineSupportsConfig(e.id, config).ok;
+  });
   if (usable.length === 0) {
     const anyInstalled = status.engines.some((e) => e.available);
+    const reasons = status.engines
+      .filter((e) => e.available && engineSupports(e.id, config.protocol))
+      .map((e) => engineSupportsConfig(e.id, config))
+      .filter((r) => !r.ok)
+      .map((r) => r.error);
     return {
       status: 'failed',
       engine: null,
@@ -116,9 +131,11 @@ export async function proxyProbeWithEngine(
       tlsVersion: null,
       httpStatus: null,
       failureKind: 'engine_unavailable',
-      error: anyInstalled
-        ? `no installed core supports protocol ${config.protocol}`
-        : 'no proxy core installed — install xray or sing-box to test proxy latency',
+      error: reasons.length > 0
+        ? reasons[0]!
+        : anyInstalled
+          ? `no installed core supports protocol ${config.protocol}`
+          : 'no proxy core installed — install xray, sing-box or v2ray to test proxy latency',
     };
   }
 

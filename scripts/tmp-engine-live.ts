@@ -63,20 +63,22 @@ async function main(): Promise<void> {
     console.log(`ss-server listening on 127.0.0.1:${SERVER_PORT}`);
 
     // 2. The node config a user's v2ray source would carry (loopback here)
+    //    NP_CONFIG_SECURITY=reality exercises failover: v2ray refuses Reality,
+    //    so the probe must land on xray even when v2ray is preferred.
     const config: ParsedNodeConfig = {
       protocol: 'shadowsocks',
       host: '127.0.0.1',
       port: SERVER_PORT,
       transport: 'tcp',
-      security: 'none',
+      security: (process.env['NP_CONFIG_SECURITY'] as 'none' | 'reality' | 'tls') ?? 'none',
       encryption: 'chacha20-ietf-poly1305',
     };
 
     // 3. Real engine probe — xray client spawn, config gen, CONNECT tunnel
     const result = await proxyProbeWithEngine(config, {
       secret: PW,
-      // NP_ENGINE_PREFERRED=sing-box exercises the sing-box client core too
-      preferred: (process.env['NP_ENGINE_PREFERRED'] as 'auto' | 'xray' | 'sing-box') ?? 'auto',
+      // NP_ENGINE_PREFERRED=sing-box|v2ray exercises those client cores too
+      preferred: (process.env['NP_ENGINE_PREFERRED'] as 'auto' | 'xray' | 'sing-box' | 'v2ray') ?? 'auto',
       testUrl: 'https://httpbin.org/ip',
       timeoutMs: 25_000,
     });
