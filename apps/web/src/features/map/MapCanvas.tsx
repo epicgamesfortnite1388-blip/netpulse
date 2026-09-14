@@ -72,6 +72,38 @@ export const CONFIDENCE_RING: Record<NonNullable<MapNode['geoConfidence']>, { ra
   unknown: { radiusFactor: 2.3, dash: [1, 5], alpha: 0.3 },
 };
 
+/**
+ * Legend copy for the confidence rings — one entry per ring style, shared by
+ * the map's corner legend and the destination panel's Location-row tooltip so
+ * the words can never drift from what the rings actually draw.
+ */
+export const CONFIDENCE_LEGEND: Record<NonNullable<MapNode['geoConfidence']>, { ring: string; meaning: string }> = {
+  high: { ring: '◎ solid ring', meaning: 'Known endpoint — the place itself reports where it is (e.g. a Cloudflare colo).' },
+  medium: { ring: '◌ dashed ring', meaning: 'GeoIP estimate of the resolved IP — city-level, approximate.' },
+  low: { ring: '﹒ sparse ring', meaning: 'Country-level GeoIP guess — coarse, city unknown.' },
+  unknown: { ring: '﹒ faintest ring', meaning: 'Location evidence is minimal — treat the pin as indicative only.' },
+};
+
+/**
+ * The ring-legend tooltip body. Rendered above the map's corner legend and
+ * next to the destination panel's confidence glyph, so hovering either
+ * surface explains every ring style the same way.
+ */
+export function ConfidenceLegendBody() {
+  return (
+    <div className="space-y-1.5">
+      <div className="font-semibold text-text">Ring = how well the location is known</div>
+      {(Object.keys(CONFIDENCE_LEGEND) as (keyof typeof CONFIDENCE_LEGEND)[]).map((level) => (
+        <div key={level} className="flex gap-2">
+          <span className="w-24 shrink-0 text-accent">{CONFIDENCE_LEGEND[level].ring}</span>
+          <span className="text-muted">{CONFIDENCE_LEGEND[level].meaning}</span>
+        </div>
+      ))}
+      <div className="pt-0.5 text-faint">Node positions are known endpoints or GeoIP estimates — never exact router locations.</div>
+    </div>
+  );
+}
+
 /** Minimum pin trust shown on the map. 'show all' disables filtering. */
 export type ConfidenceThreshold = 'show all' | GeoConfidenceLevel;
 

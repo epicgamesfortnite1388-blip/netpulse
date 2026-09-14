@@ -37,7 +37,7 @@ import { fmtMs, fmtPct, timeAgo } from '@/lib/format';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { useWsTestProgress } from '@/lib/ws';
 import { MapCanvas } from './MapCanvas';
-import { ConfidenceRingGlyph, confidenceMeetsThreshold } from './MapCanvas';
+import { ConfidenceLegendBody, ConfidenceRingGlyph, confidenceMeetsThreshold } from './MapCanvas';
 import type { ConfidenceThreshold } from './MapCanvas';
 
 import type { MapArc, MapNode, MapPath } from './MapCanvas';
@@ -679,7 +679,9 @@ export default function LiveMapPage() {
               <div className="absolute bottom-3 left-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-[10px] leading-relaxed text-faint backdrop-blur">
                 <span className="text-accent">●</span> measured · <span className="text-warn">●</span> through VPN · <span className="text-faint">●</span> historical
                 <br />
-                <span title="Ring = how well the location is known">◎</span> solid ring known endpoint · ◌ dashed GeoIP estimate · ﹒sparse rough guess
+                <Tooltip content={<ConfidenceLegendBody />}>
+                  <span className="cursor-help">◎ solid ring known endpoint · ◌ dashed GeoIP estimate · ﹒sparse rough guess</span>
+                </Tooltip>
                 <br />
                 Node positions: known endpoints (Cloudflare colo) vs country-level GeoIP estimates — never exact router locations.
               </div>
@@ -764,12 +766,14 @@ export default function LiveMapPage() {
                       return (
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-[11px] uppercase tracking-wider text-faint">Location</span>
-                          <span className="flex items-center gap-1.5 text-right text-muted">
-                            <ConfidenceRingGlyph level={geo.confidence.confidence} />
-                            <span className="text-xs">
-                              {geo.confidence.label} <span className="text-faint">({geo.confidence.confidence})</span>
+                          <Tooltip content={<ConfidenceLegendBody />}>
+                            <span className="flex cursor-help items-center gap-1.5 text-right text-muted">
+                              <ConfidenceRingGlyph level={geo.confidence.confidence} />
+                              <span className="text-xs">
+                                {geo.confidence.label} <span className="text-faint">({geo.confidence.confidence})</span>
+                              </span>
                             </span>
-                          </span>
+                          </Tooltip>
                         </div>
                       );
                     }
