@@ -120,6 +120,7 @@ const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortD
   { value: 'packetLoss', label: 'Packet loss', defaultDir: 'asc' },
   { value: 'reliability', label: 'Reliability', defaultDir: 'desc' },
   { value: 'country', label: 'Country', defaultDir: 'asc' },
+  { value: 'engine', label: 'Runtime', defaultDir: 'asc' },
   { value: 'protocol', label: 'Protocol', defaultDir: 'asc' },
   { value: 'sourceCount', label: 'Source count', defaultDir: 'desc' },
   { value: 'lastSeen', label: 'Last seen', defaultDir: 'desc' },
@@ -328,7 +329,7 @@ function applyFilters(nodes: PublicNode[], filters: NodeFilter[]): PublicNode[] 
   });
 }
 
-function applySort(nodes: PublicNode[], sort: NodeSort): PublicNode[] {
+export function applySort(nodes: PublicNode[], sort: NodeSort): PublicNode[] {
   const { field, dir } = sort;
   const multiplier = dir === 'asc' ? 1 : -1;
 
@@ -397,6 +398,18 @@ function applySort(nodes: PublicNode[], sort: NodeSort): PublicNode[] {
         av = a.security === 'reality' ? 1 : 0;
         bv = b.security === 'reality' ? 1 : 0;
         break;
+      case 'engine': {
+        // Group by runtime: xray block, then sing-box block, never-tested last
+        // — fixed group order in both directions (reversing would float the
+        // untested block to the top). Direction flips only the within-group
+        // score ordering: asc = best score first.
+        const rankOf = (e: string | null | undefined) => (e === 'xray' ? 0 : e === 'sing-box' ? 1 : 2);
+        const ar = rankOf(a.lastEngine);
+        const br = rankOf(b.lastEngine);
+        if (ar !== br) return ar - br;
+        if (ar === 2) return 0; // untested keep input order
+        return (b.score - a.score) * multiplier;
+      }
       case 'ipv4':
         av = a.ipv4.length;
         bv = b.ipv4.length;

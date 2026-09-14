@@ -78,6 +78,7 @@ export type NodeSortField =
   | 'transport'
   | 'tls'
   | 'reality'
+  | 'engine'
   | 'ipv4'
   | 'ipv6'
   | 'source'
