@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { installerFileName } from './lib/installerName.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const targetDir = process.env.TAURI_TARGET_DIR ?? path.join(root, 'src-tauri', 'target', 'release');
@@ -26,7 +27,7 @@ const nsisBin = process.env.TAURI_NSIS_DIR ?? path.join(process.env.LOCALAPPDATA
 const appExe = path.join(targetDir, 'netpulse-desktop.exe');
 const nsisDir = path.join(targetDir, 'nsis', 'x64');
 const nsi = path.join(nsisDir, 'installer.nsi');
-const outInstaller = path.join(targetDir, 'bundle', 'nsis', 'NetPulse_0.2.0_x64-setup.exe');
+const outInstaller = path.join(targetDir, 'bundle', 'nsis', installerFileName(root));
 
 const step = (m) => console.log(`\n== ${m} ==`);
 const die = (m) => { console.error(m); process.exit(1); };

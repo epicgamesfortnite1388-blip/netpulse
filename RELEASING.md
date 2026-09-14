@@ -23,7 +23,8 @@ gaps (code signing, notarization) are marked honestly.
 
 - Artifacts (copied back into `src-tauri/target/x86_64-pc-windows-gnu/release/`):
   `netpulse-desktop.exe` (5.9 MB) and
-  `bundle/nsis/NetPulse_0.2.0_x64-setup.exe` (36 MB, NSIS, per-user).
+  `bundle/nsis/NetPulse_<version>_x64-setup.exe` (36 MB, NSIS, per-user;
+  name derived from `tauri.conf.json` — currently 0.2.2).
 - Install test: `/S` silent install to `%LocalAppData%\NetPulse`, Desktop +
   Start-Menu shortcuts, working `uninstall.exe`, `WebView2Loader.dll` present.
 - Runtime test (from the installed shortcut, not dev): native window

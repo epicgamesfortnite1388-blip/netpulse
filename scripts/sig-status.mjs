@@ -15,10 +15,11 @@ function status(f) {
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { installerFileName } from './lib/installerName.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const exe = join(root, '..', 'src-tauri', 'target', 'release', 'netpulse-desktop.exe');
-const setup = join(root, '..', 'src-tauri', 'target', 'release', 'bundle', 'nsis', 'NetPulse_0.2.0_x64-setup.exe');
+const setup = join(root, '..', 'src-tauri', 'target', 'release', 'bundle', 'nsis', installerFileName(join(root, '..')));
 
 const status = (f) => {
   if (!existsSync(f)) return `${f}\n    MISSING`;

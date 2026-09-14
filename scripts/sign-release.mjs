@@ -22,11 +22,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { installerFileName } from './lib/installerName.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const DEFAULT_FILES = [
   'src-tauri/target/release/netpulse-desktop.exe',
-  'src-tauri/target/release/bundle/nsis/NetPulse_0.2.0_x64-setup.exe',
+  `src-tauri/target/release/bundle/nsis/${installerFileName(repoRoot)}`,
 ];
 
 const files = process.argv.slice(2).filter((a) => !a.startsWith('--')).length
