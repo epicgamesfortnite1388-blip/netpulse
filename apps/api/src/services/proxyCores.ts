@@ -25,15 +25,32 @@ import type { ParsedNodeConfig, ProxyEngineId } from '@netpulse/shared';
 /* ============================ config generation ============================ */
 
 /**
+ * Legacy SS ciphers neither core accepts for AEAD-style configs — running
+ * them produces cryptic core exit codes instead of an honest error.
+ */
+const LEGACY_SS_CIPHERS = new Set(['rc4', 'rc4-md5', 'des-cfb', 'table', 'bf-cfb', 'chacha20', 'chacha20-ietf']);
+
+/** True when a node's protocol/transport combination is engine-testable. */
+export function configIsTestable(config: ParsedNodeConfig): { ok: true } | { ok: false; error: string } {
+  if (config.protocol === 'shadowsocksr') {
+    return { ok: false, error: 'shadowsocksr is not supported by xray or sing-box (use a shadowsocks/vless/trojan node)' };
+  }
+  if (config.protocol === 'shadowsocks' && config.encryption && LEGACY_SS_CIPHERS.has(config.encryption.toLowerCase())) {
+    return { ok: false, error: `shadowsocks cipher "${config.encryption}" is legacy and unsupported by xray/sing-box (use an AEAD cipher, e.g. aes-256-gcm or chacha20-ietf-poly1305)` };
+  }
+  return { ok: true };
+}
+
+/**
  * Xray outbound for a node. Follows the V2Ray/Xray outbound schema
  * (protocol + settings + streamSettings), which differs from sing-box's
  * flat format.
  */
 export function buildXrayOutbound(config: ParsedNodeConfig, secret: string | null): Record<string, unknown> {
-  const proto = config.protocol === 'shadowsocksr' ? 'shadowsocks' : config.protocol;
+  const proto = config.protocol;
   const isReality = config.security === 'reality' || Boolean(config.realityPublicKey);
 
-  const network = config.transport === 'none' || config.transport === 'unknown' ? 'tcp' : config.transport;
+  const network = config.transport === 'none' || config.transport === 'unknown' || config.transport === 'quic' || config.transport === 'udp' ? 'tcp' : config.transport;
   const streamSettings: Record<string, unknown> = {
     network,
     security: config.security === 'reality' ? 'reality' : config.security === 'tls' ? 'tls' : 'none',
@@ -70,10 +87,26 @@ export function buildXrayOutbound(config: ParsedNodeConfig, secret: string | nul
       path: config.path ?? '/',
       ...(config.hostHeader ? { host: [config.hostHeader] } : {}),
     };
+  } else if (config.transport === 'httpupgrade') {
+    streamSettings['httpupgradeSettings'] = {
+      path: config.path ?? '/',
+      ...(config.hostHeader ? { host: config.hostHeader } : {}),
+    };
+  } else if (config.transport === 'xhttp') {
+    streamSettings['xhttpSettings'] = {
+      path: config.path ?? '/',
+      ...(config.hostHeader ? { host: config.hostHeader } : {}),
+    };
   }
 
   let settings: Record<string, unknown>;
   switch (proto) {
+    case 'hysteria2': {
+      // xray-core has no hysteria2 outbound — engineSupports() never routes
+      // hy2 here; keep the honest guard in case routing changes.
+      settings = { servers: [{ address: config.host, port: config.port }] };
+      break;
+    }
     case 'vless':
       settings = {
         vnext: [{
@@ -124,7 +157,7 @@ export function buildXrayConfig(config: ParsedNodeConfig, secret: string | null,
  * engines share one lifecycle).
  */
 export function buildSingboxConfig(config: ParsedNodeConfig, secret: string | null, mixedPort: number): Record<string, unknown> {
-  const proto = config.protocol === 'shadowsocksr' ? 'shadowsocks' : config.protocol;
+  const proto = config.protocol;
   const outbound: Record<string, unknown> = {
     type: proto,
     server: config.host,
@@ -155,6 +188,18 @@ export function buildSingboxConfig(config: ParsedNodeConfig, secret: string | nu
     outbound['transport'] = { type: 'ws', path: config.path ?? '/' };
   } else if (config.transport === 'grpc') {
     outbound['transport'] = { type: 'grpc', service_name: config.serviceName ?? '' };
+  } else if (config.transport === 'http') {
+    outbound['transport'] = {
+      type: 'http',
+      path: config.path ?? '/',
+      ...(config.hostHeader ? { host: [config.hostHeader] } : {}),
+    };
+  } else if (config.transport === 'httpupgrade') {
+    outbound['transport'] = {
+      type: 'httpupgrade',
+      path: config.path ?? '/',
+      ...(config.hostHeader ? { host: config.hostHeader } : {}),
+    };
   }
 
   switch (proto) {
@@ -165,13 +210,33 @@ export function buildSingboxConfig(config: ParsedNodeConfig, secret: string | nu
     case 'vmess':
       outbound['uuid'] = secret ?? '';
       outbound['alter_id'] = config.alterId ?? 0;
-      outbound['security'] = config.encryption ?? 'auto';
+      outbound['security'] = config.vmessSecurity ?? config.encryption ?? 'auto';
       break;
     case 'trojan':
-    case 'shadowsocks':
       outbound['password'] = secret ?? '';
-      if (proto === 'shadowsocks') outbound['method'] = config.encryption ?? 'aes-256-gcm';
       break;
+    case 'shadowsocks':
+      outbound['method'] = config.encryption ?? 'aes-256-gcm';
+      outbound['password'] = secret ?? '';
+      break;
+    case 'hysteria2': {
+      // Credentials are REQUIRED — without them sing-box exits at startup
+      // and the probe blames the node for a local config bug.
+      outbound['password'] = secret ?? '';
+      if (typeof config.extra?.['obfs'] === 'string' && config.extra['obfs']) {
+        outbound['obfs'] = { type: String(config.extra['obfs']), password: String(config.extra['obfs-password'] ?? '') };
+      }
+      if (config.extra && config.extra['up'] != null) outbound['up_mbps'] = Number(config.extra['up']) || undefined;
+      if (config.extra && config.extra['down'] != null) outbound['down_mbps'] = Number(config.extra['down']) || undefined;
+      break;
+    }
+    case 'tuic': {
+      outbound['uuid'] = secret ?? '';
+      if (config.extra && config.extra['password'] != null) outbound['password'] = String(config.extra['password']);
+      outbound['congestion_control'] = String(config.extra?.['congestion_control'] ?? 'bbr');
+      outbound['udp_relay_mode'] = String(config.extra?.['udp_relay_mode'] ?? 'native');
+      break;
+    }
     default:
       break;
   }
@@ -327,8 +392,13 @@ export async function startCore(
   });
 }
 
-/** Which engines can dial a protocol (xray cannot do hy2/tuic/ssr). */
+/**
+ * Which engines can dial a protocol. Honest matrix: xray has no hysteria2/
+ * tuic outbounds; NEITHER core supports shadowsocksr (it was removed from
+ * sing-box and never existed in xray) — advertising it made the UI offer a
+ * test that can only fail.
+ */
 export function engineSupports(engine: ProxyEngineId, protocol: string): boolean {
   if (engine === 'xray') return ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol);
-  return ['vless', 'vmess', 'trojan', 'shadowsocks', 'shadowsocksr', 'hysteria2', 'tuic'].includes(protocol);
+  return ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(protocol);
 }

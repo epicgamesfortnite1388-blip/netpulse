@@ -125,6 +125,12 @@ describe('sweep geo honesty', () => {
   });
 
   it('a user vouch override beats the curated refusal (unicast with coordinates)', async () => {
+    // Deterministic: mock the cymru TXT lookup for 1.1.1.1 (the guard decision
+    // itself still runs for real; only the registry country is stubbed).
+    vi.spyOn(dnsPromises, 'resolveTxt').mockImplementation(async (name: string) => {
+      if (name.startsWith('1.1.1.1.')) return [['AS13335 | CLOUDFLARENET | US | 1.1.1.0/24 | US | Cloudflare']];
+      throw new Error('offline');
+    });
     setGeoOverridesForTest(
       new Map([
         ['1.1.1.1', { class: 'unicast', force: { lat: -33.87, lon: 151.21, country: 'Australia' }, note: 'user attested' }],

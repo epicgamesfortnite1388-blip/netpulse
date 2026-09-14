@@ -104,7 +104,12 @@ export function vpnError(statusCode: number, code: string, message: string, hint
  * Private keys never touch the database, the API or logs.
  */
 export class FileSecretVault {
-  constructor(private readonly file: string) {}
+  constructor(private readonly file: string) {
+    // The vault writes its key + entry files eagerly; a missing parent dir
+    // used to turn every set() into a silent ENOENT (callers swallow vault
+    // failures by design), so secrets silently never persisted.
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+  }
 
   /** Windows-safe filename for a ref: colon characters are not allowed there. */
   private pathFor(ref: string): string {

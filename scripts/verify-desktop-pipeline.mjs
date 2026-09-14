@@ -135,7 +135,12 @@ async function sidecarBootTest() {
   child.stdout.on('data', (d) => (bootOutput += d.toString()));
   child.stderr.on('data', (d) => (bootOutput += d.toString()));
 
-  const deadline = Date.now() + 30_000;
+  // Generous boot deadline: the first execution of a freshly built bundle can
+  // take >30 s on Windows while antivirus inspects the new binaries; a warm
+  // second run is fast, which made this check flaky inside desktop:package.
+  const bootDeadlineMs = 90_000;
+  const bootStart = Date.now();
+  const deadline = Date.now() + bootDeadlineMs;
   let ready = false;
   let authOk = false;
   let unauthOk = false;
@@ -205,7 +210,7 @@ async function sidecarBootTest() {
     }
   }
 
-  check('sidecar boots on 127.0.0.1', ready, `port ${port}`);
+  check('sidecar boots on 127.0.0.1', ready, `port ${port} (waited ${((Date.now() - bootStart) / 1000).toFixed(1)}s)`);
   check('sidecar enforces bearer auth', authOk && unauthOk);
   check(
     'sidecar reported ready stage',

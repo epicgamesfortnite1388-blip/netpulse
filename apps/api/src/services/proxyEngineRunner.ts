@@ -9,7 +9,7 @@
  */
 import type { ParsedNodeConfig, ProxyEngineId, ProxyEngineStatus } from '@netpulse/shared';
 
-import { engineSupports, findEngineBinary, startCore, type CoreRun, type ResolvedEngine } from './proxyCores';
+import { configIsTestable, engineSupports, findEngineBinary, startCore, type CoreRun, type ResolvedEngine } from './proxyCores';
 
 /** HTTPS-through-CONNECT probe (shared with the legacy single-engine path). */
 const httpsViaConnect = (
@@ -59,7 +59,7 @@ export function proxyEngineStatus(preferred: 'auto' | ProxyEngineId): ProxyEngin
       version: null, // version spawn is deferred to the health page probe
       protocols: id === 'xray'
         ? ['vless', 'vmess', 'trojan', 'shadowsocks']
-        : ['vless', 'vmess', 'trojan', 'shadowsocks', 'shadowsocksr', 'hysteria2', 'tuic'],
+        : ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'],
     });
     if (effective === null && available) effective = id;
   }
@@ -88,13 +88,26 @@ export async function proxyProbeWithEngine(
   const targetHost = parsed.hostname;
   const targetPort = Number(parsed.port) || 443;
 
+  // ---- preflight: honestly reject configs no core can run ----
+  const testable = configIsTestable(config);
+  if (!testable.ok) {
+    return {
+      status: 'failed',
+      engine: null,
+      latencyMs: null,
+      totalMs: Date.now() - started,
+      tlsVersion: null,
+      httpStatus: null,
+      failureKind: 'engine_unavailable',
+      error: testable.error,
+    };
+  }
+
   // ---- engine selection: preference ∩ availability ∩ protocol support ----
   const status = proxyEngineStatus(opts.preferred);
   const usable = status.engines.filter((e) => e.available && engineSupports(e.id, config.protocol));
   if (usable.length === 0) {
     const anyInstalled = status.engines.some((e) => e.available);
-    const supportedBy = (Object.keys({ vless: 1 }).length, config.protocol);
-    void supportedBy;
     return {
       status: 'failed',
       engine: null,
@@ -108,54 +121,60 @@ export async function proxyProbeWithEngine(
         : 'no proxy core installed — install xray or sing-box to test proxy latency',
     };
   }
-  const chosen = usable[0]!;
-  const engine: ResolvedEngine = {
-    id: chosen.id,
-    bin: chosen.path!,
-    args: ['run'],
+
+  // ---- try engines in order: a core that rejects the config must not end
+  // the probe while another installed core may accept it. ----
+  let lastFailure: { failure: 'engine_unavailable' | 'engine_start_failed'; error: string; engine: ProxyEngineId } | null = null;
+  for (const chosen of usable) {
+    const engine: ResolvedEngine = { id: chosen.id, bin: chosen.path!, args: ['run'] };
+    opts.onEngineResolved?.(chosen.id);
+
+    const run = await startCore(engine, config, opts.secret);
+    if (!run.ok) {
+      lastFailure = { failure: run.failure, error: run.error, engine: chosen.id };
+      continue; // failover to the next installed core
+    }
+
+    const active: CoreRun = run.run;
+    try {
+      const result = await httpsViaConnect(active.inboundPort, targetHost, targetPort, timeoutMs);
+      return {
+        status: 'done',
+        engine: chosen.id,
+        latencyMs: result.latencyMs,
+        totalMs: Date.now() - started,
+        tlsVersion: result.tlsVersion,
+        httpStatus: result.status,
+        failureKind: null,
+        error: null,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        status: 'failed',
+        engine: chosen.id,
+        latencyMs: null,
+        totalMs: Date.now() - started,
+        tlsVersion: null,
+        httpStatus: null,
+        failureKind: /timed out|rejected|reset/i.test(msg) ? 'handshake_failed' : 'target_failed',
+        error: msg.slice(0, 200),
+      };
+    } finally {
+      active.cleanup();
+    }
+  }
+
+  return {
+    status: 'failed',
+    engine: lastFailure?.engine ?? null,
+    latencyMs: null,
+    totalMs: Date.now() - started,
+    tlsVersion: null,
+    httpStatus: null,
+    failureKind: lastFailure?.failure ?? 'engine_start_failed',
+    error: lastFailure
+      ? `${lastFailure.engine} rejected the config: ${lastFailure.error}`
+      : 'no engine could be started',
   };
-  opts.onEngineResolved?.(chosen.id);
-
-  const run = await startCore(engine, config, opts.secret);
-  if (!run.ok) {
-    return {
-      status: 'failed',
-      engine: chosen.id,
-      latencyMs: null,
-      totalMs: Date.now() - started,
-      tlsVersion: null,
-      httpStatus: null,
-      failureKind: run.failure,
-      error: run.error,
-    };
-  }
-
-  const active: CoreRun = run.run;
-  try {
-    const result = await httpsViaConnect(active.inboundPort, targetHost, targetPort, timeoutMs);
-    return {
-      status: 'done',
-      engine: chosen.id,
-      latencyMs: result.latencyMs,
-      totalMs: Date.now() - started,
-      tlsVersion: result.tlsVersion,
-      httpStatus: result.status,
-      failureKind: null,
-      error: null,
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return {
-      status: 'failed',
-      engine: chosen.id,
-      latencyMs: null,
-      totalMs: Date.now() - started,
-      tlsVersion: null,
-      httpStatus: null,
-      failureKind: /timed out|rejected|reset/i.test(msg) ? 'handshake_failed' : 'target_failed',
-      error: msg.slice(0, 200),
-    };
-  } finally {
-    active.cleanup();
-  }
 }

@@ -130,3 +130,61 @@ describe('honest rejections (unusable configs must stay rejected)', () => {
     expect(parseNodeUri('https://example.com/page').protocol).toBe('unknown');
   });
 });
+
+describe('SS URI parser: corrupted-cipher regression (149 live nodes affected)', () => {
+  it('rejects a plain-text userinfo whose base64 "decoding" is binary garbage', () => {
+    // From the wild: `ss://<binary-junk>@host:port#...` — the junk round-trips
+    // as neither plain text nor valid base64. Node's lenient decoder used to
+    // turn it into random bytes, and `includes(':')` in those bytes promoted
+    // them to a "cipher name" stored in the DB.
+    const junkUri = 'ss://WvKc1v5cYj7K@198.51.100.7:8388#junk';
+    const r = parseNodeUri(junkUri);
+    // must either parse cleanly (plausible method) or be rejected — never a
+    // binary-garbage cipher. parseNodeUri returns { protocol, result: null }
+    // on rejection.
+    if (r?.result) {
+      const method = (r.result.config as { encryption?: string | null }).encryption ?? '';
+      expect(method).toMatch(/^[A-Za-z0-9-]{2,40}$/);
+    } else {
+      expect(r.result).toBeNull();
+    }
+  });
+
+  it('still parses a REAL SIP002 plain userinfo (aes-256-gcm)', () => {
+    const r = parseNodeUri('ss://aes-256-gcm:thepassword@203.0.113.9:8388#plain');
+    expect(r).not.toBeNull();
+    if (r && r.protocol === 'shadowsocks' && r.result) {
+      expect((r.result.config as { encryption?: string | null }).encryption).toBe('aes-256-gcm');
+      expect(r.result.secret).toBe('thepassword');
+    }
+  });
+
+  it('still parses a REAL base64 userinfo (2022 cipher with colon-bearing key)', () => {
+    const userinfo = Buffer.from('2022-blake3-aes-256-gcm:some-long-key:ephkey', 'utf8').toString('base64');
+    const r = parseNodeUri(`ss://${userinfo}@203.0.113.10:8388#b64`);
+    expect(r).not.toBeNull();
+    if (r && r.protocol === 'shadowsocks' && r.result) {
+      expect((r.result.config as { encryption?: string | null }).encryption).toBe('2022-blake3-aes-256-gcm');
+      expect(r.result.secret).toBe('some-long-key:ephkey');
+    }
+  });
+
+  it('still parses the legacy all-base64 form', () => {
+    const body = Buffer.from('chacha20-ietf-poly1305:pw2@203.0.113.11:8388', 'utf8').toString('base64');
+    const r = parseNodeUri(`ss://${body}#legacy`);
+    expect(r).not.toBeNull();
+    if (r && r.protocol === 'shadowsocks' && r.result) {
+      expect((r.result.config as { encryption?: string | null }).encryption).toBe('chacha20-ietf-poly1305');
+    }
+  });
+
+  it('legacy vmess base64-JSON bodies that are not base64 are rejected, not garbled', () => {
+    const r = parseNodeUri('vmess://not-valid-base64-at-all!!');
+    if (r?.result) {
+      // parsed: host must still be sane
+      expect((r.result.config as { host: string }).host).not.toContain(' ');
+    } else {
+      expect(r.result).toBeNull();
+    }
+  });
+});

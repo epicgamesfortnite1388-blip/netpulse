@@ -7,6 +7,7 @@ import {
   buildSingboxConfig,
   buildXrayConfig,
   buildXrayOutbound,
+  configIsTestable,
   engineSupports,
   findEngineBinary,
 } from '../src/services/proxyCores';
@@ -157,5 +158,80 @@ describe('NodeSecretVault', () => {
     expect(files.length).toBeGreaterThan(0);
     const raw = fs.readFileSync(path.join(dir, files[0]!), 'latin1');
     expect(raw.includes('PLAINTEXT-MARKER-123')).toBe(false);
+  });
+});
+
+describe('engine coverage for real-world v2ray-family configs', () => {
+  it('hysteria2 outbound gets its REQUIRED password (sing-box exits without one)', () => {
+    const full = buildSingboxConfig(cfg({ protocol: 'hysteria2', transport: 'udp', security: 'tls' }), 'hy2-pass', 45678);
+    const out = (full['outbounds'] as Array<Record<string, unknown>>)[0]!;
+    expect(out['type']).toBe('hysteria2');
+    expect(out['password']).toBe('hy2-pass');
+    expect(out['tls']).toBeDefined();
+  });
+
+  it('hysteria2 obfs + bandwidth params from extra are carried', () => {
+    const full = buildSingboxConfig(
+      cfg({ protocol: 'hysteria2', transport: 'udp', security: 'tls', extra: { obfs: 'salamander', 'obfs-password': 'ob', up: '50', down: '200' } }),
+      'pw', 45678,
+    );
+    const out = (full['outbounds'] as Array<Record<string, unknown>>)[0]!;
+    expect(out['obfs']).toEqual({ type: 'salamander', password: 'ob' });
+    expect(out['up_mbps']).toBe(50);
+    expect(out['down_mbps']).toBe(200);
+  });
+
+  it('tuic outbound gets uuid + congestion control', () => {
+    const full = buildSingboxConfig(cfg({ protocol: 'tuic', transport: 'udp', security: 'tls' }), 'tuic-uuid', 45678);
+    const out = (full['outbounds'] as Array<Record<string, unknown>>)[0]!;
+    expect(out['type']).toBe('tuic');
+    expect(out['uuid']).toBe('tuic-uuid');
+    expect(out['congestion_control']).toBe('bbr');
+    expect(out['udp_relay_mode']).toBe('native');
+  });
+
+  it('httpupgrade transport generates httpupgradeSettings for xray and httpupgrade for sing-box', () => {
+    const x = buildXrayOutbound(cfg({ transport: 'httpupgrade', path: '/up', hostHeader: 'up.example.com' }), 'u');
+    const ss = x['streamSettings'] as Record<string, unknown>;
+    expect(ss['network']).toBe('httpupgrade');
+    expect(ss['httpupgradeSettings']).toEqual({ path: '/up', host: 'up.example.com' });
+
+    const s = buildSingboxConfig(cfg({ transport: 'httpupgrade', path: '/up', hostHeader: 'up.example.com' }), 'u', 45678);
+    const out = (s['outbounds'] as Array<Record<string, unknown>>)[0]!;
+    expect(out['transport']).toEqual({ type: 'httpupgrade', path: '/up', host: 'up.example.com' });
+  });
+
+  it('xhttp transport generates xhttpSettings for xray', () => {
+    const x = buildXrayOutbound(cfg({ transport: 'xhttp', path: '/x', hostHeader: null }), 'u');
+    const ss = x['streamSettings'] as Record<string, unknown>;
+    expect(ss['network']).toBe('xhttp');
+    expect(ss['xhttpSettings']).toEqual({ path: '/x' });
+  });
+
+  it('vmess uses vmessSecurity, falling back to encryption then auto', () => {
+    const a = buildSingboxConfig(cfg({ protocol: 'vmess', vmessSecurity: 'aes-128-gcm' }), 'u', 1);
+    expect((a['outbounds'] as Array<Record<string, unknown>>)[0]!['security']).toBe('aes-128-gcm');
+    const b = buildSingboxConfig(cfg({ protocol: 'vmess', encryption: 'chacha20-poly1305' }), 'u', 1);
+    expect((b['outbounds'] as Array<Record<string, unknown>>)[0]!['security']).toBe('chacha20-poly1305');
+    const c = buildSingboxConfig(cfg({ protocol: 'vmess' }), 'u', 1);
+    expect((c['outbounds'] as Array<Record<string, unknown>>)[0]!['security']).toBe('auto');
+  });
+
+  it('configIsTestable rejects ssr with an honest reason', () => {
+    const r = configIsTestable(cfg({ protocol: 'shadowsocksr' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('shadowsocksr');
+  });
+
+  it('configIsTestable rejects legacy SS ciphers before spawning a core', () => {
+    const r = configIsTestable(cfg({ protocol: 'shadowsocks', encryption: 'rc4-md5' }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('rc4-md5');
+    expect(configIsTestable(cfg({ protocol: 'shadowsocks', encryption: 'aes-256-gcm' })).ok).toBe(true);
+  });
+
+  it('neither engine claims shadowsocksr anymore (was falsely advertised)', () => {
+    expect(engineSupports('sing-box', 'shadowsocksr')).toBe(false);
+    expect(engineSupports('xray', 'shadowsocksr')).toBe(false);
   });
 });

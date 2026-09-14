@@ -16,6 +16,8 @@ export type NodeTransport =
   | 'ws'
   | 'grpc'
   | 'http'
+  | 'httpupgrade'
+  | 'xhttp'
   | 'quic'
   | 'udp'
   | 'reality'

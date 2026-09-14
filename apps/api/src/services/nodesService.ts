@@ -246,11 +246,25 @@ export class NodesService {
           updatedAt: now,
         });
 
+        // Backfill the secret vault: nodes imported before vaulting existed
+        // (or whose vault entry was lost) arrive as duplicates forever and
+        // could never regain their credentials — every proxy test then failed
+        // auth honestly but permanently. If the source still supplies the
+        // secret and the vault has none, store it.
+        if (item.parsed.secret && this.deps.nodeVault?.get(existing.id) == null) {
+          try {
+            this.deps.nodeVault?.set(existing.id, item.parsed.secret);
+          } catch {
+            // vault failure must not block the import; tests will report
+          }
+        }
+
         this.recordEvent('node.duplicate', {
           nodeId: existing.id,
           host: existing.host,
           sourceId,
           sourceUrl,
+          secretBackfilled: Boolean(item.parsed.secret),
         });
 
         imported.push(existing.id);
@@ -726,6 +740,14 @@ export class NodesService {
         allowInsecure: node.allowInsecure,
         encryption: node.encryption,
         ssrProtocol: node.ssrProtocol,
+        // Reality material MUST reach the engine config — without the public
+        // key xray rejects the outbound at startup (exit 23) and the probe
+        // blames the node for what is a dropped field.
+        realityPublicKey: node.realityPublicKey,
+        realityShortId: node.realityShortId,
+        realityServerName: node.realityServerName,
+        vmessSecurity: node.encryption,
+        extra: (node as unknown as { extra?: Record<string, unknown> | null }).extra ?? null,
         remark: node.remark,
       },
       {

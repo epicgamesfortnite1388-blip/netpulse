@@ -17,12 +17,39 @@ import {
 
 /* --------------------------------- helpers ---------------------------------- */
 
-function base64SafeDecode(str: string): string {
-  // Add padding if needed
-  let s = str.trim();
+/**
+ * Strict base64 decode for URI segments. Node's `Buffer.from(s, 'base64')`
+ * silently SKIPS invalid characters, so garbage input "decodes" to random
+ * bytes instead of failing — 149 stored SS nodes ended up with binary junk as
+ * their cipher name because of exactly that. Returns null unless the input is
+ * genuinely base64 AND the output is clean text (no control bytes).
+ */
+function base64SafeDecode(str: string): string | null {
+  let s = str.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (s.length === 0 || /[^A-Za-z0-9+/=]/.test(s)) return null;
   const missing = (4 - (s.length % 4)) % 4;
   s += '='.repeat(missing);
-  return Buffer.from(s, 'base64').toString('utf8');
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(s, 'base64');
+  } catch {
+    return null;
+  }
+  if (buf.length === 0) return null;
+  // round-trip check: the input must be the canonical encoding of the output
+  if (buf.toString('base64').replace(/=+$/, '') !== s.replace(/=+$/, '')) return null;
+  const out = buf.toString('utf8');
+  if (/[\u0000-\u0008\u000e-\u001f\u007f]/.test(out)) return null;
+  return out;
+}
+
+/**
+ * Cipher-name sanity: SS methods are short alphanumeric+dash tokens
+ * (aes-256-gcm, 2022-blake3-chacha20-poly1305, rc4-md5, none, plain).
+ * Anything outside this charset is a parse bug, not a server quirk.
+ */
+function plausibleCipherName(method: string): boolean {
+  return /^[A-Za-z0-9-]{2,40}$/.test(method);
 }
 
 function canonicalizeHost(host: string): string {
@@ -112,6 +139,7 @@ export function parseVlessUri(text: string): VlessParseResult | null {
     }
     // legacy base64-JSON branch (previous behavior)
     const decoded = base64SafeDecode(body);
+    if (decoded === null) return null;
     const json = JSON.parse(decoded) as Record<string, unknown>;
 
     const host = String(json.add ?? json.server ?? json.ps ?? '');
@@ -133,6 +161,8 @@ export function parseVlessUri(text: string): VlessParseResult | null {
     const transport: NodeTransport = transportRaw === 'ws' ? 'ws'
       : transportRaw === 'grpc' ? 'grpc'
       : transportRaw === 'h2' || transportRaw === 'http' ? 'http'
+      : transportRaw === 'httpupgrade' ? 'httpupgrade'
+      : transportRaw === 'xhttp' ? 'xhttp'
       : transportRaw === 'quic' ? 'quic'
       : 'tcp';
 
@@ -220,6 +250,8 @@ function parseVlessSip002(body: string): VlessParseResult | null {
     const transport: NodeTransport = transportRaw === 'ws' ? 'ws'
       : transportRaw === 'grpc' ? 'grpc'
       : transportRaw === 'h2' || transportRaw === 'http' ? 'http'
+      : transportRaw === 'httpupgrade' ? 'httpupgrade'
+      : transportRaw === 'xhttp' ? 'xhttp'
       : transportRaw === 'quic' ? 'quic'
       : 'tcp';
 
@@ -297,6 +329,7 @@ export function parseVmessUri(text: string): VmessParseResult | null {
       return null;
     }
     const decoded = base64SafeDecode(body);
+    if (decoded === null) return null;
     const json = JSON.parse(decoded) as Record<string, unknown>;
 
     const host = String(json.add ?? json.ps ?? json.server ?? '');
@@ -446,7 +479,7 @@ export function parseShadowsocksUri(text: string): SSParseResult | null {
       // userinfo may be base64(method:pass) OR plain "method:pass[:ephemeral]"
       const decodedUserinfo = base64SafeDecode(userinfo);
       let cred: string;
-      if (decodedUserinfo !== userinfo && decodedUserinfo.includes(':')) {
+      if (decodedUserinfo !== null && decodedUserinfo !== userinfo && decodedUserinfo.includes(':')) {
         cred = decodedUserinfo;
       } else {
         cred = decodeURIComponentSafe(userinfo);
@@ -455,6 +488,7 @@ export function parseShadowsocksUri(text: string): SSParseResult | null {
       if (sep < 0) return null;
       method = cred.slice(0, sep);
       password = cred.slice(sep + 1);
+      if (!plausibleCipherName(method)) return null;
       const h = serverpart.startsWith('[')
         ? serverpart.slice(1, serverpart.indexOf(']'))
         : serverpart.split(':').slice(0, -1).join(':');
@@ -466,6 +500,7 @@ export function parseShadowsocksUri(text: string): SSParseResult | null {
       port = validateNodePort(Number(p));
     } else {
       const decoded = base64SafeDecode(main);
+      if (decoded === null) return null;
       const at = decoded.lastIndexOf('@');
       if (at < 0) return null;
       const [cred, serverpart] = [decoded.slice(0, at), decoded.slice(at + 1)];
@@ -473,6 +508,7 @@ export function parseShadowsocksUri(text: string): SSParseResult | null {
       if (sep < 0 || !serverpart.includes(':')) return null;
       method = cred.slice(0, sep);
       password = cred.slice(sep + 1);
+      if (!plausibleCipherName(method)) return null;
       const [h, p] = serverpart.split(':');
       if (!h || !p) return null;
       host = validateNodeHost(h);
@@ -527,6 +563,7 @@ export function parseSsrUri(text: string): SSRParseResult | null {
     const remark = hashIdx >= 0 ? decodeURIComponent(rest.slice(hashIdx + 1)) : null;
 
     const decoded = base64SafeDecode(main);
+    if (decoded === null) return null;
     const slashIdx = decoded.indexOf('/');
     if (slashIdx < 0) return null;
 
@@ -539,6 +576,7 @@ export function parseSsrUri(text: string): SSRParseResult | null {
     const credPart = addrPart.slice(0, atIdx);
     const serverPart = addrPart.slice(atIdx + 1);
     const credDecoded = base64SafeDecode(credPart);
+    if (credDecoded === null) return null;
     const colonIdx = credDecoded.indexOf(':');
     if (colonIdx < 0) return null;
 
@@ -888,6 +926,8 @@ export const TRANSPORT_LABELS: Record<NodeTransport, string> = {
   ws: 'WebSocket',
   grpc: 'gRPC',
   http: 'HTTP',
+  httpupgrade: 'HTTPUpgrade',
+  xhttp: 'XHTTP',
   quic: 'QUIC',
   udp: 'UDP',
   reality: 'Reality',
