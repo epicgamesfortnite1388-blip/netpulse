@@ -15,7 +15,7 @@ import { createAuth, ensureDaemonToken } from './auth';
 import { loadConfig } from './config';
 import { openDb } from './db/client';
 import { RetentionService, RETENTION_INTERVAL_MS } from './db/retention';
-import { enrichNodeGeoBatch, scrubAnycastGeo } from './services/nodeGeoService';
+import { enrichNodeGeoBatch, scrubAnycastGeo, setGeoPreferenceSource } from './services/nodeGeoService';
 import { defaultGeoOverridePath, geoOverrideError, setGeoOverrideFile } from './services/geoGuard';
 import { NodeTestScheduler } from './services/nodeTestScheduler';
 import { createRepositories } from './db/repositories';
@@ -251,6 +251,8 @@ export async function buildApp(opts: BuildOptions = {}) {
 
   const events = new EventService(repos.events);
   const settings = new SettingsService(repos.settings);
+  // Geo lookups read the user's provider preference live (cheap: cached settings).
+  setGeoPreferenceSource(() => settings.get().geoProvider?.preferred ?? 'auto');
   const ipInfo = new IpInfoService({ reputationProviders });
   const ping = new PingService({ controller, tests: repos.tests, events, settings, bus, log });
   const route = new RouteService({ controller, tests: repos.tests, comparisons: repos.routeComparisons, events, settings, bus, vpn, log });

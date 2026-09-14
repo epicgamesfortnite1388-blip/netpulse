@@ -108,6 +108,11 @@ export interface AppSettings {
     /** 'auto' picks the first available engine (xray first for Reality/XTLS). */
     preferred: 'auto' | 'sing-box' | 'xray';
   };
+  /** Primary IP-geolocation provider with automatic failover. */
+  geoProvider: {
+    /** 'auto' = ipwho.is first, geojs.io on failure/rate-limit. */
+    preferred: 'auto' | 'ipwho.is' | 'geojs.io';
+  };
   /** Adaptive node auto-tester (bounded TCP-probe batches on a cadence). */
   automation: {
     autoTestNodes: {

@@ -108,3 +108,19 @@ export async function fetchGeoJs(ip: string, timeoutMs = 6_000): Promise<IpWhoIs
     return null;
   }
 }
+
+export type GeoProviderId = 'ipwho.is' | 'geojs.io';
+
+/**
+ * Failover order for the user's geoProvider preference.
+ *
+ *   - 'auto'      → ipwho.is, then geojs.io (default: richer verdicts first)
+ *   - 'ipwho.is'  → ipwho.is, then geojs.io
+ *   - 'geojs.io'  → geojs.io, then ipwho.is
+ *
+ * The non-preferred provider always remains as failover: a preference
+ * changes the order — it never removes a provider.
+ */
+export function geoProviderOrder(preferred: 'auto' | GeoProviderId): GeoProviderId[] {
+  return preferred === 'geojs.io' ? ['geojs.io', 'ipwho.is'] : ['ipwho.is', 'geojs.io'];
+}

@@ -18,6 +18,7 @@ import type { Logger } from '../src/logger';
 vi.mock('../src/providers/ipinfo/ipwhoIs', () => ({
   fetchIpWhoIs: vi.fn(),
   fetchGeoJs: vi.fn(),
+  geoProviderOrder: vi.fn((p: 'auto' | 'ipwho.is' | 'geojs.io') => (p === 'geojs.io' ? ['geojs.io', 'ipwho.is'] : ['ipwho.is', 'geojs.io'])),
 }));
 
 vi.mock('node:dns/promises', () => ({

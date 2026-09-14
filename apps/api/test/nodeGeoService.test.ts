@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { enrichNodeGeoBatch, clearGeoIpCacheForTests, scrubAnycastGeo, geoStatusReasonFor } from '../src/services/nodeGeoService';
+import { enrichNodeGeoBatch, clearGeoIpCacheForTests, scrubAnycastGeo, geoStatusReasonFor, recheckNodeGeo, setGeoPreferenceSource } from '../src/services/nodeGeoService';
 
 import type { PublicNodeRow, PublicNodesRepository } from '../src/db/repositories';
 import type { Logger } from '../src/logger';
@@ -16,6 +16,8 @@ import type { Logger } from '../src/logger';
 
 vi.mock('../src/providers/ipinfo/ipwhoIs', () => ({
   fetchIpWhoIs: vi.fn(),
+  fetchGeoJs: vi.fn(),
+  geoProviderOrder: vi.fn((p: 'auto' | 'ipwho.is' | 'geojs.io') => (p === 'geojs.io' ? ['geojs.io', 'ipwho.is'] : ['ipwho.is', 'geojs.io'])),
 }));
 
 vi.mock('node:dns/promises', () => ({
@@ -30,9 +32,34 @@ vi.mock('node:dns/promises', () => ({
   },
 }));
 
-import { fetchIpWhoIs } from '../src/providers/ipinfo/ipwhoIs';
+import { fetchIpWhoIs, fetchGeoJs, geoProviderOrder } from '../src/providers/ipinfo/ipwhoIs';
 
 const mockFetch = vi.mocked(fetchIpWhoIs);
+const mockGeoJs = vi.mocked(fetchGeoJs);
+const mockOrder = vi.mocked(geoProviderOrder);
+
+/** Minimal provider verdict with the requested source/geo. */
+function verdict(source: 'ipwho.is' | 'geojs.io', country: string, lat: number, lon: number) {
+  return {
+    ip: '95.90.100.9',
+    country,
+    countryCode: country,
+    region: null,
+    city: null,
+    latitude: lat,
+    longitude: lon,
+    timezone: null,
+    isp: 'Test ISP',
+    org: null,
+    asn: 24940,
+    asnOrg: null,
+    source,
+  };
+}
+
+afterEach(() => {
+  setGeoPreferenceSource(null);
+});
 
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger;
 
@@ -370,5 +397,80 @@ describe('recheckNodeGeo', () => {
     const r = await recheckNodeGeo(repo, row({ ipv4: ['192.168.1.10'] }), log);
     expect(r).toEqual({ outcome: 'failed', reason: 'private_only' });
     expect(geoWrites).toHaveLength(0);
+  });
+});
+
+describe('geo provider failover order', () => {
+  beforeEach(() => {
+    clearGeoIpCacheForTests();
+    mockFetch.mockReset();
+    mockGeoJs.mockReset();
+  });
+
+  it('auto: ipwho.is answers first, geojs.io untouched', async () => {
+    setGeoPreferenceSource(() => 'auto');
+    mockFetch.mockResolvedValue(verdict('ipwho.is', 'DE', 50.11, 8.68));
+    const { repo, geoWrites } = fakeRepo();
+    const out = await enrichNodeGeoBatch(repo, [row({ ipv4: ['95.90.100.9'] })], log);
+    expect(out.resolved).toBe(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockGeoJs).not.toHaveBeenCalled();
+    expect(geoWrites[0]?.geo).toMatchObject({ country: 'DE' });
+  });
+
+  it('auto: geojs.io covers when ipwho.is fails (failover, not Unknown)', async () => {
+    setGeoPreferenceSource(() => 'auto');
+    mockFetch.mockResolvedValue(null);
+    mockGeoJs.mockResolvedValue(verdict('geojs.io', 'NL', 52.37, 4.9));
+    const { repo, geoWrites } = fakeRepo();
+    const out = await enrichNodeGeoBatch(repo, [row({ ipv4: ['95.90.100.9'] })], log);
+    expect(out.resolved).toBe(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockGeoJs).toHaveBeenCalledTimes(1);
+    expect(geoWrites[0]?.geo).toMatchObject({ country: 'NL' });
+  });
+
+  it('geojs.io preferred: geojs.io is queried first', async () => {
+    setGeoPreferenceSource(() => 'geojs.io');
+    mockGeoJs.mockResolvedValue(verdict('geojs.io', 'FR', 48.85, 2.35));
+    const { repo, geoWrites } = fakeRepo();
+    const out = await enrichNodeGeoBatch(repo, [row({ ipv4: ['95.90.100.9'] })], log);
+    expect(out.resolved).toBe(1);
+    expect(mockGeoJs).toHaveBeenCalledTimes(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(geoWrites[0]?.geo).toMatchObject({ country: 'FR' });
+  });
+
+  it('geojs.io preferred: ipwho.is still answers when geojs.io fails (never removes a provider)', async () => {
+    setGeoPreferenceSource(() => 'geojs.io');
+    mockGeoJs.mockResolvedValue(null);
+    mockFetch.mockResolvedValue(verdict('ipwho.is', 'PL', 52.23, 21.01));
+    const { repo, geoWrites } = fakeRepo();
+    const out = await enrichNodeGeoBatch(repo, [row({ ipv4: ['95.90.100.9'] })], log);
+    expect(out.resolved).toBe(1);
+    expect(mockGeoJs).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(geoWrites[0]?.geo).toMatchObject({ country: 'PL' });
+  });
+
+  it('a missing preference source behaves as auto', async () => {
+    setGeoPreferenceSource(null);
+    mockFetch.mockResolvedValue(verdict('ipwho.is', 'DE', 50.11, 8.68));
+    const { repo } = fakeRepo();
+    const out = await enrichNodeGeoBatch(repo, [row({ ipv4: ['95.90.100.9'] })], log);
+    expect(out.resolved).toBe(1);
+    expect(mockGeoJs).not.toHaveBeenCalled();
+  });
+
+  it('both providers failing stays honest (no write, lookup_failed on re-check)', async () => {
+    setGeoPreferenceSource(() => 'geojs.io');
+    mockGeoJs.mockResolvedValue(null);
+    mockFetch.mockResolvedValue(null);
+    const { repo, geoWrites } = fakeRepo();
+    const r = await recheckNodeGeo(repo, row({ ipv4: ['95.90.100.9'] }), log);
+    expect(r).toEqual({ outcome: 'failed', reason: 'lookup_failed' });
+    expect(geoWrites).toHaveLength(0);
+    expect(mockGeoJs).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

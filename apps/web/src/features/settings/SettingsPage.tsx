@@ -185,7 +185,20 @@ export default function SettingsPage() {
                   onChange={(e) => patch('network', { probes: Number(e.target.value) })}
                 />
               </Field>
-              <Button variant="primary" loading={saving} onClick={() => void save({ network: draft.network })}>
+              <Field
+                label="Geo lookup provider"
+                hint="Node and map geolocation source — the other provider stays as automatic failover"
+              >
+                <Select
+                  value={draft.geoProvider.preferred}
+                  onChange={(e) => patch('geoProvider', { preferred: e.target.value as AppSettings['geoProvider']['preferred'] })}
+                >
+                  <option value="auto">Automatic (ipwho.is → geojs.io)</option>
+                  <option value="ipwho.is">ipwho.is first (geojs.io failover)</option>
+                  <option value="geojs.io">geojs.io first (ipwho.is failover)</option>
+                </Select>
+              </Field>
+              <Button variant="primary" loading={saving} onClick={() => void save({ network: draft.network, geoProvider: draft.geoProvider })}>
                 <Save size={14} /> Save network
               </Button>
             </CardBody>

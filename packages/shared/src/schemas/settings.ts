@@ -110,6 +110,10 @@ export const SettingsSchema = z.object({
   proxyEngine: z.object({
     preferred: z.enum(['auto', 'sing-box', 'xray']),
   }),
+  geoProvider: z.object({
+    /** 'auto' = ipwho.is first (richer verdicts) with geojs.io failover. */
+    preferred: z.enum(['auto', 'ipwho.is', 'geojs.io']),
+  }),
   automation: z.object({
     autoTestNodes: z.object({
       enabled: z.boolean(),
@@ -141,6 +145,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     ipv6Behavior: 'auto',
   },
   proxyEngine: {
+    preferred: 'auto',
+  },
+  geoProvider: {
     preferred: 'auto',
   },
   scheduling: {
@@ -204,6 +211,11 @@ export const SettingsPatchSchema = z
     proxyEngine: z
       .object({
         preferred: z.enum(['auto', 'sing-box', 'xray']),
+      })
+      .partial(),
+    geoProvider: z
+      .object({
+        preferred: z.enum(['auto', 'ipwho.is', 'geojs.io']),
       })
       .partial(),
     automation: z

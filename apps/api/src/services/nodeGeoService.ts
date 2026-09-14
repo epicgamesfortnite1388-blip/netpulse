@@ -2,7 +2,9 @@ import dns from 'node:dns/promises';
 
 import { hasCountryBox, inCountryBox } from '@netpulse/shared';
 
-import { fetchIpWhoIs, fetchGeoJs } from '../providers/ipinfo/ipwhoIs';
+import { fetchIpWhoIs, fetchGeoJs, geoProviderOrder } from '../providers/ipinfo/ipwhoIs';
+
+import type { IpWhoIsResult } from '../providers/ipinfo/ipwhoIs';
 import { familyOfIp, isPrivateIp } from '../util/targetGuard';
 import { classifyGeoTarget, geoForcedLocation, geoVouchedByOverride } from './geoGuard';
 
@@ -34,6 +36,25 @@ import type { Logger } from '../logger';
 
 /** Per-node minimum spacing between geo attempts. */
 const ATTEMPT_SPACING_MS = 60_000;
+/**
+ * Where the user's geoProvider preference reaches the lookup chain.
+ * app.ts injects its SettingsService once at boot (setGeoPreferenceSource);
+ * tests may inject a fixed preference or leave the default ('auto').
+ */
+let geoPreferenceSource: (() => 'auto' | 'ipwho.is' | 'geojs.io') | null = null;
+
+export function setGeoPreferenceSource(src: (() => 'auto' | 'ipwho.is' | 'geojs.io') | null): void {
+  geoPreferenceSource = src;
+}
+
+function currentGeoPreference(): 'auto' | 'ipwho.is' | 'geojs.io' {
+  try {
+    return geoPreferenceSource?.() ?? 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
 /** Abort ipwho.is lookups quickly; the worker reruns on a schedule. */
 const LOOKUP_TIMEOUT_MS = 6_000;
 /** Never look up more than this many distinct hosts per pass. */
@@ -163,10 +184,15 @@ async function geoForIp(ip: string, log?: Logger): Promise<GeoLookup> {
   let verdict: GeoVerdict | null = null;
   let stripped = false;
   try {
-    // Primary + fallback: ipwho.is rate-limits aggressively; geojs.io covers
-    // the gap so a lookup degrades to a second provider, not to Unknown.
-    let d = await fetchIpWhoIs(ip, LOOKUP_TIMEOUT_MS);
-    if (!d) d = await fetchGeoJs(ip, LOOKUP_TIMEOUT_MS);
+    // Primary + failover order from the user's geoProvider preference
+    // (default 'auto' = ipwho.is first; the other provider always remains
+    // as failover so a lookup degrades to the second provider, not to Unknown).
+    let d: IpWhoIsResult | null = null;
+    for (const id of geoProviderOrder(currentGeoPreference())) {
+      const fetcher = id === 'ipwho.is' ? fetchIpWhoIs : fetchGeoJs;
+      d = await fetcher(ip, LOOKUP_TIMEOUT_MS);
+      if (d) break;
+    }
     if (d && d.countryCode) {
       verdict = {
         country: d.country ?? null,
