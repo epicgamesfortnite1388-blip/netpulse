@@ -9,7 +9,9 @@ import type { NodesService } from '../services/nodesService';
 import { getKnownSources, createSourceFromInput, isValidSourceUrl } from '../services/nodeSourceRegistry';
 import { recheckNodeGeo } from '../services/nodeGeoService';
 import type { NodeProtocol, NodeSecurity, NodeSort, NodeStatus, PublicSource } from '@netpulse/shared';
+import { EngineInstallRequestSchema } from '@netpulse/shared';
 import { proxyEngineStatus } from '../services/proxyEngineRunner';
+import { installEngine } from '../services/engineManager';
 
 const NodeFilterSchema = z.object({
   field: z.string().min(1).max(64),
@@ -869,6 +871,17 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/engines', async () => {
     const preferred = ctx.services.settings.get().proxyEngine?.preferred ?? 'auto';
     return proxyEngineStatus(preferred);
+  });
+
+  // Install or update a proxy core from its official release. The request
+  // body is validated by schema; everything else (host allowlist, checksum,
+  // binary self-check) is enforced inside the engine manager.
+  app.post('/api/v1/nodes/engines/install', { config: { rateLimit: { max: 4, timeWindow: '5 minutes' } } }, async (req) => {
+    const parsed = EngineInstallRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(400, 'invalid_request', 'engine install request failed validation');
+    }
+    return installEngine(parsed.data.engine, parsed.data.version);
   });
 
   app.get('/api/v1/nodes/stats', async () => {

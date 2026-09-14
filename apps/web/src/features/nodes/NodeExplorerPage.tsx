@@ -604,6 +604,36 @@ export default function NodeExplorerPage() {
     void loadData();
   }, [loadData]);
 
+  // Engine install/update: the backend downloads from the official release,
+  // verifies the published SHA256 digest, and validates the binary with a
+  // real `version` spawn before reporting success.
+  const [installingEngine, setInstallingEngine] = useState<string | null>(null);
+  const handleEngineInstall = useCallback(
+    async (engineId: string) => {
+      if (installingEngine) return;
+      setInstallingEngine(engineId);
+      try {
+        const r = await api.post<{ engine: string; status: string; version: string | null; checksumVerified: boolean; versionOutput: string | null; error: string | null }>(
+          '/nodes/engines/install',
+          { engine: engineId },
+        );
+        if (r.status === 'failed') {
+          toast('error', `${engineId} install failed`, r.error ?? undefined);
+        } else if (r.status === 'already_current') {
+          toast('ok', `${engineId} is current`, r.versionOutput ?? undefined);
+        } else {
+          toast('ok', `${engineId} ${r.status}`, `${r.version ?? ''}${r.checksumVerified ? ' · checksum verified' : ''}`);
+        }
+      } catch (err) {
+        toast('error', 'Install failed', err instanceof Error ? err.message : undefined);
+      } finally {
+        setInstallingEngine(null);
+        void loadData();
+      }
+    },
+    [installingEngine, loadData, toast],
+  );
+
   if (loading) {
     return <LoadingState label="Loading nodes..." />;
   }
@@ -627,12 +657,42 @@ export default function NodeExplorerPage() {
             >
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${e.available ? 'bg-status-ok' : 'bg-gray-500'}`} />
               {e.label}
+              {e.available && (
+                <button
+                  className="ml-1 underline decoration-dotted hover:text-foreground"
+                  title={`Reinstall / update ${e.label} from its official release`}
+                  onClick={() => void handleEngineInstall(e.id)}
+                  disabled={installingEngine !== null}
+                >
+                  {installingEngine === e.id ? 'installing…' : 'update'}
+                </button>
+              )}
             </span>
-          ))}            <span className="text-gray-500">
-              {engines.effective
-                ? `proxy tests will use ${ENGINE_LABELS[engines.effective]}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
-                : 'install xray, sing-box or v2ray to enable proxy tests'}
+          ))}
+          {engines.engines.filter((e) => !e.available).length > 0 && (
+            <span className="inline-flex items-center gap-2">
+              <span className="text-gray-500">not installed:</span>
+              {engines.engines
+                .filter((e) => !e.available)
+                .map((e) => (
+                  <button
+                    key={e.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 disabled:opacity-50"
+                    title={`Download and install ${e.label} from its official release (checksum-verified)`}
+                    onClick={() => void handleEngineInstall(e.id)}
+                    disabled={installingEngine !== null}
+                  >
+                    <Download size={11} />
+                    {installingEngine === e.id ? 'installing…' : `install ${e.label}`}
+                  </button>
+                ))}
             </span>
+          )}
+          <span className="text-gray-500">
+            {engines.effective
+              ? `proxy tests will use ${ENGINE_LABELS[engines.effective]}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
+              : 'install xray, sing-box or v2ray to enable proxy tests'}
+          </span>
         </div>
       )}
 

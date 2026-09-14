@@ -18,6 +18,7 @@ export * from './models/iran';
 export * from './models/publicNodes';
 export * from './models/proxyEngine';
 export * from './schemas/settings';
+export * from './schemas/engines';
 export * from './schemas/tests';
 export * from './score/engine';
 export * from './net/stats';
