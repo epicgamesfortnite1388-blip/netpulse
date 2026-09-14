@@ -365,6 +365,8 @@ export interface PublicNode {
   userNotes: string | null;
   /** last successful proxy test latency (ms) */
   lastProxyMs: number | null;
+  /** local core that produced the most recent proxy test: xray | sing-box (null = never proxy-tested) */
+  lastEngine: 'xray' | 'sing-box' | null;
   /** last IP-based geolocation attempt (epoch ms; null = never attempted) */
   geoLastAttempt: number | null;
   /** last successful TCP test latency (ms) */

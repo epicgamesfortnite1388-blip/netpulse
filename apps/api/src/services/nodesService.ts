@@ -76,6 +76,7 @@ interface NodeWebDTO {
   tags: string[];
   favorite: boolean;
   lastProxyMs: number | null;
+  lastEngine: 'xray' | 'sing-box' | null;
   lastTcpMs: number | null;
   lastTlsMs: number | null;
   testCount: number;
@@ -326,6 +327,7 @@ export class NodesService {
         favorite: false,
         userNotes: null,
         lastProxyMs: null,
+        lastEngine: null,
         lastTcpMs: null,
         lastTlsMs: null,
         testCount: 0,
@@ -484,6 +486,7 @@ export class NodesService {
       tags: nodeRow.tags,
       favorite: nodeRow.favorite ? true : false,
       lastProxyMs: nodeRow.lastProxyMs,
+      lastEngine: (nodeRow.lastEngine as 'xray' | 'sing-box' | null) ?? null,
       geoLastAttempt: nodeRow.geoLastAttempt ?? null,
       lastTcpMs: nodeRow.lastTcpMs,
       lastTlsMs: nodeRow.lastTlsMs,
@@ -967,6 +970,7 @@ export class NodesService {
       status: newStatus,
       confidence: newConfidence,
       lastProxyMs: type === 'proxy' ? result.latencyMs : node.lastProxyMs,
+      lastEngine: type === 'proxy' ? (result.engine as 'xray' | 'sing-box' | null) : node.lastEngine,
       lastTcpMs: type === 'tcp' ? result.latencyMs : node.lastTcpMs,
       lastTlsMs: type === 'tls' ? result.latencyMs : node.lastTlsMs,
       testCount: totalTests,
@@ -1979,6 +1983,8 @@ export class NodesService {
     tags: string[];
     favorite: boolean;
     lastProxyMs: number | null;
+    /** raw DB value; coerced to the DTO union below */
+    lastEngine: string | null;
     lastTcpMs: number | null;
     lastTlsMs: number | null;
     testCount: number;
@@ -2046,6 +2052,7 @@ export class NodesService {
       favorite: node.favorite,
       userNotes: node.userNotes,
       lastProxyMs: node.lastProxyMs,
+      lastEngine: node.lastEngine === 'xray' || node.lastEngine === 'sing-box' ? node.lastEngine : null,
       lastTcpMs: node.lastTcpMs,
       lastTlsMs: node.lastTlsMs,
       testCount: node.testCount,

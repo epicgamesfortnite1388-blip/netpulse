@@ -562,6 +562,8 @@ export const publicNodes = sqliteTable('public_nodes', {
   favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
   userNotes: text('user_notes'),
   lastProxyMs: real('last_proxy_ms'),
+  /** which local core produced the most recent proxy test: xray | sing-box */
+  lastEngine: text('last_engine'),
   geoLastAttempt: integer('geo_last_attempt'),
   lastTcpMs: real('last_tcp_ms'),
   lastTlsMs: real('last_tls_ms'),

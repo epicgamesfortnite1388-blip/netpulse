@@ -175,6 +175,21 @@ function FreshnessDot({ freshness }: { freshness: string }) {
   }
 }
 
+/** Local core that produced the node's most recent proxy measurement. */
+function EngineBadge({ engine }: { engine: 'xray' | 'sing-box' }) {
+  const style = engine === 'xray'
+    ? 'text-sky-400 bg-sky-500/10'
+    : 'text-fuchsia-400 bg-fuchsia-500/10';
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${style}`}
+      title={`Last proxy test ran through the ${engine === 'xray' ? 'Xray-core' : 'sing-box'} runtime`}
+    >
+      {engine}
+    </span>
+  );
+}
+
 function buildFilters(opts: {
   protocol?: string;
   country?: string;
@@ -803,6 +818,7 @@ export default function NodeExplorerPage() {
                 <th className="text-left py-3 px-4">Country</th>
                 <th className="text-left py-3 px-4">Score</th>
                 <th className="text-left py-3 px-4">Proxy</th>
+                <th className="text-left py-3 px-4">Runtime</th>
                 <th className="text-left py-3 px-4">TCP</th>
                 <th className="text-left py-3 px-4">Loss</th>
                 <th className="text-left py-3 px-4">Reliability</th>
@@ -868,6 +884,13 @@ export default function NodeExplorerPage() {
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">
                     {node.medianProxyMs != null ? fmtMs(node.medianProxyMs) : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {node.lastEngine ? (
+                      <EngineBadge engine={node.lastEngine} />
+                    ) : (
+                      <span className="text-xs text-muted" title="Never proxy-tested — no engine has run against this node">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">
                     {node.medianTcpMs != null ? fmtMs(node.medianTcpMs) : '—'}

@@ -932,6 +932,8 @@ export interface PublicNodeRow {
   favorite: boolean;
   userNotes: string | null;
   lastProxyMs: number | null;
+  /** xray | sing-box — core of the most recent proxy test (denormalized from node_tests) */
+  lastEngine: string | null;
   geoLastAttempt: number | null;
   lastTcpMs: number | null;
   lastTlsMs: number | null;
