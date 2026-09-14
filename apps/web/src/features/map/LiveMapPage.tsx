@@ -36,11 +36,12 @@ import { GEO_STATUS_COPY, GeoTooltipBody, geoReasonOf } from '@/lib/geoStatus';
 import { fmtMs, fmtPct, timeAgo } from '@/lib/format';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { useWsTestProgress } from '@/lib/ws';
-import { MapCanvas } from './MapCanvas';
-import { ConfidenceLegendBody, ConfidenceRingGlyph, confidenceMeetsThreshold } from './MapCanvas';
-import type { ConfidenceThreshold } from './MapCanvas';
+import { GlobeCanvas } from './GlobeCanvas';
+import { ConfidenceLegendBody, ConfidenceRingGlyph, confidenceMeetsThreshold } from './mapEncoding';
+import type { ConfidenceThreshold } from './mapEncoding';
+import { clusterNodes } from './clusterNodes';
 
-import type { MapArc, MapNode, MapPath } from './MapCanvas';
+import type { GlobeArc, GlobeNode, GlobeRoute } from './mapEncoding';
 import type { GeoConfidenceLevel, MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
 import type { WsTestMessage } from '@/lib/ws';
 
@@ -345,7 +346,7 @@ export default function LiveMapPage() {
 
   const hidden = privacy || presentation;
 
-  const youNode: MapNode | null = useMemo(() => {
+  const youNode: GlobeNode | null = useMemo(() => {
     if (local?.latitude == null || local.longitude == null) return null;
     return {
       id: 'you',
@@ -359,8 +360,11 @@ export default function LiveMapPage() {
     };
   }, [local, hidden]);
 
-  const nodes: MapNode[] = useMemo(() => {
-    const list: MapNode[] = [];
+  /** Camera zoom proxy for clustering: closer focus → higher zoom. */
+  const [globeZoom, setGlobeZoom] = useState(1);
+
+  const nodes: GlobeNode[] = useMemo(() => {
+    const list: GlobeNode[] = [];
     if (youNode) list.push(youNode);
     let hiddenCount = 0;
     for (const obs of observations.values()) {
@@ -392,15 +396,15 @@ export default function LiveMapPage() {
       });
     }
     filteredOutCountRef.current = hiddenCount;
-    return list;
-  }, [youNode, observations, filter, hidden, playback, minConfidence, selectedTargetId]);
+    return clusterNodes(list, globeZoom);
+  }, [youNode, observations, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom]);
 
   /** Pins hidden by the confidence filter (computed during node building). */
   const hiddenByConfidence = filteredOutCountRef.current;
 
-  const arcs: MapArc[] = useMemo(() => {
+  const arcs: GlobeArc[] = useMemo(() => {
     if (!youNode) return [];
-    const out: MapArc[] = [];
+    const out: GlobeArc[] = [];
     for (const obs of observations.values()) {
       if (playback && playback.id === obs.id) continue; // rendered by the dedicated block below
       const geo = destinationGeo(obs);
@@ -433,13 +437,20 @@ export default function LiveMapPage() {
     return out;
   }, [youNode, observations, playback, selectedTargetId, minConfidence]);
 
-  const paths: MapPath[] = useMemo(() => {
-    if (!obsForMap) return [];
-    const pts = obsForMap.hops
+  /**
+   * MEASURED route (traceroute): hop-by-hop positions for the selected
+   * observation, rendered as a distinct bright polyline — separate visual
+   * language from the approximate endpoint arcs. Hops without geo evidence
+   * are skipped (never invented), so a route with <2 geo hops renders as
+   * no path at all rather than a fabricated line.
+   */
+  const route: GlobeRoute | null = useMemo(() => {
+    if (!obsForMap) return null;
+    const hops = obsForMap.hops
       .filter((h) => h.geo)
-      .map((h) => ({ lat: h.geo!.lat, lon: h.geo!.lon }));
-    if (pts.length < 2) return [];
-    return [{ id: obsForMap.id, points: pts, label: obsForMap.target.name, historical: !!playback }];
+      .map((h) => ({ lat: h.geo!.lat, lon: h.geo!.lon, label: h.hostname ?? h.ip ?? undefined }));
+    if (hops.length < 2) return null;
+    return { id: obsForMap.id, hops, historical: !!playback };
   }, [obsForMap, playback]);
 
   const focus = useMemo(() => {
@@ -654,16 +665,17 @@ export default function LiveMapPage() {
           />
           <CardBody className="p-0">
             <div className="relative h-[560px]">
-              <MapCanvas
+              <GlobeCanvas
                 nodes={nodes}
                 arcs={arcs}
-                paths={paths}
+                route={route}
                 focus={focus}
                 focusKey={selectedTargetId}
                 privacy={hidden}
                 reducedMotion={reducedMotion}
+                onZoomChange={setGlobeZoom}
                 onSelect={(node) => {
-                  if (node && node.id !== 'you') setSelectedTargetId(node.id);
+                  if (node && node.id !== 'you' && !node.id.startsWith('cluster:')) setSelectedTargetId(node.id);
                 }}
               />
               {progress && (
@@ -1146,7 +1158,7 @@ export default function LiveMapPage() {
             </button>
           </div>
           <div className="relative flex-1">
-            <MapCanvas nodes={nodes} arcs={arcs} paths={paths} privacy={hidden} reducedMotion={reducedMotion} onSelect={(n) => n && n.id !== 'you' && setSelectedTargetId(n.id)} />
+            <GlobeCanvas nodes={nodes} arcs={arcs} route={route} privacy={hidden} reducedMotion={reducedMotion} onZoomChange={setGlobeZoom} onSelect={(n) => n && n.id !== 'you' && !n.id.startsWith('cluster:') && setSelectedTargetId(n.id)} />
             {selectedObs?.insights.length ? (
               <div className="absolute bottom-4 left-4 max-w-md space-y-1 rounded-xl border border-line bg-bg/80 px-4 py-3 text-xs text-muted backdrop-blur">
                 {selectedObs.insights.map((ins, i) => (

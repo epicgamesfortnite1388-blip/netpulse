@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONFIDENCE_RING, confidenceMeetsThreshold } from '../src/features/map/MapCanvas';
+import { CONFIDENCE_RING, confidenceMeetsThreshold } from '../src/features/map/mapEncoding';
 
 import type { GeoConfidenceLevel } from '@netpulse/shared';
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ringPulse } from '../src/features/map/MapCanvas';
+import { ringPulse } from '../src/features/map/mapEncoding';
 
 /**
  * Selected-pin ripple geometry: the ring must expand out of the confidence

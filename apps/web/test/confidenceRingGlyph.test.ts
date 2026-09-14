@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONFIDENCE_LEGEND, CONFIDENCE_RING, ConfidenceLegendBody, ConfidenceRingGlyph, ringGlyphStyle } from '../src/features/map/MapCanvas';
+import { CONFIDENCE_LEGEND, CONFIDENCE_RING, ConfidenceLegendBody, ConfidenceRingGlyph, ringGlyphStyle } from '../src/features/map/mapEncoding';
 
 /**
  * The destination panel's Location glyph must be derived from the SAME
