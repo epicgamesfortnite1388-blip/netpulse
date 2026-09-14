@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { arcPoints, clusterAnchor, greatCircleKm, latencyColor, lonLatToVec3 } from '../src/features/map/globeMath';
+import { arcPoints, clusterAnchor, greatCircleKm, latencyColor, lonLatToVec3, thetaForLon } from '../src/features/map/globeMath';
 import { clusterCellDeg, clusterNodes } from '../src/features/map/clusterNodes';
 
 import type { GlobeNode } from '../src/features/map/mapEncoding';
@@ -161,5 +161,25 @@ describe('route honesty (measured vs approximate)', () => {
     const b = via[Math.floor(via.length / 2)]!;
     const dist = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
     expect(dist).toBeGreaterThan(0.5);
+  });
+});
+
+describe('camera facing (thetaForLon)', () => {
+  it('places the focus longitude at the center of the view', () => {
+    // Sub-camera point: θ = -lon  ⇒  facing lon = -θ·180/π (normalized).
+    const facingOf = (theta: number) => {
+      const lon = -theta * (180 / Math.PI);
+      return ((lon + 540) % 360) - 180;
+    };
+    for (const lon of [0, 8.68, 103.82, -74.0, 151.21, 179.5, -179.5]) {
+      expect(facingOf(thetaForLon(lon))).toBeCloseTo(lon, 5);
+    }
+  });
+
+  it('is the antipode of the old broken formula (regression: fly-to aimed 180° away)', () => {
+    // The previous implementation used -(lon+180°); assert they differ by π
+    // for a real city so this cannot silently regress.
+    const old = -((8.68 + 180) * Math.PI) / 180;
+    expect(Math.abs(thetaForLon(8.68) - old)).toBeCloseTo(Math.PI, 5);
   });
 });

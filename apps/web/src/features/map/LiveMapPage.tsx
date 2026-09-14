@@ -21,7 +21,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
@@ -40,8 +40,10 @@ import { GlobeCanvas } from './GlobeCanvas';
 import { ConfidenceLegendBody, ConfidenceRingGlyph, confidenceMeetsThreshold } from './mapEncoding';
 import type { ConfidenceThreshold } from './mapEncoding';
 import { clusterNodes } from './clusterNodes';
+import { nodePinsFromDb } from './nodePins';
 
 import type { GlobeArc, GlobeNode, GlobeRoute } from './mapEncoding';
+import type { PublicNode } from '@netpulse/shared';
 import type { GeoConfidenceLevel, MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
 import type { WsTestMessage } from '@/lib/ws';
 
@@ -197,6 +199,13 @@ export default function LiveMapPage() {
     queryKey: ['map', 'compare', selectedTargetId],
     queryFn: () => api.get<CompareResponse>(`/map/compare?targetId=${encodeURIComponent(selectedTargetId!)}`),
     enabled: selectedTargetId != null,
+  });
+  // Node database → globe pins. Bounded to geo-verified nodes so a large DB
+  // cannot flood the scene; clustering handles density.
+  const dbNodesQuery = useQuery({
+    queryKey: ['map', 'db-nodes'],
+    queryFn: () => api.get<{ nodes: PublicNode[]; total: number }>('/nodes?limit=1500&sortField=score&sortDir=desc'),
+    staleTime: 60_000,
   });
   const historyQuery = useQuery({
     queryKey: ['map', 'history', selectedTargetId],
@@ -363,9 +372,29 @@ export default function LiveMapPage() {
   /** Camera zoom proxy for clustering: closer focus → higher zoom. */
   const [globeZoom, setGlobeZoom] = useState(1);
 
+  const navigate = useNavigate();
+  /** DB-node pins open their detail page; map targets select on the globe. */
+  const onGlobeSelect = useCallback(
+    (node: GlobeNode | null) => {
+      if (!node || node.id === 'you' || node.id.startsWith('cluster:')) return;
+      if (node.id.startsWith('node:')) {
+        navigate(`/nodes/${encodeURIComponent(node.id.slice('node:'.length))}`);
+        return;
+      }
+      setSelectedTargetId(node.id);
+    },
+    [navigate],
+  );
+
   const nodes: GlobeNode[] = useMemo(() => {
     const list: GlobeNode[] = [];
     if (youNode) list.push(youNode);
+    // Node-DB pins first, minus ids that measured observations also provide
+    // (the observation pin carries live latency/status and wins).
+    const obsIds = new Set<string>();
+    for (const obs of observations.values()) obsIds.add(obs.target.id);
+    const dbPins = nodePinsFromDb(dbNodesQuery.data?.nodes ?? []).filter((p) => !obsIds.has(p.id.slice('node:'.length)));
+    list.push(...dbPins);
     let hiddenCount = 0;
     for (const obs of observations.values()) {
       const t = obs.target;
@@ -397,7 +426,7 @@ export default function LiveMapPage() {
     }
     filteredOutCountRef.current = hiddenCount;
     return clusterNodes(list, globeZoom);
-  }, [youNode, observations, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom]);
+  }, [youNode, observations, dbNodesQuery.data, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom]);
 
   /** Pins hidden by the confidence filter (computed during node building). */
   const hiddenByConfidence = filteredOutCountRef.current;
@@ -670,13 +699,11 @@ export default function LiveMapPage() {
                 arcs={arcs}
                 route={route}
                 focus={focus}
-                focusKey={selectedTargetId}
+                focusKey={selectedTargetId ?? (youNode ? 'you' : null)}
                 privacy={hidden}
                 reducedMotion={reducedMotion}
                 onZoomChange={setGlobeZoom}
-                onSelect={(node) => {
-                  if (node && node.id !== 'you' && !node.id.startsWith('cluster:')) setSelectedTargetId(node.id);
-                }}
+                onSelect={onGlobeSelect}
               />
               {progress && (
                 <div className="absolute left-3 top-3 rounded-lg border border-accent/30 bg-bg/85 px-3 py-2 text-xs text-accent backdrop-blur">
@@ -1158,7 +1185,7 @@ export default function LiveMapPage() {
             </button>
           </div>
           <div className="relative flex-1">
-            <GlobeCanvas nodes={nodes} arcs={arcs} route={route} privacy={hidden} reducedMotion={reducedMotion} onZoomChange={setGlobeZoom} onSelect={(n) => n && n.id !== 'you' && !n.id.startsWith('cluster:') && setSelectedTargetId(n.id)} />
+            <GlobeCanvas nodes={nodes} arcs={arcs} route={route} privacy={hidden} reducedMotion={reducedMotion} onZoomChange={setGlobeZoom} onSelect={onGlobeSelect} />
             {selectedObs?.insights.length ? (
               <div className="absolute bottom-4 left-4 max-w-md space-y-1 rounded-xl border border-line bg-bg/80 px-4 py-3 text-xs text-muted backdrop-blur">
                 {selectedObs.insights.map((ins, i) => (

@@ -14,6 +14,20 @@ import * as THREE from 'three';
 
 export const GLOBE_RADIUS = 10;
 
+/**
+ * Camera theta (azimuth) that puts `lon` at the center of the view.
+ *
+ * Facing condition, from the two conventions above (camera at
+ * `(d sinφ cosθ, d cosφ, d sinφ sinθ)`, surface point at
+ * `(−r sinφ cos(θg), r cosφ, r sinφ sin(θg))` with θg = lon+180°):
+ * the sub-camera point satisfies `cosθ = −cos θg` and `sinθ = sin θg`,
+ * i.e. `θ = π − θg = −lon`. (An earlier `-（lon+180°)` version aimed the
+ * camera at the antipode — pins appeared ~180° away from center.)
+ */
+export function thetaForLon(lon: number): number {
+  return -THREE.MathUtils.degToRad(lon);
+}
+
 export interface Vec3 {
   x: number;
   y: number;

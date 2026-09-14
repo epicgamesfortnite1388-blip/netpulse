@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 import { worldLandRings } from '@netpulse/shared';
 
-import { GLOBE_RADIUS, arcPoints, latencyColor, lonLatToVec3 } from './globeMath';
+import { GLOBE_RADIUS, arcPoints, latencyColor, lonLatToVec3, thetaForLon } from './globeMath';
 import { ringPulse } from './mapEncoding';
 
 import type { Vec3 } from './globeMath';
@@ -131,7 +131,7 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const dataRef = useRef({ nodes: [] as PreparedNode[], arcs: [] as GlobeArc[], route: null as GlobeRoute | null });
   const animRef = useRef<number>(0);
-  const camState = useRef({ theta: -Math.PI / 2, phi: Math.PI / 2.4, dist: GLOBE_RADIUS * 2.6, targetTheta: -Math.PI / 2, targetPhi: Math.PI / 2.4, targetDist: GLOBE_RADIUS * 2.6 });
+  const camState = useRef({ theta: thetaForLon(10), phi: Math.PI / 2.4, dist: GLOBE_RADIUS * 2.6, targetTheta: thetaForLon(10), targetPhi: Math.PI / 2.4, targetDist: GLOBE_RADIUS * 2.6 });
   const reducedRef = useRef(!!reducedMotion);
   const privacyRef = useRef(!!privacy);
   const onSelectRef = useRef(onSelect);
@@ -206,8 +206,10 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
         const dy = e.clientY - lastY;
         movedDistance += Math.abs(dx) + Math.abs(dy);
         const c = camState.current;
-        // drag right → globe rotates east (theta decreases visually)
-        c.targetTheta -= dx * 0.005;
+        // Grab-the-globe: the terrain under the pointer follows it. With the
+        // thetaForLon convention, increasing theta moves the sub-camera point
+        // westward, so a rightward drag needs targetTheta += dx.
+        c.targetTheta += dx * 0.005;
         c.targetPhi = Math.max(0.12, Math.min(Math.PI - 0.12, c.targetPhi - dy * 0.005));
         lastX = e.clientX;
         lastY = e.clientY;
@@ -412,14 +414,12 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
   useEffect(() => {
     if (!focus) return;
     const c = camState.current;
-    // Convert the focus lat/lon to camera theta/phi so the point faces the camera
+    // Convert the focus lat/lon to camera theta/phi so the point faces the camera.
+    // thetaForLon derives the exact facing angle from the shared projection
+    // convention (see globeMath.ts) — one definition, tested.
     const phi = Math.PI / 2 - THREE.MathUtils.degToRad(focus.lat);
-    // camera theta convention: position = dist*(sinφ·cosθ, cosφ, sinφ·sinθ)
-    // lonLatToVec3(lon, lat) = (-r sinφ cos(θg), r cosφ, r sinφ sin(θg)) with θg = lon+180°
-    // Matching the two conventions gives θ = -(lon + 180°) in radians.
-    const theta = -THREE.MathUtils.degToRad(focus.lon + 180);
     c.targetPhi = Math.max(0.12, Math.min(Math.PI - 0.12, phi));
-    c.targetTheta = theta;
+    c.targetTheta = thetaForLon(focus.lon);
     c.targetDist = GLOBE_RADIUS * 2.2;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
