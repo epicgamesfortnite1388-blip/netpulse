@@ -21,6 +21,8 @@ export interface GlobeNode {
   geoConfidence?: 'high' | 'medium' | 'low' | 'unknown';
   historical?: boolean;
   selected?: boolean;
+  /** Pointer is over this pin — drives hover enlargement + tooltip. */
+  hovered?: boolean;
   /** Set when this marker aggregates N collapsed nodes (clustering). */
   cluster?: number;
 }

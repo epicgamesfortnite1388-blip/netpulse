@@ -371,12 +371,20 @@ export default function LiveMapPage() {
 
   /** Camera zoom proxy for clustering: closer focus → higher zoom. */
   const [globeZoom, setGlobeZoom] = useState(1);
+  /** Pin currently under the pointer (from the globe's hover picking). */
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const navigate = useNavigate();
   /** DB-node pins open their detail page; map targets select on the globe. */
   const onGlobeSelect = useCallback(
     (node: GlobeNode | null) => {
-      if (!node || node.id === 'you' || node.id.startsWith('cluster:')) return;
+      if (!node || node.id === 'you') return;
+      if (node.id.startsWith('cluster:')) {
+        // Clusters expand by zooming in: clusterCellDeg shrinks with zoom,
+        // so pushing the camera closer breaks the cluster into its members.
+        setGlobeZoom((z) => Math.min(8, z + 1.4));
+        return;
+      }
       if (node.id.startsWith('node:')) {
         navigate(`/nodes/${encodeURIComponent(node.id.slice('node:'.length))}`);
         return;
@@ -425,8 +433,10 @@ export default function LiveMapPage() {
       });
     }
     filteredOutCountRef.current = hiddenCount;
-    return clusterNodes(list, globeZoom);
-  }, [youNode, observations, dbNodesQuery.data, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom]);
+    const clustered = clusterNodes(list, globeZoom);
+    // Mark the hovered pin so the canvas can enlarge it + anchor the tooltip.
+    return hoveredId ? clustered.map((n) => (n.id === hoveredId ? { ...n, hovered: true } : n)) : clustered;
+  }, [youNode, observations, dbNodesQuery.data, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom, hoveredId]);
 
   /** Pins hidden by the confidence filter (computed during node building). */
   const hiddenByConfidence = filteredOutCountRef.current;
@@ -704,6 +714,7 @@ export default function LiveMapPage() {
                 reducedMotion={reducedMotion}
                 onZoomChange={setGlobeZoom}
                 onSelect={onGlobeSelect}
+                onHover={(n) => setHoveredId(n?.id ?? null)}
               />
               {progress && (
                 <div className="absolute left-3 top-3 rounded-lg border border-accent/30 bg-bg/85 px-3 py-2 text-xs text-accent backdrop-blur">

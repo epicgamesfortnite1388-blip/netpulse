@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { arcPoints, clusterAnchor, greatCircleKm, latencyColor, lonLatToVec3, thetaForLon } from '../src/features/map/globeMath';
+import * as THREE from 'three';
+
+import {
+  GLOBE_RADIUS,
+  arcPoints,
+  cameraAnchorFor,
+  clusterAnchor,
+  facesCamera,
+  greatCircleKm,
+  latencyColor,
+  lonLatToVec3,
+  nearestScreenPin,
+  projectPins,
+  thetaForLon,
+} from '../src/features/map/globeMath';
 import { clusterCellDeg, clusterNodes } from '../src/features/map/clusterNodes';
 
 import type { GlobeNode } from '../src/features/map/mapEncoding';
@@ -181,5 +195,106 @@ describe('camera facing (thetaForLon)', () => {
     // for a real city so this cannot silently regress.
     const old = -((8.68 + 180) * Math.PI) / 180;
     expect(Math.abs(thetaForLon(8.68) - old)).toBeCloseTo(Math.PI, 5);
+  });
+});
+
+describe('hover tooltip anchoring (screen-space projection)', () => {
+  it('projects a pin at the sub-camera point to viewport center', async () => {
+    const { lonLatToVec3, thetaForLon, GLOBE_RADIUS } = await import('../src/features/map/globeMath');
+    const THREE = (await import('three')).default ?? (await import('three'));
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 300);
+    // camera placed per the canvas convention: facing lon=10
+    const lon = 10;
+    const lat = 20;
+    camera.position.set(
+      GLOBE_RADIUS * 2.6 * Math.sin(Math.PI / 2 - THREE.MathUtils.degToRad(lat)) * Math.cos(thetaForLon(lon)),
+      GLOBE_RADIUS * 2.6 * Math.cos(Math.PI / 2 - THREE.MathUtils.degToRad(lat)),
+      GLOBE_RADIUS * 2.6 * Math.sin(Math.PI / 2 - THREE.MathUtils.degToRad(lat)) * Math.sin(thetaForLon(lon)),
+    );
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const pin = new THREE.Vector3(...(Object.values(lonLatToVec3(lon, lat)) as [number, number, number]));
+    const projected = pin.clone().project(camera);
+    // the pin the camera is aimed at must land at the center of the viewport
+    expect(Math.abs(projected.x)).toBeLessThan(0.02);
+    expect(Math.abs(projected.y)).toBeLessThan(0.02);
+  });
+
+  it('a hovered marker behind the globe is farther from the camera than the surface allows', async () => {
+    // mirrors the canvas's isOccluded contract: dot(normal, camDir) <= 0.02
+    const { lonLatToVec3, GLOBE_RADIUS } = await import('../src/features/map/globeMath');
+    const THREE = (await import('three')).default ?? (await import('three'));
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 300);
+    camera.position.set(0, 0, GLOBE_RADIUS * 2.6);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const asVec3 = (p: { x: number; y: number; z: number }) => new THREE.Vector3(p.x, p.y, p.z);
+    const occluded = (p: THREE.Vector3) => p.clone().normalize().dot(camera.position.clone().normalize()) <= 0.02;
+    // camera at +Z: with theta=lon+180, z=R·sin(theta) → lon=-90 gives z=+R (near),
+    // lon=+90 gives z=-R (far). The test pins the exact antipodal pair.
+    const nearPin = asVec3(lonLatToVec3(-90, 0));
+    const farPin = asVec3(lonLatToVec3(90, 0));
+    // Exactly one of the two antipodal pins is near the camera; the other is occluded.
+    const nearOccluded = occluded(nearPin);
+    const farOccluded = occluded(farPin);
+    expect(nearOccluded).toBe(false);
+    expect(farOccluded).toBe(true);
+  });
+});
+
+describe('screen-space picking (clicking a node must never be a pixel hunt)', () => {
+  const cameraAt = (lon: number, lat: number) => {
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 300);
+    const p = cameraAnchorFor(lon, lat, GLOBE_RADIUS * 2.6);
+    camera.position.set(p.x, p.y, p.z);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    return camera;
+  };
+
+  it('picks the nearest pin inside the tolerance circle and nothing outside it', () => {
+    const projected = [
+      { item: 'far', x: 300, y: 200, z: 0 },
+      { item: 'near', x: 122, y: 98, z: 0 },
+    ];
+    expect(nearestScreenPin(projected, 120, 100, 14)).toBe('near');
+    // 15 px away — just outside the radius → a miss, not an accidental selection
+    expect(nearestScreenPin([{ item: 'edge', x: 120, y: 115, z: 0 }], 120, 100, 14)).toBeNull();
+    // pointer nowhere near any pin
+    expect(nearestScreenPin(projected, 420, 420, 14)).toBeNull();
+  });
+
+  it('finds a pin the old raycast-marker path missed (few-px marker, 10 px click)', () => {
+    const lon = 29;
+    const lat = 41;
+    const camera = cameraAt(lon, lat);
+    const pin = { id: 'istanbul', pos: lonLatToVec3(lon, lat) };
+    const projected = projectPins([pin], camera, 564, 560);
+    expect(projected).toHaveLength(1);
+    // card-sized viewport → the sub-camera pin lands at its center
+    expect(Math.abs(projected[0]!.x - 282)).toBeLessThan(3);
+    expect(Math.abs(projected[0]!.y - 280)).toBeLessThan(3);
+    const picked = nearestScreenPin(projected, projected[0]!.x + 10, projected[0]!.y, 14);
+    expect(picked?.id).toBe('istanbul');
+  });
+
+  it('never picks a far-side pin, even when its projection lands under the pointer', () => {
+    const lon = 29;
+    const lat = 41;
+    const camera = cameraAt(lon, lat);
+    const near = { id: 'near', pos: lonLatToVec3(lon, lat) };
+    const far = { id: 'far', pos: lonLatToVec3(lon + 180, -lat) };
+    // the canvas filters by facesCamera before projecting
+    const visible = [near, far].filter((p) => facesCamera(p.pos, camera.position));
+    expect(visible.map((p) => p.id)).toEqual(['near']);
+    const target = projectPins([near], camera, 564, 560)[0]!;
+    const picked = nearestScreenPin(projectPins(visible, camera, 564, 560), target.x, target.y, 14);
+    expect(picked?.id).toBe('near');
+  });
+
+  it('drops pins beyond the far plane instead of picking a phantom position', () => {
+    const camera = cameraAt(10, 0);
+    const beyond = { id: 'beyond', pos: lonLatToVec3(10, 0, 400) };
+    expect(projectPins([beyond], camera, 564, 560)).toHaveLength(0);
   });
 });

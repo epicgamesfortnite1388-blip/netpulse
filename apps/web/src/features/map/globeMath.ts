@@ -130,6 +130,72 @@ export function clusterAnchor(points: { lat: number; lon: number }[]): { lat: nu
   return { lat, lon: norm === -180 ? 180 : norm };
 }
 
+/**
+ * Camera-facing test for pins on the globe surface: a pin is visible iff its
+ * outward normal still points toward the camera (dot > alignEps). Tangent pins
+ * (dot ≈ 0) count as visible so pins at the silhouette edge stay clickable,
+ * while anything on the far side is occluded by the sphere itself.
+ */
+export function facesCamera(pos: Vec3, cameraPosition: Vec3, alignEps = 0.02): boolean {
+  const n = Math.hypot(pos.x, pos.y, pos.z) || 1;
+  const c = Math.hypot(cameraPosition.x, cameraPosition.y, cameraPosition.z) || 1;
+  const dot = (pos.x * cameraPosition.x + pos.y * cameraPosition.y + pos.z * cameraPosition.z) / (n * c);
+  return dot > alignEps;
+}
+
+/** A pin projected to canvas-relative screen pixels (z is NDC depth). */
+export interface ScreenPin<T> {
+  item: T;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Project pins to screen space with a three.js camera. Pins behind the camera
+ * or beyond the far plane are dropped — they are not interactable regardless
+ * of where their projection lands.
+ */
+export function projectPins<T extends { pos: Vec3 }>(
+  pins: readonly T[],
+  camera: THREE.PerspectiveCamera,
+  width: number,
+  height: number,
+): ScreenPin<T>[] {
+  const out: ScreenPin<T>[] = [];
+  for (const pin of pins) {
+    const p = new THREE.Vector3(pin.pos.x, pin.pos.y, pin.pos.z).project(camera);
+    if (p.z > 1) continue;
+    out.push({ item: pin, x: ((p.x + 1) / 2) * width, y: ((1 - p.y) / 2) * height, z: p.z });
+  }
+  return out;
+}
+
+/**
+ * The screen-space pick (globe.gl's contract): the nearest projected pin within
+ * `tolerancePx` of the pointer, or null when the click missed everything.
+ *
+ * This replaces raycasting tiny marker spheres — at a typical camera distance a
+ * marker spans only a few pixels, so sphere hits missed nearly every click.
+ */
+export function nearestScreenPin<T>(
+  projected: readonly ScreenPin<T>[],
+  px: number,
+  py: number,
+  tolerancePx: number,
+): T | null {
+  let best: T | null = null;
+  let bestDist = tolerancePx;
+  for (const p of projected) {
+    const d = Math.hypot(p.x - px, p.y - py);
+    if (d <= bestDist) {
+      bestDist = d;
+      best = p.item;
+    }
+  }
+  return best;
+}
+
 /** Perceptual color ramp for measured latency (ms) — the arc/marker palette. */
 export function latencyColor(ms: number | null | undefined): string {
   if (ms == null) return '#64748b'; // unknown

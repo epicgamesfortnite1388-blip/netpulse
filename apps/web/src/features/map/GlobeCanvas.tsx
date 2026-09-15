@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 import { worldLandRings } from '@netpulse/shared';
 
-import { GLOBE_RADIUS, arcPoints, latencyColor, lonLatToVec3, thetaForLon } from './globeMath';
+import { GLOBE_RADIUS, arcPoints, facesCamera, latencyColor, lonLatToVec3, nearestScreenPin, projectPins, thetaForLon } from './globeMath';
 import { ringPulse } from './mapEncoding';
 
 import type { Vec3 } from './globeMath';
@@ -16,6 +16,22 @@ const DARK_BG = '#070d17';
 const MIN_DISTANCE = GLOBE_RADIUS * 1.35;
 const MAX_DISTANCE = GLOBE_RADIUS * 6;
 const BASE_MARKER = 0.11;
+
+/**
+ * Shared invisible pick-target material: visible=false is skipped by the
+ * raycaster, so the hit spheres render nothing but still intercept rays —
+ * color/opacity are irrelevant, one instance serves every marker.
+ */
+/**
+ * Screen-space pick tolerance (CSS px). Markers are only a few pixels wide at
+ * the default camera distance, so raycasting the marker spheres made hovers
+ * and clicks miss almost every time (and the old invisible "hit sphere"
+ * material was created with `visible: false`, which also hid it from the
+ * renderer's picking path in some three.js builds). Picking is now done like
+ * globe.gl: project every visible pin to screen space and take the nearest one
+ * inside a fixed pixel radius — reliable at every zoom level.
+ */
+const PICK_TOLERANCE_PX = 14;
 
 export interface GlobeCanvasProps {
   nodes: GlobeNode[];
@@ -126,8 +142,8 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
   const nodesGroupRef = useRef<THREE.Group>(null!);
   const arcsGroupRef = useRef<THREE.Group>(null!);
   const routeGroupRef = useRef<THREE.Group>(null!);
-  const pickablesRef = useRef<{ node: PreparedNode; mesh: THREE.Mesh }[]>([]);
-  const raycasterRef = useRef(new THREE.Raycaster());
+  /** Visible pins, in draw order — the candidates screen-space picking scans. */
+  const pickablesRef = useRef<PreparedNode[]>([]);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const dataRef = useRef({ nodes: [] as PreparedNode[], arcs: [] as GlobeArc[], route: null as GlobeRoute | null });
   const animRef = useRef<number>(0);
@@ -240,30 +256,40 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('pointerleave', onLeave);
 
-    /* ------------------------------ picking ------------------------------- */
-    function pickAt(x: number, y: number) {
+    /* ------------------------------- picking ------------------------------- */
+    // Screen-space picking (see PICK_TOLERANCE_PX): occlusion first, so a pin on
+    // the far side of the globe can never eat a click or hover meant for the
+    // near side, then nearest-to-pointer inside the pixel tolerance.
+    function pickNearest(x: number, y: number): PreparedNode | null {
       const camera = cameraRef.current;
       const container = containerRef.current;
-      if (!camera || !container) return;
+      if (!camera || !container) return null;
       const rect = container.getBoundingClientRect();
-      const ndc = new THREE.Vector2((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
-      raycasterRef.current.setFromCamera(ndc, camera);
-      const meshes = pickablesRef.current.map((p) => p.mesh);
-      const hits = raycasterRef.current.intersectObjects(meshes, false);
-      if (hits.length > 0) {
-        const hitMesh = hits[0]!.object;
-        const entry = pickablesRef.current.find((p) => p.mesh === hitMesh);
-        if (entry) {
-          onSelectRef.current?.(entry.node);
-          return;
-        }
+      const visible = pickablesRef.current.filter((n) => facesCamera(n.pos, camera.position));
+      const projected = projectPins(visible, camera, rect.width, rect.height);
+      // Machine-readable pick state for tests/automation: how many pins are
+      // pickable and how far the pointer is from the closest one. Integer-only
+      // strings, written only when the values change.
+      let nearest = Number.POSITIVE_INFINITY;
+      for (const p of projected) nearest = Math.min(nearest, Math.hypot(p.x - x, p.y - y));
+      const containerEl = containerRef.current;
+      if (containerEl) {
+        const pins = String(pickablesRef.current.length);
+        const dist = Number.isFinite(nearest) ? String(Math.round(nearest)) : 'none';
+        if (containerEl.dataset['pins'] !== pins) containerEl.dataset['pins'] = pins;
+        if (containerEl.dataset['nearestPx'] !== dist) containerEl.dataset['nearestPx'] = dist;
       }
-      onSelectRef.current?.(null);
+      return nearestScreenPin(projected, x, y, PICK_TOLERANCE_PX);
+    }
+
+    function pickAt(x: number, y: number) {
+      onSelectRef.current?.(pickNearest(x, y));
     }
 
     /* ------------------------------- frame -------------------------------- */
     const clock = new THREE.Clock();
     let lastZoomReported = -1;
+    let lastHoverId: string | null = null;
     const animate = () => {
       animRef.current = requestAnimationFrame(animate);
       if (document.hidden) return;
@@ -280,6 +306,19 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
         c.dist * Math.sin(c.phi) * Math.sin(c.theta),
       );
       camera.lookAt(0, 0, 0);
+
+      // hover picking every frame while the pointer is over the canvas —
+      // the globe may rotate under a still pointer, so a one-shot move handler
+      // is not enough (this is why hover previously felt dead).
+      const p = pointerRef.current;
+      if (p && !dragging) {
+        const hovered = pickNearest(p.x, p.y);
+        if ((hovered?.id ?? null) !== lastHoverId) {
+          lastHoverId = hovered?.id ?? null;
+          onHoverRef.current?.(hovered);
+          el.style.cursor = hovered ? 'pointer' : 'grab';
+        }
+      }
 
       // idle auto-rotation (disabled for reduced motion)
       if (!reducedRef.current && !dragging && pointerRef.current == null) {
@@ -320,13 +359,26 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
       });
       container.removeChild(renderer.domElement);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---------------------------- node reconciliation ------------------------ */
   const prepared = useMemo<PreparedNode[]>(() => {
     return nodes.map((n) => ({ ...n, pos: lonLatToVec3(n.lon, n.lat) }));
   }, [nodes]);
+
+  // hovered node id (mirrored from page state) drives hover enlargement
+  const hoveredId = nodes.find((n) => n.hovered)?.id ?? null;
+  useEffect(() => {
+    const group = nodesGroupRef.current;
+    if (!group) return;
+    for (const child of group.children) {
+      const mesh = child as THREE.Mesh;
+      const base = mesh.userData?.baseScale as number | undefined;
+      if (base == null) continue;
+      const isHovered = hoveredId != null && mesh.userData?.['id'] === hoveredId;
+      mesh.scale.setScalar(isHovered ? base * 1.45 : base);
+    }
+  }, [hoveredId, prepared]);
 
   useEffect(() => {
     const group = nodesGroupRef.current;
@@ -339,20 +391,23 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
       const mat = mesh.material as THREE.Material;
       mat?.dispose();
     }
-    const pickables: { node: PreparedNode; mesh: THREE.Mesh }[] = [];
-    const sphereGeo = new THREE.SphereGeometry(BASE_MARKER, 12, 10);
+    const pickables: PreparedNode[] = [];
+    const visualGeo = new THREE.SphereGeometry(BASE_MARKER, 12, 10);
     for (const node of prepared) {
       const color = new THREE.Color(nodeColor(node));
       const material = new THREE.MeshBasicMaterial({ color });
-      const mesh = new THREE.Mesh(sphereGeo, material);
+      const mesh = new THREE.Mesh(visualGeo, material);
       mesh.position.copy(v3(node.pos));
-      mesh.scale.setScalar(node.kind === 'you' ? 1.7 : node.kind === 'hop' ? 0.6 : node.cluster != null ? 1.25 : 1);
-      mesh.userData = { id: node.id };
+      const baseScale = node.kind === 'you' ? 1.7 : node.kind === 'hop' ? 0.6 : node.cluster != null ? 1.25 : 1;
+      mesh.scale.setScalar(baseScale);
+      mesh.userData = { id: node.id, baseScale };
       group.add(mesh);
-      pickables.push({ node, mesh });
+      pickables.push(node);
     }
     pickablesRef.current = pickables;
     dataRef.current.nodes = prepared;
+    // Test/automation hook: how many pins exist on the globe right now.
+    if (containerRef.current) containerRef.current.dataset['pins'] = String(pickables.length);
   }, [prepared]);
 
   /* ----------------------------- arc reconciliation ------------------------ */
@@ -482,7 +537,7 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
   function updateNodePulses(t: number) {
     const group = nodesGroupRef.current;
     if (!group) return;
-    const selected = pickablesRef.current.find((p) => p.node.selected);
+    const selected = pickablesRef.current.find((n) => n.selected);
     let ring = group.getObjectByName('select-pulse') as THREE.Mesh | null;
     if (!selected) {
       if (ring) group.remove(ring);
@@ -496,10 +551,10 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
       ring.name = 'select-pulse';
       group.add(ring);
     }
-    ring.position.copy(v3(selected.node.pos)).multiplyScalar(1.002);
+    ring.position.copy(v3(selected.pos)).multiplyScalar(1.002);
     // orient the ring tangent to the sphere: lookAt outward along the normal
-    ring.lookAt(v3(selected.node.pos).multiplyScalar(2));
-    const base = selected.node.kind === 'you' ? 1.7 : 1;
+    ring.lookAt(v3(selected.pos).multiplyScalar(2));
+    const base = selected.kind === 'you' ? 1.7 : 1;
     if (reducedRef.current) {
       ring.scale.setScalar(base * 2.2);
       (ring.material as THREE.MeshBasicMaterial).opacity = 0.5;
@@ -510,7 +565,68 @@ export function GlobeCanvas({ nodes, arcs, route, focus, focusKey, privacy, redu
     (ring.material as THREE.MeshBasicMaterial).opacity = pulse.alpha;
   }
 
-  return <div ref={containerRef} className="h-full w-full" style={{ cursor: 'grab' }} />;
+  // Screen-space tooltip: positioned from the hovered pin's projected
+  // screen coords, updated per frame (globe.gl's tooltip is exactly this —
+  // a DOM overlay following the projected object position).
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const hoveredNode = nodes.find((n) => n.hovered) ?? null;
+  useEffect(() => {
+    const canvas = rendererRef.current?.domElement;
+    if (!canvas || !hoveredNode) return;
+    const update = () => {
+      const camera = cameraRef.current;
+      const el = tipRef.current;
+      if (!camera || !el) return;
+      const pos = lonLatToVec3(hoveredNode.lon, hoveredNode.lat);
+      const projected = v3(pos).project(camera);
+      const rect = canvas.getBoundingClientRect();
+      const left = ((projected.x + 1) / 2) * rect.width;
+      const top = ((1 - projected.y) / 2) * rect.height;
+      el.style.left = `${left + 14}px`;
+      el.style.top = `${top - 10}px`;
+    };
+    update();
+    let raf = 0;
+    const loop = () => {
+      update();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [hoveredNode]);
+
+  return (
+    <div ref={containerRef} className="relative h-full w-full" style={{ cursor: 'grab' }}>
+      {hoveredNode && (
+        <div
+          ref={tipRef}
+          className="pointer-events-none absolute z-10 max-w-56 rounded-lg border border-line bg-bg/95 px-2.5 py-1.5 text-[11px] leading-snug shadow-lg backdrop-blur"
+        >
+          <div className="font-medium text-foreground">{hoveredNode.label}</div>
+          {hoveredNode.sub && <div className="truncate font-mono text-[10px] text-faint">{hoveredNode.sub}</div>}
+          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted">
+            {hoveredNode.cluster != null ? (
+              <span className="text-accent">{hoveredNode.cluster} nodes — click to expand</span>
+            ) : hoveredNode.latencyMs != null ? (
+              <>
+                {/* sub-ms RTTs are real (tunnel/colo-local): keep the decimal
+                    so the tooltip never rounds a truthful 0.4 ms to "0 ms" */}
+                <span className="font-mono">
+                  {hoveredNode.latencyMs < 10 ? `${hoveredNode.latencyMs.toFixed(1)} ms` : `${Math.round(hoveredNode.latencyMs)} ms`}
+                </span>
+                <span className="text-faint">· {hoveredNode.status}</span>
+              </>
+            ) : (
+              <span className="text-faint">{hoveredNode.status}</span>
+            )}
+            {hoveredNode.geoConfidence && hoveredNode.geoConfidence !== 'unknown' && (
+              <span className="text-faint">· {hoveredNode.geoConfidence} geo</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Marker color: kind/status-aware, matching the 2D palette. */
