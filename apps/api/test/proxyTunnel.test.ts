@@ -211,3 +211,64 @@ describe('stripChunked', () => {
     expect(stripChunked('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello')).toBe('hello');
   });
 });
+
+describe('tunnel audit fixes', () => {
+  it('does not touch the system proxy when verification fails (user proxy preserved)', async () => {
+    let proxyWrites = 0;
+    const { deps } = makeDeps({
+      traceFail: new Error('proxy CONNECT rejected: 503'),
+      setSystemProxy: async (p) => { proxyWrites += 1; return { ok: true }; },
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.start(node(), { systemProxy: true, preferredEngine: 'auto' });
+    expect(s.state).toBe('down');
+    // Verification failed before any handoff → we must not write the registry at all.
+    expect(proxyWrites).toBe(0);
+  });
+
+  it('a stop() issued while a restart is pending wins (no resurrection)', async () => {
+    const core: FakeCore = { closeListeners: [], killed: false };
+    let generations = 0;
+    const { deps } = makeDeps({
+      core,
+      startCoreFn: async () => {
+        generations += 1;
+        const listeners: Array<(code: number | null) => void> = [];
+        core.closeListeners = listeners;
+        return {
+          ok: true as const,
+          run: {
+            child: { once: (_ev: string, fn: (code: number | null) => void) => { listeners.push(fn); } } as never,
+            inboundPort: 46000 + generations,
+            cleanup: () => { /* gen-scoped */ },
+            stderrTail: '',
+          },
+        };
+      },
+    });
+    const svc = new ProxyTunnelService(deps);
+    await svc.start(node(), { systemProxy: false, preferredEngine: 'auto' });
+    for (const fn of core.closeListeners) fn(1); // crash → restart queued (1.5s)
+    // Stop while the restart timer is pending.
+    await new Promise((r) => setTimeout(r, 200));
+    await svc.stop();
+    const genAtStop = generations;
+    // Wait past the queued restart delay: it must NOT come back.
+    await new Promise((r) => setTimeout(r, 2_200));
+    expect(generations).toBe(genAtStop);
+    expect(svc.getStatus().state).toBe('idle');
+  });
+
+  it('verification failure leaves the previous system proxy untouched even with systemProxy:true', async () => {
+    let written: string | null | undefined;
+    const { deps } = makeDeps({
+      traceFail: new Error('TLS through proxy timed out'),
+      setSystemProxy: async (p) => { written = p; return { ok: true }; },
+      getSystemProxy: async () => ({ proxy: '10.0.0.1:8080' }),
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.start(node(), { systemProxy: true, preferredEngine: 'auto' });
+    expect(s.state).toBe('down');
+    expect(written).toBeUndefined();
+  });
+});

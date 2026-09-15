@@ -29,7 +29,6 @@ import { findEngineBinary, startCore, type CoreRun } from './proxyCores';
 interface TunnelCore {
   engine: ProxyEngineId;
   run: CoreRun;
-  configPath: string;
 }
 
 export type TunnelState = 'idle' | 'starting' | 'active' | 'down' | 'stopping';
@@ -118,6 +117,8 @@ export class ProxyTunnelService {
   private stopping = false;
   /** serialized start/stop so rapid toggles can't interleave */
   private transition: Promise<void> = Promise.resolve();
+  /** bumped by stop() so a queued restart's start() aborts instead of resurrecting */
+  private stopGeneration = 0;
 
   constructor(private readonly deps: TunnelDeps) {}
 
@@ -134,10 +135,17 @@ export class ProxyTunnelService {
    * when the core rejects it.
    */
   async start(node: TunnelNodeInput, opts: { systemProxy: boolean; preferredEngine: 'auto' | ProxyEngineId }): Promise<TunnelStatus> {
+    const myGeneration = this.stopGeneration;
     const prev = this.transition;
     let done!: () => void;
     this.transition = new Promise<void>((res) => { done = res; });
     await prev.catch(() => {});
+    // A stop() that queued behind us (or ahead of us) must win: if the
+    // generation moved while we waited, this start is stale — drop it.
+    if (myGeneration !== this.stopGeneration) {
+      done();
+      return this.getStatus();
+    }
     try {
       return await this.startInner(node, opts);
     } finally {
@@ -208,7 +216,7 @@ export class ProxyTunnelService {
       return this.getStatus();
     }
 
-    this.core = { engine, run: started.run, configPath: '' };
+    this.core = { engine, run: started.run };
     // Crash watcher: any core exit while we think the tunnel is up = down.
     started.run.child.once('close', (code) => {
       if (this.stopping || this.core?.run !== started.run) return;
@@ -241,7 +249,9 @@ export class ProxyTunnelService {
       this.status = { ...this.status, state: 'down', error: `started but verification failed: ${msg}` };
       this.deps.publish('tunnel:error', { nodeId: node.id, error: this.status.error });
       this.killCore();
-      if (opts.systemProxy) await this.deps.setSystemProxy(null);
+      // We never reached the handoff step, so there is nothing of ours to
+      // restore — do NOT write null blindly or we would wipe a proxy the user
+      // had configured before this attempt.
       return this.getStatus();
     }
 
@@ -278,6 +288,7 @@ export class ProxyTunnelService {
 
   private async stopInner(o: { keepStatus: boolean }): Promise<TunnelStatus> {
     this.stopping = true;
+    this.stopGeneration += 1;
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
     const wasNodeId = this.status.nodeId;
 
@@ -314,10 +325,14 @@ export class ProxyTunnelService {
     }
     this.restarts += 1;
     const delay = RESTART_BASE_MS * 2 ** (this.restarts - 1);
+    const myGeneration = this.stopGeneration;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopping || this.status.state === 'active') return;
       void this.start(node, opts).then((s) => {
+        // start() is a no-op if a stop() superseded us (generation moved);
+        // state will be idle — do not reschedule from a dead restart chain.
+        if (this.stopGeneration !== myGeneration) return;
         if (s.state === 'down' && !s.error?.includes('gave up')) return this.scheduleRestart(node, opts);
       });
     }, delay);
@@ -359,19 +374,44 @@ export function fetchThroughHttpProxy(port: number, url: string, timeoutMs: numb
         return;
       }
       // TLS through the tunnel, then plain GET (reuse tls lazily to keep the import light).
-      void import('node:tls').then((tls) => {
-        const tlsSocket = tls.connect({ socket, servername: target.hostname }, () => {
-          tlsSocket.write(
-            `GET ${target.pathname}${target.search} HTTP/1.1\r\nHost: ${target.hostname}\r\nUser-Agent: NetPulse-Tunnel/1.0\r\nConnection: close\r\n\r\n`,
-          );
-          let raw = '';
-          tlsSocket.on('data', (d: Buffer) => { raw += d.toString('latin1'); });
-          tlsSocket.on('end', () => resolve(stripChunked(raw)));
+      void import('node:tls')
+        .then((tls) => {
+          const tlsSocket = tls.connect({ socket, servername: target.hostname }, () => {
+            tlsSocket.write(
+              `GET ${target.pathname}${target.search} HTTP/1.1\r\nHost: ${target.hostname}\r\nUser-Agent: NetPulse-Tunnel/1.0\r\nConnection: close\r\n\r\n`,
+            );
+            let raw = '';
+            let settled = false;
+            const finishOk = () => {
+              if (settled) return;
+              settled = true;
+              tlsSocket.destroy();
+              socket.destroy();
+              resolve(stripChunked(raw));
+            };
+            const finishErr = (err: Error) => {
+              if (settled) return;
+              settled = true;
+              tlsSocket.destroy();
+              socket.destroy();
+              reject(err);
+            };
+            tlsSocket.on('data', (d: Buffer) => { raw += d.toString('latin1'); });
+            tlsSocket.on('end', finishOk);
+            // A body stall after the headers must not hang past the budget.
+            tlsSocket.setTimeout(timeoutMs, () => finishErr(new Error('trace fetch timed out')));
+            tlsSocket.on('error', finishErr);
+            tlsSocket.on('close', () => { if (!settled) finishOk(); });
+          });
+          tlsSocket.setTimeout(timeoutMs, () => { tlsSocket.destroy(); socket.destroy(); reject(new Error('TLS handshake through proxy timed out')); });
           tlsSocket.on('error', reject);
+        })
+        .catch((err: Error) => {
+          // Dynamic import failed (never in practice) — the CONNECT socket is
+          // still open and would leak.
+          socket.destroy();
+          reject(err);
         });
-        tlsSocket.setTimeout(timeoutMs, () => { tlsSocket.destroy(); reject(new Error('trace fetch timed out')); });
-        tlsSocket.on('error', reject);
-      });
     });
     req.on('timeout', () => { req.destroy(new Error('CONNECT timed out')); });
     req.on('error', reject);

@@ -51,7 +51,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
     return { tunnel: ctx.services.tunnel.getStatus() };
   });
 
-  app.post('/api/v1/vpn/tunnel/start', async (req) => {
+  app.post('/api/v1/vpn/tunnel/start', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const body = TunnelStartSchema.parse(req.body ?? {});
     const wantSystemProxy = body.systemProxy ?? DEFAULTS.systemProxy;
 
@@ -74,11 +74,11 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
     return { tunnel: status };
   });
 
-  app.post('/api/v1/vpn/tunnel/stop', async () => {
+  app.post('/api/v1/vpn/tunnel/stop', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async () => {
     return { tunnel: await ctx.services.tunnel.stop() };
   });
 
-  app.post('/api/v1/vpn/tunnel/reconnect', async () => {
+  app.post('/api/v1/vpn/tunnel/reconnect', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async () => {
     const cur = ctx.services.tunnel.getStatus();
     if (!cur.nodeId) throw badRequest('tunnel_not_active', 'no tunnel to reconnect');
     const node = ctx.repos.publicNodes.get(cur.nodeId);
