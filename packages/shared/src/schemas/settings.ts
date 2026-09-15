@@ -210,7 +210,7 @@ export const SettingsPatchSchema = z
       .partial(),
     proxyEngine: z
       .object({
-        preferred: z.enum(['auto', 'sing-box', 'xray']),
+        preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray']),
       })
       .partial(),
     geoProvider: z

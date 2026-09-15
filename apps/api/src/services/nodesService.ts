@@ -547,10 +547,23 @@ export class NodesService {
           throw new Error(`unknown test type: ${type}`);
       }
 
-      // Persist engine attribution on the test row, then update the node.
-      if (result.engine) {
-        this.deps.tests.update(testId, { engine: result.engine });
-      }
+      // Persist the final row state for EVERY test type. tcp/tls tests write
+      // their own row inline, but proxy/icmp return results without touching
+      // the row — without this finalize the row stays `running` forever, so
+      // the node's lastProxyMs/median/score never update and the tunnel gate
+      // sees no tunnelable node. Idempotent for the types that already wrote.
+      this.deps.tests.update(testId, {
+        status: result.status,
+        latencyMs: result.latencyMs,
+        totalMs: result.totalMs,
+        tlsVersion: result.tlsVersion,
+        authorized: result.authorized,
+        httpStatus: result.httpStatus,
+        responseSize: result.responseSize,
+        error: result.error,
+        finishedAt: result.finishedAt,
+        engine: result.engine ?? undefined,
+      });
 
       // Update node with test result
       await this.updateNodeAfterTest(nodeId, node, result, type);

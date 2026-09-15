@@ -13,6 +13,8 @@ import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { armElevationBridge } from '@/lib/elevationBroker';
 
+import { ProxyTunnelCard } from './ProxyTunnelCard';
+
 import type { VpnStatus } from '@shared/models/vpn';
 
 interface VpnProviderInfoDto {
@@ -236,6 +238,8 @@ export default function VpnPage() {
 
       {statusQuery.isError && <ErrorState error={statusQuery.error} retry={() => void statusQuery.refetch()} />}
       {statusQuery.isLoading && <LoadingState label="Reading VPN state" />}
+
+      <ProxyTunnelCard />
 
       {status && (
         <Card className={`mb-6 ${connected ? 'border-ok/40' : ''}`}>

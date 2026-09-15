@@ -54,6 +54,7 @@ import type { SpeedService } from '../services/speedService';
 import type { StabilityService } from '../services/stabilityService';
 import type { VpnRegistry } from '../vpn/vpnService';
 import type { ElevationBroker } from '../vpn/elevationBroker';
+import type { ProxyTunnelService } from '../services/proxyTunnel';
 import type { Logger } from '../logger';
 
 export interface AppContext {
@@ -111,6 +112,7 @@ export interface AppContext {
     healthMonitor: HealthMonitorService;
     schedule: ScheduleService;
     vpnSelfTest: VpnSelfTestService;
+    tunnel: ProxyTunnelService;
     map: MapService;
     iran: IranService;
     /* Public-node subsystem services. Kept loose until the crawler pipeline is fully typed. */

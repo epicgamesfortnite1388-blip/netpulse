@@ -223,3 +223,30 @@ describe('listNodes engine filter', () => {
     expect(nodes.list).toHaveBeenCalledWith(expect.not.objectContaining({ engine: expect.anything() }));
   });
 });
+
+describe('proxy test row finalization', () => {
+  // Regression: proxy tests returned results without ever writing the final
+  // row state — every proxy row stayed `running` forever, node stats
+  // (lastProxyMs / median / score) never updated, and the tunnel gate saw no
+  // tunnelable node. tcp/tls write their own rows; the central finalize in
+  // testNode must cover every type.
+  it('finalizes the test row from a returned proxy result', async () => {
+    const node = nodeRow(null);
+    const { svc } = makeService(node);
+    const svcAny = svc as unknown as Record<string, unknown>;
+    const tests = (svcAny['deps'] as { tests: { update: ReturnType<typeof vi.fn> } }).tests;
+    vi.spyOn(svcAny, 'proxyTest').mockImplementation(async () => proxyResult('xray'));
+    vi.spyOn(svcAny, 'getTestEndpoint').mockImplementation(async () => ({
+      id: 'te1', name: 'te', url: 'https://www.cloudflare.com/cdn-cgi/trace', expectedStatus: 200, timeoutMs: 5_000, maxBytes: 1_024, enabled: true, createdAt: 0,
+    }));
+
+    await svc.testNode('node:eng1', 'proxy');
+
+    const finalize = tests.update.mock.calls.map((c: unknown[]) => c[1] as UpdatePatch).find((p) => 'status' in p);
+    expect(finalize).toBeDefined();
+    expect(finalize?.['status']).toBe('done');
+    expect(finalize?.['finishedAt']).toEqual(expect.any(Number));
+    expect(finalize?.['latencyMs']).toBe(123);
+    expect(finalize?.['engine']).toBe('xray');
+  });
+});

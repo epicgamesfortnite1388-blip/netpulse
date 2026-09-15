@@ -1345,6 +1345,18 @@ export class NodeTestsRepository {
     this.handle.db.update(nodeTests).set(patch as Partial<NodeTestRow>).where(eq(nodeTests.id, id)).run();
   }
 
+  /** Finalize node_tests rows still `running` after a crash/force-kill. The
+   *  in-process promises died with the old process, so these can never
+   *  complete — left alone they poison history and engine attribution. */
+  markRunningInterrupted(): number {
+    const res = this.handle.db
+      .update(nodeTests)
+      .set({ status: 'failed', error: 'test interrupted: application restarted while the test was running', finishedAt: Date.now() })
+      .where(eq(nodeTests.status, 'running'))
+      .run();
+    return res.changes;
+  }
+
   recentForNode(nodeId: string, since: number) {
     return this.handle.db
       .select()

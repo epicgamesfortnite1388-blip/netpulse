@@ -47,6 +47,7 @@ import { registerSettingsRoutes } from './routes/settings';
 import { registerSpeedRoutes } from './routes/speed';
 import { registerStabilityRoutes } from './routes/stability';
 import { registerVpnRoutes } from './routes/vpn';
+import { registerTunnelRoutes } from './routes/tunnel';
 import { registerWebrtcRoutes } from './routes/webrtc';
 import { registerNodesRoutes } from './routes/nodes';
 
@@ -67,6 +68,8 @@ import { VpnSelfTestService } from './services/vpnSelfTestService';
 import { SelectionService } from './services/selectionService';
 import { NodesService } from './services/nodesService';
 import { NodeSecretVault } from './services/nodeSecretVault';
+import { ProxyTunnelService, fetchThroughHttpProxy } from './services/proxyTunnel';
+import { getSystemProxy, setSystemProxy } from './services/systemProxy';
 import { SourceRefreshScheduler, seedKnownSources } from './services/nodeSourceRegistry';
 import { SettingsService } from './services/settingsService';
 import { SpeedService } from './services/speedService';
@@ -307,6 +310,8 @@ export async function buildApp(opts: BuildOptions = {}) {
       }
     },
   });
+  const nodeVault = new NodeSecretVault(path.join(config.dataDir, 'secrets', 'vault'));
+
   const nodesService = new NodesService({
     nodes: repos.publicNodes,
     sources: repos.nodeSources,
@@ -325,8 +330,20 @@ export async function buildApp(opts: BuildOptions = {}) {
     // Encrypted at-rest vault for node credentials; proxy tests dial with the
     // node's REAL uuid/password (without this, vless/vmess/trojan/ss tests
     // can only ever fail authentication).
-    nodeVault: new NodeSecretVault(path.join(config.dataDir, 'secrets', 'vault')),
+    nodeVault,
     settings,
+  });
+
+  // Proxy tunnel — one long-lived local core (xray/sing-box/v2ray) the system
+  // can be routed through. Verified exit IP, crash detection with bounded
+  // auto-reconnect, system-proxy handoff with restore.
+  const proxyTunnel = new ProxyTunnelService({
+    nodeVault,
+    fetchThroughPort: (port, url, timeoutMs) => fetchThroughHttpProxy(port, url, timeoutMs),
+    setSystemProxy: (p) => setSystemProxy(p),
+    getSystemProxy: () => getSystemProxy(),
+    publish: (kind, payload) => bus.publish('nodes', { type: kind, ...payload }),
+    log: { info: (m) => log.info(m), warn: (m) => log.warn(m), error: (m) => log.error(m) },
   });
 
   // Adaptive node tester — bounded TCP-probe batches on a settings-driven
@@ -362,6 +379,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     healthMonitor,
     schedule,
     vpnSelfTest,
+    tunnel: proxyTunnel,
     elevationBroker,
     map,
     iran,
@@ -381,6 +399,12 @@ export async function buildApp(opts: BuildOptions = {}) {
   // process died can never complete (the optimizer/dns/ping runs are in-process
   // promises). Finalize them so the UI poll fallback doesn't spin forever.
   const staleTests = repos.tests.markStaleRunningInterrupted();
+  // Same recovery for per-node test history (proxy/tcp/tls rows): finalize
+  // rows that were mid-flight when the previous process died.
+  const staleNodeTests = repos.nodeTests.markRunningInterrupted();
+  if (staleNodeTests > 0) {
+    log.warn({ staleNodeTests }, 'recovered from unclean shutdown: interrupted node tests finalized');
+  }
   if (staleTests > 0) {
     log.warn({ staleTests }, 'recovered from unclean shutdown: interrupted background tests finalized');
   }
@@ -518,6 +542,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerServerRoutes(app, ctx);
   registerHistoryRoutes(app, ctx);
   registerVpnRoutes(app, ctx);
+  registerTunnelRoutes(app, ctx);
   registerWebrtcRoutes(app, ctx);
   registerNodesRoutes(app, ctx);
 
@@ -591,6 +616,9 @@ export async function buildApp(opts: BuildOptions = {}) {
     // Stop user-started monitors so no interval survives the app.
     services.healthMonitor.stop();
     services.stability.stop();
+    // Kill the proxy tunnel core + restore any system-proxy handoff so a
+    // desktop quit never strands the machine routed through a dead port.
+    try { await services.tunnel.stop(); } catch { /* shutdown best effort */ }
     // Best-effort: disconnect any tunnel this process owns so a desktop quit
     // never strands a managed proxy/tunnel process. Provider disconnects run
     // live system probes (interface/route checks) that can each take seconds;
