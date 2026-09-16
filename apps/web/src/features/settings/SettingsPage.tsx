@@ -340,23 +340,28 @@ export default function SettingsPage() {
                 rules stay direct and are exempt. Preferences apply to future connections; they never
                 change a running tunnel silently.
               </SectionNote>
+              {/* `wired` = something actually reads the value. A preference the
+                  backend ignores is shown locked with the reason stated, rather
+                  than as a control that silently does nothing. */}
               {(
                 [
-                  ['killSwitch', 'Kill switch', 'Block all traffic if the VPN drops'],
-                  ['autoConnect', 'Auto-connect', 'Connect on app start'],
-                  ['autoSelectServer', 'Auto-select server', 'Pick the best server by score'],
-                  ['dnsThroughVpn', 'DNS through VPN', 'Prevent DNS leaks by tunneling DNS'],
+                  ['killSwitch', 'Kill switch', 'Block all traffic if the VPN drops', true],
+                  ['autoConnect', 'Auto-connect', 'Connect on app start', false],
+                  ['autoSelectServer', 'Auto-select server', 'Pick the best server by score', false],
+                  ['dnsThroughVpn', 'DNS through VPN', 'Prevent DNS leaks by tunneling DNS', false],
                 ] as const
-              ).map(([key, label, hint]) => (
-                <Tooltip key={key} content={hint}>
+              ).map(([key, label, hint, wired]) => (
+                <Tooltip key={key} content={wired ? hint : `${hint} — not implemented yet, so nothing reads it`}>
                   <div className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-4 py-3">
                     <div>
                       <div className="text-sm">{label}</div>
-                      <div className="text-xs text-faint">{hint}</div>
+                      <div className="text-xs text-faint">
+                        {wired ? hint : `${hint} — not implemented yet`}
+                      </div>
                     </div>
                     <Switch
                       checked={draft.vpn[key]}
-                      disabled
+                      disabled={!wired}
                       onCheckedChange={(v) => patch('vpn', { [key]: v })}
                     />
                   </div>
