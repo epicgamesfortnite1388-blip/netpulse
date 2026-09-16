@@ -1040,6 +1040,8 @@ export class SingboxProvider implements VpnProvider {
   private readonly vault: FileSecretVault;
   private readonly configDir: string;
   private available = false;
+  /** Resolved sing-box binary (managed cores dir first, then PATH). */
+  private launchPath: string | null = null;
   private child: ChildProcess | null = null;
   private connectedAt: number | null = null;
   private connectedProfile: ImportedProfile | null = null;
@@ -1066,9 +1068,11 @@ export class SingboxProvider implements VpnProvider {
   }
 
   async init(): Promise<void> {
-    const { detectVpnBinaries } = await import('../util/vpnDetect');
-    const bins = await detectVpnBinaries();
-    this.available = bins.singbox === true;
+    // Managed binary first (the app's own cores dir), then PATH. Spawning the
+    // bare name can never see the cores dir, so keep the resolved path.
+    const { findSingBoxLaunch } = await import('../util/vpnDetect');
+    this.launchPath = await findSingBoxLaunch();
+    this.available = this.launchPath !== null;
     this.info.available = this.available;
   }
 
@@ -1176,7 +1180,7 @@ export class SingboxProvider implements VpnProvider {
     this.hooks?.event?.('info', `Starting sing-box client for "${profile.name}" (proxy mode, 127.0.0.1:${this.mixedPort})`, { profileId: profile.id });
 
     const { spawn } = await import('node:child_process');
-    const child = spawn('sing-box', ['run', '-c', realConfigPath, '-D', this.configDir], { windowsHide: true, shell: false });
+    const child = spawn(this.launchPath ?? 'sing-box', ['run', '-c', realConfigPath, '-D', this.configDir], { windowsHide: true, shell: false });
     let stderrBuf = '';
     child.stderr?.on('data', (chunk: Buffer) => {
       stderrBuf = (stderrBuf + chunk.toString()).slice(-4_000); // bounded
