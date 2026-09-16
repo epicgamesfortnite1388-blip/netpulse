@@ -5,6 +5,8 @@ import type { FastifyInstance } from 'fastify';
 
 import pkg from '../../package.json';
 
+import { proxyEngineStatus } from '../services/proxyEngineRunner';
+
 import type { AppContext } from './context';
 
 export type HealthState = 'ok' | 'degraded' | 'failed';
@@ -83,21 +85,40 @@ export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext): voi
       ...(fsProbe.state !== 'ok' ? { action: { kind: 'open-logs' as const, label: 'Open logs folder' } } : {}),
     };
 
-    // 3. VPN engines: binary detection (degraded, not failed — the app works without them).
+    // 3. VPN engines — two classes, named separately (degraded, not failed:
+    //    the app works without them). Reporting only the first class described
+    //    a machine with xray/sing-box/v2ray installed as having no engines:
+    //      a) system providers (WireGuard / OpenVPN / sing-box on PATH) that the
+    //         VPN page's tunnel providers spawn,
+    //      b) the app-managed proxy cores in the data dir (xray / sing-box /
+    //         v2ray) that node tests and the local proxy tunnel actually run.
+    //    Detection only — no binary is executed here.
     let vpnBinaries: Record<string, boolean> = {};
     try {
       vpnBinaries = safeMode ? { wireguard: false, openvpn: false, singbox: false } : await withTimeout(ctx.controller.detectVpnBinaries(), 3_000);
     } catch { /* reported as degraded below */ }
-    const enginesInstalled = Object.values(vpnBinaries).some(Boolean);
+    const providers = Object.entries(vpnBinaries).filter(([, v]) => v).map(([k]) => k);
+    // Same owner the engine strip on Node Explorer uses, so this check and
+    // /nodes/engines can never disagree about which cores are installed.
+    const cores = safeMode
+      ? []
+      : proxyEngineStatus(ctx.services.settings.get().proxyEngine?.preferred ?? 'auto')
+          .engines.filter((e) => e.available)
+          .map((e) => e.id);
     const vpn: HealthCheck = {
       id: 'vpn-engines',
       label: 'VPN engines',
-      state: safeMode ? 'degraded' : enginesInstalled ? 'ok' : 'degraded',
+      state: safeMode ? 'degraded' : providers.length + cores.length > 0 ? 'ok' : 'degraded',
       detail: safeMode
         ? 'Safe Mode: engine detection disabled.'
-        : enginesInstalled
-          ? `Detected: ${Object.entries(vpnBinaries).filter(([, v]) => v).map(([k]) => k).join(', ')}`
-          : 'No VPN engine found on PATH — tunnels unavailable, everything else works.',
+        : [
+            providers.length > 0
+              ? `System providers: ${providers.join(', ')}`
+              : 'No system VPN provider (WireGuard/OpenVPN)',
+            cores.length > 0
+              ? `Proxy cores: ${cores.join(', ')}`
+              : 'No app-managed proxy core — node tests that need a proxied request report unavailable',
+          ].join(' · '),
     };
 
     // 4. Network (skipped in Safe Mode — null controller refuses).

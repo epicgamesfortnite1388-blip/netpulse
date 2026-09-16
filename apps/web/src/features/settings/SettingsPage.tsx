@@ -16,13 +16,35 @@ import { api } from '@/lib/api';
 import { tauriInvoke } from '@/lib/transport';
 import { useScheduleStatus } from '@/lib/useScheduleStatus';
 
+import { SCAN_PROFILE_IDS, SCAN_PROFILES } from '@netpulse/shared';
 import type { AppSettings, ScheduleSettings, ScheduledRunStatus, ScoreWeights } from '@shared/models/settings';
+import type { ScanProfileId } from '@netpulse/shared';
 import type { SettingsPatch } from '@shared/schemas/settings';
 import type { GameDefinition } from '@netpulse/shared';
 import type { ReactNode } from 'react';
 
 function SectionNote({ children }: { children: ReactNode }) {
   return <p className="mb-4 text-xs leading-relaxed text-faint">{children}</p>;
+}
+
+/**
+ * Bypass lists are edited as free text and stored as arrays. Splitting on any
+ * run of separators means a pasted column of hosts, a comma list and a
+ * semicolon list all work; entries the backend cannot parse are refused there
+ * (never reinterpreted), so junk typed here simply does not become a rule.
+ */
+function listText(values: string[]): string {
+  return values.join(', ');
+}
+
+function parseList(text: string): string[] {
+  return text.split(/[\s,;]+/).filter(Boolean);
+}
+
+function parsePortList(text: string): number[] {
+  return parseList(text)
+    .map((p) => Number(p))
+    .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65_535);
 }
 
 export default function SettingsPage() {
@@ -311,9 +333,12 @@ export default function SettingsPage() {
             <CardHeader title="VPN" subtitle="Behavior preferences for the VPN engine" />
             <CardBody className="max-w-xl space-y-4">
               <SectionNote>
-                Kill switch and auto-connect require platform support: WireGuard exposes a kill switch on
-                Windows (via the WireGuard service) and needs block-outside rules on Linux. Preferences
-                apply to future connections; they never change a running tunnel silently.
+                The kill switch applies to proxy-mode tunnels: when one routes the system proxy and drops,
+                non-bypassed traffic is fail-closed (pointed at a sink that answers nothing) instead of
+                falling back to a direct connection. It is enforced at the system-proxy layer, so apps
+                that ignore the system proxy are outside its guarantee. Destinations in the split-tunnel
+                rules stay direct and are exempt. Preferences apply to future connections; they never
+                change a running tunnel silently.
               </SectionNote>
               {(
                 [
@@ -337,6 +362,83 @@ export default function SettingsPage() {
                   </div>
                 </Tooltip>
               ))}
+              <Field
+                label="Node discovery profile"
+                hint={SCAN_PROFILES[draft.vpn.scanProfile].summary}
+              >
+                <Select
+                  value={draft.vpn.scanProfile}
+                  onChange={(e) => patch('vpn', { scanProfile: e.target.value as ScanProfileId })}
+                >
+                  {SCAN_PROFILE_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {SCAN_PROFILES[id].label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Button variant="primary" loading={saving} onClick={() => void save({ vpn: draft.vpn })}>
+                <Save size={14} /> Save VPN
+              </Button>
+            </CardBody>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader
+              title="Split tunnel"
+              subtitle="Destinations that should not go through a public node"
+            />
+            <CardBody className="max-w-xl space-y-4">
+              <SectionNote>
+                Applies to the proxy tunnel only — node tests always dial the node, or they would be measuring a
+                different path than the one they report. Turns on split-tunnel routing in the local core
+                (xray / sing-box / v2ray); entries that are not a plausible domain or address are ignored rather
+                than guessed at.
+              </SectionNote>
+              <div className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-4 py-3">
+                <div>
+                  <div className="text-sm">Enable bypass rules</div>
+                  <div className="text-xs text-faint">Keep the list but stop applying it when off</div>
+                </div>
+                <Switch
+                  checked={draft.vpn.bypass.enabled}
+                  onCheckedChange={(v) => patch('vpn', { bypass: { ...draft.vpn.bypass, enabled: v } })}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-4 py-3">
+                <div>
+                  <div className="text-sm">Always bypass LAN</div>
+                  <div className="text-xs text-faint">Loopback and private ranges dial direct</div>
+                </div>
+                <Switch
+                  checked={draft.vpn.bypass.lan}
+                  onCheckedChange={(v) => patch('vpn', { bypass: { ...draft.vpn.bypass, lan: v } })}
+                />
+              </div>
+              <Field label="Bypass domains" hint="Comma separated; a domain also matches its subdomains">
+                <Input
+                  placeholder="bank.example.com, stream.example"
+                  value={listText(draft.vpn.bypass.domains)}
+                  onChange={(e) => patch('vpn', { bypass: { ...draft.vpn.bypass, domains: parseList(e.target.value) } })}
+                />
+              </Field>
+              <Field label="Bypass addresses" hint="IPv4/IPv6 addresses or CIDR ranges">
+                <Input
+                  placeholder="10.0.0.0/8, 2001:db8::/32"
+                  value={listText(draft.vpn.bypass.ips)}
+                  onChange={(e) => patch('vpn', { bypass: { ...draft.vpn.bypass, ips: parseList(e.target.value) } })}
+                />
+              </Field>
+              <Field label="Bypass ports" hint="Destination ports dialled direct">
+                <Input
+                  placeholder="25, 465, 587"
+                  value={listText(draft.vpn.bypass.ports.map(String))}
+                  onChange={(e) => patch('vpn', { bypass: { ...draft.vpn.bypass, ports: parsePortList(e.target.value) } })}
+                />
+              </Field>
+              <Button variant="primary" loading={saving} onClick={() => void save({ vpn: draft.vpn })}>
+                <Save size={14} /> Save split tunnel
+              </Button>
             </CardBody>
           </Card>
         </TabPanel>
@@ -426,8 +528,11 @@ export default function SettingsPage() {
                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">VPN engines</div>
                     <div className="space-y-2">
                       {Object.entries(caps.vpn).map(([key, v]) => (
-                        <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-2 px-4 py-2.5">
-                          <div className="text-sm capitalize">{key}</div>
+                        <div key={key} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-surface-2 px-4 py-2.5">
+                          <div className="min-w-0">
+                            <div className="text-sm">{VPN_ENGINE_LABELS[key] ?? key}</div>
+                            <div className="text-[11px] text-faint">{v.note}</div>
+                          </div>
                           <CapBadge state={v.installed ? 'supported' : 'unavailable'} />
                         </div>
                       ))}
@@ -703,6 +808,17 @@ function CapBadge({ state }: { state: string }) {
     </span>
   );
 }
+
+/**
+ * Display names for the VPN engine rows. The API keys are camelCase; without
+ * this map the CSS `capitalize` class rendered "Singbox"/"Proxycores".
+ */
+const VPN_ENGINE_LABELS: Record<string, string> = {
+  wireGuard: 'WireGuard',
+  openVpn: 'OpenVPN',
+  singBox: 'sing-box',
+  proxyCores: 'Proxy cores (app-managed)',
+};
 
 interface PlatformCapabilities {
   generatedAt: number;

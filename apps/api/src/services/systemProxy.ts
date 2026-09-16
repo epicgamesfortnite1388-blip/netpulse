@@ -79,6 +79,12 @@ export async function setSystemProxy(proxyOrNull: string | null): Promise<{ ok: 
       await regPut('ProxyEnable', 'REG_DWORD', '0');
       return { ok: false, error: 'registry write failed (ProxyServer)' };
     }
+  } else {
+    // Disabling must also clear the stale server value: leaving it behind
+    // means a later ProxyEnable=1 (from any other tool) silently resurrects a
+    // proxy we are no longer running, and "restore the previous setting"
+    // would not actually be a restore.
+    await regPut('ProxyServer', 'REG_SZ', '');
   }
   refreshWinInet();
   return { ok: true };

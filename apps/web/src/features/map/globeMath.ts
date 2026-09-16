@@ -1,32 +1,19 @@
 import * as THREE from 'three';
 
 /**
- * Pure globe math: the lon/lat → 3D convention, great-circle arcs, and
- * camera anchors. Shared by the canvas and the tests so the projection has
- * exactly one definition.
+ * Pure globe math + the honest marker/tooltip encoding shared by the canvas
+ * and the tests. Since the renderer moved to react-globe.gl (which owns
+ * picking, orbit and fly-to), this module keeps only what remains ours:
+ * great-circle geometry and the content contract of every pin and tooltip.
  *
- * Convention (matches three.js SphereGeometry UV mapping for an equirectangular
- * Earth, so land rings and any texture agree):
- *   lon 0 / lat 0      → +X (Gulf of Guinea faces the default camera)
- *   lon +90°E / lat 0  → −Z
+ * Convention (matches three-globe's own lat/lng → position mapping, so any
+ * raw three.js math we keep agrees with what the library renders):
+ *   lat 0 / lng 0      → +X (Gulf of Guinea faces the default camera)
+ *   lat 0 / lng +90°E  → −Z
  *   lat +90°N          → +Y
  */
 
 export const GLOBE_RADIUS = 10;
-
-/**
- * Camera theta (azimuth) that puts `lon` at the center of the view.
- *
- * Facing condition, from the two conventions above (camera at
- * `(d sinφ cosθ, d cosφ, d sinφ sinθ)`, surface point at
- * `(−r sinφ cos(θg), r cosφ, r sinφ sin(θg))` with θg = lon+180°):
- * the sub-camera point satisfies `cosθ = −cos θg` and `sinθ = sin θg`,
- * i.e. `θ = π − θg = −lon`. (An earlier `-（lon+180°)` version aimed the
- * camera at the antipode — pins appeared ~180° away from center.)
- */
-export function thetaForLon(lon: number): number {
-  return -THREE.MathUtils.degToRad(lon);
-}
 
 export interface Vec3 {
   x: number;
@@ -95,17 +82,6 @@ export function arcPoints(
   return out;
 }
 
-/** Camera anchor for a geographic point (the position a globe looks FROM). */
-export function cameraAnchorFor(lon: number, lat: number, distance: number = GLOBE_RADIUS * 2.6): Vec3 {
-  const p = lonLatToVec3(lon, lat, distance);
-  return p;
-}
-
-/** Screen-space size ratio for distance-based marker scaling. */
-export function distanceScale(cameraDistance: number, pointDistance: number): number {
-  return Math.max(0.35, Math.min(1.6, cameraDistance / Math.max(0.001, pointDistance)));
-}
-
 /**
  * Anchor point for a cluster of geographic positions: circular mean of the
  * unit vectors (correct across the antimeridian and at the poles — an
@@ -124,76 +100,10 @@ export function clusterAnchor(points: { lat: number; lon: number }[]): { lat: nu
   const len = Math.hypot(x, y, z);
   if (len < 1e-9) return points[0]!;
   const lat = THREE.MathUtils.radToDeg(Math.asin(y / len));
-  const lon = THREE.MathUtils.radToDeg(Math.atan2(z, -x)) - 180;
+  let lon = THREE.MathUtils.radToDeg(Math.atan2(z, -x)) - 180;
   // atan2 range wrap: normalize back to (-180, 180]
-  const norm = ((lon + 540) % 360) - 180;
-  return { lat, lon: norm === -180 ? 180 : norm };
-}
-
-/**
- * Camera-facing test for pins on the globe surface: a pin is visible iff its
- * outward normal still points toward the camera (dot > alignEps). Tangent pins
- * (dot ≈ 0) count as visible so pins at the silhouette edge stay clickable,
- * while anything on the far side is occluded by the sphere itself.
- */
-export function facesCamera(pos: Vec3, cameraPosition: Vec3, alignEps = 0.02): boolean {
-  const n = Math.hypot(pos.x, pos.y, pos.z) || 1;
-  const c = Math.hypot(cameraPosition.x, cameraPosition.y, cameraPosition.z) || 1;
-  const dot = (pos.x * cameraPosition.x + pos.y * cameraPosition.y + pos.z * cameraPosition.z) / (n * c);
-  return dot > alignEps;
-}
-
-/** A pin projected to canvas-relative screen pixels (z is NDC depth). */
-export interface ScreenPin<T> {
-  item: T;
-  x: number;
-  y: number;
-  z: number;
-}
-
-/**
- * Project pins to screen space with a three.js camera. Pins behind the camera
- * or beyond the far plane are dropped — they are not interactable regardless
- * of where their projection lands.
- */
-export function projectPins<T extends { pos: Vec3 }>(
-  pins: readonly T[],
-  camera: THREE.PerspectiveCamera,
-  width: number,
-  height: number,
-): ScreenPin<T>[] {
-  const out: ScreenPin<T>[] = [];
-  for (const pin of pins) {
-    const p = new THREE.Vector3(pin.pos.x, pin.pos.y, pin.pos.z).project(camera);
-    if (p.z > 1) continue;
-    out.push({ item: pin, x: ((p.x + 1) / 2) * width, y: ((1 - p.y) / 2) * height, z: p.z });
-  }
-  return out;
-}
-
-/**
- * The screen-space pick (globe.gl's contract): the nearest projected pin within
- * `tolerancePx` of the pointer, or null when the click missed everything.
- *
- * This replaces raycasting tiny marker spheres — at a typical camera distance a
- * marker spans only a few pixels, so sphere hits missed nearly every click.
- */
-export function nearestScreenPin<T>(
-  projected: readonly ScreenPin<T>[],
-  px: number,
-  py: number,
-  tolerancePx: number,
-): T | null {
-  let best: T | null = null;
-  let bestDist = tolerancePx;
-  for (const p of projected) {
-    const d = Math.hypot(p.x - px, p.y - py);
-    if (d <= bestDist) {
-      bestDist = d;
-      best = p.item;
-    }
-  }
-  return best;
+  lon = ((lon + 540) % 360) - 180;
+  return { lat, lon: lon === -180 ? 180 : lon };
 }
 
 /** Perceptual color ramp for measured latency (ms) — the arc/marker palette. */
@@ -203,4 +113,95 @@ export function latencyColor(ms: number | null | undefined): string {
   if (ms < 120) return '#22d3ee'; // good
   if (ms < 220) return '#fbbf24'; // fair
   return '#f87171'; // poor
+}
+
+/* --------------------------- globe.gl encoding ---------------------------- */
+
+/** Camera altitude → the zoom proxy LiveMapPage uses for clustering. */
+export function zoomProxyFromAltitude(altitude: number): number {
+  // dist = R·(1 + altitude); the old canvas reported (R·3.2)/dist.
+  return Math.max(0.5, Math.min(8, 3.2 / (1 + Math.max(0, altitude))));
+}
+
+/** Marker color: kind first, then measured status (never decorative). */
+export function nodePointColor(node: { kind: string; status: string; cluster?: number }): string {
+  if (node.kind === 'you') return '#a78bfa';
+  if (node.kind === 'vpn') return '#fbbf24';
+  if (node.kind === 'hop') return '#94a3b8';
+  if (node.cluster != null) return '#38bdf8';
+  switch (node.status) {
+    case 'excellent':
+      return '#34d399';
+    case 'good':
+      return '#22d3ee';
+    case 'fair':
+      return '#fbbf24';
+    case 'poor':
+    case 'unreachable':
+      return '#f87171';
+    default:
+      return '#64748b';
+  }
+}
+
+/** Marker radius: big enough to hover reliably (3-4 px pins made hover luck). */
+export function nodePointRadius(node: { kind: string; cluster?: number }): number {
+  if (node.kind === 'you') return 1.15;
+  if (node.cluster != null) return 0.95;
+  if (node.kind === 'hop') return 0.5;
+  return 0.8;
+}
+
+/**
+ * Honest tooltip for a globe pin. HTML string — globe.gl renders it in its
+ * own floating tooltip, positioned by the library (the piece our hand-rolled
+ * overlay kept getting wrong).
+ */
+export function nodeTooltipHtml(node: {
+  label: string;
+  sub?: string | null;
+  latencyMs: number | null;
+  status: string;
+  geoConfidence?: string;
+  cluster?: number;
+}): string {
+  const rows: string[] = [];
+  if (node.cluster != null) {
+    // Cluster pins: the label IS the count — no duplicate count line.
+    rows.push(`<div style="font-weight:600;color:#38bdf8">${node.cluster} nodes</div>`);
+    rows.push(`<div style="font-size:10px;color:#38bdf8">click to expand</div>`);
+  } else {
+    rows.push(`<div style="font-weight:600;color:#e2e8f0">${esc(node.label)}</div>`);
+    if (node.sub) rows.push(`<div style="font-family:monospace;font-size:10px;color:#8ea2bd">${esc(node.sub)}</div>`);
+    // sub-ms RTTs are real (tunnel/colo-local): keep the decimal so the
+    // tooltip never rounds a truthful 0.4 ms to "0 ms"
+    const latency =
+      node.latencyMs != null
+        ? `<span style="font-family:monospace">${node.latencyMs < 10 ? node.latencyMs.toFixed(1) : Math.round(node.latencyMs)} ms</span>`
+        : null;
+    const bits = [latency, `<span style="color:#64748b">${esc(node.status)}</span>`].filter(Boolean);
+    if (bits.length) rows.push(`<div style="font-size:10px">${bits.join(' · ')}</div>`);
+  }
+  if (node.geoConfidence && node.geoConfidence !== 'unknown') {
+    rows.push(`<div style="color:#64748b;font-size:10px">${esc(node.geoConfidence)} geo</div>`);
+  }
+  return `<div style="max-width:224px;line-height:1.4">${rows.join('')}</div>`;
+}
+
+/** Tooltip for an endpoint-to-endpoint arc (labelled as the approximation it is). */
+export function arcTooltipHtml(arc: { kind: string; latencyMs: number | null; lossPct: number | null }): string {
+  const kind =
+    arc.kind === 'vpn'
+      ? 'through VPN'
+      : arc.kind === 'historical'
+        ? 'historical snapshot'
+        : 'approximate endpoint-to-endpoint path';
+  const bits = [`<div style="font-weight:600;color:#e2e8f0">${kind}</div>`];
+  if (arc.latencyMs != null) bits.push(`<div style="font-family:monospace;font-size:10px">latency ${Math.round(arc.latencyMs)} ms</div>`);
+  if (arc.lossPct != null) bits.push(`<div style="font-family:monospace;font-size:10px">loss ${arc.lossPct.toFixed(1)}%</div>`);
+  return `<div style="line-height:1.4">${bits.join('')}</div>`;
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 }

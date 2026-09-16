@@ -17,108 +17,179 @@ const USER_AGENT = 'NetPulse-SourceFetcher/1.0 (+local diagnostics; educational 
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 60_000;
 
-const KNOWN_SOURCES: PublicSource[] = [
+/**
+ * Built-in source catalog — the only place in the app that declares a source
+ * URL. Nothing here is a node: every host, port, uuid and password is parsed
+ * out of the bytes a URL actually served (`extractRawConfigs` → `parseNodeUri`),
+ * so a source can only ever contribute configs it really returned. A source
+ * that is unreachable, empty, or unparseable fails loudly and imports nothing —
+ * it never falls back to a mirrored, sanitized or placeholder list.
+ *
+ * Each `notes` string records what the file contained when it was measured, on
+ * the date shown. Re-measure before trusting a count: community lists change
+ * daily and a stale note is a claim, not a fact.
+ */
+interface BuiltinSourceSpec {
+  id: string;
+  name: string;
+  homepage: string;
+  repositoryUrl: string;
+  /** `github_raw` for every built-in today; kept explicit for future sources. */
+  type: SourceType;
+  urls: string[];
+  formats: string[];
+  notes: string;
+}
+
+const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
+  /* ------------------------- v2ray-flavoured URI lists ------------------------- */
   {
     id: 'barry-far',
     name: 'barry-far / V2ray-Config',
     homepage: 'https://github.com/barry-far/V2ray-Config',
     repositoryUrl: 'https://github.com/barry-far/V2ray-Config',
-    enabled: true,
     type: 'github_raw',
-    // URLs verified live 2026-09-12: the subscription files live on `main`
-    // (the old master/ssr.md + v2ray.md paths 404).
+    // The subscription files live on `main` (the old master/ssr.md +
+    // v2ray.md paths 404).
     urls: [
       'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/All_Configs_Sub.txt',
       'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Sub1.txt',
     ],
     formats: ['uri', 'base64'],
-    intervalMinutes: 60,
-    lastFetch: null,
-    lastSuccess: null,
-    lastFailure: null,
-    status: 'idle',
-    discoveredConfigCount: 0,
-    importedConfigCount: 0,
-    duplicateCount: 0,
-    invalidCount: 0,
-    recentDiscovered: 0,
-    recentImported: 0,
-    recentHealthy: 0,
-    health: 'unknown',
-    lastContentHash: null,
-    createdAt: Date.now() - 86_400_000,
+    notes: 'Mixed VLESS/Trojan/SS subscription. Measured 2026-09-16: 8,040 config lines → 8,022 parsed.',
   },
   {
     id: 'epodonios',
     name: 'Epodonios / v2ray-configs',
     homepage: 'https://github.com/Epodonios/v2ray-configs',
     repositoryUrl: 'https://github.com/Epodonios/v2ray-configs',
-    enabled: true,
     type: 'github_raw',
-    // Verified live 2026-09-12: subscription files sit at the repo root on `main`.
     urls: [
       'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/All_Configs_Sub.txt',
       'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Sub1.txt',
     ],
     formats: ['uri', 'base64'],
-    intervalMinutes: 60,
-    lastFetch: null,
-    lastSuccess: null,
-    lastFailure: null,
-    status: 'idle',
-    discoveredConfigCount: 0,
-    importedConfigCount: 0,
-    duplicateCount: 0,
-    invalidCount: 0,
-    recentDiscovered: 0,
-    recentImported: 0,
-    recentHealthy: 0,
-    health: 'unknown',
-    lastContentHash: null,
-    createdAt: Date.now() - 86_400_000,
+    notes: 'Subscription files at the repo root on `main`.',
   },
   {
     id: 'ebrasha',
     name: 'ebrasha / free-v2ray-public-list',
     homepage: 'https://github.com/ebrasha/free-v2ray-public-list',
     repositoryUrl: 'https://github.com/ebrasha/free-v2ray-public-list',
-    enabled: true,
     type: 'github_raw',
-    // Verified live 2026-09-12 (old subscriptions/v2ray.txt path 404s).
     urls: [
       'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/V2Ray-Config-By-EbraSha-All-Type.txt',
       'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/separated-protocols/vless_configs.txt',
     ],
     formats: ['uri', 'base64', 'plaintext'],
-    intervalMinutes: 60,
-    lastFetch: null,
-    lastSuccess: null,
-    lastFailure: null,
-    status: 'idle',
-    discoveredConfigCount: 0,
-    importedConfigCount: 0,
-    duplicateCount: 0,
-    invalidCount: 0,
-    recentDiscovered: 0,
-    recentImported: 0,
-    recentHealthy: 0,
-    health: 'unknown',
-    lastContentHash: null,
-    createdAt: Date.now() - 86_400_000,
+    notes: 'VLESS-heavy all-protocol list. Measured 2026-09-16: 37,063 lines → 34,657 parsed (20,870 VLESS · 4,994 SS · 4,532 Trojan · 4,131 VMess · 129 Hysteria2).',
   },
   {
     id: '0xRadikal',
     name: '0xRadikal / Free-v2ray-Configs',
     homepage: 'https://github.com/0xRadikal/Free-v2ray-Configs',
     repositoryUrl: 'https://github.com/0xRadikal/Free-v2ray-Configs',
-    enabled: true,
     type: 'github_raw',
-    // Verified live 2026-09-12 (old subscriptions.txt path 404s).
     urls: [
       'https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt',
       'https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/protocols/vless.txt',
     ],
     formats: ['uri', 'base64', 'plaintext'],
+    notes: 'Top-100 list plus a per-protocol VLESS file.',
+  },
+
+  /* --------------- added 2026-09-16 (each URL fetched + measured) --------------- */
+  {
+    id: 'mahdibland',
+    name: 'mahdibland / ShadowsocksAggregator',
+    homepage: 'https://github.com/mahdibland/ShadowsocksAggregator',
+    repositoryUrl: 'https://github.com/mahdibland/ShadowsocksAggregator',
+    type: 'github_raw',
+    // The repo's other paths (sub/share/all, SS.txt, master/*) 404 — this is
+    // the aggregated merge file that actually exists.
+    urls: ['https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/sub/sub_merge.txt'],
+    formats: ['uri', 'plaintext'],
+    notes: 'Shadowsocks-heavy aggregated merge. Measured 2026-09-16: 4,062 config lines → 4,017 parsed (1,825 SS · 1,555 VMess · 637 Trojan).',
+  },
+  {
+    id: 'mheidari98',
+    name: 'mheidari98 / .proxy',
+    homepage: 'https://github.com/mheidari98/.proxy',
+    repositoryUrl: 'https://github.com/mheidari98/.proxy',
+    type: 'github_raw',
+    urls: ['https://raw.githubusercontent.com/mheidari98/.proxy/main/all'],
+    formats: ['base64', 'uri'],
+    notes: 'Single-line base64 aggregator, widest protocol spread of any built-in. Measured 2026-09-16: 16,021 lines → 15,924 parsed across 8,937 distinct hosts (6,363 VLESS · 4,741 VMess · 2,937 SS · 1,538 Trojan · 343 Hysteria2 · 2 TUIC).',
+  },
+  {
+    id: 'ALIILAPRO',
+    name: 'ALIILAPRO / v2rayNG-Config',
+    homepage: 'https://github.com/ALIILAPRO/v2rayNG-Config',
+    repositoryUrl: 'https://github.com/ALIILAPRO/v2rayNG-Config',
+    type: 'github_raw',
+    urls: ['https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/server.txt'],
+    formats: ['base64', 'uri'],
+    notes: 'Single-line base64 VMess-heavy list. Measured 2026-09-16: 2,295 lines → 2,265 parsed (1,703 VMess · 559 VLESS).',
+  },
+  {
+    id: 'ermaozi',
+    name: 'ermaozi / get_subscribe',
+    homepage: 'https://github.com/ermaozi/get_subscribe',
+    repositoryUrl: 'https://github.com/ermaozi/get_subscribe',
+    type: 'github_raw',
+    // The repo's clash.yml is Clash YAML, not share links — this is the URI file.
+    urls: ['https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt'],
+    formats: ['uri', 'plaintext'],
+    notes: 'Hysteria2-heavy URI list — the best Hysteria2 coverage of the built-ins. Measured 2026-09-16: 233 config lines → 223 parsed (117 Hysteria2 · 53 VLESS · 30 Trojan · 14 VMess · 9 SS).',
+  },
+  {
+    id: 'MhdiTaheri',
+    name: 'MhdiTaheri / V2rayCollector',
+    homepage: 'https://github.com/MhdiTaheri/V2rayCollector',
+    repositoryUrl: 'https://github.com/MhdiTaheri/V2rayCollector',
+    type: 'github_raw',
+    // sub/mix is the combined file; sub/vless and sub/trojan are subsets of it,
+    // so fetching them too would only inflate duplicate counts.
+    urls: ['https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/mix'],
+    formats: ['uri', 'plaintext'],
+    notes: 'Collector mix of VLESS/Trojan/VMess/SS. Measured 2026-09-16: 1,673 config lines → 927 parsed (645 VLESS · 144 Trojan · 82 VMess · 56 SS).',
+  },
+  {
+    id: 'peasoft',
+    name: 'peasoft / NoMoreWalls',
+    homepage: 'https://github.com/peasoft/NoMoreWalls',
+    repositoryUrl: 'https://github.com/peasoft/NoMoreWalls',
+    type: 'github_raw',
+    urls: ['https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt'],
+    formats: ['base64', 'uri'],
+    notes: 'Single-line base64 list, Hysteria2-dominated. Measured 2026-09-16: 333 config lines → 150 parsed (109 Hysteria2 · 23 VLESS · 9 SS · 7 Trojan · 2 VMess).',
+  },
+  {
+    id: 'ts-sf',
+    name: 'ts-sf / fly',
+    homepage: 'https://github.com/ts-sf/fly',
+    repositoryUrl: 'https://github.com/ts-sf/fly',
+    type: 'github_raw',
+    urls: ['https://raw.githubusercontent.com/ts-sf/fly/main/v2'],
+    formats: ['base64', 'uri'],
+    notes: 'Single-line base64 VMess-heavy list. Measured 2026-09-16: 201 config lines → 200 parsed (194 VMess · 6 Trojan).',
+  },
+];
+
+/**
+ * Zeroed catalog entry: every counter starts honest and unclaimed — counts
+ * come only from real fetches recorded by the pipeline.
+ */
+function builtinSource(spec: BuiltinSourceSpec): PublicSource {
+  return {
+    id: spec.id,
+    name: spec.name,
+    homepage: spec.homepage,
+    repositoryUrl: spec.repositoryUrl,
+    enabled: true,
+    type: spec.type,
+    urls: [...spec.urls],
+    formats: [...spec.formats],
     intervalMinutes: 60,
     lastFetch: null,
     lastSuccess: null,
@@ -133,9 +204,12 @@ const KNOWN_SOURCES: PublicSource[] = [
     recentHealthy: 0,
     health: 'unknown',
     lastContentHash: null,
+    notes: spec.notes,
     createdAt: Date.now() - 86_400_000,
-  },
-];
+  };
+}
+
+const KNOWN_SOURCES: PublicSource[] = BUILTIN_SPECS.map(builtinSource);
 
 export interface FetchContext {
   sourceId: string;
@@ -333,6 +407,9 @@ function splitLines(text: string): string[] {
   return text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
 }
 
+/** Share-link schemes the parsers understand (kept in sync with nodeParsers). */
+const CONFIG_URI_RE = /^(vmess|vless|trojan|ss|ssr|hysteria2|hy2|tuic|wireguard):\/\//i;
+
 /* --------------------------------- URL extraction from markdown -------------------------------- */
 
 function extractUrlsFromMarkdown(text: string): string[] {
@@ -427,6 +504,24 @@ export function extractRawConfigs(rawText: string): { configs: string[]; format:
   // A source may contain multiple configs separated by newlines
   const lines = splitLines(rawText);
 
+  // Base64 is checked FIRST, and on the payload with the fetcher's own framing
+  // removed. Two things went wrong when this ran last: the framing the fetcher
+  // prepends (`# Source: <url>`, `---` separators) contains `#`, which made every
+  // base64 subscription look like markdown and take the markdown branch — so a
+  // whole class of feeds parsed to zero configs and imported nothing. And a
+  // wrapped (76-column) payload never matched the old single-line test.
+  // A base64 body can contain neither `#` nor `-` runs, so those lines can only
+  // be framing. The decode only counts when it really contains share links,
+  // which is what stops an unrelated document from being "decoded" into
+  // invented configs.
+  const payload = lines.filter((l) => !l.startsWith('#') && !/^-{3,}$/.test(l)).join('');
+  if (payload.length > 100 && /^[A-Za-z0-9+/]+={0,2}$/.test(payload)) {
+    const decodedLines = splitLines(Buffer.from(payload, 'base64').toString('utf8'));
+    if (decodedLines.some((l) => CONFIG_URI_RE.test(l))) {
+      return { configs: decodedLines.filter((l) => l.includes('://')), format: 'base64' };
+    }
+  }
+
   // If it's a markdown file, extract the config lines
   const isMarkdown = rawText.includes('```') || rawText.includes('#');
 
@@ -457,14 +552,17 @@ export function extractRawConfigs(rawText: string): { configs: string[]; format:
       if (code) configs.push(code);
     }
 
-    // Also extract bare URIs from non-code-block lines
+    // Also extract share links from non-code-block lines. A share link's `#`
+    // starts its remark — the node's name, which the source really served — so
+    // the link is kept whole instead of being truncated at the `#`. Only
+    // trailing whitespace-separated junk (markdown table cells, list padding)
+    // is dropped; almost every subscription list contains `#`, so truncating
+    // here used to strip the name off every imported node.
     for (const line of lines) {
-      if (!line.startsWith('```') && !line.startsWith('#') && line.includes('://')) {
-        const trimmed = line.split('#')[0]?.trim() ?? '';
-        if (trimmed && /^(vmess|vless|trojan|ss|ssr|hysteria2|hy2|tuic|wireguard):\/\//i.test(trimmed)) {
-          configs.push(trimmed);
-        }
-      }
+      if (line.startsWith('```') || line.startsWith('#')) continue;
+      if (!line.includes('://')) continue;
+      const trimmed = line.split(/\s+/)[0]?.trim() ?? '';
+      if (trimmed && CONFIG_URI_RE.test(trimmed)) configs.push(trimmed);
     }
 
     return { configs: configs.filter((c) => c.length > 0), format: 'mixed' };
@@ -477,24 +575,56 @@ export function extractRawConfigs(rawText: string): { configs: string[]; format:
     return { configs: lines, format: 'uri-list' };
   }
 
-  // Could be base64-encoded — try decoding
-  if (lines.length === 1 && lines[0] && /^[A-Za-z0-9+/=]+$/.test(lines[0]) && lines[0].length > 100) {
-    try {
-      const decoded = Buffer.from(lines[0]!, 'base64').toString('utf8');
-      if (decoded.includes('://')) {
-        return { configs: splitLines(decoded), format: 'base64' };
-      }
-    } catch { /* not valid base64 */ }
-  }
-
   // Generic: treat each non-empty line as a potential config
   return { configs: lines.filter((l) => l.includes('://')), format: 'plaintext' };
+}
+
+/* --------------------------------- candidate partition -------------------------------- */
+
+/**
+ * Split extracted candidates into what a parser accepted and what it refused.
+ *
+ * Extraction is deliberately permissive — it hands over every line that could
+ * be a node, including the nested subscription URLs many lists carry. This is
+ * where those stop being a node: a candidate a parser cannot turn into a config
+ * is counted, never skipped.
+ *
+ * That total is the point: `valid.length + invalid === candidates.length`, so
+ * the pipeline's own arithmetic closes (`discovered === accepted + invalid`) and
+ * the per-source table cannot show lines that were neither imported nor
+ * refused. Lines used to be dropped in silence here, which is how a feed could
+ * report 333 discovered against 150 accepted and 12 invalid with 171 configs
+ * unaccounted for.
+ */
+export function partitionConfigs(candidates: string[]): {
+  valid: Array<{ raw: string; parsed: { config: ParsedNodeConfig; secret: string } }>;
+  invalid: number;
+} {
+  const valid: Array<{ raw: string; parsed: { config: ParsedNodeConfig; secret: string } }> = [];
+  let invalid = 0;
+
+  for (const raw of candidates) {
+    try {
+      const parsed = parseNodeUri(raw);
+      if (parsed.protocol !== 'unknown' && parsed.result !== null) {
+        valid.push({ raw, parsed: parsed.result as { config: ParsedNodeConfig; secret: string } });
+      } else {
+        invalid++;
+      }
+    } catch {
+      invalid++;
+    }
+  }
+
+  return { valid, invalid };
 }
 
 /* --------------------------------- source registry -------------------------------- */
 
 export function getKnownSources(): PublicSource[] {
-  return KNOWN_SOURCES.map((s) => ({ ...s }));
+  // Arrays are copied too: a shallow spread would hand callers the catalog's
+  // own `urls` array, so one `push` anywhere would edit the built-ins.
+  return KNOWN_SOURCES.map((s) => ({ ...s, urls: [...s.urls], formats: [...s.formats] }));
 }
 
 export function getSourceById(id: string): PublicSource | undefined {
@@ -582,10 +712,26 @@ export function createSourceFromInput(input: {
 
 /* --------------------------------- fetch + import pipeline -------------------------------- */
 
+/**
+ * Outcome of one fetch. `status` is the pipeline's own verdict — a feed that
+ * 404'd, timed out, or produced no parseable configs comes back `failed` with
+ * the reason, so callers cannot mistake "the HTTP request finished" for
+ * "the source worked".
+ */
+export interface SourceFetchOutcome {
+  status: 'completed' | 'failed';
+  error: string | null;
+  fetched: number;
+  imported: number;
+  duplicates: number;
+  invalid: number;
+  documents: string[];
+}
+
 export async function fetchAndImportSource(
   source: PublicSource,
   ctx: FetchContext,
-): Promise<{ fetched: number; imported: number; duplicates: number; invalid: number; documents: string[] }> {
+): Promise<SourceFetchOutcome> {
   ctx.onStatus('fetching');
 
   // Create fetch record
@@ -662,7 +808,7 @@ export async function fetchAndImportSource(
         status: 'healthy',
         lastContentHash: contentHash,
       });
-      return { fetched, imported, duplicates, invalid, documents };
+      return { status: 'completed', error: null, fetched, imported, duplicates, invalid, documents };
     }
 
     // Extract configs from raw text
@@ -673,30 +819,7 @@ export async function fetchAndImportSource(
     }
 
     // Parse each config and hand valid ones to the importer
-    const validConfigs: Array<{ raw: string; parsed: { config: ParsedNodeConfig; secret: string } }> = [];
-    let parseInvalid = 0;
-    for (const configText of configs) {
-      try {
-        const parseResult = parseNodeUri(configText);
-        if (parseResult.protocol !== 'unknown' && parseResult.result !== null) {
-          validConfigs.push({ raw: configText, parsed: parseResult.result as { config: ParsedNodeConfig; secret: string } });
-        } else {
-          // Could be a nested subscription URL — extract it
-          try {
-            const trimmed = configText.trim();
-            if (!trimmed) continue;
-            const u = new URL(trimmed);
-            if (u.protocol.startsWith('http')) {
-              // This is a URL, not a config — skip
-              continue;
-            }
-          } catch { /* not a URL */ }
-          parseInvalid++;
-        }
-      } catch {
-        parseInvalid++;
-      }
-    }
+    const { valid: validConfigs, invalid: parseInvalid } = partitionConfigs(configs);
 
     // Persist through the deduplicating importer when wired; otherwise count only
     if (ctx.onImportConfigs) {
@@ -748,7 +871,7 @@ export async function fetchAndImportSource(
     ctx.onDuplicate(duplicates);
     ctx.onInvalid(invalid);
 
-    return { fetched, imported, duplicates, invalid, documents };
+    return { status: 'completed', error: null, fetched, imported, duplicates, invalid, documents };
 
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -769,7 +892,7 @@ export async function fetchAndImportSource(
       rawBytes: null,
     });
 
-    return { fetched, imported, duplicates, invalid: invalid + 1, documents };
+    return { status: 'failed', error, fetched, imported, duplicates, invalid: invalid + 1, documents };
   }
 }
 

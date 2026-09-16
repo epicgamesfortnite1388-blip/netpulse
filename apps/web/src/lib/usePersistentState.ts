@@ -59,6 +59,23 @@ export function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((pr
 }
 
 /**
+ * Read a persisted UI value without subscribing to it.
+ *
+ * Two components can persist under the same key, but each hook instance holds
+ * its own in-memory copy — so a second component reading the hook would act on
+ * a value captured at mount. Reading at the moment of use (a click) is always
+ * current, and keeps the storage-key format owned by this module.
+ */
+export function readPersistedState<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(`np.ui.${key}`);
+    return raw != null ? deserialize<T>(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Narrower helper for the common "selected/running entity id" pattern.
  * Returns null when the stored id's entity no longer exists (caller checks).
  */

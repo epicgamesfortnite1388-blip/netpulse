@@ -13,6 +13,10 @@ export interface WsTestMessage {
   targetId?: string;
   observationId?: string;
   sweepId?: string;
+  /** discovery progress frames (`discovery` topic): real per-candidate counts */
+  done?: number;
+  total?: number;
+  profile?: string;
 }
 
 /**

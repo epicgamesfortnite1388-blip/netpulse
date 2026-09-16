@@ -11,6 +11,8 @@ import websocket from '@fastify/websocket';
 import Fastify, { LogController as FastifyLogController, type FastifyBaseLogger } from 'fastify';
 import pino from 'pino';
 
+import { normalizeBypass } from '@netpulse/shared';
+
 import { createAuth, ensureDaemonToken } from './auth';
 import { loadConfig } from './config';
 import { openDb } from './db/client';
@@ -18,6 +20,9 @@ import { RetentionService, RETENTION_INTERVAL_MS } from './db/retention';
 import { enrichNodeGeoBatch, scrubAnycastGeo, setGeoPreferenceSource } from './services/nodeGeoService';
 import { defaultGeoOverridePath, geoOverrideError, setGeoOverrideFile } from './services/geoGuard';
 import { NodeTestScheduler } from './services/nodeTestScheduler';
+import { GatewayMemoryService } from './services/gatewayMemory';
+import { VpnHistoryService } from './services/vpnHistory';
+import { NodeDiscoveryService } from './services/nodeDiscovery';
 import { createRepositories } from './db/repositories';
 import { registerHealthRoutes } from './routes/health';
 import { registerErrorHandler } from './plugins/errorHandler';
@@ -70,6 +75,7 @@ import { NodesService } from './services/nodesService';
 import { NodeSecretVault } from './services/nodeSecretVault';
 import { ProxyTunnelService, fetchThroughHttpProxy } from './services/proxyTunnel';
 import { getSystemProxy, setSystemProxy } from './services/systemProxy';
+import { KillSwitchService } from './services/killSwitch';
 import { SourceRefreshScheduler, seedKnownSources } from './services/nodeSourceRegistry';
 import { SettingsService } from './services/settingsService';
 import { SpeedService } from './services/speedService';
@@ -195,6 +201,51 @@ export async function buildApp(opts: BuildOptions = {}) {
       return info.ip;
     },
     event: (level, message, data) => events.record(level, 'vpn', message, data),
+  };
+
+  // Kill switch — one owner for "what happens to the OS proxy when a
+  // proxy-mode tunnel drops": fail closed when the user enabled it, restore
+  // their own proxy when they did not. The bypass getter is the SAME rule set
+  // the split-tunnel feature applies, so "non-bypassed" means exactly what the
+  // user configured (and what Aether receives as [direct] routes).
+  const killSwitch = new KillSwitchService({
+    setSystemProxy: (p) => setSystemProxy(p),
+    getSystemProxy: () => getSystemProxy(),
+    enabled: () => { try { return settings.get().vpn?.killSwitch === true; } catch { return false; } },
+    bypass: () => {
+      try {
+        const b = settings.get().vpn?.bypass;
+        return b?.enabled ? normalizeBypass(b) : null;
+      } catch {
+        return null;
+      }
+    },
+    event: (level, message) => events.record(level, 'vpn', message),
+    publish: (kind, payload) => bus.publish('vpn', { type: kind, ...payload }),
+    // Persisted so a crash while fail-closed cannot strand the machine with a
+    // dead sink proxy and no process left to explain it.
+    loadHold: () => repos.settings.get('killswitch.hold') as { previousProxy: string | null; label: string; blocking: boolean } | null,
+    saveHold: (record) => {
+      if (record) repos.settings.put('killswitch.hold', record as unknown as Record<string, unknown>);
+      else repos.settings.put('killswitch.hold', {});
+    },
+  });
+  // Boot recovery runs once the service exists (never blocks startup on a
+  // registry read that may legitimately fail).
+  void killSwitch.recoverAfterRestart().catch(() => undefined);
+  // The Aether provider reads the same live rule set and preference, so both
+  // proxy-mode engines answer to one kill switch and one bypass list.
+  vpnHooks.aether = {
+    killSwitch,
+    bypass: () => {
+      try {
+        const b = settings.get().vpn?.bypass;
+        return b?.enabled ? normalizeBypass(b) : null;
+      } catch {
+        return null;
+      }
+    },
+    killSwitchEnabled: () => { try { return settings.get().vpn?.killSwitch === true; } catch { return false; } },
   };
 
   const log = pino({
@@ -334,6 +385,10 @@ export async function buildApp(opts: BuildOptions = {}) {
     settings,
   });
 
+  // Gateway memory — the gateways this app has personally verified, kept
+  // across restarts so a reconnect can retry what last worked before scanning.
+  const gatewayMemory = new GatewayMemoryService({ store: repos.settings, log });
+
   // Proxy tunnel — one long-lived local core (xray/sing-box/v2ray) the system
   // can be routed through. Verified exit IP, crash detection with bounded
   // auto-reconnect, system-proxy handoff with restore.
@@ -343,13 +398,78 @@ export async function buildApp(opts: BuildOptions = {}) {
     setSystemProxy: (p) => setSystemProxy(p),
     getSystemProxy: () => getSystemProxy(),
     publish: (kind, payload) => bus.publish('nodes', { type: kind, ...payload }),
+    killSwitch,
     log: { info: (m) => log.info(m), warn: (m) => log.warn(m), error: (m) => log.error(m) },
+    // Memory is written from the verified path only, so an entry always means
+    // "this node provably carried traffic", never "this node looked fine".
+    onVerifiedGateway: (input) => {
+      gatewayMemory.remember(input);
+    },
+    onGatewayFailed: (nodeId) => {
+      gatewayMemory.markFailed(nodeId);
+    },
+  });
+
+  // Discovery — bounded, profile-driven search for a node worth connecting
+  // to. Depth comes from the profile (turbo=TCP handshake … ironclad=real
+  // proxied request); the report states which was actually proven.
+  const nodeDiscovery = new NodeDiscoveryService({
+    pickCandidates: ({ limit, protocol }) => {
+      const { rows } = repos.publicNodes.list({
+        limit,
+        sortField: 'score',
+        sortDir: 'desc',
+        ...(protocol ? { protocol } : {}),
+      });
+      return rows
+        .filter((r) => r.status !== 'stale')
+        .map((r) => ({
+          id: r.id,
+          name: r.remark ?? null,
+          host: r.host,
+          port: r.port,
+          protocol: r.protocol,
+        }));
+    },
+    probe: async (nodeId, depth, _timeoutMs) => {
+      try {
+        const result = await nodesService.testNode(nodeId, depth);
+        const ok = result.status === 'done';
+        return {
+          ok,
+          latencyMs: result.latencyMs ?? result.totalMs ?? null,
+          failure: ok ? null : (result.error ?? `test finished as ${result.status}`),
+        };
+      } catch (err) {
+        return { ok: false, latencyMs: null, failure: err instanceof Error ? err.message : String(err) };
+      }
+    },
+    log,
+    // Progress travels on its own topic so the discovery surface can subscribe
+    // without receiving every unrelated node event. The frame carries the real
+    // per-candidate counts; the UI renders an indeterminate bar until one
+    // arrives rather than inventing a percentage.
+    onProgress: (p) =>
+      bus.publish('discovery', {
+        type: 'discovery:progress',
+        task: 'discovery',
+        pct: p.total > 0 ? Math.round((p.done / p.total) * 100) : 0,
+        message: `${p.done} of ${p.total} candidates (${p.profile})`,
+        done: p.done,
+        total: p.total,
+        profile: p.profile,
+      }),
   });
 
   // Adaptive node tester — bounded TCP-probe batches on a settings-driven
   // cadence (never-validated first, then stale-good, then unstable; retires
   // dead+unseen nodes). Disabled in tests/Safe Mode like all network workers.
   const nodeTestScheduler = new NodeTestScheduler({ nodes: nodesService, settings, log });
+
+  // VPN history — persists discovery/quick-connect runs and aggregates them
+  // (with gateway memory) into the dashboard report. Recording failures are
+  // warn-only by design: history must never break a connect.
+  const vpnHistory = new VpnHistoryService({ events: repos.nodeEvents, gatewayMemory, log });
 
   // Source refresh scheduler — periodically re-fetches enabled public sources.
   const sourceScheduler = new SourceRefreshScheduler([], async (source) => {
@@ -380,6 +500,10 @@ export async function buildApp(opts: BuildOptions = {}) {
     schedule,
     vpnSelfTest,
     tunnel: proxyTunnel,
+    killSwitch,
+    gatewayMemory,
+    discovery: nodeDiscovery,
+    vpnHistory,
     elevationBroker,
     map,
     iran,

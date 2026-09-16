@@ -12,6 +12,8 @@ import type {
   VpnStatus,
   VpnVerification,
 } from '@netpulse/shared';
+// Type-only (erased at compile time): no runtime cycle with the provider.
+import type { AetherProviderOptions } from './aetherProvider';
 
 /* ------------------------------ shared types ------------------------------ */
 
@@ -70,6 +72,13 @@ export interface VpnProviderHooks {
   publicIpProbe?(): Promise<string | null>;
   /** record a VPN event */
   event?(level: 'info' | 'warn' | 'error', message: string, data?: Record<string, unknown>): void;
+  /**
+   * Aether-specific wiring: the kill switch (fail-closed on drop), the live
+   * split-tunnel rule set the engine receives as [direct] routes, and the
+   * user's kill-switch preference that drives system-proxy takeover. Kept in
+   * hooks so the provider stays constructible without the whole app.
+   */
+  aether?: AetherProviderOptions;
 }
 
 export interface VpnProvider {
@@ -1416,6 +1425,14 @@ export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: 
   registry.register(new WireGuardProvider(vault, configDir, hooks));
   registry.register(new OpenVpnProvider(vault, configDir, hooks));
   registry.register(new SingboxProvider(vault, configDir, hooks));
+  // Aether: a separate tunnel engine (MASQUE/WARP-family) managed like the
+  // other providers. Lazy import keeps this module loadable without it.
+  void import('./aetherProvider').then(({ AetherProvider }) => {
+    registry.register(
+      new AetherProvider(vault, path.join(configDir, '..', 'aether-profiles'), hooks, hooks?.aether ?? {}),
+    );
+    void registry.get('aether')?.init();
+  });
   registry.register(new CustomProvider());
   return registry;
 }

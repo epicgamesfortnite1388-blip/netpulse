@@ -16,7 +16,15 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   app.put('/api/v1/settings', async (req) => {
     const parsed = SettingsPatchSchema.safeParse(req.body);
     if (!parsed.success) throw parsed.error;
-    return { settings: ctx.services.settings.update(parsed.data) };
+    const before = ctx.services.settings.get().vpn?.killSwitch === true;
+    const settings = ctx.services.settings.update(parsed.data);
+    // Turning the switch off must release a block that is currently applied —
+    // otherwise "off" would keep the machine cut off until the next connect,
+    // which is exactly the silent-broken-state class this feature avoids.
+    if (before && settings.vpn?.killSwitch !== true && ctx.services.killSwitch.status().armed) {
+      await ctx.services.killSwitch.release('disabled in settings');
+    }
+    return { settings };
   });
 
   // Live state of the recurring benchmark scheduler (last/next run, failures).

@@ -1,4 +1,6 @@
 import type { DnsServerSpec } from './dns';
+import type { ScanProfileId } from './scanProfile';
+import type { VpnBypassSettings } from './vpnBypass';
 
 export interface ScoreWeights {
   latency: number;
@@ -102,6 +104,10 @@ export interface AppSettings {
     autoSelectServer: boolean;
     dnsThroughVpn: boolean;
     ipv6Behavior: 'block' | 'allow' | 'auto';
+    /** Split-tunnel: destinations that bypass the tunnel and dial direct. */
+    bypass: VpnBypassSettings;
+    /** Discovery profile the one-click connect uses to find a working node. */
+    scanProfile: ScanProfileId;
   };
   /** Public-node proxy-test core preference. */
   proxyEngine: {

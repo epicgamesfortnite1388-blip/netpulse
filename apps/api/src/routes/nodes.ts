@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../util/appError';
+import { MAX_LIST_LIMIT } from '../db/repositories';
 
 import type { AppContext } from './context';
 import type { NodesService } from '../services/nodesService';
@@ -98,8 +99,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       sortDir?: string;
     };
 
-    const limit = Math.min(Number(q.limit) || 100, 500);
-    const offset = Number(q.offset) || 0;
+    // Honour the caller's page size up to the repository's ceiling instead of
+    // clamping at 500 in silence — the map asks for 1,500 and used to receive
+    // 500 without ever being told.
+    const limit = Math.min(Number(q.limit) || 100, MAX_LIST_LIMIT);
+    const offset = Math.max(0, Number(q.offset) || 0);
 
     const sort: { field: string; dir: 'asc' | 'desc' } | undefined = q.sortField
       ? { field: q.sortField, dir: (q.sortDir as 'asc' | 'desc') || 'desc' }
@@ -505,6 +509,19 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     try {
       const result = await nodesService.discoverFromSource(id);
+      // The pipeline reports its own verdict. A feed that 404'd or yielded no
+      // parseable configs must not be reported as a completed fetch just because
+      // the HTTP request finished.
+      if (result.status === 'failed') {
+        const error = result.error ?? 'source fetch failed';
+        ctx.bus.publish('sources', {
+          type: 'source:fetch:failed',
+          sourceId: id,
+          sourceName: source.name,
+          error,
+        });
+        return reply.status(502).send({ error: { code: 'fetch_failed', message: error } });
+      }
       ctx.bus.publish('sources', {
         type: 'source:fetch:completed',
         sourceId: id,
@@ -513,7 +530,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         duplicates: result.duplicates,
         invalid: result.invalid,
       });
-      return { status: 'completed', ...result };
+      return { ...result };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       ctx.bus.publish('sources', {
@@ -885,31 +902,24 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   app.get('/api/v1/nodes/stats', async () => {
+    // Every number here is a COUNT over the stored rows, taken in SQL. The total
+    // used to be the length of a capped list window, so a database with tens of
+    // thousands of nodes reported "2000", and the breakdowns described only the
+    // first thousand rows.
     const statusCounts = ctx.repos.publicNodes.statusCounts();
-    const total = ctx.repos.publicNodes.list({ limit: 1 }).total;
+    const summary = ctx.repos.publicNodes.summary();
 
     return {
-      total,
+      total: summary.total,
       discovered: statusCounts.discovered,
       healthy: statusCounts.healthy,
       degraded: statusCounts.degraded,
       failed: statusCounts.failed,
       stale: statusCounts.stale,
-      favoriteCount: ctx.repos.publicNodes.list({ favorite: true, limit: 1 }).total,
-      protocolBreakdown: ctx.repos.publicNodes.list({ limit: 1000 }).rows.reduce((acc, n) => {
-        acc[n.protocol] = (acc[n.protocol] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-      countryBreakdown: ctx.repos.publicNodes.list({ limit: 1000 }).rows.reduce((acc, n) => {
-        if (n.country) {
-          acc[n.country] = (acc[n.country] || 0) + 1;
-        }
-        return acc;
-      }, {} as Record<string, number>),
-      transportBreakdown: ctx.repos.publicNodes.list({ limit: 1000 }).rows.reduce((acc, n) => {
-        acc[n.transport] = (acc[n.transport] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
+      favoriteCount: summary.favoriteCount,
+      protocolBreakdown: summary.protocolBreakdown,
+      countryBreakdown: summary.countryBreakdown,
+      transportBreakdown: summary.transportBreakdown,
     };
   });
 }

@@ -371,20 +371,25 @@ export default function LiveMapPage() {
 
   /** Camera zoom proxy for clustering: closer focus → higher zoom. */
   const [globeZoom, setGlobeZoom] = useState(1);
-  /** Pin currently under the pointer (from the globe's hover picking). */
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  /**
+   * Hover changes are refs-only: React state here rebuilt the points layer on
+   * every pointer move (all meshes recreated, hover cleared, tooltip flicker).
+   * The canvas keeps its own hover emphasis; the page tracks the id solely for
+   * unmount-time cleanup.
+   */
+  const hoveredIdRef = useRef<string | null>(null);
+  const handleHoverChange = useCallback((n: GlobeNode | null) => {
+    hoveredIdRef.current = n?.id ?? null;
+  }, []);
 
   const navigate = useNavigate();
-  /** DB-node pins open their detail page; map targets select on the globe. */
+  /** DB-node pins open their detail page; map targets select on the globe.
+   *  Cluster pins never reach here — the canvas zooms the camera itself
+   *  (altitude is the clustering source of truth) and camera moves flow back
+   *  through onZoomChange, breaking the cluster into members. */
   const onGlobeSelect = useCallback(
     (node: GlobeNode | null) => {
-      if (!node || node.id === 'you') return;
-      if (node.id.startsWith('cluster:')) {
-        // Clusters expand by zooming in: clusterCellDeg shrinks with zoom,
-        // so pushing the camera closer breaks the cluster into its members.
-        setGlobeZoom((z) => Math.min(8, z + 1.4));
-        return;
-      }
+      if (!node || node.id === 'you' || node.cluster != null) return;
       if (node.id.startsWith('node:')) {
         navigate(`/nodes/${encodeURIComponent(node.id.slice('node:'.length))}`);
         return;
@@ -433,10 +438,13 @@ export default function LiveMapPage() {
       });
     }
     filteredOutCountRef.current = hiddenCount;
-    const clustered = clusterNodes(list, globeZoom);
-    // Mark the hovered pin so the canvas can enlarge it + anchor the tooltip.
-    return hoveredId ? clustered.map((n) => (n.id === hoveredId ? { ...n, hovered: true } : n)) : clustered;
-  }, [youNode, observations, dbNodesQuery.data, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom, hoveredId]);
+    // NOTE: deliberately NOT marking the hovered pin here. Marking rebuilt the
+    // whole points layer on every hover change (globe.gl re-created every mesh,
+    // hover state cleared, and the tooltip flickered away mid-hover). Hover
+    // emphasis lives entirely inside the canvas now, which animates one marker
+    // instead of reconciling the layer.
+    return clusterNodes(list, globeZoom);
+  }, [youNode, observations, dbNodesQuery.data, filter, hidden, playback, minConfidence, selectedTargetId, globeZoom]);
 
   /** Pins hidden by the confidence filter (computed during node building). */
   const hiddenByConfidence = filteredOutCountRef.current;
@@ -714,7 +722,7 @@ export default function LiveMapPage() {
                 reducedMotion={reducedMotion}
                 onZoomChange={setGlobeZoom}
                 onSelect={onGlobeSelect}
-                onHover={(n) => setHoveredId(n?.id ?? null)}
+                onHover={handleHoverChange}
               />
               {progress && (
                 <div className="absolute left-3 top-3 rounded-lg border border-accent/30 bg-bg/85 px-3 py-2 text-xs text-accent backdrop-blur">

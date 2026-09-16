@@ -8,10 +8,14 @@ import {
   buildV2rayConfig,
   buildXrayConfig,
   buildXrayOutbound,
+  chainExitProtocolUnsupported,
+  chainExitUnsupported,
   configIsTestable,
   engineSupports,
   engineSupportsConfig,
   findEngineBinary,
+  isAeadShadowsocksCipher,
+  startCore,
 } from '../src/services/proxyCores';
 import { engineOrder } from '../src/services/proxyEngineRunner';
 import { NodeSecretVault } from '../src/services/nodeSecretVault';
@@ -87,6 +91,69 @@ describe('sing-box config generation', () => {
     const outbounds = full['outbounds'] as Array<Record<string, unknown>>;
     expect(outbounds[0]['type']).toBe('vless');
     expect(outbounds[0]['uuid']).toBe('uuid-9');
+  });
+});
+
+/**
+ * NESTED MODE wiring. The shapes here were measured against xray 26.3.27 / 
+ * sing-box 1.14.0: with dialerProxy (xray) or detour (sing-box) pointing at an
+ * http outbound into the peer core, killing the peer core kills the path — so
+ * these are real chains, not a direct connection with a two-hop label.
+ * v2ray-core 5.53 silently ignores dialerProxy, hence the refusal below.
+ */
+describe('nested-mode chain wiring', () => {
+  it('xray exit dials its node through the peer core via docked dialerProxy + http outbound', () => {
+    const json = buildXrayConfig(cfg(), 'uuid-1234', 1080, null, 9999);
+    const outbounds = json['outbounds'] as Array<Record<string, unknown>>;
+    expect(outbounds).toHaveLength(2);
+    const nodeOutbound = outbounds[0] as { streamSettings: { sockopt?: { dialerProxy?: string } } };
+    const upstream = outbounds[1] as { protocol: string; tag: string; settings: { servers: Array<{ address: string; port: number }> } };
+    expect(nodeOutbound.streamSettings.sockopt).toEqual({ dialerProxy: upstream.tag });
+    expect(upstream.protocol).toBe('http');
+    expect(upstream.settings.servers[0]).toEqual({ address: '127.0.0.1', port: 9999 });
+  });
+
+  it('sing-box exit dials its node through the peer core via detour + http outbound', () => {
+    const json = buildSingboxConfig(cfg(), 'uuid-1234', 1080, null, 9999);
+    const outbounds = json['outbounds'] as Array<Record<string, unknown>>;
+    expect(outbounds).toHaveLength(2);
+    expect(outbounds[0]!['detour']).toBe(outbounds[1]!['tag']);
+    expect(outbounds[1]).toMatchObject({ type: 'http', server: '127.0.0.1', server_port: 9999 });
+  });
+
+  it('leaves both configs untouched when no chain is requested (probe path)', () => {
+    const xray = JSON.stringify(buildXrayConfig(cfg(), 'uuid', 1080));
+    const sing = JSON.stringify(buildSingboxConfig(cfg(), 'uuid', 1080));
+    expect(xray).not.toContain('dialerProxy');
+    expect(sing).not.toContain('detour');
+  });
+
+  it('refuses a v2ray exit hop instead of shipping a chain it ignores', () => {
+    expect(chainExitUnsupported('v2ray', 'vless')).toContain('dialerProxy');
+    expect(chainExitUnsupported('xray', 'vless')).toBeNull();
+    expect(chainExitUnsupported('sing-box', 'vless')).toBeNull();
+  });
+
+  it('refuses UDP protocols as the exit hop whichever core would run them', () => {
+    expect(chainExitProtocolUnsupported('hysteria2')).toContain('UDP-based');
+    expect(chainExitProtocolUnsupported('tuic')).toContain('UDP-based');
+    expect(chainExitProtocolUnsupported('vless')).toBeNull();
+  });
+
+  it('refuses non-AEAD shadowsocks ciphers on the v2ray family (measured: xray exits with "unknown cipher method")', () => {
+    const legacy = cfg({ protocol: 'shadowsocks', encryption: 'aes-256-cfb', transport: 'tcp', security: 'none' });
+    expect(engineSupportsConfig('xray', legacy).ok).toBe(false);
+    expect(engineSupportsConfig('sing-box', legacy).ok).toBe(true);
+    expect(engineSupportsConfig('xray', cfg({ protocol: 'shadowsocks', encryption: 'aes-256-gcm' })).ok).toBe(true);
+    expect(isAeadShadowsocksCipher('chacha20-ietf-poly1305')).toBe(true);
+    expect(isAeadShadowsocksCipher('2022-blake3-aes-128-gcm')).toBe(true);
+    expect(isAeadShadowsocksCipher('aes-256-cfb')).toBe(false);
+  });
+
+  it('startCore refuses the exit role on v2ray before spawning anything', async () => {
+    const res = await startCore({ id: 'v2ray', bin: 'definitely-not-a-real-binary', args: ['run'] }, cfg(), 'uuid', 500, { dialThroughPort: 9999 });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('dialerProxy');
   });
 });
 

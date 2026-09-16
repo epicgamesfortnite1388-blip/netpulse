@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, gte, inArray, isNull, isNotNull, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, isNotNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 import type { EventCategory, EventLevel, NodeProtocol, TestStatus, TestType } from '@netpulse/shared';
 
@@ -957,6 +958,106 @@ export interface PublicNodeRow {
   updatedAt: number;
 }
 
+/**
+ * Largest single page the node list will return.
+ *
+ * This bounds one response, not what can be reached: `total` is the real count
+ * of stored nodes and `offset` pages over all of them, so every stored node is
+ * reachable even though no single response carries the whole table.
+ */
+export const MAX_LIST_LIMIT = 2000;
+
+export interface NodeListFilters {
+  protocol?: string;
+  country?: string;
+  asn?: number;
+  status?: string;
+  transport?: string;
+  security?: string;
+  freshness?: string;
+  favorite?: boolean;
+  search?: string;
+  minScore?: number;
+  maxLatency?: number;
+  minReliability?: number;
+  /** only nodes whose last proxy test ran through this core ('xray' | 'sing-box') */
+  engine?: string;
+}
+
+/** Escape LIKE wildcards so a search for `50%` searches for `50%`. */
+function escapeLike(term: string): string {
+  return term.replace(/([\\%_])/g, '\\$1');
+}
+
+/**
+ * Substring search across the fields a node can be recognised by, evaluated by
+ * SQLite over every stored row.
+ *
+ * This ran in memory before, over a capped window, so searching for a node
+ * imported earlier than that window answered "nothing found" while the node was
+ * in the database. `ipv4`/`ipv6` are JSON text columns, so matching inside them
+ * is a substring match on the stored array — the same text the user is looking
+ * for, not a re-derived value.
+ */
+function searchCondition(term: string): SQL {
+  const needle = `%${escapeLike(term.toLowerCase())}%`;
+  const likeText = (column: SQLiteColumn) => sql`lower(${column}) like ${needle} escape '\\'`;
+
+  const condition = or(
+    likeText(publicNodes.host),
+    likeText(publicNodes.remark),
+    likeText(publicNodes.protocol),
+    likeText(publicNodes.country),
+    likeText(publicNodes.city),
+    likeText(publicNodes.isp),
+    likeText(publicNodes.organization),
+    likeText(publicNodes.canonicalFingerprint),
+    likeText(publicNodes.ipv4),
+    likeText(publicNodes.ipv6),
+    sql`cast(${publicNodes.asn} as text) like ${needle} escape '\\'`,
+  );
+
+  // `or()` is typed as possibly-undefined; the list above is never empty.
+  return condition ?? sql`1 = 1`;
+}
+
+/**
+ * The SQL expression a sort field orders by, and whether NULL means "never
+ * measured" for that field.
+ */
+function nodeSortPlan(field?: string): { expr: SQL | SQLiteColumn; nullable: boolean } {
+  const n = publicNodes;
+  switch (field) {
+    case 'proxyLatency': return { expr: n.medianProxyMs, nullable: true };
+    case 'tcpLatency': return { expr: n.medianTcpMs, nullable: true };
+    case 'tlsLatency': return { expr: n.medianTlsMs, nullable: true };
+    case 'packetLoss': return { expr: n.recentLossPct, nullable: false };
+    case 'reliability':
+    case 'stability':
+    case 'successRate': return { expr: n.reliabilityPct, nullable: false };
+    case 'score': return { expr: n.score, nullable: false };
+    case 'country': return { expr: n.country, nullable: true };
+    case 'city': return { expr: n.city, nullable: true };
+    case 'asn': return { expr: n.asn, nullable: true };
+    case 'isp': return { expr: n.isp, nullable: true };
+    case 'protocol': return { expr: n.protocol, nullable: false };
+    case 'port': return { expr: n.port, nullable: false };
+    case 'transport': return { expr: n.transport, nullable: false };
+    case 'tls': return { expr: n.security, nullable: false };
+    case 'reality': return { expr: sql`case when ${n.security} = 'reality' then 1 else 0 end`, nullable: false };
+    case 'ipv4': return { expr: sql`json_array_length(${n.ipv4})`, nullable: false };
+    case 'ipv6': return { expr: sql`json_array_length(${n.ipv6})`, nullable: false };
+    case 'source':
+    case 'sourceCount': return { expr: n.sourceCount, nullable: false };
+    case 'firstSeen': return { expr: n.firstSeen, nullable: false };
+    case 'lastSeen':
+    // Anything unrecognised (including 'uptime', which the API has never had a
+    // definition for) falls back to recency — the same default as before, so an
+    // unknown field cannot silently reorder by some other column.
+    default: return { expr: n.lastSeen, nullable: false };
+  }
+}
+
 export class PublicNodesRepository {
   constructor(private readonly handle: DbHandle) {}
 
@@ -1119,10 +1220,161 @@ export class PublicNodesRepository {
     sortField?: string;
     sortDir?: 'asc' | 'desc';
   } = {}): { rows: PublicNodeRow[]; total: number } {
-    const limit = Math.min(opts.limit ?? 100, 500);
-    const offset = opts.offset ?? 0;
+    const limit = Math.max(1, Math.min(opts.limit ?? 100, MAX_LIST_LIMIT));
+    const offset = Math.max(0, opts.offset ?? 0);
+    const conditions = this.nodeConditions(opts);
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Build conditions array for Drizzle
+    const query = this.handle.db.select().from(publicNodes);
+    const rows = (where ? query.where(where) : query)
+      .orderBy(...this.nodeOrder(opts.sortField, opts.sortDir))
+      .limit(limit)
+      .offset(offset)
+      .all() as PublicNodeRow[];
+
+    // The count is a COUNT: `total` used to be the length of a 2,000-row window,
+    // so a database holding tens of thousands of nodes reported "2000" and every
+    // consumer (header, pager, statistics) repeated that number as if it were the
+    // number of nodes that exist.
+    return { rows, total: this.count(opts) };
+  }
+
+  /**
+   * How many stored nodes match these filters. Same predicates as `list`, so a
+   * page and its total can never disagree.
+   */
+  count(opts: NodeListFilters = {}): number {
+    const conditions = this.nodeConditions(opts);
+    const query = this.handle.db.select({ n: count() }).from(publicNodes);
+    const row = conditions.length > 0 ? query.where(and(...conditions)).get() : query.get();
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Real stored-node totals and breakdowns, grouped in SQL.
+   *
+   * The Explorer header and GET /nodes/stats quote these, so each number is a
+   * COUNT of rows that exist. They used to be derived from a 1,000-row window,
+   * which made every breakdown a description of the first thousand rows rather
+   * than of the database.
+   */
+  summary(): {
+    total: number;
+    favoriteCount: number;
+    protocolBreakdown: Record<string, number>;
+    countryBreakdown: Record<string, number>;
+    transportBreakdown: Record<string, number>;
+  } {
+    const grouped = (column: SQLiteColumn): Record<string, number> =>
+      Object.fromEntries(
+        this.handle.db
+          .select({ key: column, n: count() })
+          .from(publicNodes)
+          .groupBy(column)
+          .all()
+          .filter((r) => r.key != null)
+          .map((r) => [String(r.key), r.n]),
+      );
+
+    return {
+      total: this.count(),
+      favoriteCount: this.count({ favorite: true }),
+      protocolBreakdown: grouped(publicNodes.protocol),
+      countryBreakdown: grouped(publicNodes.country),
+      transportBreakdown: grouped(publicNodes.transport),
+    };
+  }
+
+  /**
+   * Nodes whose host is this hostname/substring, selected in SQL.
+   *
+   * The route used to list the newest 100 rows and filter them in memory, so
+   * looking up any node that was not in that window answered "no nodes" while
+   * the node was stored — a lookup that reports absence for a row that exists.
+   * Exact matches rank first.
+   */
+  findByHost(host: string, limit = 100): PublicNodeRow[] {
+    const needle = host.toLowerCase();
+    const pattern = `%${escapeLike(needle)}%`;
+    return this.handle.db
+      .select()
+      .from(publicNodes)
+      .where(sql`lower(${publicNodes.host}) = ${needle} or lower(${publicNodes.host}) like ${pattern} escape '\\'`)
+      .orderBy(sql`lower(${publicNodes.host}) = ${needle} desc`, desc(publicNodes.lastSeen))
+      .limit(Math.max(1, Math.min(limit, MAX_LIST_LIMIT)))
+      .all() as PublicNodeRow[];
+  }
+
+  /**
+   * Candidates for the autonomous tester, one bucket at a time, chosen in SQL.
+   *
+   * Every bucket used to be computed by loading the newest 2,000 rows and
+   * filtering them in memory, so the scheduler could only ever test nodes near
+   * the top of that window: most of a large database never reached the tester
+   * at all. The predicates below are the same ones, expressed as queries over
+   * the whole table.
+   */
+  pickForAutoTest(
+    bucket: 'never-validated' | 'stale-good' | 'unstable',
+    limit: number,
+    now = Date.now(),
+  ): Array<{ id: string }> {
+    const capped = Math.max(1, Math.min(limit, MAX_LIST_LIMIT));
+    const query = this.handle.db.select({ id: publicNodes.id }).from(publicNodes);
+
+    switch (bucket) {
+      case 'never-validated':
+        return query
+          .where(isNull(publicNodes.lastValidated))
+          .orderBy(desc(publicNodes.firstSeen))
+          .limit(capped)
+          .all();
+      case 'stale-good':
+        return query
+          .where(and(isNotNull(publicNodes.lastValidated), or(eq(publicNodes.status, 'healthy'), gte(publicNodes.score, 60))))
+          .orderBy(asc(publicNodes.lastValidated))
+          .limit(capped)
+          .all();
+      case 'unstable':
+        return query
+          .where(
+            and(
+              gt(publicNodes.consecutiveFailures, 0),
+              lt(publicNodes.consecutiveFailures, 10),
+              gte(publicNodes.lastFailureAt, now - 7 * 86_400_000),
+            ),
+          )
+          .orderBy(desc(publicNodes.lastFailureAt))
+          .limit(capped)
+          .all();
+    }
+  }
+
+  /**
+   * Retire nodes the sources stopped carrying AND that keep failing, in one
+   * statement. Returns how many rows changed.
+   *
+   * The caller used to list a capped window and loop over it, so retirement only
+   * ever considered a small slice of the database. History is untouched (the
+   * retention service owns deletion); only the lifecycle state moves.
+   */
+  retireStale(cutoff: number, minConsecutiveFailures: number): number {
+    const result = this.handle.db
+      .update(publicNodes)
+      .set({ status: 'stale', updatedAt: Date.now() } as Partial<PublicNodeRow>)
+      .where(
+        and(
+          ne(publicNodes.status, 'stale'),
+          lt(publicNodes.lastSeen, cutoff),
+          gte(publicNodes.consecutiveFailures, minConsecutiveFailures),
+        ),
+      )
+      .run();
+    return result.changes;
+  }
+
+  /** WHERE clauses for the list/count queries — one definition, used by both. */
+  private nodeConditions(opts: NodeListFilters): SQL[] {
     const conditions: SQL[] = [];
     if (opts.protocol) conditions.push(eq(publicNodes.protocol, opts.protocol));
     if (opts.country) conditions.push(eq(publicNodes.country, opts.country));
@@ -1136,102 +1388,42 @@ export class PublicNodesRepository {
     if (opts.maxLatency != null) conditions.push(lte(publicNodes.medianProxyMs, opts.maxLatency));
     if (opts.minReliability != null) conditions.push(gte(publicNodes.reliabilityPct, opts.minReliability));
     if (opts.engine) conditions.push(eq(publicNodes.lastEngine, opts.engine));
-
-    // Fetch all matching rows (with a reasonable cap for client-side search)
-    const qb = this.handle.db.select().from(publicNodes);
-    const allRows = (conditions.length > 0
-      ? qb.where(and(...conditions)).orderBy(desc(publicNodes.lastSeen)).limit(2000).all()
-      : qb.orderBy(desc(publicNodes.lastSeen)).limit(2000).all()) as PublicNodeRow[];
-
-    // Apply search filter client-side
-    let filteredRows = allRows;
-    if (opts.search) {
-      const s = opts.search.toLowerCase();
-      filteredRows = allRows.filter((r) =>
-        r.host.toLowerCase().includes(s) ||
-        r.ipv4.some((ip) => ip.includes(s)) ||
-        r.ipv6.some((ip) => ip.includes(s)) ||
-        r.canonicalFingerprint.includes(s) ||
-        r.protocol.includes(s) ||
-        r.remark?.toLowerCase().includes(s),
-      );
-    }
-
-    // Sort
-    const sorted = this.sortNodes(filteredRows, opts.sortField, opts.sortDir);
-
-    const total = filteredRows.length;
-    const rows = sorted.slice(offset, offset + limit);
-
-    return { rows, total };
+    if (opts.search) conditions.push(searchCondition(opts.search));
+    return conditions;
   }
 
-  private sortNodes(rows: PublicNodeRow[], field?: string, dir?: 'asc' | 'desc'): PublicNodeRow[] {
-    const f = field ?? 'lastSeen';
-    const d = dir ?? 'desc';
-    const multiplier = d === 'asc' ? 1 : -1;
+  /**
+   * ORDER BY for the list. Two properties matter beyond "sorted":
+   *
+   *   - a missing measurement is not a small measurement, so NULLs sort last in
+   *     both directions — an unmeasured node must never head a
+   *     fastest-first list, and absence must not outrank a real 900 ms reading;
+   *   - the order is total (field, then last_seen, then id), because paging over
+   *     an unstable sort can show one row twice and skip another entirely.
+   */
+  private nodeOrder(field?: string, dir: 'asc' | 'desc' = 'desc'): SQL[] {
+    // Runtime is a grouping, not a scalar order: the blocks always read
+    // xray → sing-box → v2ray → never-tested (reversing them would float the
+    // untested block to the top), and the direction only flips the score
+    // ordering *inside* a block, where asc means best score first. That is the
+    // contract the explorer's Runtime column has always promised.
+    if (field === 'engine') {
+      return [
+        sql`case ${publicNodes.lastEngine} when 'xray' then 0 when 'sing-box' then 1 when 'v2ray' then 2 else 3 end`,
+        dir === 'asc' ? desc(publicNodes.score) : asc(publicNodes.score),
+        desc(publicNodes.lastSeen),
+        asc(publicNodes.id),
+      ];
+    }
 
-    return rows.sort((a, b) => {
-      let av: number | string | null = 0;
-      let bv: number | string | null = 0;
-
-      switch (f) {
-        case 'proxyLatency':
-          av = a.medianProxyMs ?? Infinity; bv = b.medianProxyMs ?? Infinity; break;
-        case 'tcpLatency':
-          av = a.medianTcpMs ?? Infinity; bv = b.medianTcpMs ?? Infinity; break;
-        case 'tlsLatency':
-          av = a.medianTlsMs ?? Infinity; bv = b.medianTlsMs ?? Infinity; break;
-        case 'packetLoss':
-          av = a.recentLossPct; bv = b.recentLossPct; break;
-        case 'reliability':
-          av = a.reliabilityPct; bv = b.reliabilityPct; break;
-        case 'score':
-          av = a.score; bv = b.score; break;
-        case 'country':
-          av = a.country ?? ''; bv = b.country ?? ''; break;
-        case 'city':
-          av = a.city ?? ''; bv = b.city ?? ''; break;
-        case 'asn':
-          av = a.asn ?? 0; bv = b.asn ?? 0; break;
-        case 'isp':
-          av = a.isp ?? ''; bv = b.isp ?? ''; break;
-        case 'protocol':
-          av = a.protocol; bv = b.protocol; break;
-        case 'port':
-          av = a.port; bv = b.port; break;
-        case 'transport':
-          av = a.transport; bv = b.transport; break;
-        case 'tls':
-          av = a.security; bv = b.security; break;
-        case 'reality':
-          av = a.security === 'reality' ? 1 : 0; bv = b.security === 'reality' ? 1 : 0; break;
-        case 'ipv4':
-          av = a.ipv4.length; bv = b.ipv4.length; break;
-        case 'ipv6':
-          av = a.ipv6.length; bv = b.ipv6.length; break;
-        case 'source':
-          av = a.sourceCount; bv = b.sourceCount; break;
-        case 'sourceCount':
-          av = a.sourceCount; bv = b.sourceCount; break;
-        case 'firstSeen':
-          av = a.firstSeen; bv = b.firstSeen; break;
-        case 'lastSeen':
-          av = a.lastSeen; bv = b.lastSeen; break;
-        case 'stability':
-          av = a.reliabilityPct; bv = b.reliabilityPct; break;
-        default:
-          av = a.lastSeen; bv = b.lastSeen;
-      }
-
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1 * multiplier;
-      if (bv == null) return -1 * multiplier;
-      if (typeof av === 'string' && typeof bv === 'string') {
-        return av.localeCompare(bv) * multiplier;
-      }
-      return ((av as number) - (bv as number)) * multiplier;
-    });
+    const direction = dir === 'asc' ? asc : desc;
+    const plan = nodeSortPlan(field);
+    const order: SQL[] = [];
+    if (plan.nullable) order.push(sql`${plan.expr} is null`);
+    order.push(direction(plan.expr));
+    order.push(desc(publicNodes.lastSeen));
+    order.push(asc(publicNodes.id));
+    return order;
   }
 
   clear(): number {
@@ -1241,7 +1433,8 @@ export class PublicNodesRepository {
 }
 
 export interface NodeAddressRow {
-  id: number;
+  /** Assigned by the table's autoincrement — callers must not compute it. */
+  id?: number;
   nodeId: string;
   ip: string;
   family: 4 | 6;
@@ -1274,7 +1467,8 @@ export class NodeAddressesRepository {
 }
 
 export interface NodeSourceRow {
-  id: number;
+  /** Assigned by the table's autoincrement — callers must not compute it. */
+  id?: number;
   nodeId: string;
   sourceId: string;
   sourceUrl: string;

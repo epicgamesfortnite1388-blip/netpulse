@@ -476,25 +476,45 @@ export async function recheckNodeGeo(
  * + force coordinates re-pins a node instead. Returns rows touched.
  */
 export function scrubAnycastGeo(nodesRepo: {
-  list(opts: { limit: number }): { rows: PublicNodeRow[] };
+  list(opts: { limit: number; offset?: number }): { rows: PublicNodeRow[] };
   updateGeo(id: string, geo: Record<string, unknown>): void;
 }): number {
+  const pageSize = 2000;
+  const seen = new Set<string>();
   let scrubbed = 0;
+
   try {
-    for (const row of nodesRepo.list({ limit: 5000 }).rows) {
-      const cls = classifyGeoTarget(row.host, row.asn);
-      if (cls === 'unicast' && inCountryBox(row.country, row.lat, row.lon)) continue;
-      if (row.lat == null && row.lon == null && row.country == null) continue;
-      nodesRepo.updateGeo(row.id, {
-        country: null,
-        city: null,
-        lat: null,
-        lon: null,
-        confidence: 'unknown',
-        geoSourceCount: 1,
-        geoLastAttempt: Date.now(),
-      });
-      scrubbed += 1;
+    // Pages over the whole table. A single capped window was the old behaviour,
+    // so on a large database most legacy rows were never repaired while the
+    // scrub was reported as done. The loop stops when a page brings no row it
+    // has not already seen, which is also the guarantee that a query that is
+    // not advancing cannot spin here.
+    for (let offset = 0; ; offset += pageSize) {
+      const page = nodesRepo.list({ limit: pageSize, offset }).rows;
+      if (page.length === 0) break;
+
+      let unseen = 0;
+      for (const row of page) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        unseen += 1;
+
+        const cls = classifyGeoTarget(row.host, row.asn);
+        if (cls === 'unicast' && inCountryBox(row.country, row.lat, row.lon)) continue;
+        if (row.lat == null && row.lon == null && row.country == null) continue;
+        nodesRepo.updateGeo(row.id, {
+          country: null,
+          city: null,
+          lat: null,
+          lon: null,
+          confidence: 'unknown',
+          geoSourceCount: 1,
+          geoLastAttempt: Date.now(),
+        });
+        scrubbed += 1;
+      }
+
+      if (unseen === 0 || page.length < pageSize) break;
     }
   } catch {
     // scrub is best-effort; the geo worker refuses refused-classes going forward

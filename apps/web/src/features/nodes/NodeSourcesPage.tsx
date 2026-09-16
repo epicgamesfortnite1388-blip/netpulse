@@ -142,11 +142,21 @@ export default function NodeSourcesPage() {
       toast(
         'ok',
         `Fetched "${name}"`,
-        `${res.imported ?? 0} imported · ${res.duplicates ?? 0} duplicates · ${res.invalid ?? 0} invalid`,
+        // 'imported' is the importer's accepted count, which includes configs it
+        // recognised from an earlier fetch — labelled here so the number cannot
+        // be read as "this many new nodes" (a re-fetch of an unchanged list
+        // reports every config accepted and every one already known).
+        `${res.imported ?? 0} accepted (${res.duplicates ?? 0} already known) · ${res.invalid ?? 0} invalid`,
       );
       await load();
     } catch (err) {
       toast('error', `Fetch failed for "${name}"`, err instanceof Error ? err.message : undefined);
+      // The pipeline persists its own verdict ('failed' + health 'poor'), so the
+      // row must be re-read: without this the failed source kept displaying its
+      // previous status and counts — 'idle 0 0' for a feed that just 404'd — and
+      // the only trace of the failure was a toast that disappears after a few
+      // seconds. A failed fetch has to stay visible.
+      await load();
     } finally {
       setFetchingId(null);
     }

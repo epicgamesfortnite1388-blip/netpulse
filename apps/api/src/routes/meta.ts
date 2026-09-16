@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import pkg from '../../package.json';
 
+import { proxyEngineStatus } from '../services/proxyEngineRunner';
+
 import type { FastifyInstance } from 'fastify';
 
 import type { AppContext } from './context';
@@ -47,10 +49,31 @@ async function detectCapabilities(ctx: AppContext): Promise<PlatformCapabilities
   }
 
   const binaries = await ctx.controller.detectVpnBinaries();
+  // The app runs two kinds of engine. The tunnel providers above need their
+  // binary on PATH; the app-managed proxy cores (installed by this app into its
+  // data dir) drive node tests and the local proxy tunnel. Reporting only the
+  // PATH side made "unavailable" mean "we found nothing" on a machine with
+  // xray/sing-box/v2ray installed.
+  const installedCores = proxyEngineStatus(ctx.services.settings.get().proxyEngine?.preferred ?? 'auto')
+    .engines.filter((e) => e.available)
+    .map((e) => e.id);
   const vpn: PlatformCapabilities['vpn'] = {
     wireGuard: { installed: binaries.wireguard ?? false, note: binaries.wireguard ? 'wireguard CLI present' : 'Not installed — WireGuard profiles import but cannot connect.' },
     openVpn: { installed: binaries.openvpn ?? false, note: binaries.openvpn ? 'openvpn CLI present' : 'Not installed — OpenVPN profiles import but cannot connect.' },
-    singBox: { installed: binaries.singbox ?? false, note: binaries.singbox ? 'sing-box present' : 'Not installed — VLESS/VMess/Trojan/Shadowsocks profiles import but cannot connect.' },
+    singBox: {
+      installed: binaries.singbox ?? false,
+      note: binaries.singbox
+        ? 'sing-box present'
+        : installedCores.length > 0
+          ? `sing-box is not on PATH, so the sing-box tunnel provider is unavailable. The app-managed cores (${installedCores.join(', ')}) still run node tests and the local proxy tunnel for these protocols.`
+          : 'Not installed — VLESS/VMess/Trojan/Shadowsocks profiles import but cannot connect.',
+    },
+    proxyCores: {
+      installed: installedCores.length > 0,
+      note: installedCores.length > 0
+        ? `App-managed proxy cores installed: ${installedCores.join(', ')}.`
+        : 'No app-managed proxy core — node tests that need a real proxied request report unavailable.',
+    },
   };
 
   const caps: PlatformCapabilities = {

@@ -1,7 +1,7 @@
 export interface VpnProviderInfo {
   id: string;
   name: string;
-  kind: 'wireguard' | 'openvpn' | 'singbox' | 'custom';
+  kind: 'wireguard' | 'openvpn' | 'singbox' | 'aether' | 'custom';
   /** capability flags, e.g. 'connect', 'import-config', 'kill-switch' */
   capabilities: string[];
   /** false until the native platform layer confirms the engine exists */
@@ -62,7 +62,7 @@ export interface VpnProfile {
   id: string;
   providerId: string;
   name: string;
-  kind: 'wireguard' | 'openvpn' | 'sing-box' | 'custom';
+  kind: 'wireguard' | 'openvpn' | 'sing-box' | 'aether' | 'custom';
   /** endpoint summary for display only — never includes secrets/keys */
   endpoint: string | null;
   createdAt: number;

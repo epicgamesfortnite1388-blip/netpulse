@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useNavigate } from 'react-router';
 
@@ -38,8 +38,6 @@ import type {
   NodeStatus,
   NodeSortField,
   NodeSortDir,
-  NodeSort,
-  NodeFilter,
   NodeTestResult,
   PublicNode,
   ProxyEngineStatus,
@@ -189,268 +187,6 @@ function EngineBadge(props: { engine: 'xray' | 'sing-box' | 'v2ray' }) {
   return <SharedEngineBadge engine={props.engine} title={`Last proxy test ran through the ${ENGINE_LABELS[props.engine]} runtime`} />;
 }
 
-function buildFilters(opts: {
-  protocol?: string;
-  country?: string;
-  asn?: string;
-  status?: string;
-  transport?: string;
-  security?: string;
-  freshness?: string;
-  favorite?: boolean;
-  search?: string;
-  minScore?: number;
-  maxLatency?: number;
-  minReliability?: number;
-}): NodeFilter[] {
-  const filters: NodeFilter[] = [];
-  if (opts.protocol && opts.protocol !== 'all') {
-    filters.push({ field: 'protocol', op: 'eq', value: opts.protocol });
-  }
-  if (opts.country) {
-    filters.push({ field: 'country', op: 'eq', value: opts.country });
-  }
-  if (opts.asn) {
-    filters.push({ field: 'asn', op: 'eq', value: Number(opts.asn) });
-  }
-  if (opts.status && opts.status !== 'all') {
-    filters.push({ field: 'status', op: 'eq', value: opts.status });
-  }
-  if (opts.transport && opts.transport !== 'all') {
-    filters.push({ field: 'transport', op: 'eq', value: opts.transport });
-  }
-  if (opts.security && opts.security !== 'all') {
-    filters.push({ field: 'security', op: 'eq', value: opts.security });
-  }
-  if (opts.freshness && opts.freshness !== 'all') {
-    filters.push({ field: 'freshness', op: 'eq', value: opts.freshness });
-  }
-  if (opts.favorite !== undefined) {
-    filters.push({ field: 'favorite', op: 'eq', value: opts.favorite });
-  }
-  if (opts.minScore != null && opts.minScore > 0) {
-    filters.push({ field: 'score', op: 'gte', value: opts.minScore });
-  }
-  if (opts.maxLatency != null && opts.maxLatency > 0) {
-    filters.push({ field: 'medianProxyMs', op: 'lte', value: opts.maxLatency });
-  }
-  if (opts.minReliability != null && opts.minReliability > 0) {
-    filters.push({ field: 'reliabilityPct', op: 'gte', value: opts.minReliability });
-  }
-  return filters;
-}
-
-function applyFilters(nodes: PublicNode[], filters: NodeFilter[]): PublicNode[] {
-  if (filters.length === 0) return nodes;
-  return nodes.filter((n) => {
-    for (const f of filters) {
-      let value: unknown;
-      switch (f.field) {
-        case 'protocol':
-          value = n.protocol;
-          break;
-        case 'country':
-          value = n.country;
-          break;
-        case 'asn':
-          value = n.asn;
-          break;
-        case 'status':
-          value = n.status;
-          break;
-        case 'transport':
-          value = n.transport;
-          break;
-        case 'security':
-          value = n.security;
-          break;
-        case 'tls':
-          value = n.security === 'tls' || n.security === 'reality';
-          break;
-        case 'reality':
-          value = n.security === 'reality';
-          break;
-        case 'ipv4':
-          value = n.ipv4.length > 0;
-          break;
-        case 'ipv6':
-          value = n.ipv6.length > 0;
-          break;
-        case 'sourceCount':
-          value = n.sourceCount;
-          break;
-        case 'score':
-          value = n.score;
-          break;
-        case 'medianProxyMs':
-          value = n.medianProxyMs;
-          break;
-        case 'medianTcpMs':
-          value = n.medianTcpMs;
-          break;
-        case 'medianTlsMs':
-          value = n.medianTlsMs;
-          break;
-        case 'recentLossPct':
-          value = n.recentLossPct;
-          break;
-        case 'reliabilityPct':
-          value = n.reliabilityPct;
-          break;
-        case 'lastValidated':
-          value = n.lastValidated;
-          break;
-        case 'favorite':
-          value = n.favorite;
-          break;
-        case 'freshness':
-          value = n.freshness;
-          break;
-        default:
-          continue;
-      }
-
-      if (f.op === 'eq') {
-        if (value !== f.value) return false;
-      } else if (f.op === 'neq') {
-        if (value === f.value) return false;
-      } else if (f.op === 'gt') {
-        if ((value as number) <= (f.value as number)) return false;
-      } else if (f.op === 'gte') {
-        if ((value as number) < (f.value as number)) return false;
-      } else if (f.op === 'lt') {
-        if ((value as number) >= (f.value as number)) return false;
-      } else if (f.op === 'lte') {
-        if ((value as number) > (f.value as number)) return false;
-      } else if (f.op === 'contains' && typeof value === 'string') {
-        if (!value.toLowerCase().includes(String(f.value).toLowerCase())) return false;
-      }
-    }
-    return true;
-  });
-}
-
-export function applySort(nodes: PublicNode[], sort: NodeSort): PublicNode[] {
-  const { field, dir } = sort;
-  const multiplier = dir === 'asc' ? 1 : -1;
-
-  return [...nodes].sort((a, b) => {
-    let av: number | string | null = 0;
-    let bv: number | string | null = 0;
-
-    switch (field) {
-      case 'proxyLatency':
-        av = a.medianProxyMs ?? Infinity;
-        bv = b.medianProxyMs ?? Infinity;
-        break;
-      case 'tcpLatency':
-        av = a.medianTcpMs ?? Infinity;
-        bv = b.medianTcpMs ?? Infinity;
-        break;
-      case 'tlsLatency':
-        av = a.medianTlsMs ?? Infinity;
-        bv = b.medianTlsMs ?? Infinity;
-        break;
-      case 'packetLoss':
-        av = a.recentLossPct;
-        bv = b.recentLossPct;
-        break;
-      case 'reliability':
-        av = a.reliabilityPct;
-        bv = b.reliabilityPct;
-        break;
-      case 'score':
-        av = a.score;
-        bv = b.score;
-        break;
-      case 'country':
-        av = a.country ?? '';
-        bv = b.country ?? '';
-        break;
-      case 'city':
-        av = a.city ?? '';
-        bv = b.city ?? '';
-        break;
-      case 'asn':
-        av = a.asn ?? 0;
-        bv = b.asn ?? 0;
-        break;
-      case 'isp':
-        av = a.isp ?? '';
-        bv = b.isp ?? '';
-        break;
-      case 'protocol':
-        av = a.protocol;
-        bv = b.protocol;
-        break;
-      case 'port':
-        av = a.port;
-        bv = b.port;
-        break;
-      case 'transport':
-        av = a.transport;
-        bv = b.transport;
-        break;
-      case 'tls':
-        av = a.security;
-        bv = b.security;
-        break;
-      case 'reality':
-        av = a.security === 'reality' ? 1 : 0;
-        bv = b.security === 'reality' ? 1 : 0;
-        break;
-      case 'engine': {
-        // Group by runtime: xray block, then sing-box block, never-tested last
-        // — fixed group order in both directions (reversing would float the
-        // untested block to the top). Direction flips only the within-group
-        // score ordering: asc = best score first.
-        const rankOf = (e: string | null | undefined) => (e === 'xray' ? 0 : e === 'sing-box' ? 1 : e === 'v2ray' ? 2 : 3);
-        const ar = rankOf(a.lastEngine);
-        const br = rankOf(b.lastEngine);
-        if (ar !== br) return ar - br;
-        if (ar === 3) return 0; // untested keep input order
-        return (b.score - a.score) * multiplier;
-      }
-      case 'ipv4':
-        av = a.ipv4.length;
-        bv = b.ipv4.length;
-        break;
-      case 'ipv6':
-        av = a.ipv6.length;
-        bv = b.ipv6.length;
-        break;
-      case 'source':
-      case 'sourceCount':
-        av = a.sourceCount;
-        bv = b.sourceCount;
-        break;
-      case 'firstSeen':
-        av = a.firstSeen;
-        bv = b.firstSeen;
-        break;
-      case 'lastSeen':
-        av = a.lastSeen;
-        bv = b.lastSeen;
-        break;
-      case 'stability':
-        av = a.reliabilityPct;
-        bv = b.reliabilityPct;
-        break;
-      default:
-        av = a.lastSeen;
-        bv = b.lastSeen;
-    }
-
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1 * multiplier;
-    if (bv == null) return -1 * multiplier;
-    if (typeof av === 'string' && typeof bv === 'string') {
-      return av.localeCompare(bv) * multiplier;
-    }
-    return ((av as number) - (bv as number)) * multiplier;
-  });
-}
-
 export default function NodeExplorerPage() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -508,30 +244,14 @@ export default function NodeExplorerPage() {
     void loadData();
   }, [loadData]);
 
-  // Rebuild filters when filters change
-  const filters = useMemo(() => buildFilters({
-    protocol,
-    status,
-    transport,
-    security,
-    freshness,
-    search,
-    minScore,
-    maxLatency,
-    minReliability,
-  }), [protocol, status, transport, security, freshness, search, minScore, maxLatency, minReliability]);
-
-  // Apply filters client-side
-  const filteredNodes = useMemo(() => {
-    let result = nodes;
-    if (filters.length > 0) {
-      result = applyFilters(result, filters);
-    }
-    return applySort(result, { field: sortField, dir: sortDir });
-  }, [nodes, filters, sortField, sortDir]);
-
-  const displayedNodes = filteredNodes.slice(page * pageSize, (page + 1) * pageSize);
-  const totalPages = Math.max(1, Math.ceil(filteredNodes.length / pageSize));
+  // The server owns filtering, sorting and paging, and `total` is the real count
+  // of stored nodes matching the current filters. This page used to re-apply the
+  // filters and re-sort the response in the browser and then slice that response
+  // again by the global offset — with a 50-row page, page 2 sliced at index 50
+  // and rendered nothing, and the page count came from the rows on screen rather
+  // than from the database.
+  const displayedNodes = nodes;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleTestNode = useCallback(async (nodeId: string, type: 'tcp' | 'tls' | 'proxy' | 'icmp' = 'tcp') => {
     try {
@@ -583,7 +303,7 @@ export default function NodeExplorerPage() {
 
   const handleExport = useCallback(async (format: 'uri' | 'plaintext' | 'base64' | 'json' | 'clash' | 'singbox') => {
     try {
-      const nodeIds = filteredNodes.map((n) => n.id).join(',');
+      const nodeIds = nodes.map((n) => n.id).join(',');
       const result = await api.get<string>(`/nodes/export?nodeIds=${encodeURIComponent(nodeIds)}&format=${format}`);
 
       const blob = new Blob([result], { type: 'text/plain' });
@@ -593,11 +313,13 @@ export default function NodeExplorerPage() {
       a.download = `nodes-${format}-${Date.now()}.txt`;
       a.click();
       URL.revokeObjectURL(url);
-      toast('ok', 'Exported', `${format} — ${filteredNodes.length} nodes`);
+      // Export works on the rows the API returned for this page — say so rather
+      // than implying the whole filtered set was written out.
+      toast('ok', 'Exported', `${format} — ${nodes.length} nodes on this page`);
     } catch (err) {
       toast('error', 'Export failed', err instanceof Error ? err.message : undefined);
     }
-  }, [filteredNodes, toast]);
+  }, [nodes, toast]);
 
   const handleRefresh = useCallback(() => {
     setPage(0);

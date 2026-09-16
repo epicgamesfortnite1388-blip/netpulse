@@ -13,7 +13,10 @@ import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { armElevationBridge } from '@/lib/elevationBroker';
 
+import { AetherCard } from './AetherCard';
+import { DiscoveryCard } from './DiscoveryCard';
 import { ProxyTunnelCard } from './ProxyTunnelCard';
+import { VpnHistoryCard } from './VpnHistoryCard';
 
 import type { VpnStatus } from '@shared/models/vpn';
 
@@ -228,9 +231,11 @@ export default function VpnPage() {
         title="VPN"
         description="Import profiles and control tunnels through the backend's provider layer. WireGuard and OpenVPN drive the installed native clients; sing-box runs VLESS/VMess/Trojan/Shadowsocks links in unprivileged proxy mode. Private key material never leaves the encrypted vault."
         actions={
-          connected ? (
+          // Also offered while the kill switch is blocking: that state has no
+          // connected tunnel, and Disconnect is the way out of it.
+          connected || status?.killSwitchActive ? (
             <Button variant="danger" onClick={() => disconnect.mutate()} loading={disconnect.isPending}>
-              Disconnect
+              {connected ? 'Disconnect' : 'Release kill switch'}
             </Button>
           ) : null
         }
@@ -239,7 +244,10 @@ export default function VpnPage() {
       {statusQuery.isError && <ErrorState error={statusQuery.error} retry={() => void statusQuery.refetch()} />}
       {statusQuery.isLoading && <LoadingState label="Reading VPN state" />}
 
+      <AetherCard />
       <ProxyTunnelCard />
+      <DiscoveryCard />
+      <VpnHistoryCard />
 
       {status && (
         <Card className={`mb-6 ${connected ? 'border-ok/40' : ''}`}>
@@ -261,7 +269,7 @@ export default function VpnPage() {
                 {status.endpoint && <span>Endpoint: <span className="text-text">{status.endpoint}</span></span>}
                 {status.since != null && <span>Since: <span className="text-text">{new Date(status.since).toLocaleTimeString()}</span></span>}
                 {status.verifiedPublicIp && <span>Tunnel IP: <span className="text-text">{status.verifiedPublicIp}</span></span>}
-                {status.killSwitchActive && <Badge tone="ok">kill switch active</Badge>}
+                {status.killSwitchActive && <Badge tone="danger">kill switch blocking</Badge>}
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-muted">

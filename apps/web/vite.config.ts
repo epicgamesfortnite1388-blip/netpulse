@@ -6,6 +6,12 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // react-globe.gl's dependency three-conic-polygon-geometry touches `window`
+  // at import time; pure-logic map tests import from the page module, so give
+  // every test run a DOM.
+  test: {
+    environment: 'jsdom',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { BYPASS_MAX_ENTRIES } from '../models/vpnBypass';
+import { SCAN_PROFILE_IDS } from '../models/scanProfile';
+
 import type { AppSettings } from '../models/settings';
 
 /**
@@ -75,6 +78,21 @@ const weightsSchema = z
     message: 'Weights must sum to 100',
   });
 
+const scanProfileSchema = z.enum(SCAN_PROFILE_IDS as [string, ...string[]]);
+
+/**
+ * Split-tunnel rule lists. Entries are validated as bounded strings here and
+ * normalized/refused for real by `normalizeBypass` (which drops entries that
+ * are not plausible domains or addresses rather than guessing at them).
+ */
+export const VpnBypassSchema = z.object({
+  enabled: z.boolean(),
+  domains: z.array(z.string().max(253)).max(BYPASS_MAX_ENTRIES),
+  ips: z.array(z.string().max(64)).max(BYPASS_MAX_ENTRIES),
+  ports: z.array(z.number().int().min(1).max(65_535)).max(64),
+  lan: z.boolean(),
+});
+
 export const SettingsSchema = z.object({
   general: z.object({
     theme: z.enum(['dark', 'light', 'system']),
@@ -106,6 +124,8 @@ export const SettingsSchema = z.object({
     autoSelectServer: z.boolean(),
     dnsThroughVpn: z.boolean(),
     ipv6Behavior: z.enum(['block', 'allow', 'auto']),
+    bypass: VpnBypassSchema,
+    scanProfile: scanProfileSchema,
   }),
   proxyEngine: z.object({
     preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray']),
@@ -143,6 +163,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoSelectServer: true,
     dnsThroughVpn: true,
     ipv6Behavior: 'auto',
+    // Off by default: a bypass list changes routing in ways the user must
+    // opt into, but LAN-bypass is on because a tunnel that breaks your own
+    // LAN is a bug, not a privacy feature.
+    bypass: { enabled: false, domains: [], ips: [], ports: [], lan: true },
+    scanProfile: 'balanced',
   },
   proxyEngine: {
     preferred: 'auto',
@@ -206,6 +231,8 @@ export const SettingsPatchSchema = z
         autoSelectServer: z.boolean(),
         dnsThroughVpn: z.boolean(),
         ipv6Behavior: z.enum(['block', 'allow', 'auto']),
+        bypass: VpnBypassSchema.partial(),
+        scanProfile: scanProfileSchema,
       })
       .partial(),
     proxyEngine: z

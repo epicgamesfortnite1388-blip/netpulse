@@ -78,6 +78,183 @@ export const ENGINE_RELEASES: Record<
 
 const RELEASE_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
 
+/**
+ * Aether (https://github.com/CluvexStudio/Aether) — a censorship-circumvention
+ * tunnel binary shipped as its own engine. Installed into its own dir so it
+ * never collides with the proxy cores drop-in folder; identity state lives
+ * beside the binary. Its release publishes a per-asset `.sha256` sidecar plus
+ * a SHA256SUMS.txt; both are honored (sidecar first).
+ */
+export const AETHER_RELEASE = {
+  repo: 'CluvexStudio/Aether',
+  assetName: (platform: string, arch: string): string | null => {
+    if (platform === 'win32') return arch === 'arm64' ? null : 'aether-windows-x86_64.zip';
+    if (platform === 'linux') return arch === 'arm64' ? 'aether-linux-aarch64.tar.gz' : arch === 'x64' ? 'aether-linux-x86_64.tar.gz' : null;
+    return null; // macos assets exist but the desktop app is Windows-only today
+  },
+  binaryName: process.platform === 'win32' ? 'aether.exe' : 'aether',
+};
+
+/** Aether install dir (override for tests). Identity state lives beside it. */
+export function aetherEngineDir(): string {
+  if (process.env['NETPULSE_AETHER_DIR']) return process.env['NETPULSE_AETHER_DIR'];
+  return path.join(process.env['NETPULSE_DATA_DIR'] ?? process.cwd(), 'aether');
+}
+
+interface AetherInstallOutcome {
+  status: 'installed' | 'updated' | 'already_current' | 'failed';
+  version: string | null;
+  path: string | null;
+  checksumVerified: boolean;
+  versionOutput: string | null;
+  error: string | null;
+  tookMs: number;
+}
+
+/**
+ * Extract every entry whose base name is wanted (Aether's zip may nest the
+ * binary in a top-level folder; unlike the single-binary cores, any matching
+ * entry is acceptable, first hit wins).
+ */
+/** Install or update Aether from its official GitHub releases. */
+export async function installAether(): Promise<AetherInstallOutcome> {
+  const started = Date.now();
+  const fail = (error: string): AetherInstallOutcome => ({
+    status: 'failed',
+    version: null,
+    path: null,
+    checksumVerified: false,
+    versionOutput: null,
+    error: redactSecrets(error.slice(0, 300)),
+    tookMs: Date.now() - started,
+  });
+
+  const assetPattern = AETHER_RELEASE.assetName(process.platform, process.arch);
+  if (!assetPattern) return fail(`no Aether release asset is published for ${process.platform}/${process.arch}`);
+
+  let release: GithubRelease;
+  try {
+    release = await fetchGithubRelease(AETHER_RELEASE.repo);
+  } catch (err) {
+    return fail(`could not look up Aether release: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const assetUrl = matchAsset(release, assetPattern);
+  if (!assetUrl) return fail(`release ${release.tag_name} has no asset matching ${assetPattern}`);
+
+  const dir = aetherEngineDir();
+  const target = path.join(dir, AETHER_RELEASE.binaryName);
+  const previousVersion = fs.existsSync(target) ? await probeBinaryVersionAether(target, 5_000) : null;
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-aether-'));
+  try {
+    const assetFile = path.join(tmp, path.basename(new URL(assetUrl).pathname));
+    await download(assetUrl, assetFile);
+
+    // Checksum: the release publishes a per-asset `.sha256` sidecar. A
+    // mismatch discards the download before anything is installed.
+    let checksumVerified = false;
+    const digestName = `${path.basename(assetFile)}.sha256`;
+    const digestUrl = release.assets.find((a) => a.name === digestName)?.browser_download_url;
+    if (!digestUrl) return fail(`release ${release.tag_name} publishes no .sha256 sidecar for ${digestName} — refusing to install unverified`);
+    const digestFile = path.join(tmp, digestName);
+    await download(digestUrl, digestFile);
+    const published = fs.readFileSync(digestFile, 'utf8');
+    const actual = await sha256File(assetFile);
+    if (!published.includes(actual)) {
+      return fail(`SHA256 mismatch for ${digestName} — the download did not match the published digest and was discarded`);
+    }
+    checksumVerified = true;
+
+    const extracted = path.join(tmp, AETHER_RELEASE.binaryName);
+    const ok = await extractFileFromZip(assetFile, AETHER_RELEASE.binaryName, extracted);
+    if (!ok) return fail(`archive did not contain ${AETHER_RELEASE.binaryName}`);
+
+    // Self-check: the binary must identify itself before it is installed.
+    const versionOutput = await probeBinaryVersionAether(extracted);
+    if (!versionOutput) return fail('extracted binary failed the `-v` self-check — install aborted');
+
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(extracted, target);
+    try {
+      fs.chmodSync(target, 0o755);
+    } catch {
+      /* best effort */
+    }
+    return {
+      status: previousVersion === versionOutput ? 'already_current' : previousVersion ? 'updated' : 'installed',
+      version: release.tag_name,
+      path: target,
+      checksumVerified,
+      versionOutput,
+      error: null,
+      tookMs: Date.now() - started,
+    };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  } finally {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+/** Aether answers `-v` (not `version` like the proxy cores). */
+function probeBinaryVersionAether(bin: string, timeoutMs = 8_000): Promise<string | null> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(bin, ['-v'], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let out = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve(null);
+    }, timeoutMs);
+    child.stdout?.on('data', (c: Buffer) => (out += c.toString()));
+    child.stderr?.on('data', (c: Buffer) => (out += c.toString()));
+    child.once('close', () => {
+      clearTimeout(timer);
+      const m = out.match(/aether\s+(\d+\.\d+\.\d+)/);
+      resolve(m ? m[1]! : null);
+    });
+    child.once('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
+async function fetchGithubRelease(repo: string, version?: string): Promise<GithubRelease> {
+  const url = version
+    ? `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(version)}`
+    : `https://api.github.com/repos/${repo}/releases/latest`;
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, { agent: false, headers: { 'User-Agent': 'NetPulse-EngineManager/1.0', Accept: 'application/vnd.github+json' } }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`release lookup failed: HTTP ${res.statusCode ?? 0} for ${repo}`));
+          return;
+        }
+        let body = '';
+        res.on('data', (c) => (body += c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body) as GithubRelease);
+          } catch {
+            reject(new Error('release metadata was not valid JSON'));
+          }
+        });
+      })
+      .on('error', (err) => reject(err instanceof Error ? err : new Error(String(err))));
+  });
+}
+
 /** https GET limited to allowlisted hosts, size and time capped. */
 function download(url: string, destFile: string, redirectsLeft = 3): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -244,31 +421,7 @@ interface GithubRelease {
 }
 
 async function fetchRelease(engine: EngineId, version: string | undefined): Promise<GithubRelease> {
-  const conf = ENGINE_RELEASES[engine];
-  const apiHost = 'api.github.com';
-  const url = version
-    ? `https://${apiHost}/repos/${conf.repo}/releases/tags/${encodeURIComponent(version)}`
-    : `https://${apiHost}/repos/${conf.repo}/releases/latest`;
-  return new Promise((resolve, reject) => {
-    https
-      .get(url, { agent: false, headers: { 'User-Agent': 'NetPulse-EngineManager/1.0', Accept: 'application/vnd.github+json' } }, (res) => {
-        if (res.statusCode !== 200) {
-          res.resume();
-          reject(new Error(`release lookup failed: HTTP ${res.statusCode ?? 0} for ${conf.repo}`));
-          return;
-        }
-        let body = '';
-        res.on('data', (c) => (body += c));
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(body) as GithubRelease);
-          } catch {
-            reject(new Error('release metadata was not valid JSON'));
-          }
-        });
-      })
-      .on('error', (err) => reject(err instanceof Error ? err : new Error(String(err))));
-  });
+  return fetchGithubRelease(ENGINE_RELEASES[engine].repo, version);
 }
 
 function matchAsset(release: GithubRelease, pattern: string): string | null {

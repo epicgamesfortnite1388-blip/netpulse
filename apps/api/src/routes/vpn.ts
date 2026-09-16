@@ -12,11 +12,12 @@ import type { AppContext } from './context';
 import type { VpnProvider } from '../vpn/vpnService';
 
 const ImportSchema = z.object({
-  providerId: z.enum(['wireguard', 'openvpn', 'singbox']),
+  providerId: z.enum(['wireguard', 'openvpn', 'singbox', 'aether']),
   // printable, single-line: the name is echoed into events/log lines and the UI
   name: z.string().min(1).max(128).regex(/^[^\u0000-\u001f\u007f<>]*$/, 'must not contain control characters or angle brackets'),
-  /** WireGuard: INI config text. OpenVPN: .ovpn text. sing-box: share link or outbound JSON. */
-  configText: z.string().min(1).max(64_000),
+  /** WireGuard: INI config text. OpenVPN: .ovpn text. sing-box: share link or
+   *  outbound JSON. aether: settings JSON (empty string = defaults). */
+  configText: z.string().max(64_000).default(''),
 });
 
 const ConnectSchema = z.object({
@@ -117,6 +118,67 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     providers: ctx.vpn.all().map((p) => p.info),
   }));
 
+  // Kill switch state — the honest answer to "is traffic actually blocked
+  // right now, and what is exempt". Reports the live enforcement state, not
+  // the preference: `blocking` is true only while the sink is really set.
+  app.get('/api/v1/vpn/killswitch', async () => ({
+    killSwitch: ctx.services.killSwitch.status(),
+  }));
+
+  // Aether engine lifecycle: version/install-state, and a verified
+  // install/update through the same release pipeline as the proxy cores.
+  // Rate-limited: each call downloads + verifies a ~15 MB asset.
+  app.get('/api/v1/vpn/aether/engine', async () => {
+    const provider = ctx.vpn.get('aether') as (VpnProvider & { installOrUpdate?: () => Promise<unknown> }) | undefined;
+    if (!provider) return { installed: false, version: null, note: 'Aether provider is not registered in this build' };
+    const { aetherDir } = await import('../vpn/aetherProvider');
+    const fsMod = await import('node:fs');
+    const pathMod = await import('node:path');
+    const exe = process.platform === 'win32' ? 'aether.exe' : 'aether';
+    const bin = pathMod.join(aetherDir(), exe);
+    const installed = fsMod.existsSync(bin);
+    let version: string | null = null;
+    if (installed) {
+      try {
+        const { runCommand } = await import('../util/exec');
+        const res = await runCommand(bin, ['-v'], { timeoutMs: 8_000 });
+        version = res.stdout.match(/aether\s+(\d+\.\d+\.\d+)/)?.[1] ?? null;
+      } catch {
+        version = null;
+      }
+    }
+    return {
+      installed,
+      version,
+      path: installed ? bin : null,
+      available: provider.info.available,
+      note:
+        installed && version
+          ? `aether ${version} installed and self-check passing`
+          : installed
+            ? 'aether binary exists but failed its -v self-check — reinstall'
+            : 'aether is not installed — use Install/Update',
+    };
+  });
+
+  app.post(
+    '/api/v1/vpn/aether/engine/install',
+    { config: { rateLimit: { max: 3, timeWindow: '5 minutes' } } },
+    async () => {
+      const provider = ctx.vpn.get('aether') as (VpnProvider & { installOrUpdate?: () => Promise<{ ok: boolean; status: string; version: string | null; error: string | null; checksumVerified: boolean }> }) | undefined;
+      if (!provider?.installOrUpdate) throw new AppError(501, 'not_implemented', 'Aether engine management is not available in this build');
+      const outcome = await provider.installOrUpdate();
+      ctx.services.events.record(
+        outcome.ok ? 'info' : 'error',
+        'vpn',
+        outcome.ok
+          ? `Aether engine ${outcome.status} (version ${outcome.version ?? 'unknown'}, checksum ${outcome.checksumVerified ? 'verified' : 'UNVERIFIED'})`
+          : `Aether engine install failed: ${outcome.error ?? 'unknown error'}`,
+      );
+      return outcome;
+    },
+  );
+
   app.get('/api/v1/vpn/profiles', async () => ({
     profiles: ctx.vpn.listProfiles().map((p) => ({
       id: p.id,
@@ -139,7 +201,7 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const profile = await provider.importProfile({
         name: parsed.data.name,
         configText: parsed.data.configText,
-        protocol: parsed.data.providerId === 'singbox' ? 'custom' : parsed.data.providerId,
+        protocol: parsed.data.providerId === 'singbox' || parsed.data.providerId === 'aether' ? 'custom' : parsed.data.providerId,
       });
       ctx.vpn.addProfile(parsed.data.providerId, profile);
       ctx.repos.vpnProfiles.insert({
@@ -186,7 +248,20 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
     // the active provider is whichever reports a live tunnel
     const active = statuses.find((s) => s.connected);
-    return active ?? { connected: false, serverId: null, serverName: null, protocol: null, since: null, supported: statuses.some((s) => s.supported), killSwitchActive: false };
+    // The kill switch outlives the tunnel it was armed by: when it is blocking
+    // there is no connected provider, so the aggregate status must still say so
+    // rather than reporting a bare "disconnected" over fail-closed traffic.
+    const blocking = ctx.services.killSwitch.status().blocking;
+    if (active) return { ...active, killSwitchActive: active.killSwitchActive || blocking };
+    return {
+      connected: false,
+      serverId: null,
+      serverName: null,
+      protocol: null,
+      since: null,
+      supported: statuses.some((s) => s.supported),
+      killSwitchActive: blocking,
+    };
   });
 
   app.get('/api/v1/vpn/health', async () => {
@@ -268,6 +343,16 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
       const active = statuses.find((s) => s.connected);
       if (!active?.providerId) {
+        // No provider is connected — but the kill switch may still be holding
+        // the machine fail-closed after a drop. "Disconnect" is the user's way
+        // out, so it must release that block (restoring their own proxy)
+        // instead of returning a bare disconnected status over blocked traffic.
+        const ks = ctx.services.killSwitch.status();
+        if (ks.armed || ks.blocking) {
+          const released = await ctx.services.killSwitch.onTunnelStopped();
+          ctx.services.events.record('warn', 'vpn', 'Kill switch released by explicit disconnect — previous proxy restored');
+          return { connected: false, killSwitchReleased: true, note: released.note } as Awaited<ReturnType<VpnProvider['disconnect']>> & { killSwitchReleased: boolean; note: string | null };
+        }
         return { connected: false } as Awaited<ReturnType<VpnProvider['disconnect']>>;
       }
       const provider = ctx.vpn.get(active.providerId);

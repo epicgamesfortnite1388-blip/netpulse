@@ -111,6 +111,15 @@ Geography is confidence-aware: known endpoints (Cloudflare colo from `cfProbe`) 
 | GET | `/vpn/status` | Real observed VPN state |
 | POST | `/vpn/connect` · `/vpn/disconnect` | Drive the provider binary |
 | GET | `/vpn/connections` | Connection history |
+| GET | `/vpn/aether/engine` | Aether install state: installed, version, self-check verdict |
+| POST | `/vpn/aether/engine/install` | Install/update Aether from official GitHub releases (SHA256-verified; rate-limited) |
+
+Aether is a separate provider (`providerId: "aether"`): its profile takes a JSON
+settings object (`protocol/scanMode/transport/ipVersion/noize/quickReconnect`, or
+an empty string for defaults) and drives the real binary in proxy mode —
+`socks5://127.0.0.1:1819`. Verification is the SOCKS5 relay handshake plus an
+exit-IP fetch *through* the tunnel; proxy mode intentionally does not change the
+system route.
 
 ## Data
 
@@ -124,16 +133,27 @@ Geography is confidence-aware: known endpoints (Cloudflare colo from `cfProbe`) 
 | POST | `/settings/schedule/run` | Trigger one run now: `{ "kind": "dns" \| "gaming" \| "vpn" }` |
 | GET | `/vpn/selftest` | Latest scheduled VPN dry-run self-test result + its schedule state |
 | POST | `/vpn/selftest/run` | Trigger an immediate VPN dry-run self-check (no elevation, never touches tunnel state) |
+| GET | `/vpn/tunnel/status` | Live proxy-tunnel state: verified exit IP/country, engine, system-proxy handoff, reconnect budget, active bypass summary, and — for nested mode — a `chain` with each hop's own observed exit IP and whether the exit differs from the entry edge |
+| POST | `/vpn/tunnel/start` | Start (or move) the tunnel: `{ nodeId \| auto: true, systemProxy? }`. Reported `active` only after an HTTPS trace has provably traversed the node |
+| POST | `/vpn/tunnel/start` (nested) | `{ mode: "nested", entryNodeId?, exitNodeId? }` chains TWO local cores: the exit core dials its node *through* the entry core (`sockopt.dialerProxy` / `dialerProxy`-equivalent `detour`), so traffic is local → entry node → exit node. Omitted hop ids are auto-picked from the tested pool. Both hops must be different tested nodes; the exit hop must be a TCP-family node (`vless`/`vmess`/`trojan`/`shadowsocks`) run by xray or sing-box (v2ray-core silently ignores the dial-through wiring, hysteria2/tuic are UDP — both are refused with `400 tunnel_exit_unusable`). Each hop is verified separately and the two observed addresses are compared: `chain.exitDiffers` is `true` only when a difference was actually observed, and `chain.note` says so verbatim either way |
+| POST | `/vpn/tunnel/stop` | Stop the tunnel, kill the core, restore the previous system proxy |
+| POST | `/vpn/tunnel/reconnect` | Restart the tunnel on its current node |
+| GET | `/vpn/tunnel/gateways` | Gateways this app has personally verified, in retry order (quick-reconnect memory) |
+| DELETE | `/vpn/tunnel/gateways` | Forget every remembered gateway |
+| DELETE | `/vpn/tunnel/gateways/:nodeId` | Forget one remembered gateway |
+| POST | `/vpn/tunnel/quick` | Quick connect: retry remembered gateways first, then discover; every attempt is a real verified tunnel start |
+| POST | `/vpn/discover` | Bounded discovery run `{ profile?, limit?, protocol? }` — the profile decides probe depth and volume |
 | GET | `/vpn/elevation/pending?opId=&nonce=` | Rust elevation bridge: fetch ONE pending WireGuard install descriptor (Bearer + nonce gated) |
 | POST | `/vpn/elevation/result?opId=&nonce=` | Rust elevation bridge: report the UAC launch outcome (Bearer + nonce gated) |
-| GET | `/nodes/stats` | Node database totals + protocol/country/transport breakdowns |
+| GET | `/nodes` | Node list `{ limit, offset, protocol, country, asn, status, transport, security, freshness, favorite, search, engine, minScore, maxLatency, minReliability, sortField, sortDir }`. `total` is a COUNT of the stored rows matching the filters, and `offset` pages over all of them (filters, search and sorting run in SQL, not over one response). A response carries at most 2000 rows. Sorting puts rows without the sorted measurement last in both directions, and a `sortField=engine` response groups xray → sing-box → v2ray → never-tested. `search` matches host/remark/protocol/ASN/ISP/city/country/fingerprint/stored IP text |
+| GET | `/nodes/stats` | Node database totals + protocol/country/transport breakdowns, each a COUNT over the stored rows |
 | GET | `/nodes/engines` | Local proxy-core availability (xray / sing-box): installed, path, protocols, which engine proxy tests will use. Cores are found on `PATH` or dropped into `<dataDir>/cores/` (or `NETPULSE_CORES_DIR`) |
 | POST | `/cloudflare/scan` | Start a Cloudflare endpoint scan. CIDRs /8–/32 accepted; large published ranges (e.g. the default `104.16.0.0/13`, `172.64.0.0/13`) are sampled on an even stride up to `maxCandidates`; private/reserved bases rejected |
-| GET | `/sources` | Public node sources (built-ins seeded into the DB at boot; DB is authoritative) |
+| GET | `/sources` | Public node sources (built-ins seeded into the DB at boot; DB is authoritative). Built-in catalog: 11 v2ray-flavoured subscription lists (`All_Configs_Sub.txt`-style), each with the per-source counts it really returned |
 | POST | `/sources` | Add a custom source `{ name, urls[] }` (https public hosts only) |
 | PATCH | `/sources/:id` | Enable/disable a source |
 | DELETE | `/sources/:id` | Remove a custom source |
-| POST | `/sources/:id/fetch` | Fetch + parse + import a source now. Imports are parse+store only (no DNS in the hot path — 8k configs ≈ 8 s); hosts resolve at test time. Repeat fetches of unchanged content short-circuit via content hash. |
+| POST | `/sources/:id/fetch` | Fetch + parse + import a source now. Imports are parse+store only (no DNS in the hot path — 8k configs ≈ 8 s); hosts resolve at test time. Repeat fetches of unchanged content short-circuit via content hash. A feed that 404s, times out, or yields no parseable configs answers **502 `fetch_failed`** and the source is marked `failed` — nothing is imported and no mirrored or placeholder list is substituted. Every host/port/uuid is parsed out of the bytes the URL actually served. |
 
 ## WebSocket
 
@@ -163,6 +183,38 @@ failures are recorded and the next run still scheduled, and every state change i
 on the `schedule` WebSocket topic (replayed to late subscribers). `GET /settings/schedule`
 returns `{ dns, gaming, vpn }` with `enabled`, `running`, `lastRunAt`, `lastResult`,
 `lastError`, `nextRunAt`; `POST /settings/schedule/run` kicks off an immediate run.
+
+### Proxy tunnel, gateway memory and discovery
+
+The proxy tunnel (`services/proxyTunnel.ts`) keeps one long-lived local core
+(xray / sing-box / v2ray) alive with the node's real secret from the vault and
+reports `active` only after a trace fetched **through** it yields an `ip=` line —
+the exit IP shown anywhere in the app is read from that trace, never assumed. A
+core crash flips state to `down` and triggers a bounded auto-reconnect (3 tries,
+backoff); `stop()` cancels a queued restart, so an explicit disconnect is never
+undone by a pending retry.
+
+**Gateway memory** (`services/gatewayMemory.ts`, persisted in the settings
+key-value table) records a gateway only on that verified path, so a remembered
+entry always means "this node provably carried traffic". `POST /vpn/tunnel/quick`
+retries those gateways best-first before scanning anything new; memory decides
+only *what to try first*, never what is reported — every attempt is a full tunnel
+start. A remembered gateway that later fails verification is demoted (kept, but
+moved behind working ones) rather than trusted.
+
+**Discovery profiles** (`models/scanProfile.ts`, `services/nodeDiscovery.ts`) make
+the probe-traffic trade-off explicit. Depth is exactly what it says: `turbo`
+proves a TCP handshake, `balanced` a TLS handshake, `thorough`/`ironclad` a real
+proxied request. A run is bounded by the profile's candidate cap (a caller may
+request fewer, never more), probes run in a bounded pool, and the report always
+states which depth was actually validated — a TCP-only run says so and never
+implies traffic was proven to relay.
+
+**Split tunnel** (`settings.vpn.bypass`) emits real routing rules in the generated
+core config (`direct`/`freedom` outbound + domain/CIDR/port matches, private ranges
+matched separately). It applies to the tunnel only: probe and test configs never
+carry bypass, because a test that skipped the node would be measuring a different
+path than the one it claims to measure.
 
 ### VPN tunnel self-test
 

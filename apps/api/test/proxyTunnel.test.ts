@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ProxyTunnelService, fetchThroughHttpProxy, stripChunked } from '../src/services/proxyTunnel';
+import { ProxyTunnelService, chainRecord, fetchThroughHttpProxy, stripChunked } from '../src/services/proxyTunnel';
 
 import type { TunnelDeps, TunnelNodeInput } from '../src/services/proxyTunnel';
 
@@ -46,14 +46,39 @@ interface FakeCore {
   killed: boolean;
 }
 
-function makeDeps(overrides: Partial<TunnelDeps> & { traceBody?: string; traceFail?: Error; core?: FakeCore } = {}) {
+interface StartCall {
+  engine: string;
+  opts?: { bypass?: unknown; dialThroughPort?: number | null };
+  port: number;
+}
+
+function makeDeps(
+  overrides: Partial<TunnelDeps> & {
+    traceBody?: string;
+    traceFail?: Error;
+    core?: FakeCore;
+    /** per-fetch trace bodies, consumed in order; an Error value rejects */
+    traces?: Array<string | Error>;
+  } = {},
+) {
   const events: string[] = [];
   const core: FakeCore = overrides.core ?? { closeListeners: [], killed: false };
+  const calls: StartCall[] = [];
+  const killedPorts: number[] = [];
+  /** close listener per core port, so a nested test can crash ONE hop */
+  const closeByPort = new Map<number, Array<(code: number | null) => void>>();
+  const ports = [45678, 45679, 45680, 45681];
   let systemProxy: string | null = null;
   const deps: TunnelDeps = {
     nodeVault: null,
     fetchThroughPort: async () => {
       if (overrides.traceFail) throw overrides.traceFail;
+      if (overrides.traces) {
+        const next = overrides.traces.shift();
+        if (next === undefined) throw new Error('no trace body queued for this fetch');
+        if (next instanceof Error) throw next;
+        return next;
+      }
       return overrides.traceBody ?? 'ip=185.199.108.153\nloc=NL\ncolo=AMS\n';
     },
     setSystemProxy: async (p) => { systemProxy = p; return { ok: true }; },
@@ -61,20 +86,35 @@ function makeDeps(overrides: Partial<TunnelDeps> & { traceBody?: string; traceFa
     publish: (kind, payload) => events.push(`${kind}:${JSON.stringify(payload)}`),
     log: { info: () => {}, warn: () => {}, error: () => {} },
     findBinary: () => '/fake/xray.exe',
-    startCoreFn: async (_engine, _config, _secret, _timeout) => ({
-      ok: true,
-      run: {
-        child: {
-          once: (_ev: string, fn: (code: number | null) => void) => { core.closeListeners.push(fn); },
-        } as never,
-        inboundPort: 45678,
-        cleanup: () => { core.killed = true; },
-        stderrTail: '',
-      },
-    }),
+    startCoreFn: async (engine, _config, _secret, _timeout, opts) => {
+      const port = ports[calls.length] ?? 45678;
+      calls.push({ engine: engine.id, opts, port });
+      const listeners: Array<(code: number | null) => void> = [];
+      closeByPort.set(port, listeners);
+      return {
+        ok: true,
+        run: {
+          child: {
+            once: (_ev: string, fn: (code: number | null) => void) => { listeners.push(fn); core.closeListeners.push(fn); },
+          } as never,
+          inboundPort: port,
+          cleanup: () => { core.killed = true; killedPorts.push(port); },
+          stderrTail: '',
+        },
+      };
+    },
     ...overrides,
   };
-  return { deps, events, core, getSystemProxy: () => systemProxy };
+  return {
+    deps,
+    events,
+    core,
+    calls,
+    killedPorts,
+    /** simulate a crash of the core listening on `port` */
+    crash: (port: number) => { for (const fn of closeByPort.get(port) ?? []) fn(1); },
+    getSystemProxy: () => systemProxy,
+  };
 }
 
 describe('ProxyTunnelService', () => {
@@ -198,6 +238,155 @@ describe('ProxyTunnelService', () => {
     const svc = new ProxyTunnelService(deps);
     const s = await svc.stop();
     expect(s.state).toBe('idle');
+  });
+});
+
+/**
+ * NESTED MODE (Aether-style chain): two cores, the exit dialling its node
+ * through the entry. The contract under test is the honest-reporting rule:
+ * the reported chain carries the entry edge's own observed address, the final
+ * exit address, and a verdict on whether they differ — including when they do
+ * not.
+ */
+describe('ProxyTunnelService nested mode', () => {
+  const entryNode = node({ id: 'entry', host: 'entry.example', port: 443, remark: 'Entry NL' });
+  const exitNode = node({ id: 'exit', host: 'exit.example', port: 8443, remark: 'Exit JP' });
+
+  it('chains two cores, dials the exit hop through the entry, and reports both observed addresses', async () => {
+    const { deps, calls, events } = makeDeps({
+      traces: [
+        'ip=203.0.113.9\nloc=NL\n', // through the entry core alone
+        'ip=198.51.100.7\nloc=JP\n', // through the chained exit
+      ],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: false, preferredEngine: 'auto' });
+
+    expect(s.state).toBe('active');
+    // Two cores: the entry first, then the exit wired to dial through it.
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.opts?.dialThroughPort).toBeUndefined();
+    expect(calls[1]!.opts?.dialThroughPort).toBe(calls[0]!.port);
+
+    expect(s.nodeId).toBe('exit');
+    expect(s.inboundPort).toBe(calls[1]!.port);
+    expect(s.chain).not.toBeNull();
+    expect(s.chain!.hops.map((h) => h.nodeId)).toEqual(['entry', 'exit']);
+    expect(s.chain!.entryExitIp).toBe('203.0.113.9');
+    expect(s.chain!.exitIp).toBe('198.51.100.7');
+    expect(s.chain!.exitDiffers).toBe(true);
+    expect(s.chain!.note).toContain('203.0.113.9');
+    expect(s.chain!.note).toContain('198.51.100.7');
+    expect(events.some((e) => e.startsWith('tunnel:starting') && e.includes('"nested":true'))).toBe(true);
+    expect(events.some((e) => e.startsWith('tunnel:active') && e.includes('"exitDiffers":true'))).toBe(true);
+  });
+
+  it('says so when both hops observe the SAME exit address instead of claiming a difference', async () => {
+    const { deps } = makeDeps({
+      traces: ['ip=203.0.113.9\nloc=NL\n', 'ip=203.0.113.9\nloc=NL\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: false, preferredEngine: 'auto' });
+    expect(s.state).toBe('active');
+    expect(s.chain!.exitDiffers).toBe(false);
+    expect(s.chain!.note).toContain('identical');
+  });
+
+  it('goes down and kills BOTH cores when the entry hop cannot relay', async () => {
+    const { deps, killedPorts } = makeDeps({
+      traces: [new Error('proxy CONNECT rejected: 503')],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: false, preferredEngine: 'auto' });
+    expect(s.state).toBe('down');
+    expect(s.error).toContain('entry hop');
+    // Nothing is left behind, and the exit core was never even started.
+    expect(killedPorts).toEqual([45678]);
+  });
+
+  it('stop kills every core of the chain', async () => {
+    const { deps, killedPorts, getSystemProxy } = makeDeps({
+      traces: ['ip=203.0.113.9\nloc=NL\n', 'ip=198.51.100.7\nloc=JP\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: true, preferredEngine: 'auto' });
+    expect(getSystemProxy()).toBe('127.0.0.1:45679');
+    const s = await svc.stop();
+    expect(s.state).toBe('idle');
+    expect(s.chain).toBeNull();
+    expect(killedPorts).toEqual([45678, 45679]);
+    expect(getSystemProxy()).toBeNull();
+  });
+
+  it('treats a crash of either hop as the tunnel going down', async () => {
+    const { deps, crash } = makeDeps({
+      traces: ['ip=203.0.113.9\nloc=NL\n', 'ip=198.51.100.7\nloc=JP\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: false, preferredEngine: 'auto' });
+    crash(45678); // the ENTRY core dies — the chain is broken too
+    expect(svc.getStatus().state).toBe('down');
+    expect(svc.getStatus().error).toContain('core exited unexpectedly');
+    await svc.stop();
+  });
+
+  it('never picks v2ray for the exit hop (its dialerProxy is ignored, so the "chain" would be single-hop)', async () => {
+    const { deps, calls } = makeDeps({
+      findBinary: (id) => `/fake/${id}.exe`,
+      traces: ['ip=203.0.113.9\nloc=NL\n', 'ip=198.51.100.7\nloc=JP\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested({ entry: entryNode, exit: exitNode }, { systemProxy: false, preferredEngine: 'v2ray' });
+    expect(s.state).toBe('active');
+    // The preference still applies to the entry hop, but the EXIT hop is never
+    // v2ray: its dialerProxy is ignored, so the "chain" would be single-hop.
+    expect(calls[0]!.engine).toBe('v2ray');
+    expect(calls[1]!.engine).toBe('xray');
+  });
+
+  it('routes a non-AEAD shadowsocks node around xray, which cannot run that cipher', async () => {
+    const { deps, calls } = makeDeps({
+      findBinary: (id) => `/fake/${id}.exe`,
+      traces: ['ip=203.0.113.9\nloc=NL\n', 'ip=198.51.100.7\nloc=JP\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested(
+      { entry: entryNode, exit: node({ id: 'exit', protocol: 'shadowsocks', encryption: 'aes-256-cfb', host: 'exit.example' }) },
+      { systemProxy: false, preferredEngine: 'auto' },
+    );
+    expect(s.state).toBe('active');
+    // xray would exit during startup ("unknown cipher method"), so the picker
+    // must land on sing-box even though xray comes first by default.
+    expect(calls[1]!.engine).toBe('sing-box');
+  });
+
+  it('refuses a UDP exit hop with an honest reason rather than a fake chain', async () => {
+    const { deps, calls } = makeDeps();
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.startNested(
+      { entry: entryNode, exit: node({ id: 'exit', protocol: 'hysteria2', host: 'exit.example' }) },
+      { systemProxy: false, preferredEngine: 'auto' },
+    );
+    expect(s.state).toBe('down');
+    expect(s.error).toMatch(/UDP-based/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('chainRecord', () => {
+  const hop = (id: string, ip: string | null) => ({
+    nodeId: id, name: id, engine: 'xray' as const, host: `${id}.example`, port: 443, exitIp: ip, exitCountry: null, inboundPort: 1,
+  });
+
+  it('reports a difference only when one was observed', () => {
+    expect(chainRecord(hop('a', '1.1.1.1'), hop('b', '2.2.2.2')).exitDiffers).toBe(true);
+    expect(chainRecord(hop('a', '1.1.1.1'), hop('b', '1.1.1.1')).exitDiffers).toBe(false);
+  });
+
+  it('cannot claim a difference it did not see', () => {
+    const c = chainRecord(hop('a', null), hop('b', '2.2.2.2'));
+    expect(c.exitDiffers).toBe(false);
+    expect(c.note).toContain('could not be compared');
   });
 });
 

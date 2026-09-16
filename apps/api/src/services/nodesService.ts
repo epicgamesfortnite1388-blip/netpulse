@@ -96,7 +96,7 @@ import { fingerprintHash, buildFingerprint, PROTOCOL_LABELS, TRANSPORT_LABELS, S
 import { proxyProbeWithEngine } from './proxyEngineRunner';
 import type { NodeSecretVault } from './nodeSecretVault';
 import { fetchAndImportSource, hashContent, type FetchContext } from './nodeSourceRegistry';
-import type { PublicNodeRow, RawDocumentsRepository, SourceFetchesRepository } from '../db/repositories';
+import type { RawDocumentsRepository, SourceFetchesRepository } from '../db/repositories';
 import type { AppSettings, PublicSource } from '@netpulse/shared';
 import { geoStatusReasonFor } from './nodeGeoService';
 import { validateNodeHost, normalizeNodePort, familyOfIp, resolveTarget } from '../util/targetGuard';
@@ -118,6 +118,20 @@ import type { PlatformNetworkController } from '../providers/platform/types';
 
 const TEST_TIMEOUT_MS = 8_000;
 const DEFAULT_TEST_ENDPOINT = 'https://httpbin.org/ip';
+
+/**
+ * Elapsed milliseconds rounded to a tenth, for firewall-safe display.
+ *
+ * Exported and tested because the expression it replaces was wrong: it read
+ * `Math.round(elapsed / 100) / 10`, which divides by 1000 and reported every
+ * TCP/TLS latency roughly three orders of magnitude too small — a 45 ms
+ * handshake became `0 ms`, and a 1.2 s one became `1.2 ms`. Those numbers were
+ * surfaced as measured latency, so the bug made the app claim a precision it
+ * did not have.
+ */
+export function tenthsOfMs(elapsedMs: number): number {
+  return Math.round(elapsedMs * 10) / 10;
+}
 
 /* --------------------------- internal state -------------------------------- */
 
@@ -158,7 +172,14 @@ export class NodesService {
 
   /* ----------------------------- discovery ----------------------------- */
 
-  async discoverFromSource(sourceId: string): Promise<{ parsed: number; imported: number; duplicates: number; invalid: number }> {
+  async discoverFromSource(sourceId: string): Promise<{
+    status: 'completed' | 'failed';
+    error: string | null;
+    parsed: number;
+    imported: number;
+    duplicates: number;
+    invalid: number;
+  }> {
     const source = this.deps.sourceRepo.get(sourceId) as unknown as PublicSource | undefined;
     if (!source) throw new Error(`source not found: ${sourceId}`);
 
@@ -186,12 +207,21 @@ export class NodesService {
 
     this.recordEvent('source.fetch.completed', {
       sourceId,
+      status: result.status,
+      error: result.error,
       imported: result.imported,
       duplicates: result.duplicates,
       invalid: result.invalid,
     });
 
-    return { parsed: result.fetched, imported: result.imported, duplicates: result.duplicates, invalid: result.invalid };
+    return {
+      status: result.status,
+      error: result.error,
+      parsed: result.fetched,
+      imported: result.imported,
+      duplicates: result.duplicates,
+      invalid: result.invalid,
+    };
   }
 
   /* ----------------------------- import ----------------------------- */
@@ -225,9 +255,11 @@ export class NodesService {
         // Update existing node
         duplicates++;
 
-        // Record provenance
+        // Record provenance. The id is left to the table's autoincrement: a
+        // computed `id` was identical for every row in a batch (same lengths,
+        // same timestamp), so the primary-key conflict silently discarded all
+        // but the first row and attribution was lost.
         this.deps.sources.insert({
-          id: existing.id.length + sourceId.length + now,
           nodeId: existing.id,
           sourceId,
           sourceUrl,
@@ -353,9 +385,8 @@ export class NodesService {
 
       this.deps.nodes.insert(node);
 
-      // Record provenance
+      // Record provenance (id left to the table's autoincrement — see above)
       this.deps.sources.insert({
-        id: nodeId.length + sourceId.length + now,
         nodeId,
         sourceId,
         sourceUrl,
@@ -366,11 +397,12 @@ export class NodesService {
       });
 
       // Record address
+      // Address rows take the autoincrement id for the same reason.
       for (const ip of node.ipv4) {
-        this.deps.addresses.insert({ id: now, nodeId, ip, family: 4, firstSeen: now, lastSeen: now });
+        this.deps.addresses.insert({ nodeId, ip, family: 4, firstSeen: now, lastSeen: now });
       }
       for (const ip of node.ipv6) {
-        this.deps.addresses.insert({ id: now, nodeId, ip, family: 6, firstSeen: now, lastSeen: now });
+        this.deps.addresses.insert({ nodeId, ip, family: 6, firstSeen: now, lastSeen: now });
       }
 
       this.recordEvent('node.discovered', { nodeId, host, protocol: node.protocol, port, sourceId, sourceUrl });
@@ -603,7 +635,7 @@ export class NodesService {
         if (resolved) return;
         resolved = true;
         socket.destroy();
-        const latencyMs = latency ?? Math.round((Date.now() - start) / 100) / 10;
+        const latencyMs = latency ?? tenthsOfMs(Date.now() - start);
         this.deps.tests.update(testId, {
           status: ok ? 'done' : 'failed',
           latencyMs,
@@ -660,7 +692,7 @@ export class NodesService {
         if (resolved) return;
         resolved = true;
         try { socket.destroy(); } catch { /* already closed */ }
-        const latencyMs = latency ?? Math.round((Date.now() - start) / 100) / 10;
+        const latencyMs = latency ?? tenthsOfMs(Date.now() - start);
         this.deps.tests.update(testId, {
           status: ok ? 'done' : 'failed',
           latencyMs,
@@ -1205,27 +1237,10 @@ export class NodesService {
   /* ----------------------------- search ----------------------------- */
 
   searchNodes(query: string, limit = 50): NodeWebDTO[] {
-    // Search across host, IP, fingerprint, protocol, remark
-    const q = query.toLowerCase();
-    const { rows } = this.deps.nodes.list({
-      limit,
-      protocol: undefined,
-      search: undefined,
-    });
-
-    // Client-side filtering for complex search
-    const results = rows.filter((n) => {
-      return n.host.toLowerCase().includes(q) ||
-             n.ipv4.some((ip) => ip.includes(q)) ||
-             n.ipv6.some((ip) => ip.includes(q)) ||
-             n.canonicalFingerprint.includes(q) ||
-             n.protocol.toLowerCase().includes(q) ||
-             n.remark?.toLowerCase().includes(q) ||
-             n.asn?.toString().includes(q) ||
-             (n.country && n.country.toLowerCase().includes(q));
-    });
-
-    return results.map((r) => this.toWebDTO(r));
+    // The repository owns the search predicate, so it runs in SQL over every
+    // stored node instead of over whichever rows this call happened to load.
+    const { rows } = this.deps.nodes.list({ limit, search: query });
+    return rows.map((r) => this.toWebDTO(r));
   }
 
   /* ----------------------------- IP lookup ----------------------------- */
@@ -1250,15 +1265,7 @@ export class NodesService {
   }
 
   getNodesByHostname(host: string): NodeWebDTO[] {
-    const hostLower = host.toLowerCase();
-    const { rows } = this.deps.nodes.list({
-      limit: 100,
-      search: undefined,
-    });
-
-    return rows
-      .filter((n) => n.host.toLowerCase() === hostLower || n.host.toLowerCase().includes(hostLower))
-      .map((r) => this.toWebDTO(r));
+    return this.deps.nodes.findByHost(host, 100).map((r) => this.toWebDTO(r));
   }
 
   /* ----------------------------- filters ----------------------------- */
@@ -1511,28 +1518,10 @@ export class NodesService {
    * Cheap bounded lists; the scheduler runs a handful of TCP probes per tick.
    */
   pickNodesForAutoTest(opts: { bucket: 'never-validated' | 'stale-good' | 'unstable'; limit: number }): Array<{ id: string }> {
-    const limit = Math.min(opts.limit, 50);
-    const all = this.deps.nodes.list({ limit: 2000 }).rows as unknown as PublicNodeRow[]; // in-memory filter over indexed columns
-    const now = Date.now();
-    let rows: PublicNodeRow[];
-    switch (opts.bucket) {
-      case 'never-validated':
-        rows = all.filter((n) => n.lastValidated == null).sort((a, b) => b.firstSeen - a.firstSeen);
-        break;
-      case 'stale-good': {
-        const healthy = all.filter((n) => n.lastValidated != null && (n.status === 'healthy' || n.score >= 60));
-        healthy.sort((a, b) => (a.lastValidated ?? 0) - (b.lastValidated ?? 0));
-        rows = healthy;
-        break;
-      }
-      case 'unstable': {
-        const flapping = all.filter((n) => n.consecutiveFailures > 0 && n.consecutiveFailures < 10 && now - (n.lastFailureAt ?? 0) < 7 * 86_400_000);
-        flapping.sort((a, b) => (b.lastFailureAt ?? 0) - (a.lastFailureAt ?? 0));
-        rows = flapping;
-        break;
-      }
-    }
-    return rows.slice(0, limit).map((n) => ({ id: n.id }));
+    // Selection happens in SQL, so the buckets describe the whole database. It
+    // used to load the newest 2,000 rows and filter them in memory, which meant
+    // the tester could only ever see nodes near the top of that window.
+    return this.deps.nodes.pickForAutoTest(opts.bucket, Math.min(opts.limit, 50));
   }
 
   /**
@@ -1541,19 +1530,8 @@ export class NodesService {
    * deletion); only the lifecycle state moves. Returns how many retired.
    */
   retireStaleNodes(): number {
-    const all = this.deps.nodes.list({ limit: 5000 }).rows;
-    const now = Date.now();
     const RETIRE_AFTER_MS = 14 * 86_400_000;
-    let n = 0;
-    for (const row of all) {
-      if (row.status === 'stale') continue;
-      const unseenFor = now - row.lastSeen;
-      if (unseenFor > RETIRE_AFTER_MS && row.consecutiveFailures >= 3) {
-        this.deps.nodes.updateStatus(row.id, 'stale');
-        n += 1;
-      }
-    }
-    return n;
+    return this.deps.nodes.retireStale(Date.now() - RETIRE_AFTER_MS, 3);
   }
 
   /* ----------------------------- recommendations ----------------------------- */

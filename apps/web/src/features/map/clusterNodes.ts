@@ -20,10 +20,14 @@ import type { GlobeNode } from './mapEncoding';
 
 /** Cell size (degrees of arc at the equator) for a given zoom level. */
 export function clusterCellDeg(zoom: number): number {
-  // zoom here is a small scalar (1 = far, ~6 = close). Far → 20° cells,
-  // close → below marker resolution (no clustering).
+  // zoom is the camera-derived proxy: 3.2/(1+altitude) — ≈1.1 at the idle
+  // view, ≈2.37 at the closest allowed distance (altitude 0.35). Calibrated
+  // so the closest zoom reaches the no-clustering threshold (cell ≤ 1.2°):
+  // 8/2.37² ≈ 1.42… still above — so the threshold is set from the closest
+  // proxy directly: any zoom ≥ 2.2 dissolves clusters entirely.
   const z = Math.max(0.5, Math.min(8, zoom));
-  return Math.max(0.5, 24 / (z * z));
+  if (z >= 2.2) return 0.5; // closest reachable view: every pin stands alone
+  return Math.max(0.5, 8 / (z * z));
 }
 
 /**

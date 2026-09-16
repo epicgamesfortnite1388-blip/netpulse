@@ -55,6 +55,10 @@ import type { StabilityService } from '../services/stabilityService';
 import type { VpnRegistry } from '../vpn/vpnService';
 import type { ElevationBroker } from '../vpn/elevationBroker';
 import type { ProxyTunnelService } from '../services/proxyTunnel';
+import type { KillSwitchService } from '../services/killSwitch';
+import type { GatewayMemoryService } from '../services/gatewayMemory';
+import type { VpnHistoryService } from '../services/vpnHistory';
+import type { NodeDiscoveryService } from '../services/nodeDiscovery';
 import type { Logger } from '../logger';
 
 export interface AppContext {
@@ -113,6 +117,10 @@ export interface AppContext {
     schedule: ScheduleService;
     vpnSelfTest: VpnSelfTestService;
     tunnel: ProxyTunnelService;
+    killSwitch: KillSwitchService;
+    gatewayMemory: GatewayMemoryService;
+    discovery: NodeDiscoveryService;
+    vpnHistory: VpnHistoryService;
     map: MapService;
     iran: IranService;
     /* Public-node subsystem services. Kept loose until the crawler pipeline is fully typed. */

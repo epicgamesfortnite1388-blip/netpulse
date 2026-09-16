@@ -16,14 +16,35 @@
  *     publishes a realtime event; a bounded auto-reconnect (default 3 tries,
  *     backoff) re-establishes it when enabled
  *
- * Only ONE tunnel runs at a time — starting a new one stops the old core.
+ * NESTED MODE chains TWO local cores so the observed exit address is not the
+ * entry edge: the entry core carries the node the user picked for the edge, and
+ * the exit core dials ITS node *through* the entry core (`dialerProxy` /
+ * `detour`), so traffic is local → entry node → exit node → internet. Both hops
+ * are verified separately — the entry's own exit IP is read through the entry
+ * core alone, then the final exit IP through the exit core — and the two are
+ * compared, so "the exit differs from the entry edge" is an observation the
+ * status reports (and can report as false) rather than a claim.
+ *
+ * Only ONE tunnel runs at a time — starting a new one stops the old cores.
  */
 import http from 'node:http';
 
-import { type ParsedNodeConfig, type ProxyEngineId } from '@netpulse/shared';
+import {
+  bypassIsEmpty,
+  bypassSummary,
+  type BypassRuleSet,
+  type GatewaySuccessInput,
+  type ParsedNodeConfig,
+  type ProxyEngineId,
+  type ProxyTunnelStatus,
+  type TunnelChain,
+  type TunnelHop,
+  type TunnelSource,
+} from '@netpulse/shared';
+
+import { chainExitProtocolUnsupported, chainExitUnsupported, engineSupports, engineSupportsConfig, findEngineBinary, startCore, type CoreRun } from './proxyCores';
 
 import type { NodeSecretVault } from './nodeSecretVault';
-import { findEngineBinary, startCore, type CoreRun } from './proxyCores';
 
 /** Long-lived core handle (vs the probe's start-and-kill cycle). */
 interface TunnelCore {
@@ -31,29 +52,16 @@ interface TunnelCore {
   run: CoreRun;
 }
 
-export type TunnelState = 'idle' | 'starting' | 'active' | 'down' | 'stopping';
+export type TunnelStatus = ProxyTunnelStatus;
+export type TunnelState = ProxyTunnelStatus['state'];
 
-export interface TunnelStatus {
-  state: TunnelState;
-  nodeId: string | null;
-  engine: ProxyEngineId | null;
-  /** loopback HTTP proxy port apps can be pointed at */
-  inboundPort: number | null;
-  /** OS system proxy routed through the tunnel? */
-  systemProxy: boolean;
-  /** system proxy restored to this value after disconnect (null = was direct) */
-  previousProxy: string | null;
-  /** verified by reading ip= from a trace fetched THROUGH the tunnel */
-  exitIp: string | null;
-  exitCountry: string | null;
-  verifiedAt: number | null;
-  startedAt: number | null;
-  error: string | null;
-}
+/** Exit-IP trace endpoint — the node's own view of the world. */
+const TRACE_URL = 'https://www.cloudflare.com/cdn-cgi/trace';
 
 const IDLE: TunnelStatus = {
   state: 'idle',
   nodeId: null,
+  nodeName: null,
   engine: null,
   inboundPort: null,
   systemProxy: false,
@@ -63,7 +71,22 @@ const IDLE: TunnelStatus = {
   verifiedAt: null,
   startedAt: null,
   error: null,
+  reconnectAttempts: 0,
+  reconnectLimit: 0,
+  source: null,
+  bypass: null,
+  chain: null,
 };
+
+/**
+ * The slice of the kill switch this service uses. Declared structurally so the
+ * tunnel stays unit-testable without constructing the real service.
+ */
+export interface KillSwitchHandle {
+  arm(input: { previousProxy: string | null; label: string }): unknown;
+  onTunnelDropped(reason: string): Promise<unknown>;
+  onTunnelStopped(): Promise<unknown>;
+}
 
 export interface TunnelDeps {
   nodeVault: NodeSecretVault | null;
@@ -72,10 +95,29 @@ export interface TunnelDeps {
   setSystemProxy(proxyOrNull: string | null): Promise<{ ok: boolean; error?: string }>;
   getSystemProxy(): Promise<{ proxy: string | null }>;
   publish(kind: string, payload: Record<string, unknown>): void;
+  /**
+   * Kill switch — owns what happens to the system proxy when this tunnel
+   * drops. Structurally typed (not an import) so the two stay independently
+   * testable; optional so existing callers/tests keep working.
+   */
+  killSwitch?: KillSwitchHandle;
   log: { info(msg: string): void; warn(msg: string): void; error(msg: string): void };
+  /**
+   * Called ONLY after a tunnel has been verified by traffic through the node,
+   * so gateway memory can never hold an unproven entry.
+   */
+  onVerifiedGateway?(input: GatewaySuccessInput): void;
+  /** Called when a verified gateway later fails verification (demote it). */
+  onGatewayFailed?(nodeId: string): void;
   /** seams for tests — default to the real core lifecycle */
   findBinary?(id: ProxyEngineId): string | null;
-  startCoreFn?(engine: { id: ProxyEngineId; bin: string; args: string[] }, config: ParsedNodeConfig, secret: string | null, readyTimeoutMs: number): ReturnType<typeof startCore>;
+  startCoreFn?(
+    engine: { id: ProxyEngineId; bin: string; args: string[] },
+    config: ParsedNodeConfig,
+    secret: string | null,
+    readyTimeoutMs: number,
+    opts?: { bypass?: BypassRuleSet | null; dialThroughPort?: number | null },
+  ): ReturnType<typeof startCore>;
 }
 
 const RESTART_BASE_MS = 1_500;
@@ -109,9 +151,51 @@ export interface TunnelNodeInput {
   remark: string | null;
 }
 
+/** What the service was asked to keep up — what reconnect restores. */
+type StartTarget =
+  | { kind: 'single'; node: TunnelNodeInput }
+  | { kind: 'nested'; entry: TunnelNodeInput; exit: TunnelNodeInput };
+
+interface StartOpts {
+  systemProxy: boolean;
+  preferredEngine: 'auto' | ProxyEngineId;
+  bypass?: BypassRuleSet | null;
+  source?: TunnelSource;
+}
+
+/** Which hop of a chain a core is running. */
+type HopRole = { kind: 'single' } | { kind: 'entry' } | { kind: 'exit'; entryPort: number };
+
+type HopStart =
+  | { ok: true; engine: ProxyEngineId; run: CoreRun }
+  | { ok: false; error: string };
+
+/** `ip=` / `loc=` from a Cloudflare trace body; null when absent. Exported for tests. */
+export function traceField(body: string, field: 'ip' | 'loc'): string | null {
+  return body.match(new RegExp(`^${field}=(.+)$`, 'm'))?.[1]?.trim() ?? null;
+}
+
+/**
+ * The nested-mode verdict. `exitDiffers` is false whenever either hop reported
+ * no address OR both observed the same one — never assume a difference.
+ * Exported for tests.
+ */
+export function chainRecord(entry: TunnelHop, exit: TunnelHop): TunnelChain {
+  const exitDiffers = Boolean(entry.exitIp && exit.exitIp && entry.exitIp !== exit.exitIp);
+  const note = !entry.exitIp || !exit.exitIp
+    ? 'One hop reported no exit IP, so the chain could not be compared.'
+    : exitDiffers
+      ? `Exit differs from the entry edge: entry ${entry.exitIp} → exit ${exit.exitIp}.`
+      : `Exit address is identical to the entry edge (${exit.exitIp}) — this pair does not change your observed address.`;
+  return { mode: 'nested', hops: [entry, exit], entryExitIp: entry.exitIp, exitIp: exit.exitIp, exitDiffers, note };
+}
+
 export class ProxyTunnelService {
   private status: TunnelStatus = { ...IDLE };
-  private core: TunnelCore | null = null;
+  /** Every core this tunnel owns — a single hop has one, nested mode has two. */
+  private cores: TunnelCore[] = [];
+  private target: StartTarget | null = null;
+  private targetOpts: StartOpts | null = null;
   private restarts = 0;
   private restartTimer: NodeJS.Timeout | null = null;
   private stopping = false;
@@ -127,14 +211,31 @@ export class ProxyTunnelService {
   }
 
   /**
-   * Start (or restart onto) a node tunnel. `node` carries the same normalized
-   * fields the probe path uses; the secret comes from the at-rest vault — a
-   * node without a stored secret can still tunnel if its protocol is
-   * unauthenticated (ss with none cipher, plain vmess...), so we pass null
-   * through and let the core decide, but we RECORD that honestly in `error`
-   * when the core rejects it.
+   * Start (or restart onto) a single-node tunnel.
    */
-  async start(node: TunnelNodeInput, opts: { systemProxy: boolean; preferredEngine: 'auto' | ProxyEngineId }): Promise<TunnelStatus> {
+  async start(node: TunnelNodeInput, opts: StartOpts): Promise<TunnelStatus> {
+    return this.enqueue(() => this.startTarget({ kind: 'single', node }, opts));
+  }
+
+  /**
+   * NESTED mode: two cores chained, so the exit address differs from the entry
+   * edge. `entry` carries the connection out of this machine; `exit` dials its
+   * node through the entry core.
+   */
+  async startNested(pair: { entry: TunnelNodeInput; exit: TunnelNodeInput }, opts: StartOpts): Promise<TunnelStatus> {
+    return this.enqueue(() => this.startTarget({ kind: 'nested', entry: pair.entry, exit: pair.exit }, opts));
+  }
+
+  /** Re-establish whatever target is currently requested (used by reconnect). */
+  async restartStored(): Promise<TunnelStatus> {
+    const target = this.target;
+    const opts = this.targetOpts;
+    if (!target || !opts) return this.getStatus();
+    return this.enqueue(() => this.startTarget(target, opts));
+  }
+
+  /** Serialize a transition; a stop() that superseded it wins. */
+  private async enqueue(fn: () => Promise<TunnelStatus>): Promise<TunnelStatus> {
     const myGeneration = this.stopGeneration;
     const prev = this.transition;
     let done!: () => void;
@@ -147,131 +248,212 @@ export class ProxyTunnelService {
       return this.getStatus();
     }
     try {
-      return await this.startInner(node, opts);
+      return await fn();
     } finally {
       done();
     }
   }
 
-  private async startInner(node: TunnelNodeInput, opts: { systemProxy: boolean; preferredEngine: 'auto' | ProxyEngineId }): Promise<TunnelStatus> {
+  private async startTarget(target: StartTarget, opts: StartOpts): Promise<TunnelStatus> {
     // Teardown any existing tunnel first (single-tunnel invariant).
     await this.stopInner({ keepStatus: true });
 
+    const nested = target.kind === 'nested';
+    const entryNode = target.kind === 'nested' ? target.entry : null;
+    const exitNode = target.kind === 'nested' ? target.exit : target.node;
+
+    this.target = target;
+    this.targetOpts = opts;
+    const bypass = opts.bypass && !bypassIsEmpty(opts.bypass) ? opts.bypass : null;
     this.status = {
       ...IDLE,
       state: 'starting',
-      nodeId: node.id,
+      nodeId: exitNode.id,
+      nodeName: exitNode.remark ?? null,
+      source: opts.source ?? 'explicit',
+      bypass: bypass ? bypassSummary(bypass) : null,
       error: null,
     };
-    this.deps.publish('tunnel:starting', { nodeId: node.id });
-
-    // 1) Resolve config + secret exactly like the test path.
-    const config: ParsedNodeConfig = {
-      protocol: node.protocol as ParsedNodeConfig['protocol'],
-      host: node.host,
-      port: node.port,
-      transport: (node.transport ?? 'tcp') as ParsedNodeConfig['transport'],
-      security: (node.security ?? 'none') as ParsedNodeConfig['security'],
-      sni: node.sni,
-      alpn: Array.isArray(node.alpn) ? node.alpn : node.alpn ? [node.alpn] : null,
-      fingerprint: node.fingerprint,
-      flow: node.flow,
-      alterId: node.alterId,
-      path: node.path,
-      hostHeader: node.hostHeader,
-      serviceName: node.serviceName,
-      allowInsecure: node.allowInsecure === true,
-      encryption: node.encryption,
-      ssrProtocol: node.ssrProtocol,
-    realityPublicKey: node.realityPublicKey,
-    realityShortId: node.realityShortId,
-    realityServerName: node.realityServerName,
-    vmessSecurity: node.encryption,
-    extra: (node as unknown as { extra?: Record<string, unknown> | null }).extra ?? null,
-    remark: node.remark,
-  };
-    const secret = this.deps.nodeVault?.get(node.id) ?? null;
-
-    // 2) Engine choice: preference first, then any installed core (same
-    //    capability matrix as the probe — protocol must be supported).
-    const engine = this.pickEngine(config.protocol, opts.preferredEngine);
-    if (!engine) {
-      this.status = { ...this.status, state: 'down', error: 'no installed proxy core supports this protocol' };
-      this.deps.publish('tunnel:error', { nodeId: node.id, error: this.status.error });
+    // Refuse a hop that cannot be started BEFORE spawning anything: a chain
+    // that would immediately unwind must not leave a stray core behind.
+    const entryBar = entryNode ? this.preflight(toParsedConfig(entryNode), opts.preferredEngine, { kind: 'entry' }) : null;
+    const exitBar = this.preflight(toParsedConfig(exitNode), opts.preferredEngine, nested ? { kind: 'exit', entryPort: -1 } : { kind: 'single' });
+    if (entryBar || exitBar) {
+      this.fail(entryBar ? `entry hop — ${entryBar}` : nested ? `exit hop — ${exitBar}` : exitBar!, exitNode.id);
       return this.getStatus();
     }
+    this.deps.publish('tunnel:starting', { nodeId: exitNode.id, nested });
 
-    // 3) Start the core with a LONG-LIVED readiness budget (the probe allows
-    //    5s; remote handshakes on cold networks can be slower).
-    const bin = (this.deps.findBinary ?? findEngineBinary)(engine);
-    if (!bin) {
-      this.status = { ...this.status, state: 'down', error: `${engine} binary not found` };
+    // 1) ENTRY hop (nested only). It is started and verified first: the exit
+    //    core will dial through it, so it must provably relay before we depend
+    //    on it.
+    let entryHop: TunnelHop | null = null;
+    if (entryNode) {
+      const entry = await this.startHop(entryNode, opts.preferredEngine, { kind: 'entry' }, bypass);
+      if (!entry.ok) {
+        this.fail(`entry hop — ${entry.error}`, exitNode.id);
+        return this.getStatus();
+      }
+      this.cores.push({ engine: entry.engine, run: entry.run });
+      this.watch(entry.run);
+      try {
+        const trace = await this.deps.fetchThroughPort(entry.run.inboundPort, TRACE_URL, 12_000);
+        const ip = traceField(trace, 'ip');
+        if (!ip) throw new Error('trace did not contain an ip= line');
+        // The entry edge's OWN observed address — the thing the exit must differ from.
+        entryHop = {
+          nodeId: entryNode.id,
+          name: entryNode.remark ?? null,
+          engine: entry.engine,
+          host: entryNode.host,
+          port: entryNode.port,
+          exitIp: ip,
+          exitCountry: traceField(trace, 'loc'),
+          inboundPort: entry.run.inboundPort,
+        };
+      } catch (err) {
+        this.fail(`entry hop started but could not relay: ${message(err)}`, exitNode.id);
+        return this.getStatus();
+      }
+    }
+
+    // 2) EXIT hop — dials its node THROUGH the entry core in nested mode.
+    const exit = await this.startHop(exitNode, opts.preferredEngine, nested ? { kind: 'exit', entryPort: entryHop!.inboundPort } : { kind: 'single' }, bypass);
+    if (!exit.ok) {
+      this.fail(nested ? `exit hop — ${exit.error}` : exit.error, exitNode.id);
       return this.getStatus();
     }
-    const startFn = this.deps.startCoreFn ?? startCore;
-    const started = await startFn({ id: engine, bin, args: ['run'] }, config, secret, 10_000);
-    if (!started.ok) {
-      this.status = { ...this.status, state: 'down', error: `${engine}: ${started.error}` };
-      this.deps.publish('tunnel:error', { nodeId: node.id, error: this.status.error });
-      return this.getStatus();
-    }
-
-    this.core = { engine, run: started.run };
-    // Crash watcher: any core exit while we think the tunnel is up = down.
-    started.run.child.once('close', (code) => {
-      if (this.stopping || this.core?.run !== started.run) return;
-      this.core = null;
-      this.status = { ...this.status, state: 'down', error: `core exited unexpectedly (code ${code ?? '?'})` };
-      this.deps.publish('tunnel:down', { nodeId: node.id, reason: 'core_exit' });
-      void this.scheduleRestart(node, opts);
-    });
+    this.cores.push({ engine: exit.engine, run: exit.run });
+    this.watch(exit.run);
 
     this.status = {
       ...this.status,
       state: 'active',
-      engine,
-      inboundPort: started.run.inboundPort,
+      engine: exit.engine,
+      inboundPort: exit.run.inboundPort,
       startedAt: Date.now(),
     };
 
-    // 4) Verify by fetching a real trace THROUGH the tunnel (not a TCP check —
-    //    that would light "active" for a core that cannot actually relay).
+    // 3) Verify by fetching a real trace THROUGH the final hop (not a TCP check
+    //    — that would light "active" for a core that cannot actually relay).
     try {
-      const trace = await this.deps.fetchThroughPort(started.run.inboundPort, 'https://www.cloudflare.com/cdn-cgi/trace', 12_000);
-      const ip = trace.match(/^ip=(.+)$/m)?.[1]?.trim() ?? null;
-      const loc = trace.match(/^loc=(.+)$/m)?.[1]?.trim() ?? null;
+      const trace = await this.deps.fetchThroughPort(exit.run.inboundPort, TRACE_URL, 12_000);
+      const ip = traceField(trace, 'ip');
+      const loc = traceField(trace, 'loc');
       if (!ip) throw new Error('trace did not contain an ip= line');
-      this.status = { ...this.status, exitIp: ip, exitCountry: loc, verifiedAt: Date.now(), error: null };
-      this.deps.publish('tunnel:active', { nodeId: node.id, engine, exitIp: ip, exitCountry: loc });
+      const now = Date.now();
+      const chain = entryHop
+        ? chainRecord(entryHop, {
+            nodeId: exitNode.id,
+            name: exitNode.remark ?? null,
+            engine: exit.engine,
+            host: exitNode.host,
+            port: exitNode.port,
+            exitIp: ip,
+            exitCountry: loc,
+            inboundPort: exit.run.inboundPort,
+          })
+        : null;
+      this.status = {
+        ...this.status,
+        exitIp: ip,
+        exitCountry: loc,
+        verifiedAt: now,
+        error: null,
+        reconnectAttempts: 0,
+        reconnectLimit: RESTART_MAX_TRIES,
+        chain,
+      };
+      this.deps.publish('tunnel:active', {
+        nodeId: exitNode.id,
+        engine: exit.engine,
+        exitIp: ip,
+        exitCountry: loc,
+        ...(chain ? { nested: true, entryExitIp: chain.entryExitIp, exitDiffers: chain.exitDiffers } : {}),
+      });
+      // Proven: this is the only place gateway memory is written.
+      this.deps.onVerifiedGateway?.({
+        nodeId: exitNode.id,
+        name: exitNode.remark ?? null,
+        host: exitNode.host,
+        port: exitNode.port,
+        protocol: exitNode.protocol,
+        engine: exit.engine,
+        exitIp: ip,
+        exitCountry: loc,
+        verifyMs: this.status.startedAt != null ? now - this.status.startedAt : null,
+      });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // The core started but cannot relay — that is a dead tunnel; be honest.
-      this.status = { ...this.status, state: 'down', error: `started but verification failed: ${msg}` };
-      this.deps.publish('tunnel:error', { nodeId: node.id, error: this.status.error });
-      this.killCore();
+      // The cores started but cannot relay — that is a dead tunnel; be honest.
+      this.status = { ...this.status, state: 'down', error: `started but verification failed: ${message(err)}` };
+      this.deps.publish('tunnel:error', { nodeId: exitNode.id, error: this.status.error });
+      this.killAll();
+      // A remembered gateway that no longer relays must be demoted, not trusted.
+      this.deps.onGatewayFailed?.(exitNode.id);
       // We never reached the handoff step, so there is nothing of ours to
       // restore — do NOT write null blindly or we would wipe a proxy the user
       // had configured before this attempt.
       return this.getStatus();
     }
 
-    // 5) Optionally route the OS through the tunnel.
+    // 4) Optionally route the OS through the FINAL hop of the chain.
     if (opts.systemProxy) {
       try {
         const prevProxy = await this.deps.getSystemProxy();
-        const set = await this.deps.setSystemProxy(`127.0.0.1:${started.run.inboundPort}`);
+        const set = await this.deps.setSystemProxy(`127.0.0.1:${exit.run.inboundPort}`);
         if (set.ok) {
           this.status = { ...this.status, systemProxy: true, previousProxy: prevProxy.proxy };
+          // Arm here, not at start: the handoff is only real once the write
+          // succeeded, and the kill switch must never claim a hold it does
+          // not have.
+          this.deps.killSwitch?.arm({
+            previousProxy: prevProxy.proxy,
+            label: this.status.chain ? `chain ${this.status.nodeName ?? ''}`.trim() : this.status.nodeName ?? 'proxy tunnel',
+          });
         } else {
           this.status = { ...this.status, systemProxy: false, error: `system proxy: ${set.error ?? 'failed'}` };
         }
       } catch (err) {
-        this.status = { ...this.status, systemProxy: false, error: `system proxy: ${err instanceof Error ? err.message : String(err)}` };
+        this.status = { ...this.status, systemProxy: false, error: `system proxy: ${message(err)}` };
       }
     }
 
     this.restarts = 0;
     return this.getStatus();
+  }
+
+  /** Honest failure: record it, publish it, and leave no core behind. */
+  private fail(error: string, nodeId: string): void {
+    this.status = { ...this.status, state: 'down', error };
+    this.deps.publish('tunnel:error', { nodeId, error });
+    this.killAll();
+  }
+
+  /**
+   * Start one hop's core. The exit hop of a chain must be an engine that really
+   * honours the dial-through wiring — refused upfront rather than shipping a
+   * "chain" that silently dials the node directly.
+   */
+  private async startHop(node: TunnelNodeInput, preferred: 'auto' | ProxyEngineId, role: HopRole, bypass: BypassRuleSet | null): Promise<HopStart> {
+    const config = toParsedConfig(node);
+    const bar = this.preflight(config, preferred, role);
+    if (bar) return { ok: false, error: bar };
+    const engine = this.pickEngine(config, preferred, role.kind === 'exit')!;
+    const bin = (this.deps.findBinary ?? findEngineBinary)(engine);
+    if (!bin) return { ok: false, error: `${engine} binary not found` };
+    // The secret comes from the at-rest vault — a node without a stored secret
+    // can still tunnel if its protocol is unauthenticated, so we pass null
+    // through and let the core decide.
+    const secret = this.deps.nodeVault?.get(node.id) ?? null;
+    const startFn = this.deps.startCoreFn ?? startCore;
+    // Split-tunnel rules ride on the tunnel cores only — the probe path never
+    // bypasses, or a test would measure the wrong path.
+    const started = await startFn({ id: engine, bin, args: ['run'] }, config, secret, 10_000, {
+      bypass,
+      ...(role.kind === 'exit' ? { dialThroughPort: role.entryPort } : {}),
+    });
+    if (!started.ok) return { ok: false, error: `${engine}: ${started.error}` };
+    return { ok: true, engine, run: started.run };
   }
 
   async stop(): Promise<TunnelStatus> {
@@ -296,58 +478,141 @@ export class ProxyTunnelService {
       try {
         await this.deps.setSystemProxy(this.status.previousProxy);
       } catch (err) {
-        this.deps.log.warn(`tunnel: failed to restore system proxy: ${err instanceof Error ? err.message : String(err)}`);
+        this.deps.log.warn(`tunnel: failed to restore system proxy: ${message(err)}`);
       }
     }
-    this.killCore();
+    // Deliberate stop: always hand the user's proxy back and clear the hold
+    // (also covers disconnecting while the switch was engaged).
+    void this.deps.killSwitch?.onTunnelStopped().catch(() => undefined);
+    this.killAll();
 
     if (!o.keepStatus) {
       this.status = { ...IDLE };
+      this.target = null;
+      this.targetOpts = null;
       if (wasNodeId) this.deps.publish('tunnel:stopped', { nodeId: wasNodeId });
     }
     this.stopping = false;
     return this.getStatus();
   }
 
-  private killCore(): void {
-    if (this.core) {
-      try { this.core.run.cleanup(); } catch { /* idempotent */ }
-      this.core = null;
+  /** Kill every core this tunnel owns (idempotent). */
+  private killAll(): void {
+    const cores = this.cores;
+    this.cores = [];
+    for (const core of cores) {
+      try { core.run.cleanup(); } catch { /* idempotent */ }
     }
   }
 
-  /** Bounded auto-reconnect after a core crash. */
-  private scheduleRestart(node: TunnelNodeInput, opts: { systemProxy: boolean; preferredEngine: 'auto' | ProxyEngineId }): void {
-    if (this.stopping) return;
+  /**
+   * Crash watcher: any core exit while we think the tunnel is up = down. Only
+   * the first close is acted on — the second core's event finds no matching
+   * core and returns.
+   */
+  private watch(run: CoreRun): void {
+    run.child.once('close', (code) => {
+      if (this.stopping || !this.cores.some((c) => c.run === run)) return;
+      const nodeId = this.status.nodeId;
+      this.killAll();
+      this.status = { ...this.status, state: 'down', error: `core exited unexpectedly (code ${code ?? '?'})` };
+      this.deps.publish('tunnel:down', { nodeId, reason: 'core_exit' });
+      // The OS proxy still points at the dead core port. Let the kill switch
+      // decide: block (enabled) or hand the user's own proxy back. Without
+      // this, a crashed tunnel left a stale dead proxy setting behind with no
+      // explanation.
+      void this.deps.killSwitch?.onTunnelDropped(`core exited (code ${code ?? '?'})`).catch(() => undefined);
+      this.scheduleRestart();
+    });
+  }
+
+  /** Bounded auto-reconnect after a core crash — restores the whole target. */
+  private scheduleRestart(): void {
+    if (this.stopping || !this.target) return;
     if (this.restarts >= RESTART_MAX_TRIES) {
-      this.deps.publish('tunnel:error', { nodeId: node.id, error: `gave up after ${RESTART_MAX_TRIES} reconnect attempts` });
+      this.status = { ...this.status, reconnectLimit: RESTART_MAX_TRIES };
+      this.deps.publish('tunnel:error', { nodeId: this.status.nodeId, error: `gave up after ${RESTART_MAX_TRIES} reconnect attempts` });
       return;
     }
     this.restarts += 1;
+    // Surfaced so the UI can say "reconnecting (attempt 2 of 3)" instead of
+    // leaving the user to guess whether anything is happening.
+    this.status = { ...this.status, reconnectAttempts: this.restarts, reconnectLimit: RESTART_MAX_TRIES };
     const delay = RESTART_BASE_MS * 2 ** (this.restarts - 1);
     const myGeneration = this.stopGeneration;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopping || this.status.state === 'active') return;
-      void this.start(node, opts).then((s) => {
+      void this.restartStored().then((s) => {
         // start() is a no-op if a stop() superseded us (generation moved);
         // state will be idle — do not reschedule from a dead restart chain.
         if (this.stopGeneration !== myGeneration) return;
-        if (s.state === 'down' && !s.error?.includes('gave up')) return this.scheduleRestart(node, opts);
+        if (s.state === 'down' && !s.error?.includes('gave up')) this.scheduleRestart();
       });
     }, delay);
   }
 
-  private pickEngine(protocol: string, preferred: 'auto' | ProxyEngineId): ProxyEngineId | null {
-    const find = this.deps.findBinary ?? findEngineBinary;
-    const SUPPORTS: Record<ProxyEngineId, RegExp> = {
-      'xray': /^(vless|vmess|trojan|shadowsocks)$/i,
-      'sing-box': /^(vless|vmess|trojan|shadowsocks|hysteria2|tuic)$/i,
-      'v2ray': /^(vless|vmess|trojan|shadowsocks)$/i,
-    };
-    const order: ProxyEngineId[] = preferred === 'auto' ? ['xray', 'sing-box', 'v2ray'] : [preferred, ...(['xray', 'sing-box', 'v2ray'] as const).filter((e) => e !== preferred)];
-    return order.find((e) => find(e) !== null && SUPPORTS[e].test(protocol)) ?? null;
+  /**
+   * Why this hop cannot be started, or null when it can. Names the REAL
+   * blocker: a protocol that can never chain is a different problem from a
+   * core that simply is not installed.
+   */
+  private preflight(config: ParsedNodeConfig, preferred: 'auto' | ProxyEngineId, role: HopRole): string | null {
+    if (this.pickEngine(config, preferred, role.kind === 'exit')) return null;
+    if (role.kind !== 'exit') return 'no installed proxy core supports this protocol';
+    return chainExitProtocolUnsupported(config.protocol)
+      ?? `no installed proxy core can dial this ${config.protocol} node as the chain exit hop (needs xray or sing-box — v2ray ignores the dial-through wiring)`;
   }
+
+  /**
+   * Engine choice: the user's preference first, then any installed core that
+   * can dial the protocol. `chainExit` additionally requires an engine that
+   * honours dial-through wiring (see chainExitUnsupported).
+   */
+  private pickEngine(config: ParsedNodeConfig, preferred: 'auto' | ProxyEngineId, chainExit: boolean): ProxyEngineId | null {
+    const find = this.deps.findBinary ?? findEngineBinary;
+    const order: ProxyEngineId[] = preferred === 'auto'
+      ? ['xray', 'sing-box', 'v2ray']
+      : [preferred, ...(['xray', 'sing-box', 'v2ray'] as const).filter((e) => e !== preferred)];
+    return order.find((e) =>
+      find(e) !== null
+      && engineSupports(e, config.protocol)
+      && engineSupportsConfig(e, config).ok
+      && (!chainExit || chainExitUnsupported(e, config.protocol) === null),
+    ) ?? null;
+  }
+}
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Normalize a node row into the config shape the core builders consume. */
+function toParsedConfig(node: TunnelNodeInput): ParsedNodeConfig {
+  return {
+    protocol: node.protocol as ParsedNodeConfig['protocol'],
+    host: node.host,
+    port: node.port,
+    transport: (node.transport ?? 'tcp') as ParsedNodeConfig['transport'],
+    security: (node.security ?? 'none') as ParsedNodeConfig['security'],
+    sni: node.sni,
+    alpn: Array.isArray(node.alpn) ? node.alpn : node.alpn ? [node.alpn] : null,
+    fingerprint: node.fingerprint,
+    flow: node.flow,
+    alterId: node.alterId,
+    path: node.path,
+    hostHeader: node.hostHeader,
+    serviceName: node.serviceName,
+    allowInsecure: node.allowInsecure === true,
+    encryption: node.encryption,
+    ssrProtocol: node.ssrProtocol,
+    realityPublicKey: node.realityPublicKey,
+    realityShortId: node.realityShortId,
+    realityServerName: node.realityServerName,
+    vmessSecurity: node.encryption,
+    extra: (node as unknown as { extra?: Record<string, unknown> | null }).extra ?? null,
+    remark: node.remark,
+  };
 }
 
 /**
