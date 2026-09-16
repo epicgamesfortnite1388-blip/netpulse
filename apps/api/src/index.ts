@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+
 import { buildApp } from './app';
+import { runAutoConnectIfNeeded } from './services/autoConnect';
 import { sweepStaleCoreDirs } from './services/proxyCores';
 
 const { app, ctx } = await buildApp();
@@ -15,6 +18,8 @@ if (swept.removed > 0 || swept.failed > 0) {
 await app.listen({ port: ctx.config.port, host: ctx.config.host });
 app.log.info(`NetPulse API ready at http://localhost:${ctx.config.port}`);
 app.log.info(`Demo mode: ${ctx.config.demoMode ? 'ON (data labeled DEMO DATA)' : 'off'}`);
+
+runAutoConnectIfNeeded(app, ctx, fs.readFileSync(ctx.config.tokenFile, 'utf8').trim());
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {

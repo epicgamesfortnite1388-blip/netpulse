@@ -335,10 +335,13 @@ export default function SettingsPage() {
               <SectionNote>
                 The kill switch applies to proxy-mode tunnels: when one routes the system proxy and drops,
                 non-bypassed traffic is fail-closed (pointed at a sink that answers nothing) instead of
-                falling back to a direct connection. It is enforced at the system-proxy layer, so apps
-                that ignore the system proxy are outside its guarantee. Destinations in the split-tunnel
-                rules stay direct and are exempt. Preferences apply to future connections; they never
-                change a running tunnel silently.
+                falling back to a direct connection. Auto-connect brings the tunnel up on app start via the
+                same path as the Connect button (remembered gateways first, then a discovery scan).
+                Auto-select server lets the app pick the best tested node when you connect without choosing
+                one; turn it off to require picking a node explicitly. DNS through VPN resolves DNS inside
+                the tunnel core through the node — apps routed through the system proxy get their DNS via
+                the tunnel, but apps that ignore the system proxy keep their own DNS path. Preferences
+                apply to future connections; they never change a running tunnel silently.
               </SectionNote>
               {/* `wired` = something actually reads the value. A preference the
                   backend ignores is shown locked with the reason stated, rather
@@ -346,9 +349,9 @@ export default function SettingsPage() {
               {(
                 [
                   ['killSwitch', 'Kill switch', 'Block all traffic if the VPN drops', true],
-                  ['autoConnect', 'Auto-connect', 'Connect on app start', false],
-                  ['autoSelectServer', 'Auto-select server', 'Pick the best server by score', false],
-                  ['dnsThroughVpn', 'DNS through VPN', 'Prevent DNS leaks by tunneling DNS', false],
+                  ['autoConnect', 'Auto-connect', 'Connect on app start (remembered gateways first, then a scan)', true],
+                  ['autoSelectServer', 'Auto-select server', 'Pick the best tested node when connecting without an explicit choice', true],
+                  ['dnsThroughVpn', 'DNS through VPN', 'Resolve DNS inside the tunnel core via the node', true],
                 ] as const
               ).map(([key, label, hint, wired]) => (
                 <Tooltip key={key} content={wired ? hint : `${hint} — not implemented yet, so nothing reads it`}>

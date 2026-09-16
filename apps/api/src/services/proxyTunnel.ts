@@ -42,7 +42,7 @@ import {
   type TunnelSource,
 } from '@netpulse/shared';
 
-import { chainExitProtocolUnsupported, chainExitUnsupported, engineSupports, engineSupportsConfig, findEngineBinary, startCore, type CoreRun } from './proxyCores';
+import { chainExitProtocolUnsupported, chainExitUnsupported, engineSupports, engineSupportsConfig, findEngineBinary, startCore, type CoreRun, type DnsThroughTunnel } from './proxyCores';
 
 import type { NodeSecretVault } from './nodeSecretVault';
 
@@ -116,7 +116,7 @@ export interface TunnelDeps {
     config: ParsedNodeConfig,
     secret: string | null,
     readyTimeoutMs: number,
-    opts?: { bypass?: BypassRuleSet | null; dialThroughPort?: number | null },
+    opts?: { bypass?: BypassRuleSet | null; dialThroughPort?: number | null; dns?: DnsThroughTunnel | null },
   ): ReturnType<typeof startCore>;
 }
 
@@ -160,6 +160,8 @@ interface StartOpts {
   systemProxy: boolean;
   preferredEngine: 'auto' | ProxyEngineId;
   bypass?: BypassRuleSet | null;
+  /** Resolve DNS inside the core through the node outbound (dnsThroughVpn). */
+  dns?: DnsThroughTunnel | null;
   source?: TunnelSource;
 }
 
@@ -203,6 +205,8 @@ export class ProxyTunnelService {
   private transition: Promise<void> = Promise.resolve();
   /** bumped by stop() so a queued restart's start() aborts instead of resurrecting */
   private stopGeneration = 0;
+  /** DNS-through-tunnel wiring captured from the most recent start options. */
+  private dns: DnsThroughTunnel | null = null;
 
   constructor(private readonly deps: TunnelDeps) {}
 
@@ -214,6 +218,7 @@ export class ProxyTunnelService {
    * Start (or restart onto) a single-node tunnel.
    */
   async start(node: TunnelNodeInput, opts: StartOpts): Promise<TunnelStatus> {
+    this.dns = opts.dns ?? null;
     return this.enqueue(() => this.startTarget({ kind: 'single', node }, opts));
   }
 
@@ -223,6 +228,7 @@ export class ProxyTunnelService {
    * node through the entry core.
    */
   async startNested(pair: { entry: TunnelNodeInput; exit: TunnelNodeInput }, opts: StartOpts): Promise<TunnelStatus> {
+    this.dns = opts.dns ?? null;
     return this.enqueue(() => this.startTarget({ kind: 'nested', entry: pair.entry, exit: pair.exit }, opts));
   }
 
@@ -450,6 +456,7 @@ export class ProxyTunnelService {
     // bypasses, or a test would measure the wrong path.
     const started = await startFn({ id: engine, bin, args: ['run'] }, config, secret, 10_000, {
       bypass,
+      dns: this.dns,
       ...(role.kind === 'exit' ? { dialThroughPort: role.entryPort } : {}),
     });
     if (!started.ok) return { ok: false, error: `${engine}: ${started.error}` };

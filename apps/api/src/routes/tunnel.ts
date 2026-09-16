@@ -22,7 +22,7 @@ import {
   type ScanProfileId,
 } from '@netpulse/shared';
 import { badRequest, newNotFound } from '../util/appError';
-import { chainExitProtocolUnsupported } from '../services/proxyCores';
+import { chainExitProtocolUnsupported, type DnsThroughTunnel } from '../services/proxyCores';
 import { QuickConnectSchema, DiscoverSchema } from '@netpulse/shared';
 import type { FastifyInstance } from 'fastify';
 
@@ -49,6 +49,11 @@ export const TunnelStartSchema = z.object({
 const DEFAULTS = {
   systemProxy: true,
 };
+
+/** Encrypted resolver reached through the tunnel (dnsThroughVpn). */
+const DNS_DOH_URL = 'https://1.1.1.1/dns-query';
+/** Classic UDP fallback for exits where DoH is blocked (still via the node). */
+const DNS_PLAIN_FALLBACK = '1.1.1.1';
 
 /**
  * A node is tunnelable if a proxy test PROVABLY succeeded: either the median
@@ -86,6 +91,26 @@ function activeBypass(ctx: AppContext): BypassRuleSet | null {
   return rules;
 }
 
+/**
+ * DNS-through-tunnel wiring, applied only when the user enabled it. The
+ * resolver lives inside the tunnel core and egresses via the node outbound, so
+ * lookups the core makes never touch the local network path.
+ */
+function activeDns(ctx: AppContext): DnsThroughTunnel | null {
+  const settings = ctx.services.settings.get();
+  if (!settings.vpn?.dnsThroughVpn) return null;
+  return { doh: DNS_DOH_URL, plainFallback: DNS_PLAIN_FALLBACK };
+}
+
+/**
+ * Auto-select server (settings.vpn.autoSelectServer): when off, the app never
+ * picks a node itself — auto-start demands an explicit node and the route says
+ * so instead of silently choosing for the user.
+ */
+function autoSelectEnabled(ctx: AppContext): boolean {
+  return ctx.services.settings.get().vpn?.autoSelectServer ?? true;
+}
+
 export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/v1/vpn/tunnel/status', async () => {
     return { tunnel: ctx.services.tunnel.getStatus() };
@@ -108,11 +133,13 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
       // Auto-fill whichever hop the caller left out, from the tested pool.
       let exitPick: PublicNodeRow | null = exitRow ?? null;
       if (!exitPick) {
+        if (!autoSelectEnabled(ctx)) throw badRequest('tunnel_auto_select_disabled', 'auto-select server is off — pick an exit node explicitly');
         exitPick = pickBestNode(ctx, entryRow?.id);
         if (!exitPick) throw badRequest('tunnel_no_candidates', 'no tested-healthy node available to tunnel through — run node tests first');
       }
       let entryPick: PublicNodeRow | null = entryRow ?? null;
       if (!entryPick) {
+        if (!autoSelectEnabled(ctx)) throw badRequest('tunnel_auto_select_disabled', 'auto-select server is off — pick an entry node explicitly');
         entryPick = pickBestNode(ctx, exitPick.id);
         if (!entryPick) throw badRequest('tunnel_no_candidates', 'nested mode needs a second tested-healthy node for the entry hop — run more node tests first');
       }
@@ -130,7 +157,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
 
       const nested = await ctx.services.tunnel.startNested(
         { entry: entryNode, exit: exitNode },
-        { systemProxy: wantSystemProxy, preferredEngine: preferred, bypass: activeBypass(ctx), source: 'explicit' },
+        { systemProxy: wantSystemProxy, preferredEngine: preferred, bypass: activeBypass(ctx), dns: activeDns(ctx), source: 'explicit' },
       );
       return { tunnel: nested };
     }
@@ -139,6 +166,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
     let source: 'explicit' | 'auto' = 'explicit';
     if (!nodeId) {
       if (!body.auto) throw badRequest('tunnel_missing_target', 'provide nodeId or auto:true');
+      if (!autoSelectEnabled(ctx)) throw badRequest('tunnel_auto_select_disabled', 'auto-select server is off — pick a node explicitly');
       const best = pickBestNode(ctx);
       if (!best) throw badRequest('tunnel_no_candidates', 'no tested-healthy node available to tunnel through — run node tests first');
       nodeId = best.id;
@@ -155,6 +183,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
       systemProxy: wantSystemProxy,
       preferredEngine: preferred,
       bypass: activeBypass(ctx),
+      dns: activeDns(ctx),
       source,
     });
     return { tunnel: status };
@@ -178,6 +207,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
         systemProxy: cur.systemProxy,
         preferredEngine: preferred,
         bypass: activeBypass(ctx),
+        dns: activeDns(ctx),
         source: 'explicit',
       }),
     };
@@ -245,6 +275,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
         systemProxy: wantSystemProxy,
         preferredEngine: preferred,
         bypass,
+        dns: activeDns(ctx),
         source: source === 'memory' ? 'gateway-memory' : source === 'discovery' ? 'discovery' : 'auto',
       });
       const ok = status.state === 'active';

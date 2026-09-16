@@ -16,6 +16,7 @@
  * top-level await flow lives inside an async `main()`.
  */
 import { buildApp } from './app';
+import { runAutoConnectIfNeeded } from './services/autoConnect';
 
 function readTokenFromStdin(): Promise<string> {
   return new Promise((resolve) => {
@@ -86,6 +87,10 @@ async function main(): Promise<void> {
   const address = app.server.address();
   const boundPort = typeof address === 'object' && address ? address.port : ctx.config.port;
   app.log.info(`NetPulse desktop sidecar ready on 127.0.0.1:${boundPort}`);
+
+  // Auto-connect preference: same helper as the dev server, same quick-connect
+  // path as the Connect button (remembered gateways → discovery scan).
+  runAutoConnectIfNeeded(app, ctx, stdinToken);
 
   // Notify the supervisor that we are listening (stderr is piped to the app log).
   process.stderr.write(`sidecar-ready port=${boundPort}\n`);

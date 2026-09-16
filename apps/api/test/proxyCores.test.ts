@@ -362,3 +362,66 @@ describe('v2ray core support', () => {
     }
   });
 });
+
+describe('DNS-through-tunnel config wiring', () => {
+  const dns = { doh: 'https://1.1.1.1/dns-query', plainFallback: '1.1.1.1' };
+
+  it('xray: pins the dns module to the node outbound via the special dns inboundTag', () => {
+    const json = buildXrayConfig(cfg(), 'u', 1080, null, null, dns) as {
+      dns?: { servers: string[] };
+      routing?: { rules: Array<{ inboundTag?: string[]; outboundTag?: string }> };
+      outbounds: Array<{ tag?: string; protocol?: string }>;
+    };
+    expect(json.dns?.servers).toEqual([dns.doh, dns.plainFallback]);
+    const rule = json.routing?.rules.find((r) => r.inboundTag?.includes('dns'));
+    expect(rule?.outboundTag).toBe('np-node');
+    // the node outbound must carry the tag the rule points at
+    expect(json.outbounds.some((o) => o.tag === 'np-node')).toBe(true);
+  });
+
+  it('xray: no dns object when the preference is off', () => {
+    const json = buildXrayConfig(cfg(), 'u', 1080) as { dns?: unknown };
+    expect(json.dns).toBeUndefined();
+  });
+
+  it('xray: dns rule prepends to existing bypass routing instead of replacing it', () => {
+    const rs = { domains: ['bank.example.com'], ips: [], ports: [], lan: true } as const;
+    const json = buildXrayConfig(cfg(), 'u', 1080, rs, null, dns) as {
+      routing?: { rules: Array<{ inboundTag?: string[]; outboundTag?: string }> };
+    };
+    const tags = json.routing?.rules.map((r) => r.outboundTag);
+    expect(tags?.indexOf('np-node')).toBeLessThan(tags?.indexOf('direct') ?? -1);
+  });
+
+  it('sing-box: default_domain_resolver detours through the node outbound', () => {
+    const json = buildSingboxConfig(cfg(), 'u', 1080, null, null, dns) as {
+      dns?: { servers: Array<{ tag?: string; type?: string; detour?: string }> };
+      route?: { default_domain_resolver?: { server: string } };
+      outbounds: Array<{ tag?: string }>;
+    };
+    expect(json.route?.default_domain_resolver).toEqual({ server: 'dns-tun' });
+    const tun = json.dns?.servers.find((s) => s.tag === 'dns-tun');
+    expect(tun?.type).toBe('https');
+    expect(tun?.detour).toBe('np-node');
+    expect(json.outbounds.some((o) => o.tag === 'np-node')).toBe(true);
+  });
+
+  it('sing-box: no dns object when the preference is off', () => {
+    const json = buildSingboxConfig(cfg(), 'u', 1080) as { dns?: unknown };
+    expect(json.dns).toBeUndefined();
+  });
+
+  it('sing-box: refuses a malformed DoH URL instead of emitting a broken resolver', () => {
+    const json = buildSingboxConfig(cfg(), 'u', 1080, null, null, { doh: 'not-a-url', plainFallback: '1.1.1.1' }) as { dns?: unknown };
+    expect(json.dns).toBeUndefined();
+  });
+});
+
+describe('sing-box ws transport parity with xray', () => {
+  it(' forwards the ws Host header (CDN routing key) exactly like the xray builder', () => {
+    const withHost = buildSingboxConfig(cfg(), 'u', 1080) as { outbounds: Array<{ transport?: { type: string; headers?: { Host?: string } } }> };
+    expect(withHost.outbounds[0]?.transport?.headers?.Host).toBe('ws.example.com');
+    const bare = buildSingboxConfig(cfg({ hostHeader: null }), 'u', 1080) as { outbounds: Array<{ transport?: { headers?: unknown } }> };
+    expect(bare.outbounds[0]?.transport?.headers).toBeUndefined();
+  });
+});
