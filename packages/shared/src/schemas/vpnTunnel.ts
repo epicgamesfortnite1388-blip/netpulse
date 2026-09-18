@@ -12,6 +12,8 @@ export const QuickConnectSchema = z.object({
   profile: scanProfileSchema.optional(),
   /** how many remembered gateways may be retried before discovering (0 = skip memory) */
   maxMemoryAttempts: z.number().int().min(0).max(12).optional(),
+  /** TUN mode: capture all system traffic through a sing-box TUN gateway */
+  tun: z.boolean().optional(),
 });
 
 export type QuickConnectRequest = z.infer<typeof QuickConnectSchema>;

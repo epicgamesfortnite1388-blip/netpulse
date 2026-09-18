@@ -132,3 +132,66 @@ describe('aether [direct] routes from the split-tunnel rule set', () => {
     expect(renderAetherRoutes(null)).toBeNull();
   });
 });
+
+describe('kill switch route mode (TUN owns the default route)', () => {
+  it('arms in route mode without writing the system proxy', async () => {
+    const { ks, rec } = makeService({ enabled: true });
+    const status = ks.arm({ previousProxy: null, label: 'proxy tunnel', mode: 'route' });
+    expect(status.armed).toBe(true);
+    expect(status.mode).toBe('route');
+    expect(rec.writes).toEqual([]); // route mode touches nothing on arm
+    expect(status.note).toMatch(/route mode/);
+  });
+
+  it('a TUN drop with the switch enabled fails closed at the sink instead of falling back to direct', async () => {
+    const { ks, rec } = makeService({ enabled: true });
+    ks.arm({ previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', mode: 'route' });
+    rec.writes.length = 0;
+    const status = await ks.onTunnelDropped('TUN gateway exited unexpectedly (code 1)');
+    expect(rec.writes).toEqual([KILL_SWITCH_SINK]);
+    expect(status.blocking).toBe(true);
+    expect(status.mode).toBe('route');
+    expect(status.note).toMatch(/ENGAGED/);
+    expect(status.note).toMatch(/system-proxy layer/);
+  });
+
+  it('a TUN drop with the switch disabled restores the user proxy (direct returns deliberately)', async () => {
+    const { ks, rec } = makeService({ enabled: false });
+    ks.arm({ previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', mode: 'route' });
+    rec.writes.length = 0;
+    const status = await ks.onTunnelDropped('TUN gateway exited unexpectedly (code 1)');
+    expect(rec.writes).toEqual(['corp-proxy:8080']);
+    expect(status.blocking).toBe(false);
+  });
+
+  it('re-arming after reconnect clears an engaged sink (route mode)', async () => {
+    const { ks, rec } = makeService({ enabled: true });
+    ks.arm({ previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', mode: 'route' });
+    await ks.onTunnelDropped('TUN gateway exited unexpectedly (code 1)');
+    rec.writes.length = 0;
+    // reconnect brings the tunnel back with TUN verified
+    const status = ks.arm({ previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', mode: 'route' });
+    expect(status.blocking).toBe(false);
+    // a clean stop in route mode must clear a previously applied sink too
+    await ks.onTunnelStopped();
+    expect(rec.writes.filter((w) => w !== KILL_SWITCH_SINK)).toContain('corp-proxy:8080');
+    expect(ks.status().armed).toBe(false);
+  });
+
+  it('clean stop in route mode with no sink applied writes nothing', async () => {
+    const { ks, rec } = makeService({ enabled: true });
+    ks.arm({ previousProxy: null, label: 'proxy tunnel', mode: 'route' });
+    rec.writes.length = 0;
+    await ks.onTunnelStopped();
+    expect(rec.writes).toEqual([]);
+    expect(ks.status().armed).toBe(false);
+  });
+
+  it('proxy mode keeps the original restore-on-stop contract', async () => {
+    const { ks, rec } = makeService({ enabled: true });
+    ks.arm({ previousProxy: 'corp-proxy:8080', label: 'Aether live' });
+    expect(ks.status().mode).toBe('proxy');
+    await ks.onTunnelStopped();
+    expect(rec.writes).toContain('corp-proxy:8080');
+  });
+});

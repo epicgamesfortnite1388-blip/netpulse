@@ -51,8 +51,15 @@ export const KILL_SWITCH_SINK = '127.0.0.1:9';
 export interface KillSwitchStatus {
   /** the user enabled it in Settings → VPN */
   enabled: boolean;
-  /** a proxy-mode tunnel is up and holds the system-proxy handoff */
+  /** a tunnel is up and this service holds its handoff */
   armed: boolean;
+  /**
+   * Which capture the armed tunnel holds: `proxy` = system-proxy handoff,
+   * `route` = TUN owns the default route. null when not armed. The drop
+   * decision is the same in both modes, but the note must say honestly what
+   * each mode can and cannot enforce.
+   */
+  mode: 'proxy' | 'route' | null;
   /** traffic is currently fail-closed */
   blocking: boolean;
   /** what stays direct because the split-tunnel rules dial it direct */
@@ -88,9 +95,23 @@ export interface KillSwitchDeps {
   saveHold?(record: KillSwitchHoldRecord | null): void;
 }
 
+export interface KillSwitchArmInput {
+  previousProxy: string | null;
+  label: string;
+  /**
+   * 'proxy' (default): the tunnel took over the system proxy — restore it on
+   * stop. 'route': the TUN device owns the default route and the system proxy
+   * was NOT touched — on drop, the kernel withdraws the TUN routes and traffic
+   * would silently fall back to direct, so the switch must step in itself.
+   */
+  mode?: 'proxy' | 'route';
+}
+
 interface Hold {
   previousProxy: string | null;
   label: string;
+  /** 'proxy' = we own the system-proxy handoff; 'route' = the TUN device owns the route */
+  mode: 'proxy' | 'route';
 }
 
 export class KillSwitchService {
@@ -99,22 +120,59 @@ export class KillSwitchService {
   private blockReason: string | null = null;
   private since: number | null = null;
   private lastError: string | null = null;
+  /**
+   * True only while the sink proxy is ACTUALLY applied (a drop wrote it and no
+   * restore has run since). Route mode must survive a drop → re-arm cycle:
+   * reconnecting clears `blockingAt`, but the OS still points at the sink, so
+   * the next arm or stop has to clear it — and a route-mode hold that never
+   * applied anything must never write the proxy at all.
+   */
+  private sinkApplied = false;
 
   constructor(private readonly deps: KillSwitchDeps) {}
 
   /**
-   * Take ownership of the handoff after a tunnel has successfully set the
-   * system proxy. Records what to restore; writes nothing itself.
+   * Persist the hold BEFORE the system proxy is written. A crash between
+   * `setSystemProxy` and `arm()` would otherwise leave the OS pointing at a
+   * dead port with no recovery record; with the hold on disk first, boot
+   * recovery can always undo the handoff.
    */
-  arm(input: { previousProxy: string | null; label: string }): KillSwitchStatus {
-    this.hold = { previousProxy: input.previousProxy, label: input.label };
+  preArm(input: { previousProxy: string | null; label: string }): void {
+    this.hold = { previousProxy: input.previousProxy, label: input.label, mode: 'proxy' };
+    this.blockingAt = null;
+    this.blockReason = null;
+    this.since = null;
+    this.lastError = null;
+    this.deps.saveHold?.({ previousProxy: input.previousProxy, label: input.label, blocking: false });
+  }
+
+  /**
+   * Claim the hold once the tunnel's capture is verified. In 'proxy' mode the
+   * caller has already written the system proxy; in 'route' mode nothing was
+   * written — the hold exists so the DROP decision point exists. If a previous
+   * drop left the sink in place, re-arming (reconnect) clears it.
+   */
+  arm(input: KillSwitchArmInput): KillSwitchStatus {
+    const mode = input.mode ?? 'proxy';
+    this.hold = { previousProxy: input.previousProxy, label: input.label, mode };
     this.blockingAt = null;
     this.blockReason = null;
     this.since = Date.now();
     this.lastError = null;
     this.deps.saveHold?.({ previousProxy: input.previousProxy, label: input.label, blocking: false });
+    if (mode === 'route' && this.sinkApplied) {
+      // Re-arm after a drop: the sink is still applied from the previous drop
+      // and the TUN device now owns the route again — proxy-aware apps would
+      // send traffic to a dead port, so clear the sink as part of arming.
+      void this.restoreHold().catch(() => undefined);
+    }
     if (this.deps.enabled()) {
-      this.deps.event?.('info', `Kill switch armed for "${input.label}" — a drop will block non-bypassed traffic`);
+      this.deps.event?.(
+        'info',
+        mode === 'route'
+          ? `Kill switch armed in route mode for "${input.label}" — a TUN drop will block non-bypassed traffic instead of falling back to direct`
+          : `Kill switch armed for "${input.label}" — a drop will block non-bypassed traffic`,
+      );
     }
     return this.status();
   }
@@ -147,6 +205,7 @@ export class KillSwitchService {
     this.blockingAt = Date.now();
     this.blockReason = reason;
     this.since = Date.now();
+    this.sinkApplied = true;
     this.deps.saveHold?.({ previousProxy: this.hold.previousProxy, label: this.hold.label, blocking: true });
     this.deps.event?.('warn', `Kill switch engaged (${reason}) — non-bypassed traffic is blocked until the tunnel returns`);
     this.deps.publish?.('killswitch:engaged', { reason, sink: KILL_SWITCH_SINK });
@@ -160,7 +219,19 @@ export class KillSwitchService {
    * back so "disconnect" always means "back to normal".
    */
   async onTunnelStopped(): Promise<KillSwitchStatus> {
-    if (this.blockingAt != null) await this.restoreHold();
+    // Restore when the switch actually holds something of the user's:
+    //   - we are blocking right now (disconnect while fail-closed), or
+    //   - the capture was a system-proxy hold: arming in 'proxy' mode happens
+    //     only AFTER that write succeeded, so the hold is the record of a write
+    //     that must be handed back. The tunnel restores it too; doing it here as
+    //     well is what keeps "disconnect means back to normal" true even when
+    //     the tunnel's own restore failed.
+    //   - route mode only when OUR sink is applied: otherwise the system proxy
+    //     was never touched and writing would clobber the user's own setting.
+    const holdsUsersProxy = this.hold != null && this.hold.mode !== 'route';
+    if (this.blockingAt != null || holdsUsersProxy || this.sinkApplied) {
+      await this.restoreHold();
+    }
     this.clearHold();
     return this.status();
   }
@@ -224,6 +295,7 @@ export class KillSwitchService {
       this.deps.event?.('error', `Kill switch could not restore the previous proxy: ${this.lastError}`);
       return;
     }
+    this.sinkApplied = false;
     this.lastError = null;
   }
 
@@ -235,6 +307,7 @@ export class KillSwitchService {
     return {
       enabled,
       armed: this.hold != null,
+      mode: this.hold?.mode ?? null,
       blocking,
       bypassSummary: summary,
       previousProxy: this.hold?.previousProxy ?? null,
@@ -252,6 +325,15 @@ export class KillSwitchService {
       return 'Kill switch is off (Settings → VPN). A drop restores your previous proxy and direct traffic resumes.';
     }
     const exempt = summary ? `Bypass-listed destinations stay direct (${summary}).` : 'No bypass rules are active, so nothing is exempt.';
+    const routeMode = this.hold?.mode === 'route';
+    if (routeMode) {
+      const layer =
+        'Enforced while TUN owns the default route: if the TUN device drops, its routes are withdrawn and the system proxy is pointed at a sink, so proxy-aware apps are blocked instead of falling back to direct. Apps that ignore the system proxy would still ride the withdrawn route back to direct — that residual window needs OS firewall rules, which this build does not install.';
+      if (blocking) {
+        return `ENGAGED: the TUN device dropped, so non-bypassed traffic is fail-closed at the system-proxy layer. ${exempt} ${layer}`;
+      }
+      return `Armed in route mode: if the TUN device drops, non-bypassed traffic is blocked instead of silently falling back to a direct connection. ${exempt} ${layer}`;
+    }
     const layer = 'Enforced at the system-proxy layer, so a failure blocks apps that honour the system proxy (this build does not install OS firewall rules).';
     if (blocking) {
       return `ENGAGED: the tunnel dropped, so non-bypassed traffic is fail-closed. ${exempt} ${layer}`;

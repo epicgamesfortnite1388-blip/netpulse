@@ -31,6 +31,7 @@ const dnsLookup4 = promisify(dnsLookupCb) as (host: string, options: { family: 4
 import type { ChildProcess } from 'node:child_process';
 import type { BypassRuleSet, VpnStatus } from '@netpulse/shared';
 
+import { TunGatewayHandle } from '../services/tunGatewayHandle';
 import { vpnError } from './vpnService';
 
 import type { FileSecretVault, ImportedProfile, VpnProfileInput, VpnProvider, VpnProviderHooks } from './vpnService';
@@ -318,7 +319,7 @@ export async function fetchExitIpThroughSocks(port: number, timeoutMs = 15_000):
  * two remain independently testable).
  */
 export interface AetherKillSwitchHandle {
-  arm(input: { previousProxy: string | null; label: string }): unknown;
+  arm(input: { previousProxy: string | null; label: string; mode?: 'proxy' | 'route' }): unknown;
   onTunnelDropped(reason: string): Promise<unknown>;
   onTunnelStopped(): Promise<unknown>;
   status(): { armed: boolean; blocking: boolean; enabled: boolean; note: string | null };
@@ -360,6 +361,24 @@ export class AetherProvider implements VpnProvider {
   private previousSystemProxy: string | null = null;
   private holdsSystemProxy = false;
 
+  /*
+   * System-wide (TUN) mode.
+   *
+   * Aether serves SOCKS5 on a loopback port, so by itself it captures only the
+   * apps that were told to use it. TUN mode puts a sing-box TUN gateway in
+   * front of that port — fronted as `socks`, because that is what Aether
+   * speaks.
+   *
+   * The state machine is NOT reimplemented here: `TunGatewayHandle` owns it,
+   * shared with the proxy tunnel's TUN path, including the rules that a gateway
+   * is only `active` once traffic provably traversed it, that a failed relay
+   * check stops the device instead of leaving it holding the default route, and
+   * that a device death must reach the kill switch. `tunRequested` is the only
+   * piece of TUN state this provider owns — it is a preference, not a status.
+   */
+  private tunRequested = false;
+  private readonly tun: TunGatewayHandle;
+
   constructor(vault: FileSecretVault, configDir: string, hooks?: VpnProviderHooks, opts: AetherProviderOptions = {}) {
     this.vault = vault;
     this.configDir = configDir;
@@ -368,6 +387,53 @@ export class AetherProvider implements VpnProvider {
     this.killSwitch = opts.killSwitch;
     this.bypass = opts.bypass;
     this.killSwitchEnabled = opts.killSwitchEnabled;
+    this.tun = new TunGatewayHandle(
+      {
+        upstream: 'socks',
+        upstreamPort: () => this.bindPort,
+        bypass: () => this.bypass?.() ?? null,
+        label: () => this.connectedProfile?.name ?? 'Aether',
+        // No route exclusions can be derived here: Aether's own egress goes to
+        // relays the profile does not name, so whether its dial is captured by
+        // the device depends on the Aether binary binding it to the physical
+        // interface. The relay check is what decides.
+        armRouteMode: async () => {
+          if (!this.killSwitch) return;
+          try {
+            const { getSystemProxy } = await import('../services/systemProxy');
+            const prev = await getSystemProxy();
+            this.killSwitch.arm({ previousProxy: prev.proxy, label: this.connectedProfile?.name ?? 'Aether', mode: 'route' });
+          } catch (err) {
+            this.hooks?.event?.('warn', `Kill switch could not be armed in route mode: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        },
+        onCapturedDrop: (reason) => {
+          // Capture is gone: let the kill switch decide (block when it is on,
+          // restore the user's own proxy otherwise) rather than letting the
+          // machine silently fall back to the direct path.
+          if (this.killSwitch) void this.killSwitch.onTunnelDropped(reason).catch(() => undefined);
+          else void this.restoreSystemProxy().catch(() => undefined);
+        },
+        onState: (event) => {
+          if (event.kind === 'active') {
+            this.hooks?.event?.('info', `Aether is now system-wide: TUN gateway verified end to end (exit ${event.exitIp})`);
+          } else if (event.kind === 'degraded') {
+            const label = event.blockedBy === 'relay' ? 'Aether TUN mode is not proving out' : 'Aether TUN mode unavailable';
+            this.hooks?.event?.('warn', `${label}: ${event.error}`);
+          }
+        },
+      },
+      {
+        // Aether's SOCKS5 port has no HTTP-CONNECT inbound of its own, so the
+        // relay proof goes through the shared proxy fetch (same trace endpoint
+        // the hop checks use → ip=).
+        verifyRelay: async (port) => {
+          const { EXIT_TRACE_URL, fetchThroughHttpProxy, traceField } = await import('../services/proxyTunnel');
+          const trace = await fetchThroughHttpProxy(port, EXIT_TRACE_URL, 15_000);
+          return traceField(trace, 'ip');
+        },
+      },
+    );
   }
 
   private binaryPath(): string {
@@ -526,11 +592,16 @@ export class AetherProvider implements VpnProvider {
     this.child = child;
     this.connectedAt = Date.now();
     this.connectedProfile = profile;
+    // System-wide routing first when it was asked for: a verified TUN gateway
+    // owns the default route, so the per-app system-proxy handoff would be
+    // redundant state to hold and restore. When TUN does not prove out we fall
+    // back to that handoff — the same honest degradation the local cores use.
+    const tunUp = await this.startTunGatewayFor();
     // Kill switch: with it on, this tunnel also routes the OS (the system proxy
     // points at Aether's SOCKS5), which is what makes a drop a leak risk worth
     // blocking. With it off, proxy mode changes nothing about the OS — the
     // honest default of every proxy-mode engine here.
-    await this.takeSystemProxy(profile);
+    if (!tunUp) await this.takeSystemProxy(profile);
     child.on('close', (code) => {
       if (this.child === child) {
         const label = this.connectedProfile?.name ?? profile.name;
@@ -538,6 +609,8 @@ export class AetherProvider implements VpnProvider {
         this.connectedAt = null;
         this.connectedProfile = null;
         this.exitIp = null;
+        // The gateway fronted a port that just died — it must not survive it.
+        this.tun.stop();
         this.hooks?.event?.('warn', `Aether process for "${label}" exited unexpectedly`);
         // The OS may still be pointed at Aether's dead port. Let the kill
         // switch decide: block, or hand the user's own proxy back. With no
@@ -557,9 +630,16 @@ export class AetherProvider implements VpnProvider {
     // does not change the system route, so verifyConnect's before/after logic
     // cannot apply — this is the honest equivalent.
     this.exitIp = await fetchExitIpThroughSocks(this.bindPort);
+    const tunStatus = this.tun.status();
+    const tunNote =
+      tunStatus.tun === 'active'
+        ? ' TUN mode is verified: the OS default route is captured, so apps that ignore proxy settings ride the tunnel too. If the tunnel drops while the kill switch is on, the system proxy is pointed at a sink so traffic fails closed instead of falling back to direct.'
+        : tunStatus.tunError
+          ? ` TUN mode was requested but is not capturing the system: ${tunStatus.tunError}`
+          : '';
     const verificationNote = this.exitIp
-      ? `SOCKS5 tunnel is up on 127.0.0.1:${this.bindPort}; traffic through it exits from ${this.exitIp}. Proxy mode does not change the system route by design.`
-      : `SOCKS5 tunnel is up on 127.0.0.1:${this.bindPort} (relay verified), but the exit-IP check could not be fetched, so exit identity is unproven.`;
+      ? `SOCKS5 tunnel is up on 127.0.0.1:${this.bindPort}; traffic through it exits from ${this.exitIp}. Proxy mode does not change the system route by design.${tunNote}`
+      : `SOCKS5 tunnel is up on 127.0.0.1:${this.bindPort} (relay verified), but the exit-IP check could not be fetched, so exit identity is unproven.${tunNote}`;
 
     const status = await this.status();
     return {
@@ -618,7 +698,34 @@ export class AetherProvider implements VpnProvider {
     this.previousSystemProxy = null;
   }
 
+  /** Ask for system-wide (TUN) mode on the next connect. Idempotent. */
+  setTunPreference(enabled: boolean): void {
+    this.tunRequested = enabled;
+  }
+
+  getTunPreference(): boolean {
+    return this.tunRequested;
+  }
+
+  /**
+   * Bring up the TUN gateway in front of Aether's SOCKS5 port.
+   *
+   * Returns true only when traffic PROVABLY traversed the full path. Every
+   * failure degrades honestly — the SOCKS5 tunnel stays up and the caller falls
+   * back to the system-proxy handoff with the reason recorded. The state
+   * machine itself (verify, teardown on a failed relay, fail closed on a drop)
+   * is the shared TunGatewayHandle, not a second implementation.
+   */
+  private async startTunGatewayFor(): Promise<boolean> {
+    if (!this.tunRequested) {
+      this.tun.stop();
+      return false;
+    }
+    return this.tun.start();
+  }
+
   async disconnect(): Promise<VpnStatus> {
+    this.tun.stop();
     if (this.child) {
       this.child.kill();
       this.child = null;
@@ -655,6 +762,11 @@ export class AetherProvider implements VpnProvider {
       handshakeAgeSec: null,
       endpoint: this.connectedProfile?.endpoint ?? null,
       endpointLatencyMs: null,
+      // TUN is a *preference* here: while it is on, the honest read is "requested"
+      // until the gateway is proven active (see the shared model for tun states).
+      tun: this.tunRequested ? (this.tun.status().tun ?? 'requested') : null,
+      tunError: this.tunRequested ? this.tun.status().tunError : null,
+      tunBlockedBy: this.tunRequested ? this.tun.status().tunBlockedBy : null,
       verification: 'not_verified',
       verificationNote: null,
     };

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import net from 'node:net';
+import os from 'node:os';
 
 import {
+  AetherProvider,
   aetherFlagsFor,
   buildAetherArgs,
   fetchExitIpThroughSocks,
@@ -51,6 +53,26 @@ function startFakeSocks(opts: { replyOk: boolean; httpBody: string }): Promise<n
     });
   });
 }
+
+describe('aether TUN status mapping', () => {
+  it('claims no capture until it is requested, then reports `requested`', async () => {
+    // TUN is a preference here; the shared gateway handle owns the state. A
+    // preference that has not been attempted must never read as a capture.
+    const provider = new AetherProvider({} as never, os.tmpdir());
+    expect((await provider.status()).tun).toBeNull();
+
+    provider.setTunPreference(true);
+    const requested = await provider.status();
+    expect(requested.tun).toBe('requested');
+    expect(requested.tunBlockedBy).toBeNull();
+
+    provider.setTunPreference(false);
+    // Off means no TUN claim at all — not a stale reason from a past attempt.
+    const off = await provider.status();
+    expect(off.tun).toBeNull();
+    expect(off.tunError).toBeNull();
+  });
+});
 
 describe('aether settings', () => {
   it('null/empty input yields defaults', () => {

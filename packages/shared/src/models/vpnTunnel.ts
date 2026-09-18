@@ -72,6 +72,34 @@ export interface ProxyTunnelStatus {
   bypass: string | null;
   /** null for a single-hop tunnel; set when two local cores are chained */
   chain: TunnelChain | null;
+  /**
+   * TUN mode: a sing-box TUN gateway sits in front of the engine hop(s) and
+   * claims the OS default route, so traffic that ignores proxy settings (games,
+   * most desktop apps, anything without proxy support) is captured too.
+   *
+   *   `tun: 'active'`    — gateway verified: traffic through the TUN device
+   *                        provably reached the internet (real trace through
+   *                        the gateway, not a device-up check)
+   *   `tun: 'requested'` — asked for but not (yet) verified; the core may still
+   *                        be starting or may have failed — see `tunError`
+   *   `tun: null`        — proxy-only mode (system-proxy handoff, no route capture)
+   */
+  tun?: 'requested' | 'active' | null;
+  /** Why TUN did not come up (elevation declined, no sing-box, device error). */
+  tunError?: string | null;
+  /**
+   * What blocked TUN, as a stable code the UI can act on:
+   *   `admin` — the process lacks administrator rights (offer the elevation flow)
+   *   `core`  — no sing-box binary to act as the gateway (offer install)
+   *   `relay` — the gateway started but traffic never traversed the full path
+   *   null    — nothing blocked it (TUN active, or never requested)
+   *
+   * The UI must never string-match `tunError` to decide what to offer: the
+   * message is for reading, this code is for acting.
+   */
+  tunBlockedBy?: 'admin' | 'core' | 'relay' | null;
+  /** The loopback HTTP port of the TUN gateway (its own verified proxy inbound). */
+  tunGatewayPort?: number | null;
 }
 
 /* ------------------------------ discovery run ----------------------------- */

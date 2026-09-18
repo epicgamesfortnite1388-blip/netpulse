@@ -13,11 +13,13 @@
  * instead of a fake success.
  */
 import { spawn } from 'node:child_process';
+import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
+import { isProcessElevated } from '../util/privileges';
 import { redactSecrets } from '../util/redact';
 
 import { bypassIsEmpty, type BypassRuleSet, type ParsedNodeConfig, type ProxyEngineId } from '@netpulse/shared';
@@ -39,6 +41,7 @@ const CORE_TMP_PREFIXES = [
   'netpulse-xray-',
   'netpulse-sing-box-',
   'netpulse-v2ray-',
+  'netpulse-hysteria-',
 ] as const;
 
 /**
@@ -93,7 +96,37 @@ export function chainExitUnsupported(engine: ProxyEngineId, protocol: string): s
   if (engine === 'v2ray') {
     return 'v2ray-core ignores streamSettings.sockopt.dialerProxy, so it cannot chain to another core (use xray or sing-box)';
   }
+  if (engine === 'hysteria') {
+    return 'the Hysteria2 client has no dial-through option, so it cannot chain to another core (use xray or sing-box) — and it only dials hysteria2 anyway';
+  }
   return chainExitProtocolUnsupported(protocol);
+}
+
+/**
+ * Start-time options a core must be able to HONOUR.
+ *
+ * These are not protocol questions, so they cannot live in
+ * `engineSupportsConfig`: they are choices about how a tunnel behaves. A core
+ * that cannot express one is excluded rather than silently ignoring it —
+ * routing a bypass list through the tunnel anyway, or quietly keeping DNS on
+ * the local resolver, would be a real traffic change rather than a cosmetic
+ * difference. Returns the honest reason, or null when the core supports it.
+ */
+export function engineSupportsOptions(
+  engine: ProxyEngineId,
+  opts: { bypass?: boolean; dns?: boolean; chain?: boolean },
+): string | null {
+  if (engine !== 'hysteria') return null;
+  if (opts.bypass) {
+    return 'the Hysteria2 client has no per-domain bypass rules, so it cannot honour split tunneling (use sing-box or xray while bypass is on)';
+  }
+  if (opts.dns) {
+    return 'the Hysteria2 client resolves through its own TLS session and exposes no DNS block, so DNS-through-tunnel cannot be wired (use sing-box)';
+  }
+  if (opts.chain) {
+    return 'the Hysteria2 client has no dial-through option, so it cannot join a chain (use xray or sing-box)';
+  }
+  return null;
 }
 
 /**
@@ -524,6 +557,56 @@ export function buildSingboxConfig(
   };
 }
 
+/* ============================== hysteria2 ================================= */
+
+/**
+ * Hysteria2 client config.
+ *
+ * YAML, because that is what the binary reads (verified against the project's
+ * documented client config): `server` as `host:port`, the node password as
+ * `auth`, a `tls` block, optional salamander obfuscation, Brutal bandwidth
+ * hints, and the local inbound.
+ *
+ * The inbound is HTTP rather than SOCKS5 deliberately: this app both probes
+ * nodes and hands the OS its system proxy over HTTP CONNECT, and the Hysteria
+ * client has no mixed inbound (its `http` and `socks5` listeners are separate
+ * ports). `http.listen` is therefore what both paths talk to — and the honest
+ * consequence, no local UDP relay through this core, is stated in its
+ * capability matrix rather than hidden.
+ */
+export function buildHysteria2ClientConfig(config: ParsedNodeConfig, secret: string, httpPort: number): string {
+  // Always quoted: node credentials, SNI values and host:port pairs routinely
+  // contain YAML-significant characters (IPv6 brackets, ':', '*')
+  const yv = (v: string): string => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const lines: string[] = [
+    `server: ${yv(`${config.host}:${config.port}`)}`,
+    `auth: ${yv(secret)}`,
+    'tls:',
+    `  sni: ${yv(config.sni ?? config.host)}`,
+  ];
+  if (config.allowInsecure === true) lines.push('  insecure: true');
+  const alpn = (config.alpn ?? []).filter((a) => typeof a === 'string' && a.length > 0);
+  if (alpn.length > 0) lines.push(`  alpn: [${alpn.map(yv).join(', ')}]`);
+
+  const obfs = typeof config.extra?.['obfs'] === 'string' && config.extra['obfs'] ? config.extra['obfs'] : null;
+  if (obfs) {
+    lines.push('obfs:', `  type: ${yv(obfs)}`, '  salamander:', `    password: ${yv(String(config.extra?.['obfs-password'] ?? ''))}`);
+  }
+
+  // Brutal bandwidth hints. Only emitted when the node actually advertised
+  // them — inventing a value would change congestion behaviour on the wire.
+  const up = Number(config.extra?.['up']);
+  const down = Number(config.extra?.['down']);
+  if ((Number.isFinite(up) && up > 0) || (Number.isFinite(down) && down > 0)) {
+    lines.push('bandwidth:');
+    if (Number.isFinite(up) && up > 0) lines.push(`  up: ${yv(`${up} mbps`)}`);
+    if (Number.isFinite(down) && down > 0) lines.push(`  down: ${yv(`${down} mbps`)}`);
+  }
+
+  lines.push('http:', `  listen: ${yv(`127.0.0.1:${httpPort}`)}`, 'fastOpen: true');
+  return `${lines.join('\n')}\n`;
+}
+
 /* ============================ binary detection ============================ */
 
 export interface ResolvedEngine {
@@ -531,6 +614,34 @@ export interface ResolvedEngine {
   bin: string;
   /** spawn args before the config file */
   args: string[];
+}
+
+/** Core → on-disk binary base name (the app's cores folder). */
+const ENGINE_BINARY_BASE: Record<ProxyEngineId, string> = {
+  xray: 'xray',
+  'sing-box': 'sing-box',
+  v2ray: 'v2ray',
+  hysteria: 'hysteria',
+};
+
+/**
+ * The order cores are tried in when no preference is set.
+ *
+ * xray stays first (best Reality/XTLS fidelity). Hysteria sits ahead of
+ * sing-box because it only ever claims hysteria2 nodes — it cannot displace a
+ * core for any other protocol — and for those nodes the protocol's own client
+ * is the implementation to trust first, with sing-box as the fallback.
+ */
+export const PROXY_ENGINE_ORDER: readonly ProxyEngineId[] = ['xray', 'hysteria', 'sing-box', 'v2ray'];
+
+/**
+ * Spawn args a core expects BEFORE its config path (`-c <file>` is appended).
+ *
+ * xray/sing-box/v2ray take a `run` subcommand; the Hysteria client is invoked
+ * with `-c` directly, since client mode is its default.
+ */
+export function engineArgs(id: ProxyEngineId): string[] {
+  return id === 'hysteria' ? [] : ['run'];
 }
 
 /**
@@ -542,8 +653,13 @@ export interface ResolvedEngine {
  *   3. PATH
  */
 export function findEngineBinary(id: ProxyEngineId): string | null {
-  const base = id === 'xray' ? 'xray' : id === 'sing-box' ? 'sing-box' : 'v2ray';
+  const base = ENGINE_BINARY_BASE[id];
   const names = process.platform === 'win32' ? [`${base}.exe`] : [base];
+  if (id === 'hysteria') {
+    // Hysteria's own release filenames the executable after the platform, so a
+    // manually dropped official build is recognised too (no copy step needed).
+    names.push('hysteria-windows-amd64.exe', 'hysteria-windows-arm64.exe');
+  }
   const dirs: string[] = [];
   if (process.env['NETPULSE_CORES_DIR']) dirs.push(process.env['NETPULSE_CORES_DIR']);
   if (process.env['NETPULSE_DATA_DIR']) dirs.push(path.join(process.env['NETPULSE_DATA_DIR'], 'cores'));
@@ -598,6 +714,221 @@ export function reservePort(): Promise<number> {
   });
 }
 
+/* ================================ TUN mode ================================= */
+
+/**
+ * TUN GATEWAY (system-wide mode for every engine).
+ *
+ * The engine hops (xray / v2ray / hysteria / sing-box) expose local proxy
+ * inbounds only — none of them can claim the OS default route on Windows
+ * without a TUN device, and xray/v2ray/hysteria have no TUN inbound at all.
+ * sing-box DOES (a native `tun` inbound), so TUN mode for EVERY engine is one
+ * extra sing-box core whose outbound is a plain proxy pointed at the engine
+ * hop's inbound:
+ *
+ *   OS traffic → sing-box TUN device → http/socks outbound → engine inbound
+ *              → node → internet
+ *
+ * `upstream` names the protocol of the port being fronted: the local cores
+ * expose a mixed/HTTP inbound, while Aether serves SOCKS5 — one gateway, both
+ * shapes, so every engine gets the same system-wide mode.
+ *
+ * This is exactly the wiring Hiddify/NekoBox-class clients use: one core owns
+ * the route capture, the protocol engines stay proxy-only. The gateway's own
+ * HTTP inbound (below) gives the app a way to VERIFY the TUN path with real
+ * traffic — a trace fetched through the gateway port only succeeds if the TUN
+ * device, the route claim and the engine hop all relay.
+ *
+ * Windows requires administrator rights to create the TUN adapter (wintun),
+ * so the START function refuses honestly when the sidecar is not elevated —
+ * see `tunGatewayStartRefusal`.
+ */
+
+/**
+ * sing-box config for the TUN gateway. `upstreamPort` is the engine hop's
+ * HTTP/mixed inbound. The gateway also exposes its own mixed inbound so the
+ * verification trace (and any caller that wants a plain proxy path) can go
+ * through the gateway without the TUN device.
+ */
+export function buildTunGatewayConfig(
+  upstreamPort: number,
+  gatewayPort: number,
+  opts?: { bypass?: BypassRuleSet | null; upstream?: 'http' | 'socks'; excludeAddresses?: string[] },
+): Record<string, unknown> {
+  // Addresses the TUN device must never capture. Without this the device claims
+  // the default route and then swallows the engine hop's own dial to the node
+  // (a public address, so the `ip_is_private` rule below does not cover it) —
+  // the dial re-enters the gateway, the gateway forwards it back to the hop,
+  // and no packet ever reaches the node: the tunnel relays nothing and the
+  // machine loses DNS and connectivity while the app reports TUN as inactive.
+  const excludeAddresses = [...new Set((opts?.excludeAddresses ?? []).filter((a) => a.length > 0))];
+  const outbounds: Record<string, unknown>[] = [
+    {
+      type: opts?.upstream === 'socks' ? 'socks' : 'http',
+      tag: 'engine-hop',
+      server: '127.0.0.1',
+      server_port: upstreamPort,
+    },
+  ];
+  const route: Record<string, unknown> = {
+    auto_detect_interface: true,
+    // The gateway's own dial to the engine hop must not loop back through the
+    // TUN device: loopback traffic is excluded by rule, not by luck.
+    rules: [{ ip_is_private: true, outbound: 'direct' }, ...(opts?.bypass && !bypassIsEmpty(opts.bypass) ? buildSingboxRouteRules(opts.bypass) : [])],
+  };
+  const outbounds2 = [...outbounds];
+  if (opts?.bypass && !bypassIsEmpty(opts.bypass)) outbounds2.push({ type: 'direct', tag: 'direct' });
+  return {
+    log: { level: 'warn', timestamp: true },
+    inbounds: [
+      {
+        type: 'tun',
+        tag: 'tun-in',
+        address: ['172.19.0.1/30'],
+        mtu: 1500,
+        stack: 'system',
+        auto_route: true,
+        strict_route: false,
+        ...(excludeAddresses.length > 0 ? { route_exclude_address: excludeAddresses } : {}),
+      },
+      {
+        type: 'mixed',
+        tag: 'gw-in',
+        listen: '127.0.0.1',
+        listen_port: gatewayPort,
+      },
+    ],
+    outbounds: outbounds2,
+    route,
+  };
+}
+
+/**
+ * CIDRs a TUN gateway must NOT capture: the addresses of the hop it fronts.
+ *
+ * The gateway takes the default route, so anything the hop dials out from
+ * would otherwise be captured by the device, handed back to the gateway, and
+ * forwarded to the hop again — an endless loop that relays nothing (see the
+ * `excludeAddresses` note in `buildTunGatewayConfig`). Hosts may be IPs or
+ * domains; a domain that cannot be resolved contributes nothing rather than a
+ * guessed address. Resolution failure NEVER fails the gateway — it only leaves
+ * what we could not resolve unprotected.
+ */
+export async function tunRouteExclusions(
+  hosts: Array<string | null | undefined>,
+  resolve: (host: string) => Promise<string[]> = async (host) => (await dns.lookup(host, { all: true, verbatim: true })).map((r) => r.address),
+): Promise<string[]> {
+  const out = new Set<string>();
+  for (const host of hosts) {
+    const clean = (host ?? '').trim();
+    if (!clean) continue;
+    const literal = net.isIP(clean.replace(/^\[|\]$/g, ''));
+    if (literal) {
+      out.add(`${clean.replace(/^\[|\]$/g, '')}/${literal === 6 ? 128 : 32}`);
+      continue;
+    }
+    try {
+      for (const ip of await resolve(clean)) {
+        const family = net.isIP(ip);
+        if (family) out.add(`${ip}/${family === 6 ? 128 : 32}`);
+      }
+    } catch {
+      // Unresolvable host: leave it out. The gateway still starts; this is a
+      // partial protection, not a claim that the host is excluded.
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Why a TUN gateway start cannot even be attempted on this machine. Windows:
+ * the wintun adapter creation needs administrator rights — a non-elevated
+ * sing-box exits at startup with a device error, so refuse BEFORE spawning
+ * with the real reason rather than letting the user read a cryptic one.
+ */
+export function tunGatewayStartRefusal(): string | null {
+  // Explicit override for tests and for a deliberately elevated sidecar.
+  if (process.env['NETPULSE_TUN_ALLOW_UNELEVATED']) return null;
+  // Linux/macOS: TUN needs root too, but a privileged sidecar may legitimately
+  // exist there, so do not invent a Windows-shaped refusal.
+  if (process.platform !== 'win32') return null;
+  // One owner for the privilege answer (`util/privileges`) — the admin status
+  // route and this refusal must never disagree about whether we can create a
+  // TUN adapter.
+  if (isProcessElevated()) return null;
+  return 'TUN mode needs administrator rights to create the TUN adapter (wintun). Restart the app with administrator rights, or use system-proxy mode.';
+}
+
+/** Reserve a port for the gateway's verification inbound and start the gateway. */
+export async function startTunGateway(
+  singboxBin: string,
+  upstreamPort: number,
+  bypass?: BypassRuleSet | null,
+  readyTimeoutMs = 12_000,
+  upstream: 'http' | 'socks' = 'http',
+  excludeAddresses: string[] = [],
+): Promise<{ ok: true; run: CoreRun; gatewayPort: number } | { ok: false; error: string }> {
+  const gatewayPort = await reservePort();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-tun-gw-'));
+  const cfgPath = path.join(tmpDir, 'gateway.json');
+  fs.writeFileSync(cfgPath, JSON.stringify(buildTunGatewayConfig(upstreamPort, gatewayPort, { bypass, upstream, excludeAddresses })));
+
+  const child = spawn(singboxBin, ['run', '-c', cfgPath], {
+    windowsHide: true,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderrTail = '';
+  const capture = (c: Buffer) => { stderrTail = (stderrTail + c.toString()).slice(-2_000); };
+  child.stdout?.on('data', capture);
+  child.stderr?.on('data', capture);
+
+  const cleanup = () => {
+    try { child.kill(); } catch { /* already dead */ }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  };
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finishOk = () => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timer);
+      resolve({ ok: true, run: { child, inboundPort: gatewayPort, cleanup, get stderrTail() { return stderrTail; } }, gatewayPort });
+    };
+    const finishFail = (error: string) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timer);
+      cleanup();
+      resolve({ ok: false, error });
+    };
+
+    const timer = setTimeout(() => {
+      finishFail(startupReason(stderrTail, `TUN gateway did not become ready in ${readyTimeoutMs}ms (device creation may be blocked)`));
+    }, readyTimeoutMs);
+
+    child.once('error', (err: Error) => finishFail(`TUN gateway spawn failed: ${err.message}`));
+    child.once('close', (code) => {
+      if (!settled) finishFail(`TUN gateway exited during startup (code ${code ?? '?'}) — ${startupReason(stderrTail, 'no output')}`);
+    });
+
+    // Readiness: the gateway's mixed inbound answering TCP. Note this proves
+    // the PROCESS is up; it does NOT prove the TUN device claimed the route —
+    // the tunnel service verifies the TUN path with a real trace after start.
+    const poll = setInterval(() => {
+      const sock = net.createConnection({ host: '127.0.0.1', port: gatewayPort, timeout: 400 }, () => {
+        sock.destroy();
+        finishOk();
+      });
+      sock.on('error', () => sock.destroy());
+      sock.on('timeout', () => sock.destroy());
+    }, 300);
+  });
+}
+
 /**
  * Start a core with a generated config; resolves when its inbound accepts TCP
  * connections, or with an honest classified failure. `run.cleanup()` is always
@@ -608,7 +939,7 @@ export async function startCore(
   config: ParsedNodeConfig,
   secret: string | null,
   readyTimeoutMs = 5_000,
-  opts?: { bypass?: BypassRuleSet | null; dialThroughPort?: number | null; dns?: DnsThroughTunnel | null },
+  opts?: { bypass?: BypassRuleSet | null; dialThroughPort?: number | null; dns?: DnsThroughTunnel | null; _portRetried?: boolean },
 ): Promise<CoreStartResult> {
   const dialThroughPort = opts?.dialThroughPort ?? null;
   if (dialThroughPort != null) {
@@ -618,14 +949,30 @@ export async function startCore(
     if (why) return { ok: false, failure: 'engine_unavailable', error: why };
   }
   const inboundPort = await reservePort();
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-core-'));
-  const cfgPath = path.join(tmpDir, 'core.json');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `netpulse-${engine.id}-`));
+  const cfgPath = path.join(tmpDir, engine.id === 'hysteria' ? 'config.yaml' : 'core.json');
   const bypass = opts?.bypass ?? null;
   const dns = opts?.dns ?? null;
-  const cfgJson = engine.id === 'sing-box'
-    ? buildSingboxConfig(config, secret, inboundPort, bypass, dialThroughPort, dns)
-    : buildXrayConfig(config, secret, inboundPort, bypass, dialThroughPort, dns); // xray + v2ray share the schema
-  fs.writeFileSync(cfgPath, JSON.stringify(cfgJson));
+
+  if (engine.id === 'hysteria') {
+    // The Hysteria2 client REQUIRES the node password — without it the server
+    // rejects the session, so refuse here rather than blaming the node for a
+    // missing local secret.
+    if (!secret) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      return {
+        ok: false,
+        failure: 'engine_unavailable',
+        error: 'hysteria2 needs the node password and it is not in the vault — re-import this node to test it',
+      };
+    }
+    fs.writeFileSync(cfgPath, buildHysteria2ClientConfig(config, secret, inboundPort));
+  } else {
+    const cfgJson = engine.id === 'sing-box'
+      ? buildSingboxConfig(config, secret, inboundPort, bypass, dialThroughPort, dns)
+      : buildXrayConfig(config, secret, inboundPort, bypass, dialThroughPort, dns); // xray + v2ray share the schema
+    fs.writeFileSync(cfgPath, JSON.stringify(cfgJson));
+  }
 
   const child = spawn(engine.bin, [...engine.args, '-c', cfgPath], {
     windowsHide: true,
@@ -677,6 +1024,18 @@ export async function startCore(
       if (!settled) finishFail('engine_start_failed', `core exited during startup (code ${code ?? '?'}) — ${startupReason(stderrTail, 'no output')}`);
     });
 
+    // TOCTOU on the reserved port: between reservePort() and the bind another
+    // process can take it and the core dies on startup. Retry ONCE with a
+    // fresh port instead of reporting a confusing engine failure.
+    child.once('close', function onEarlyClose(code) {
+      if (settled || opts?._portRetried || code !== 1) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timer);
+      cleanup();
+      void startCore(engine, config, secret, readyTimeoutMs, { ...opts, _portRetried: true }).then(resolve);
+    });
+
     const poll = setInterval(() => {
       const sock = net.createConnection({ host: '127.0.0.1', port: inboundPort, timeout: 400 }, () => {
         sock.destroy();
@@ -695,6 +1054,8 @@ export async function startCore(
  * UI offer a test that can only fail.
  */
 export function engineSupports(engine: ProxyEngineId, protocol: string): boolean {
+  // The protocol's own client dials hysteria2 and nothing else.
+  if (engine === 'hysteria') return protocol === 'hysteria2';
   if (engine === 'sing-box') return ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic'].includes(protocol);
   return ['vless', 'vmess', 'trojan', 'shadowsocks'].includes(protocol); // xray, v2ray
 }
@@ -721,6 +1082,14 @@ export function isAeadShadowsocksCipher(cipher: string): boolean {
  * exit code.
  */
 export function engineSupportsConfig(engine: ProxyEngineId, config: ParsedNodeConfig): { ok: true } | { ok: false; error: string } {
+  if (engine === 'hysteria') {
+    // Hysteria2 has exactly one obfuscation mode; anything else in the node's
+    // params would be emitted as an invalid config the client exits on.
+    const obfs = typeof config.extra?.['obfs'] === 'string' && config.extra['obfs'] ? config.extra['obfs'] : null;
+    if (obfs && obfs !== 'salamander') {
+      return { ok: false, error: `the Hysteria2 client only implements salamander obfuscation, not "${obfs}" (use sing-box for this node)` };
+    }
+  }
   if (engine !== 'sing-box' && config.protocol === 'shadowsocks') {
     const cipher = config.encryption ?? 'aes-256-gcm';
     if (!isAeadShadowsocksCipher(cipher)) {

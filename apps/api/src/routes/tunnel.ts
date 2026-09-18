@@ -44,6 +44,13 @@ export const TunnelStartSchema = z.object({
   entryNodeId: z.string().trim().min(1).optional(),
   /** exit hop node id (nested only; `nodeId` is accepted as an alias) */
   exitNodeId: z.string().trim().min(1).optional(),
+  /**
+   * TUN mode: capture ALL system traffic (not just proxy-aware apps) by
+   * putting a sing-box TUN gateway in front of the engine hop. Needs
+   * administrator rights on Windows — a request that cannot be honoured
+   * degrades to proxy mode with `tunError` set, never a silent fake.
+   */
+  tun: z.boolean().optional(),
 });
 
 const DEFAULTS = {
@@ -120,6 +127,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
     const body = TunnelStartSchema.parse(req.body ?? {});
     const wantSystemProxy = body.systemProxy ?? DEFAULTS.systemProxy;
     const preferred = ctx.services.settings.get().proxyEngine?.preferred ?? 'auto';
+    const wantTun = body.tun ?? false;
 
     /* ----------------------------- nested mode ----------------------------- */
 
@@ -157,7 +165,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
 
       const nested = await ctx.services.tunnel.startNested(
         { entry: entryNode, exit: exitNode },
-        { systemProxy: wantSystemProxy, preferredEngine: preferred, bypass: activeBypass(ctx), dns: activeDns(ctx), source: 'explicit' },
+        { systemProxy: wantSystemProxy, preferredEngine: preferred, bypass: activeBypass(ctx), dns: activeDns(ctx), tun: wantTun, source: 'explicit' },
       );
       return { tunnel: nested };
     }
@@ -184,6 +192,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
       preferredEngine: preferred,
       bypass: activeBypass(ctx),
       dns: activeDns(ctx),
+      tun: wantTun,
       source,
     });
     return { tunnel: status };
@@ -208,6 +217,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
         preferredEngine: preferred,
         bypass: activeBypass(ctx),
         dns: activeDns(ctx),
+        tun: cur.tun === 'active' || cur.tun === 'requested',
         source: 'explicit',
       }),
     };
@@ -255,6 +265,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
     const body = QuickConnectSchema.parse(req.body ?? {});
     const settings = ctx.services.settings.get();
     const wantSystemProxy = body.systemProxy ?? DEFAULTS.systemProxy;
+    const wantTun = body.tun ?? false;
     const preferred = settings.proxyEngine?.preferred ?? 'auto';
     const bypass = activeBypass(ctx);
     const deadline = Date.now() + QUICK_BUDGET_MS;
@@ -276,6 +287,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
         preferredEngine: preferred,
         bypass,
         dns: activeDns(ctx),
+        tun: wantTun,
         source: source === 'memory' ? 'gateway-memory' : source === 'discovery' ? 'discovery' : 'auto',
       });
       const ok = status.state === 'active';

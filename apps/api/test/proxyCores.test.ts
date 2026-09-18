@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  PROXY_ENGINE_ORDER,
+  buildHysteria2ClientConfig,
   buildSingboxConfig,
   buildV2rayConfig,
   buildXrayConfig,
@@ -11,8 +13,10 @@ import {
   chainExitProtocolUnsupported,
   chainExitUnsupported,
   configIsTestable,
+  engineArgs,
   engineSupports,
   engineSupportsConfig,
+  engineSupportsOptions,
   findEngineBinary,
   isAeadShadowsocksCipher,
   startCore,
@@ -231,6 +235,98 @@ describe('NodeSecretVault', () => {
   });
 });
 
+describe('hysteria2 client engine', () => {
+  it('dials hysteria2 and nothing else', () => {
+    expect(engineSupports('hysteria', 'hysteria2')).toBe(true);
+    for (const p of ['vless', 'vmess', 'trojan', 'shadowsocks', 'tuic']) {
+      expect(engineSupports('hysteria', p)).toBe(false);
+    }
+    // The dedicated client must not have displaced sing-box for hysteria2.
+    expect(engineSupports('sing-box', 'hysteria2')).toBe(true);
+  });
+
+  it('is invoked with the config path and no `run` subcommand', () => {
+    expect(engineArgs('hysteria')).toEqual([]);
+    expect(engineArgs('xray')).toEqual(['run']);
+    expect(engineArgs('sing-box')).toEqual(['run']);
+  });
+
+  it('is tried ahead of sing-box for hysteria2 (protocol\u2019s own client), but xray stays first', () => {
+    expect(PROXY_ENGINE_ORDER.indexOf('hysteria')).toBeLessThan(PROXY_ENGINE_ORDER.indexOf('sing-box'));
+    expect(PROXY_ENGINE_ORDER[0]).toBe('xray');
+    expect([...PROXY_ENGINE_ORDER]).toEqual([...new Set(PROXY_ENGINE_ORDER)]);
+  });
+
+  it('builds the documented YAML client config, including salamander obfs and bandwidth', () => {
+    const yaml = buildHysteria2ClientConfig(
+      cfg({
+        protocol: 'hysteria2',
+        transport: 'udp',
+        security: 'tls',
+        host: 'hy.example.net',
+        port: 8443,
+        sni: 'hy.example.net',
+        allowInsecure: false,
+        alpn: ['h3'],
+        extra: { obfs: 'salamander', 'obfs-password': 'obf-pw', up: '50', down: '200' },
+      }),
+      'node-secret',
+      45678,
+    );
+    expect(yaml).toContain('server: "hy.example.net:8443"');
+    expect(yaml).toContain('auth: "node-secret"');
+    expect(yaml).toContain('sni: "hy.example.net"');
+    expect(yaml).toContain('alpn: ["h3"]');
+    expect(yaml).toContain('type: "salamander"');
+    expect(yaml).toContain('password: "obf-pw"');
+    expect(yaml).toContain('up: "50 mbps"');
+    expect(yaml).toContain('down: "200 mbps"');
+    // The local inbound is HTTP: both the probe and the system-proxy handoff
+    // speak HTTP CONNECT, and hysteria has no mixed inbound.
+    expect(yaml).toContain('http:');
+    expect(yaml).toContain('listen: "127.0.0.1:45678"');
+    expect(yaml).not.toContain('socks5:');
+  });
+
+  it('omits tls.insecure and bandwidth that the node did not advertise', () => {
+    const yaml = buildHysteria2ClientConfig(
+      cfg({ protocol: 'hysteria2', transport: 'udp', security: 'tls', sni: null, alpn: null, allowInsecure: null, extra: {} }),
+      'pw',
+      1234,
+    );
+    expect(yaml).toContain('sni: "example.com"'); // falls back to the host
+    expect(yaml).not.toContain('insecure');
+    expect(yaml).not.toContain('bandwidth');
+    expect(yaml).not.toContain('obfs');
+  });
+
+  it('emits tls.insecure only when the node sets allowInsecure', () => {
+    const yaml = buildHysteria2ClientConfig(cfg({ protocol: 'hysteria2', transport: 'udp', allowInsecure: true }), 'pw', 1234);
+    expect(yaml).toContain('insecure: true');
+  });
+
+  it('refuses obfuscation modes the client does not implement', () => {
+    const ok = engineSupportsConfig('hysteria', cfg({ protocol: 'hysteria2', extra: { obfs: 'salamander' } }));
+    expect(ok.ok).toBe(true);
+    const bad = engineSupportsConfig('hysteria', cfg({ protocol: 'hysteria2', extra: { obfs: 'something-else' } }));
+    expect(bad.ok).toBe(false);
+    expect(bad.ok === false && bad.error).toContain('salamander');
+  });
+
+  it('cannot chain, and reports WHY instead of a generic failure', () => {
+    expect(chainExitUnsupported('hysteria', 'hysteria2')).toContain('dial-through');
+    expect(engineSupportsOptions('hysteria', { chain: true })).toContain('chain');
+    expect(engineSupportsOptions('xray', { chain: true })).toBeNull();
+  });
+
+  it('is skipped while bypass or DNS-through-tunnel is on, rather than ignoring them', () => {
+    expect(engineSupportsOptions('hysteria', { bypass: true })).toContain('bypass');
+    expect(engineSupportsOptions('hysteria', { dns: true })).toContain('DNS');
+    expect(engineSupportsOptions('hysteria', {})).toBeNull();
+    expect(engineSupportsOptions('sing-box', { bypass: true, dns: true, chain: true })).toBeNull();
+  });
+});
+
 describe('engine coverage for real-world v2ray-family configs', () => {
   it('hysteria2 outbound gets its REQUIRED password (sing-box exits without one)', () => {
     const full = buildSingboxConfig(cfg({ protocol: 'hysteria2', transport: 'udp', security: 'tls' }), 'hy2-pass', 45678);
@@ -341,9 +437,13 @@ describe('v2ray core support', () => {
   });
 
   it('engineOrder puts the preferred engine first and never repeats it', () => {
-    expect(engineOrder('auto')).toEqual(['xray', 'sing-box', 'v2ray']);
+    // Hysteria sits second: it only claims hysteria2, so it cannot displace a
+    // core for any other protocol, but it wins for its own protocol.
+    expect(engineOrder('auto')).toEqual(['xray', 'hysteria', 'sing-box', 'v2ray']);
     expect(engineOrder('v2ray')[0]).toBe('v2ray');
-    expect(new Set(engineOrder('sing-box')).size).toBe(3);
+    expect(engineOrder('hysteria')[0]).toBe('hysteria');
+    expect(new Set(engineOrder('sing-box')).size).toBe(4);
+    expect(new Set(engineOrder('hysteria')).size).toBe(4);
   });
 
   it('findEngineBinary locates a v2ray drop-in', () => {

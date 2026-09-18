@@ -994,7 +994,7 @@ export function parseShadowsocksUri(uri: string): ParsedShareLink | null {
  * when the platform layer grants it; default is proxy-mode (no route
  * changes, no root) so the binary can run unprivileged.
  */
-export function buildSingboxConfig(outbound: Record<string, unknown>, opts: { mixedPort: number; socksPort?: number } = { mixedPort: 2080 }): Record<string, unknown> {
+export function buildSingboxConfig(outbound: Record<string, unknown>, opts: { mixedPort: number; socksPort?: number; tun?: boolean } = { mixedPort: 2080 }): Record<string, unknown> {
   return {
     log: { level: 'warn', timestamp: true },
     inbounds: [
@@ -1007,6 +1007,13 @@ export function buildSingboxConfig(outbound: Record<string, unknown>, opts: { mi
     ],
     outbounds: [outbound],
     route: { auto_detect_interface: true },
+    ...(opts.tun ? {
+      tun: {
+        enable: true,
+        stack: 'system',
+        dns: true,
+      },
+    } : {}),
   };
 }
 
@@ -1032,7 +1039,7 @@ export class SingboxProvider implements VpnProvider {
     id: 'singbox',
     name: 'sing-box',
     kind: 'singbox',
-    capabilities: ['import-config', 'connect', 'disconnect', 'status', 'proxy-mode'],
+    capabilities: ['import-config', 'connect', 'disconnect', 'status', 'proxy-mode', 'tun-mode'],
     available: false,
     protocols: [...SINGBOX_PROTOCOLS],
   };
@@ -1046,14 +1053,16 @@ export class SingboxProvider implements VpnProvider {
   private connectedAt: number | null = null;
   private connectedProfile: ImportedProfile | null = null;
   private mixedPort: number;
+  private tunMode: boolean;
   private hooks: VpnProviderHooks | undefined;
   private lastTempConfigPath: string | null = null;
 
-  constructor(vault: FileSecretVault, configDir: string, hooks?: VpnProviderHooks, mixedPort = 2080) {
+  constructor(vault: FileSecretVault, configDir: string, hooks?: VpnProviderHooks, mixedPort = 2080, tunMode = false) {
     this.vault = vault;
     this.configDir = configDir;
     this.hooks = hooks;
     this.mixedPort = mixedPort;
+    this.tunMode = tunMode;
   }
 
   /** Remove the materialized temp config — it contains the real credential. */
@@ -1126,7 +1135,7 @@ export class SingboxProvider implements VpnProvider {
     if (parsed.protocol === 'vless' || parsed.protocol === 'vmess') outbound['uuid'] = '<stored in vault>';
     else outbound['password'] = '<stored in vault>';
 
-    const doc = buildSingboxConfig(outbound, { mixedPort: this.mixedPort });
+    const doc = buildSingboxConfig(outbound, { mixedPort: this.mixedPort, tun: this.tunMode });
     const configPath = path.join(this.configDir, `${id}.json`);
     fs.writeFileSync(configPath, JSON.stringify(doc, null, 2), { mode: 0o600 });
 
@@ -1421,6 +1430,15 @@ export class VpnRegistry {
   }
 }
 
+/**
+ * Whether the sing-box provider starts with a TUN device by default.
+ * TUN on Windows needs elevation for wintun, so the default is proxy-mode
+ * everywhere and TUN is opted into per profile.
+ */
+function tunModeFromPlatform(): boolean {
+  return process.platform !== 'win32';
+}
+
 export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: VpnProviderHooks): VpnRegistry {
   fs.mkdirSync(configDir, { recursive: true });
   const vault = new FileSecretVault(vaultFile);
@@ -1428,7 +1446,8 @@ export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: 
   registry['setVault'](vault);
   registry.register(new WireGuardProvider(vault, configDir, hooks));
   registry.register(new OpenVpnProvider(vault, configDir, hooks));
-  registry.register(new SingboxProvider(vault, configDir, hooks));
+  registry.register(new SingboxProvider(vault, configDir, hooks, 2080, tunModeFromPlatform()));
+
   // Aether: a separate tunnel engine (MASQUE/WARP-family) managed like the
   // other providers. Lazy import keeps this module loadable without it.
   void import('./aetherProvider').then(({ AetherProvider }) => {
