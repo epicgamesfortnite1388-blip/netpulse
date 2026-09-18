@@ -19,6 +19,7 @@ export * from './models/publicNodes';
 export * from './models/proxyEngine';
 export * from './models/vpnBypass';
 export * from './models/vpnTunnel';
+export * from './models/admin';
 export * from './models/vpnGateway';
 export * from './models/scanProfile';
 export * from './schemas/settings';

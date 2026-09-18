@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import { z } from 'zod';
 
 import { AppError, badRequest, newNotFound } from '../util/appError';
+import { adminStatus, invalidatePrivilegeCache } from '../util/privileges';
+import { engineSupports, findEngineBinary } from '../services/proxyCores';
+import type { LinkExport } from '../services/nodeLinkExport';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -25,6 +28,64 @@ const ConnectSchema = z.object({
   /** Desktop flow: drive the per-action UAC prompt through the Rust bridge. */
   elevation: z.object({ opId: z.string().min(1).max(64) }).optional(),
 });
+
+/**
+ * Promote a stored node into an engine profile.
+ *
+ * Only sing-box consumes share links today; the local cores (xray / v2ray) are
+ * driven straight from the node row by the proxy tunnel and need no profile, so
+ * they are not offered here rather than accepted and silently ignored.
+ */
+const FromNodeSchema = z.object({
+  nodeId: z.string().min(1).max(64),
+  providerId: z.literal('singbox').default('singbox'),
+  name: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[^\u0000-\u001f\u007f<>]*$/, 'must not contain control characters or angle brackets')
+    .optional(),
+});
+
+type ImportProviderId = 'wireguard' | 'openvpn' | 'singbox' | 'aether';
+
+/**
+ * The single profile-creation path: a pasted config and a promoted node both
+ * land here, so both get the same provider validation, vault write and event.
+ */
+async function importProfileVia(ctx: AppContext, providerId: ImportProviderId, name: string, configText: string) {
+  const provider = ctx.vpn.get(providerId);
+  if (!provider) throw new AppError(400, 'unknown_provider', 'Unknown VPN provider');
+  const profile = await provider.importProfile({
+    name,
+    configText,
+    protocol: providerId === 'singbox' || providerId === 'aether' ? 'custom' : providerId,
+  });
+  ctx.vpn.addProfile(providerId, profile);
+  ctx.repos.vpnProfiles.insert({
+    id: profile.id,
+    providerId,
+    name: profile.name,
+    protocol: profile.protocol,
+    endpoint: profile.endpoint,
+    publicKeyFingerprint: profile.publicKeyFingerprint,
+    allowedIps: profile.allowedIps ? profile.allowedIps.join(',') : null,
+    dnsServers: profile.dns ? profile.dns.join(',') : null,
+    secretRef: profile.secretRef,
+    configPath: profile.configPath,
+    lastUsedAt: null,
+    createdAt: profile.createdAt,
+  });
+  ctx.services.events.record('info', 'vpn', `VPN profile "${profile.name}" imported (${providerId})`);
+  return {
+    id: profile.id,
+    providerId,
+    name: profile.name,
+    protocol: profile.protocol,
+    endpoint: profile.endpoint,
+    createdAt: profile.createdAt,
+  };
+}
 
 /**
  * Full elevated WireGuard connect: stage the op for the Rust bridge, wait for
@@ -125,6 +186,26 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     killSwitch: ctx.services.killSwitch.status(),
   }));
 
+  // Administrator rights — the honest answer to "what can this app do that
+  // Windows only lets an admin do, and what do I do about it".
+  //
+  // Detection is real (util/privileges runs the OS check); nothing here is
+  // inferred from a setting. `privileges[]` carries a reason for every entry and
+  // a remedy where one exists, so the UI never has to invent wording and a
+  // refusal is never a dead end.
+  // Both capability inputs are filesystem checks, so this is cheap enough to
+  // answer on every poll and never depends on a network probe succeeding.
+  const readAdmin = (fresh: boolean) => {
+    if (fresh) invalidatePrivilegeCache();
+    return { admin: adminStatus({ tunGatewayCoreInstalled: findEngineBinary('sing-box') != null }) };
+  };
+
+  app.get('/api/v1/vpn/admin', async () => readAdmin(false));
+
+  // Re-probe after an elevated relaunch or a Settings change, so the UI does
+  // not keep showing a stale "no admin" from the 60 s cache.
+  app.post('/api/v1/vpn/admin/recheck', async () => readAdmin(true));
+
   // Aether engine lifecycle: version/install-state, and a verified
   // install/update through the same release pipeline as the proxy cores.
   // Rate-limited: each call downloads + verifies a ~15 MB asset.
@@ -147,11 +228,15 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
         version = null;
       }
     }
+    // The TUN preference lives on the provider (applied at the next connect),
+    // so it is read from there rather than duplicated in settings.
+    const tunCapable = provider as unknown as { getTunPreference?: () => boolean };
     return {
       installed,
       version,
       path: installed ? bin : null,
       available: provider.info.available,
+      tun: tunCapable.getTunPreference?.() ?? false,
       note:
         installed && version
           ? `aether ${version} installed and self-check passing`
@@ -159,6 +244,25 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
             ? 'aether binary exists but failed its -v self-check — reinstall'
             : 'aether is not installed — use Install/Update',
     };
+  });
+
+  // System-wide (TUN) mode for Aether.
+  //
+  // Aether serves SOCKS5, so on its own it only captures apps that honour a
+  // proxy setting. This puts the shared sing-box TUN gateway in front of that
+  // port so the OS default route carries everything — the same mechanism the
+  // local cores use. The preference is applied to the NEXT connect; an active
+  // tunnel is never silently re-routed, and `tun` in the status is only
+  // 'active' after traffic provably traversed the whole path.
+  app.post('/api/v1/vpn/aether/tun', async (req) => {
+    const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+    if (!parsed.success) throw parsed.error;
+    const provider = ctx.vpn.get('aether') as unknown as { setTunPreference?: (on: boolean) => void; getTunPreference?: () => boolean } | undefined;
+    if (!provider?.setTunPreference) {
+      throw new AppError(501, 'not_implemented', 'Aether system-wide mode is not available in this build');
+    }
+    provider.setTunPreference(parsed.data.enabled);
+    return { tun: provider.getTunPreference?.() ?? parsed.data.enabled };
   });
 
   app.post(
@@ -196,40 +300,60 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     async (req, reply) => {
       const parsed = ImportSchema.safeParse(req.body);
       if (!parsed.success) throw parsed.error;
-      const provider = ctx.vpn.get(parsed.data.providerId);
-      if (!provider) throw new AppError(400, 'unknown_provider', 'Unknown VPN provider');
-      const profile = await provider.importProfile({
-        name: parsed.data.name,
-        configText: parsed.data.configText,
-        protocol: parsed.data.providerId === 'singbox' || parsed.data.providerId === 'aether' ? 'custom' : parsed.data.providerId,
-      });
-      ctx.vpn.addProfile(parsed.data.providerId, profile);
-      ctx.repos.vpnProfiles.insert({
-        id: profile.id,
-        providerId: parsed.data.providerId,
-        name: profile.name,
-        protocol: profile.protocol,
-        endpoint: profile.endpoint,
-        publicKeyFingerprint: profile.publicKeyFingerprint,
-        allowedIps: profile.allowedIps ? profile.allowedIps.join(',') : null,
-        dnsServers: profile.dns ? profile.dns.join(',') : null,
-        secretRef: profile.secretRef,
-        configPath: profile.configPath,
-        lastUsedAt: null,
-        createdAt: profile.createdAt,
-      });
-      ctx.services.events.record('info', 'vpn', `VPN profile "${profile.name}" imported (${parsed.data.providerId})`);
+      const profile = await importProfileVia(ctx, parsed.data.providerId, parsed.data.name, parsed.data.configText);
       reply.status(201);
-      return {
-        profile: {
-          id: profile.id,
-          providerId: parsed.data.providerId,
-          name: profile.name,
-          protocol: profile.protocol,
-          endpoint: profile.endpoint,
-          createdAt: profile.createdAt,
-        },
-      };
+      return { profile };
+    },
+  );
+
+  /**
+   * Add a stored node to an engine profile immediately.
+   *
+   * The node's link is rebuilt from its row plus the vaulted credential (the
+   * database never held the original config text), round-tripped through the
+   * parser, and then imported exactly like a pasted link. When the rebuild or
+   * the engine's protocol support says no, the route refuses with the reason
+   * instead of creating a profile that could only fail at connect time.
+   */
+  app.post(
+    '/api/v1/vpn/profiles/from-node',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const parsed = FromNodeSchema.safeParse(req.body);
+      if (!parsed.success) throw parsed.error;
+
+      const node = ctx.repos.publicNodes.get(parsed.data.nodeId);
+      if (!node) throw newNotFound(`Node "${parsed.data.nodeId}" not found`);
+
+      // One owner for "rebuild a stored node's link": the node service reads the
+      // row, takes the credential from the vault and round-trips the result
+      // through the parser. This route only decides what to do with it.
+      const built = ctx.services.nodes.shareLink(node.id) as LinkExport | null;
+      if (!built) throw newNotFound(`Node "${parsed.data.nodeId}" not found`);
+      if (!built.ok) {
+        throw vpnError(
+          400,
+          'node_not_exportable',
+          built.reason,
+          "Add the node's original config instead, or re-import the source it came from so its credential is vaulted.",
+        );
+      }
+
+      if (!engineSupports('sing-box', node.protocol)) {
+        throw vpnError(
+          400,
+          'engine_unsupported_protocol',
+          `The sing-box core cannot dial ${node.protocol} nodes, so no profile was created.`,
+          'Use this node through the proxy tunnel, where the app picks a core that supports it.',
+        );
+      }
+
+      const baseName = (node.remark?.trim() || `${node.host}:${node.port}`).slice(0, 100);
+      const profile = await importProfileVia(ctx, 'singbox', parsed.data.name ?? baseName, built.link);
+
+      ctx.services.events.record('info', 'vpn', `Node ${node.host}:${node.port} added to the sing-box engine as a profile`);
+      reply.status(201);
+      return { profile, node: { id: node.id, protocol: node.protocol, host: node.host, port: node.port } };
     },
   );
 

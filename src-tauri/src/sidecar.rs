@@ -233,6 +233,38 @@ fn port_bindable(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
+/// How long `bootstrap` waits for the sidecar to answer before handing the
+/// webview a port/token anyway (the UI then shows its honest offline state).
+/// Generous on purpose: a first launch on a large database runs migrations and
+/// integrity checks, and waiting is strictly better than telling the user the
+/// backend is unreachable while it is still starting.
+pub const BOOTSTRAP_READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Poll the sidecar's loopback port until it accepts a connection or `timeout`
+/// elapses. A listening socket IS the readiness signal: `desktop-index.ts` only
+/// binds after the whole app (config, database, auth, routes) is constructed,
+/// so a successful connect means the first authenticated request will be
+/// answered instead of racing start-up the way a fixed delay would.
+///
+/// Returns `true` as soon as the port answers. A connect that is refused (or
+/// times out) simply means "not yet" — never an error.
+pub fn wait_for_sidecar_ready(port: u16, timeout: Duration) -> bool {
+    if port == 0 {
+        return false;
+    }
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(75));
+    }
+}
+
 /// Locate the packaged backend binary next to the current executable.
 /// Falls back to `node` + script for `tauri dev` runs.
 fn resolve_backend(_app: &AppHandle) -> (Command, String) {
@@ -871,5 +903,40 @@ mod tests {
         assert_eq!(MAX_RAPID_RESTARTS, 5);
         assert_eq!(STABLE_REARM, Duration::from_secs(60));
         assert_eq!(COOLDOWN, Duration::from_secs(60));
+        // The bootstrap wait must outlast a cold first launch (migrations +
+        // integrity check) — that is the state it exists to cover.
+        assert!(BOOTSTRAP_READY_TIMEOUT >= Duration::from_secs(15));
+    }
+
+    #[test]
+    fn ready_wait_returns_true_once_the_port_answers() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        // Accept in the background so the connect completes.
+        let acceptor = std::thread::spawn(move || {
+            let _ = listener.accept();
+        });
+        let started = std::time::Instant::now();
+        assert!(wait_for_sidecar_ready(port, Duration::from_secs(5)));
+        // Answered on the first probe, before any sleep cycle.
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let _ = acceptor.join();
+    }
+
+    #[test]
+    fn ready_wait_times_out_on_a_closed_port_instead_of_hanging() {
+        // A reserved-then-released port: nothing is listening on it.
+        let port = reserve_ephemeral_port();
+        assert!(port != 0, "an ephemeral port must be reservable for this test");
+        let started = std::time::Instant::now();
+        assert!(!wait_for_sidecar_ready(port, Duration::from_millis(400)));
+        let waited = started.elapsed();
+        assert!(waited >= Duration::from_millis(400), "waited: {waited:?}");
+        assert!(waited < Duration::from_secs(3), "waited: {waited:?}");
+    }
+
+    #[test]
+    fn ready_wait_does_not_probe_port_zero() {
+        assert!(!wait_for_sidecar_ready(0, Duration::from_millis(50)));
     }
 }

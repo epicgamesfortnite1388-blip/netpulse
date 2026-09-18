@@ -309,7 +309,14 @@ fn shell_execute_elevated(exe: &str, params: &str) -> Result<(), String> {
 extern "system" {
     fn CloseHandle(handle: isize) -> BOOL;
     fn GetLastError() -> u32;
+    fn OpenProcess(desired_access: u32, inherit_handle: BOOL, process_id: u32) -> isize;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
+    fn GetCurrentProcessId() -> u32;
 }
+
+/// SYNCHRONIZE — the only access right needed to wait on a process handle.
+const SYNCHRONIZE: u32 = 0x0010_0000;
+const WAIT_TIMEOUT: u32 = 0x0000_0102;
 
 unsafe fn windows_close_handle(handle: isize) {
     let _ = CloseHandle(handle);
@@ -317,6 +324,119 @@ unsafe fn windows_close_handle(handle: isize) {
 
 unsafe fn windows_get_last_error() -> u32 {
     GetLastError()
+}
+
+// ---------------------------------------------------------------------------
+// Administrator rights for the APP ITSELF (not a per-action broker op).
+// ---------------------------------------------------------------------------
+
+/// Detached-process flags for the helper copy of this exe.
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Command-line flag the helper copy is launched with: `--elevate-after <pid>`.
+const ELEVATE_AFTER_FLAG: &str = "--elevate-after";
+
+/// Is THIS process elevated?
+///
+/// Same mechanism as the sidecar's `util/privileges` (`net session` succeeds
+/// only from an elevated token) on purpose: two independent, differently-shaped
+/// answers to "do we have admin" is exactly how a UI ends up telling the user
+/// two different things at once.
+///
+/// Runs hidden — a console window flashing on every status poll would be worse
+/// than the check itself.
+pub fn is_process_elevated() -> bool {
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    Command::new("net")
+        .arg("session")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Wait for another process to exit. Returns true when it did (or when the
+/// handle could not be opened because the process is already gone).
+fn wait_for_process_exit(pid: u32, timeout_ms: u32) -> bool {
+    let handle = unsafe { OpenProcess(SYNCHRONIZE, 0, pid) };
+    if handle == 0 {
+        // Already exited, or we may not even open a handle to it — either way
+        // there is nothing left to wait for.
+        return true;
+    }
+    let result = unsafe { WaitForSingleObject(handle, timeout_ms) };
+    unsafe {
+        windows_close_handle(handle);
+    }
+    // Only a timeout means "still running"; WAIT_OBJECT_0 is the clean exit and
+    // any other wait result is treated as gone rather than hanging the helper.
+    result != WAIT_TIMEOUT
+}
+
+/// Parse `--elevate-after <pid>` out of a raw argument list.
+///
+/// Pure, so the relaunch contract is unit-testable without touching a UAC
+/// prompt: a helper copy of this exe must NEVER start the GUI or the sidecar.
+pub(crate) fn parse_elevate_after<S: AsRef<str>>(args: &[S]) -> Option<u32> {
+    let joined: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
+    let idx = joined.iter().position(|a| *a == ELEVATE_AFTER_FLAG)?;
+    joined.get(idx + 1)?.parse::<u32>().ok()
+}
+
+/// Make the current process relaunch itself with administrator rights.
+///
+/// WHY A HELPER AND NOT `ShellExecuteEx(runas)` DIRECTLY: this app enforces
+/// single-instance, and the elevated copy must come up AFTER the current
+/// process is gone — otherwise it forwards its arguments to the dying instance
+/// through the single-instance plugin and exits, and the user sees a UAC prompt
+/// that changes nothing.
+///
+/// So: spawn a DETACHED, still-unprivileged copy of this exe with
+/// `--elevate-after <our pid>`, ask the UI to quit, and let that helper raise
+/// the one UAC prompt once our pid is gone. The helper does no app work.
+pub fn spawn_elevation_helper() -> Result<u32, String> {
+    use std::os::windows::process::CommandExt;
+    let exe = std::env::current_exe().map_err(|e| format!("cannot resolve own exe: {e}"))?;
+    let pid = unsafe { GetCurrentProcessId() };
+    let child = std::process::Command::new(&exe)
+        .arg(ELEVATE_AFTER_FLAG)
+        .arg(pid.to_string())
+        .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("cannot start the elevation helper: {e}"))?;
+    Ok(child.id())
+}
+
+/// Entry point for the helper copy (see `spawn_elevation_helper`).
+///
+/// Blocks until the app instance that spawned us has exited, then re-launches
+/// this exe with the `runas` verb. Never returns.
+pub fn run_elevation_helper(parent_pid: u32) -> ! {
+    log_info!("elevation helper: waiting for pid {parent_pid} to exit before prompting for admin");
+    // 60 s is generous for a GUI shutdown that includes stopping the sidecar;
+    // the elevated launch is still useful if the old instance is wedged, so
+    // time out rather than hang forever.
+    let exited = wait_for_process_exit(parent_pid, 60_000);
+    if !exited {
+        log_warn!("elevation helper: pid {parent_pid} did not exit within 60s; attempting the elevated launch anyway");
+    }
+    let exe = match std::env::current_exe() {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(e) => {
+            log_error!("elevation helper: cannot resolve own exe: {e}");
+            std::process::exit(1);
+        }
+    };
+    match shell_execute_elevated(&exe, "") {
+        Ok(()) => log_info!("elevation helper: elevated launch handed to the OS"),
+        Err(e) => log_error!("elevation helper: elevated launch failed: {e}"),
+    }
+    std::process::exit(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +601,17 @@ pub(crate) mod tests {
     fn urlencode_leaves_unreserved_and_escapes_the_rest() {
         assert_eq!(urlencode("abc-DEF_1.2~"), "abc-DEF_1.2~");
         assert_eq!(urlencode("a b/c?d"), "a%20b%2Fc%3Fd");
+    }
+
+    #[test]
+    fn elevate_after_flag_is_parsed_only_when_a_pid_follows() {
+        assert_eq!(parse_elevate_after(&["app.exe", "--elevate-after", "4321"]), Some(4321));
+        // A normal launch (and a flag with no/invalid pid) must never be
+        // mistaken for the helper: getting this wrong would spawn a second GUI.
+        assert_eq!(parse_elevate_after(&["app.exe"]), None);
+        assert_eq!(parse_elevate_after(&["app.exe", "--elevate-after"]), None);
+        assert_eq!(parse_elevate_after(&["app.exe", "--elevate-after", "not-a-pid"]), None);
+        assert_eq!(parse_elevate_after(&["app.exe", "--safe-mode"]), None);
     }
 
     #[test]

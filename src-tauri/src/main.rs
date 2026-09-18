@@ -93,20 +93,49 @@ fn reset_app_state(app: AppHandle) -> Result<String, String> {
     Ok(backup.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+/// Hand the webview its transport credentials — once the sidecar is actually
+/// answering.
+///
+/// The webview loads from bundled assets and can finish loading long before the
+/// Node sidecar has bound its port (a first launch runs migrations and an
+/// integrity check). Returning here immediately made the UI's very first health
+/// probe fail against a backend that was merely still starting, which surfaced
+/// as a "Backend unreachable" banner for the first seconds of every launch.
+/// Waiting for the port to answer removes the race: the UI holds "Starting…"
+/// while the backend boots, and the first probe it issues is a real one.
+///
+/// `async` so the wait happens off the main thread (Tauri runs sync commands
+/// there); while waiting we hold NO lock on the sidecar state, so the watchdog
+/// stays free to respawn a dead child.
+#[tauri::command(async)]
 fn bootstrap(app: AppHandle) -> Bootstrap {
-    let state = app.state::<sidecar::SidecarState>();
-    // A poisoned lock must not panic the webview's bootstrap call — the UI
-    // treats a bootstrap failure as Recovery Required and offers repair.
-    let inner = state.inner.lock().unwrap_or_else(|p| p.into_inner());
+    let (port, token) = {
+        let state = app.state::<sidecar::SidecarState>();
+        // A poisoned lock must not panic the webview's bootstrap call — the UI
+        // treats a bootstrap failure as Recovery Required and offers repair.
+        let inner = state.inner.lock().unwrap_or_else(|p| p.into_inner());
+        (inner.port, inner.token.clone())
+    };
+    let asked = std::time::Instant::now();
+    if sidecar::wait_for_sidecar_ready(port, sidecar::BOOTSTRAP_READY_TIMEOUT) {
+        let waited = asked.elapsed().as_millis();
+        if waited > 250 {
+            log_info!("bootstrap: sidecar answered after {waited} ms");
+        }
+    } else {
+        log_warn!(
+            "bootstrap: sidecar on port {port} did not answer within {}s — handing the webview the credentials anyway (the UI reports the offline state)",
+            sidecar::BOOTSTRAP_READY_TIMEOUT.as_secs()
+        );
+    }
     Bootstrap {
         // api_base MUST include the /api/v1 prefix: the web transport's
         // apiBase is '/api/v1' and api.ts appends bare resource paths
         // ('/meta/health') to it. (ws_base keeps the bare origin because
         // ws.ts hardcodes '/api/v1/ws' itself.)
-        api_base: format!("http://127.0.0.1:{}/api/v1", inner.port),
-        ws_base: format!("ws://127.0.0.1:{}", inner.port),
-        token: inner.token.clone(),
+        api_base: format!("http://127.0.0.1:{port}/api/v1"),
+        ws_base: format!("ws://127.0.0.1:{port}"),
+        token,
         desktop: true,
         app_version: app.package_info().version.to_string(),
         os: std::env::consts::OS.to_string(),
@@ -361,6 +390,58 @@ fn save_diagnostic_report(app: AppHandle) -> Result<String, String> {
     Ok(file.to_string_lossy().to_string())
 }
 
+/// Administrator rights for the app itself.
+///
+/// Reported from a REAL OS check (`net session`), never from a stored setting:
+/// the sidecar makes the same check for the same reason, so the two can never
+/// tell the user different things.
+#[derive(Serialize)]
+struct AdminRights {
+    elevated: bool,
+    platform: String,
+    /// True when a one-click elevated relaunch can actually be offered.
+    can_relaunch: bool,
+}
+
+#[tauri::command]
+fn admin_status() -> AdminRights {
+    let elevated = elevation::is_process_elevated();
+    AdminRights {
+        elevated,
+        platform: std::env::consts::OS.to_string(),
+        can_relaunch: !elevated,
+    }
+}
+
+/// Start the elevated relaunch — SINGLE-CALL SAFE.
+///
+/// Arms the detached helper (which raises the one UAC prompt only after this
+/// process exits) and THEN quits this process from a background thread, so one
+/// invoke does the whole action. Previously the quit was a separate
+/// `quit_for_elevation` command the UI had to remember to call; arming alone
+/// left a helper waiting on a process that never exited, and the elevated
+/// launch (when the helper gave up waiting) died on the single-instance lock —
+/// a dead-end UAC prompt. There is no second step left to forget.
+///
+/// The back end restores any tunnel and system-proxy state on the way out
+/// (normal exit path), so nothing is left pointing at a dead core. The quit
+/// runs detached with a short delay so this command's `Ok` still reaches the
+/// webview before the IPC channel goes away.
+#[tauri::command]
+fn relaunch_as_admin(app: AppHandle) -> Result<bool, String> {
+    if elevation::is_process_elevated() {
+        return Err("the app already has administrator rights".into());
+    }
+    log_info!("admin: starting the elevated relaunch helper");
+    let helper = elevation::spawn_elevation_helper()?;
+    log_info!("admin: helper {helper} armed; quitting for the elevated relaunch");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        app.exit(0);
+    });
+    Ok(true)
+}
+
 /// Restart the sidecar after a failure (Repair App). The watchdog will keep it
 /// alive afterwards; the UI reloads against the fresh backend.
 #[tauri::command]
@@ -454,6 +535,14 @@ fn log_dir_of(app: &AppHandle) -> String {
 
 fn main() {
     let _early_data_dir = init_logging_early();
+    // Elevated-relaunch helper FIRST, before any app work: a helper copy must
+    // never take the single-instance lock, sweep webviews or spawn a sidecar —
+    // it exists only to wait for this app to exit and then raise one UAC prompt.
+    // Logging is initialized above so the helper's outcome is recorded.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(parent_pid) = elevation::parse_elevate_after(&args) {
+        elevation::run_elevation_helper(parent_pid);
+    }
     // Kill webview children orphaned by a previous abnormal exit BEFORE the
     // single-instance plugin runs (a stale webview holding the app's window
     // class can otherwise confuse second-launch handling).
@@ -498,6 +587,8 @@ fn main() {
             save_diagnostic_report,
             restart_backend,
             open_external,
+            admin_status,
+            relaunch_as_admin,
             elevation::vpn_elevation_bridge
         ])
         .setup(|app| {

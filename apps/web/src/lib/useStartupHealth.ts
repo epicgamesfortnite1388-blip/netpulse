@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '@/lib/api';
+import { phaseForFailedProbe } from '@/lib/startupPhase';
 import { resetTransport } from '@/lib/transport';
 
 /**
@@ -54,6 +55,7 @@ type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 /** Fast retry cadence while starting/recovering (also the banner countdown). */
 const RETRY_INTERVAL_MS = 3_000;
 
+
 function invokeFn(): InvokeFn | null {
   const w = window as unknown as { __TAURI__?: { invoke?: InvokeFn } };
   return w.__TAURI__?.invoke ?? null;
@@ -86,6 +88,8 @@ export function useStartupHealth(): {
   /** 1s-ticked countdown to the next retry, for the reconnecting banner. */
   const [secondsUntilRetry, setSecondsUntilRetry] = useState<number | null>(null);
   const timers = useRef<ReturnType<typeof setInterval>[]>([]);
+  /** When this UI session started — the anchor for the startup grace window. */
+  const bootAt = useRef(Date.now());
 
   const refresh = useCallback(() => {
     void (async () => {
@@ -114,7 +118,9 @@ export function useStartupHealth(): {
         setRetryAttempt((a) => a + 1);
         setNextRetryAt(Date.now() + RETRY_INTERVAL_MS);
         setSecondsUntilRetry(RETRY_INTERVAL_MS / 1000);
-        setPhase('recovery');
+        // Still inside the startup window: the backend is booting, so the
+        // honest phase is "starting", not "unreachable".
+        setPhase(phaseForFailedProbe(Date.now() - bootAt.current));
       }
     })();
   }, []);
@@ -136,14 +142,21 @@ export function useStartupHealth(): {
     };
   }, []);
 
-  // Health polling must start only after the transport is ready — api.get
-  // awaits initTransport internally, so a failed call already means the
-  // sidecar is truly unreachable (not merely "not yet started").
-  // While starting/recovering, poll fast so the banner clears as soon as
-  // the Rust watchdog respawns the sidecar; settle to 30s once healthy.
+  // First probe of this session. `api.get` awaits the transport, and in the
+  // desktop shell that call resolves only once the sidecar answers, so this
+  // request is not racing backend start-up.
   useEffect(() => {
     refresh();
-    const interval = phase === 'starting' || phase === 'recovery' ? RETRY_INTERVAL_MS : 30_000;
+  }, [refresh]);
+
+  // Polling cadence — fast while starting/recovering so the state clears as
+  // soon as the backend answers (or the watchdog respawns the sidecar), then
+  // relaxed once healthy. Keyed on the phase only to switch cadence: firing an
+  // extra probe here would double-count every attempt in the banner.
+  useEffect(() => {
+    const interval = phase === 'starting' || phase === 'recovery' || phase === 'checking'
+      ? RETRY_INTERVAL_MS
+      : 30_000;
     const t = setInterval(refresh, interval);
     return () => clearInterval(t);
   }, [refresh, phase]);

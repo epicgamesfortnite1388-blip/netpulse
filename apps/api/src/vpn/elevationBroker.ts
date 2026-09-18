@@ -3,17 +3,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { badRequest } from '../util/appError';
+import { WIREGUARD_EXES } from '../util/privileges';
 
 import type { RealtimeBus } from '../realtime/bus';
 import type { Logger } from '../logger';
 
 export type ElevationAction = 'wireguard-install-tunnel';
 
-/** Allowed WireGuard executables (mirror of the Rust allow-list). */
-const ALLOWED_WIREGUARD_EXES = [
-  path.join(process.env['ProgramFiles'] ?? 'C:\\Program Files', 'WireGuard', 'wireguard.exe'),
-  path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'WireGuard', 'wireguard.exe'),
-];
+/**
+ * Allowed WireGuard executables — the SAME list `util/privileges` uses to report
+ * whether the WireGuard capability is available, so "available" and "may be
+ * launched" can never disagree. (Rust keeps its own independent copy: that is
+ * the point of a second validator, not duplication to remove.)
+ */
+const ALLOWED_WIREGUARD_EXES = WIREGUARD_EXES;
 
 export const ELEVATION_TOPIC = 'vpn-elevation';
 
