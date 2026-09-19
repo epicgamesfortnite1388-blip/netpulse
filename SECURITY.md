@@ -6,9 +6,14 @@ active network probes. This document is the threat model and the control set.
 ## Trust boundaries
 
 1. **Browser → API**: all routes (except `/meta`, `/auth/session`) require an
-   authenticated session. Sessions are created via the daemon token flow; the token file
-   (`DATA_DIR/daemon-token`) is generated on first start with restrictive permissions and
-   is never exposed through the API or logs.
+   authenticated session. **Desktop mode accepts only the per-launch secret** passed
+   from the Rust shell to the sidecar over stdin — no cookie a browser could request
+   or hold satisfies the API, so a leaked or forged cookie grants nothing. In server
+   mode, sessions are minted via `/auth/session`, which is **origin-gated**
+   (`sessionOriginRefusal`): a foreign-origin or metadata-less browser request is
+   refused, closing the drive-by/DNS-rebinding path. The daemon token file
+   (`DATA_DIR/daemon-token`) is generated on first start with restrictive permissions
+   and is never exposed through the API or logs.
 2. **API → OS**: argv-array `spawn` only. No shell is invoked anywhere in the API.
 3. **API → network**: probes are constrained by allowlists and schemas.
 
@@ -37,8 +42,10 @@ server-side before any query is attempted.
 
 ## Secrets
 
-- VPN private keys: AES-256-GCM vault (see [VPN.md](./VPN.md)); never stored in SQLite,
-  never returned by any endpoint, never logged.
+- VPN private keys and imported node credentials (uuid/password): AES-256-GCM vault
+  (see [VPN.md](./VPN.md)); never stored in SQLite, never returned by any endpoint,
+  never logged. Proxy cores receive secrets via config files written inside the data
+  directory — never %TEMP%.
 - Daemon token and session material: file/DB-backed server-side only.
 - No secrets in frontend code; the web bundle only ever receives non-sensitive summaries.
 
@@ -72,8 +79,16 @@ secret values, no vault contents. `LOG_LEVEL` controls verbosity in production.
 ## Privilege
 
 All measurements use unprivileged mechanisms (ICMP via system utilities, TCP connect timing,
-HTTPS). The **single** privileged operation is installing a WireGuard tunnel service, and it
-runs through a per-action elevation broker rather than a permanently-elevated helper:
+HTTPS). Privileged operations run through per-action elevation rather than a
+permanently-elevated helper. The elevation broker is driven only by registered,
+re-validated descriptors (path under the app data dir, nonce-bound, TTL-bounded) —
+there is no generic shell/exec IPC surface. Elevated **relaunch** (for TUN mode) is a
+single Tauri command that arms and quits atomically, so invoking it alone can never
+leave a dead-end UAC prompt. Under TUN the gateway claims the default route only after
+a verified relay proof; a dropped capture re-arms once or fails **closed** with the
+kill-switch hold, and the UI shows the enforcement state per mode.
+
+The per-action pattern applies to:
 
 - The unprivileged sidecar validates everything it can (profile, key vault, engine binary),
   materializes the tunnel config into a private temp dir, and registers a **pending operation**

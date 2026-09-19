@@ -20,7 +20,8 @@ of faking a result.
 | IP | Public IPv4/IPv6 intelligence: ASN, ISP, org, geo, reverse DNS, privacy indicators |
 | Routes | Traceroute (per-hop IP/hostname/latency/loss/ASN), route analysis, IPv4/IPv6 route comparison, history |
 | Cloudflare | Configured-CIDR-only endpoint scanner: discovery → TCP → TLS → HTTP validation → speed test → ranking, with favorites and export |
-| VPN | Provider abstraction (WireGuard, OpenVPN, custom), profile import with encrypted secret vault, real connect/disconnect driven by installed binaries |
+| VPN | Proxy tunnel (xray / sing-box / v2ray) with verified exit IP, TUN mode, nested chaining, kill switch; provider abstraction (WireGuard, OpenVPN, sing-box, Aether) with encrypted secret vault; discovery profiles with honest per-attempt reports; engine manager with one-click updates from official releases |
+| Nodes | Node explorer over the full stored database (server-side paging/sort/filter), config intake (paste a vless/vmess/trojan/ss link → test → promote to an engine profile), share-link export, runtime attribution per measurement |
 | Servers & Health | VPS/VPN server/diagnostic endpoint inventory, health monitoring daemon, per-server metrics and history |
 | Optimizer | Candidate endpoint optimization runs with configurable scoring weights |
 | History & Events | Persisted results for every test type plus a filterable event timeline |
@@ -88,7 +89,7 @@ npm start -w @netpulse/api   # serves the API and the built UI from one process
 
 ```bash
 npm run lint        # ESLint over all packages (incl. react-hooks rules)
-npm test            # Vitest unit + API integration tests (217 tests)
+npm test            # Vitest unit + API integration tests (973 tests across shared/api/web)
 npm run audit:ci    # circular-deps + dead-export + unused-dependency gate
 npm run test:deploy # boots the INSTALLED backend bundle: auth, real measurements, persistence
 npm run build       # typecheck + production bundles

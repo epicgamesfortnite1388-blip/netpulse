@@ -17,7 +17,9 @@
 │              Provider layer                 │
 │  platform (ping/trace/dns/mtu/interfaces)   │
 │  speed · dns transports · ipinfo · reputation│
-│  vpn (wireguard/openvpn/custom)             │
+│  vpn providers (wireguard/openvpn/sing-box/ │
+│    aether) · proxy tunnel · core-process    │
+│    owner · kill switch · TUN gateway        │
 ├─────────────────────────────────────────────┤
 │           Drizzle ORM + SQLite              │
 └─────────────────────────────────────────────┘
@@ -118,6 +120,34 @@ apps/web/src
 
 `useBackgroundTest(testId)` centralizes the start/progress/result/error lifecycle so every
 long-running page behaves the same way (submit → 202 → live progress → result or error).
+
+Per-node actions are structured the same way, in three layers:
+
+```
+features/nodes
+├── nodeActionPolicy.ts   pure: outcome → message, export envelope + filename rules
+├── useNodeActions.ts     state + request owner: one in-flight action, test / geo /
+│                         favorite / copy-link / export, shared by row and detail page
+└── NodeEngineActions.tsx rendering + its own mutations (tunnel, promote to engine)
+```
+
+The rule: a per-node action's wording and in-flight state have ONE owner
+(`useNodeActions`), and the caller supplies only what to re-read (`onChanged`) and
+whether a started test must survive an unmount (`onTestStarted`). Configs leave the
+app through `lib/transfer.ts` (`copyText`, `downloadText`), the only place that talks
+to the clipboard or saves a file. Server-side, `nodesService.shareLink(id)` is the only
+rebuilder of a stored node's share link — routes and the engine-profile import both go
+through it rather than re-deriving a link from the row and the vault.
+
+VPN surfaces compose in `features/vpn`; `EngineIntakeCard` is the single intake surface
+and is mounted from both the Overview tab and the sing-box tab on purpose.
+
+Foldable sections are one system, not per-page state: the pure policy lives in
+`lib/disclosure.ts` (storage key, default-vs-stored resolution, pinned sections), the
+React binding + toolbar in `components/ui/Disclosure.tsx`, and `Card` opts in with one
+`fold={{ id, defaultOpen, pinned, summary }}` prop. A folded card renders no body at
+all (no hidden pollers), and its folded header must state something true about what is
+inside — real counts or an honest "not checked yet", never a placeholder.
 
 ## Dependency rules
 

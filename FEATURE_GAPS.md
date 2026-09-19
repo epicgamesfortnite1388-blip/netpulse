@@ -216,7 +216,7 @@ code, 4 intentional patterns documented with `eslint-disable` + justification co
 | Kill switch enforcement | requires per-platform firewall/rule plumbing (Windows via WireGuard service block rules) | Settings toggle disabled with explanation; `killSwitchActive` reflects real rules only |
 | Auto-connect on launch | not implemented; must not silently change a system's network state without explicit support work | Settings toggle disabled |
 | Elevated VPN connect from tests | test sessions are unelevated; real tunnel handshake requires an admin run | honest 403 `elevation_required` with engine's own error text |
-| SmartScreen reputation | binaries are signed but with a self-signed cert; reputation requires a CA/EV certificate | signature + tamper detection verified; SmartScreen `UnknownError` until a CA cert exists |
+| SmartScreen reputation | binaries are signed but with a self-signed cert; reputation requires a CA-issued certificate, and since 2023 such a key must live in FIPS 140-2 L2 hardware | exe/installer/uninstaller all signed + tamper detection verified (`class=selfsigned`); the token-free Azure Trusted Signing route is wired (`NETPULSE_SIGN_AZURE_*`) with `NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1` failing a release that is not `class=trusted` — SmartScreen still warns until a real certificate is provisioned |
 
 ## Known limitations (Working features with scope limits)
 
