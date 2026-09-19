@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
+import { runCommand } from '../src/util/exec';
+import { findSingBoxLaunch } from '../src/util/vpnDetect';
 import {
   buildSingboxConfig,
   materializeSingboxConfig,
@@ -97,6 +102,54 @@ describe('parseShadowsocksUri', () => {
     expect(parsed!.host).toBe('5.6.7.8');
     expect(parsed!.port).toBe(9999);
   });
+});
+
+/**
+ * An imported share link becomes a sing-box outbound, so it must use sing-box's
+ * field names — the v2ray-era `port` is a hard decode error (`unknown field
+ * "port"`), which made every imported link unable to start a core at all.
+ * Checked against the real binary below as well, not just the shape.
+ */
+describe('share-link outbounds use sing-box field names', () => {
+  const links: Array<[string, string, number, () => ReturnType<typeof parseVlessUri>]> = [
+    ['vless', 'vless://11111111-2222-3333-4444-555555555555@example.com:8443?security=tls#V', 8443, () => parseVlessUri('vless://11111111-2222-3333-4444-555555555555@example.com:8443?security=tls#V')],
+    ['vmess', 'vmess://x', 9443, () => parseVmessUri(`vmess://${Buffer.from(JSON.stringify({ v: '2', add: 'vm.example.com', port: '9443', id: 'u', net: 'ws' })).toString('base64')}`)],
+    ['trojan', 'trojan://pw@trojan.example.com:10443?sni=x#T', 10443, () => parseTrojanUri('trojan://pw@trojan.example.com:10443?sni=x#T')],
+    ['shadowsocks', 'ss://x', 11443, () => parseShadowsocksUri(`ss://${Buffer.from('aes-256-gcm:pw').toString('base64')}@ss.example.com:11443#S`)],
+  ];
+
+  it('names the port `server_port` and never the legacy `port` key', () => {
+    for (const [protocol, label, port, parse] of links) {
+      const parsed = parse();
+      expect(parsed, `${protocol} failed to parse: ${label}`).not.toBeNull();
+      expect(parsed!.port).toBe(port);
+      expect(parsed!.fields['server_port']).toBe(port);
+      expect('port' in parsed!.fields).toBe(false);
+    }
+  });
+
+  it('produces a config the real sing-box accepts, when one is installed', async () => {
+    const bin = await findSingBoxLaunch();
+    if (!bin) {
+      // Honest skip: no binary here means nothing to check it against.
+      expect(bin).toBeNull();
+      return;
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-sbcheck-'));
+    try {
+      for (const [protocol, , port, parse] of links) {
+        const parsed = parse()!;
+        const doc = buildSingboxConfig(parsed.fields, { mixedPort: 2080 });
+        const file = path.join(dir, `${protocol}.json`);
+        fs.writeFileSync(file, materializeSingboxConfig(JSON.stringify(doc), 'SECRET'), { mode: 0o600 });
+        const res = await runCommand(bin, ['check', '-c', file], { timeoutMs: 15_000 });
+        expect(res.code, `${protocol} config rejected: ${res.stderr || res.stdout}`).toBe(0);
+        expect(port).toBeGreaterThan(0);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe('buildSingboxConfig', () => {

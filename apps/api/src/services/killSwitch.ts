@@ -154,12 +154,38 @@ export class KillSwitchService {
    */
   arm(input: KillSwitchArmInput): KillSwitchStatus {
     const mode = input.mode ?? 'proxy';
-    this.hold = { previousProxy: input.previousProxy, label: input.label, mode };
+    // The value to hand back is ALWAYS the one captured before the block. A
+    // re-arm after a drop (the watchdog healing a capture) reads the CURRENT
+    // system proxy — which, while we are blocking, is the sink WE wrote — so
+    // adopting the caller's reading would both lose the user's setting and
+    // make the sink the thing that gets "restored" later, leaving the machine
+    // pointed at a dead port with nothing left to explain why.
+    const callerReadsOurSink = normalizeProxyValue(input.previousProxy) === KILL_SWITCH_SINK;
+    const previousProxy =
+      (this.hold != null && (callerReadsOurSink || this.sinkApplied)) || (this.hold == null && callerReadsOurSink)
+        ? (this.hold?.previousProxy ?? null)
+        : input.previousProxy;
+    // Claim the hold, but only keep it if the recovery record was persisted:
+    // that record is what undoes the handoff after a crash, so a failed write
+    // means the hold is not real. Rolling back keeps `status().armed` honest —
+    // a caller that swallows this error must never be reading `armed: true`.
+    const before = { hold: this.hold, blockingAt: this.blockingAt, blockReason: this.blockReason, since: this.since };
+    this.hold = { previousProxy, label: input.label, mode };
     this.blockingAt = null;
     this.blockReason = null;
     this.since = Date.now();
     this.lastError = null;
-    this.deps.saveHold?.({ previousProxy: input.previousProxy, label: input.label, blocking: false });
+    try {
+      this.deps.saveHold?.({ previousProxy, label: input.label, blocking: false });
+    } catch (err) {
+      this.hold = before.hold;
+      this.blockingAt = before.blockingAt;
+      this.blockReason = before.blockReason;
+      this.since = before.since;
+      this.lastError = `kill-switch hold could not be persisted: ${err instanceof Error ? err.message : String(err)}`;
+      this.deps.event?.('error', this.lastError);
+      throw new Error(this.lastError);
+    }
     if (mode === 'route' && this.sinkApplied) {
       // Re-arm after a drop: the sink is still applied from the previous drop
       // and the TUN device now owns the route again — proxy-aware apps would

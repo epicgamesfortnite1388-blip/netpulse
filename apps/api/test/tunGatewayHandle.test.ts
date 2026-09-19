@@ -10,12 +10,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *      default route whatever the status says).
  *   3. A device death while capturing reaches the kill-switch callback; a
  *      device WE stopped does not, because that is not a drop.
+ *   4. A verified capture whose kill-switch hold could NOT be armed is
+ *      `unguarded`, never `active`: the device stays up (traffic really is
+ *      flowing through it), but the status must not promise the guarantee the
+ *      machine does not have.
  */
 
 const h = vi.hoisted(() => ({
   refusal: null as string | null,
   singbox: 'C:/fake/sing-box.exe' as string | null,
   startGateway: vi.fn(),
+  /** Every fake device the mocked gateway hands out, in start order. */
+  devices: [] as Array<{ fireClose: (code: number | null) => void; cleanup: () => void }>,
 }));
 
 vi.mock('../src/services/proxyCores', async (importOriginal) => {
@@ -78,12 +84,13 @@ function setup(overrides: {
 beforeEach(() => {
   h.refusal = null;
   h.singbox = 'C:/fake/sing-box.exe';
+  h.devices = [];
   h.startGateway.mockReset();
-  h.startGateway.mockImplementation(async () => ({
-    ok: true,
-    gatewayPort: GATEWAY_PORT,
-    run: fakeDevice().run,
-  }));
+  h.startGateway.mockImplementation(async () => {
+    const device = fakeDevice();
+    h.devices.push(device);
+    return { ok: true, gatewayPort: GATEWAY_PORT, run: device.run };
+  });
 });
 
 describe('TunGatewayHandle', () => {
@@ -97,6 +104,7 @@ describe('TunGatewayHandle', () => {
       tunError: h.refusal,
       tunBlockedBy: 'admin',
       tunGatewayPort: null,
+      tunWatchdog: { rearming: false, autoAttempts: 0, maxAutoAttempts: 1, lastError: null },
     });
     expect(events.at(-1)).toEqual({ kind: 'degraded', error: h.refusal, blockedBy: 'admin' });
   });
@@ -139,6 +147,7 @@ describe('TunGatewayHandle', () => {
       tunError: null,
       tunBlockedBy: null,
       tunGatewayPort: GATEWAY_PORT,
+      tunWatchdog: { rearming: false, autoAttempts: 0, maxAutoAttempts: 1, lastError: null },
     });
     expect(arm).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.kind)).toEqual(['requested', 'active']);
@@ -185,41 +194,117 @@ describe('TunGatewayHandle', () => {
     expect(handle.status().tunError).toBe('TUN gateway did not become ready in 12000ms');
   });
 
-  it('hands a device death to the drop callback, and withdraws capture', async () => {
+  it('reports `unguarded` when the hold refuses to arm, and keeps the capture up', async () => {
     const device = fakeDevice();
     h.startGateway.mockImplementation(async () => ({ ok: true, gatewayPort: GATEWAY_PORT, run: device.run }));
-    const { handle, events, dropped } = setup();
+    const { handle, events } = setup({
+      opts: { armRouteMode: () => 'the kill switch is on, but no kill-switch service is wired into this tunnel' },
+    });
+
+    // Still a capture: traffic IS flowing, so the caller must not be told the
+    // start failed and must not tear the engine down.
+    await expect(handle.start()).resolves.toBe(true);
+    expect(device.cleanup).not.toHaveBeenCalled();
+    expect(handle.status()).toEqual({
+      tun: 'unguarded',
+      tunError:
+        'TUN is capturing but the kill-switch hold could not be armed: the kill switch is on, but no kill-switch service is wired into this tunnel — a drop now falls back to the direct path instead of blocking',
+      tunBlockedBy: 'kill-switch',
+      tunGatewayPort: GATEWAY_PORT,
+      tunWatchdog: { rearming: false, autoAttempts: 0, maxAutoAttempts: 1, lastError: null },
+    });
+    // `active` is what other code branches on; an unarmed hold must not set it.
+    expect(handle.active).toBe(false);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'unguarded']);
+    expect(events.some((e) => e.kind === 'active')).toBe(false);
+    expect(events.at(-1)).toEqual({
+      kind: 'unguarded',
+      error: expect.stringMatching(/could not be armed/),
+    });
+  });
+
+  it('treats a plain refusal and a thrown arm error as the same unguarded state', async () => {
+    for (const armRouteMode of [
+      () => false as const,
+      () => {
+        throw new Error('kill-switch hold could not be persisted: EACCES');
+      },
+    ]) {
+      const device = fakeDevice();
+      h.startGateway.mockImplementation(async () => ({ ok: true, gatewayPort: GATEWAY_PORT, run: device.run }));
+      const { handle } = setup({ opts: { armRouteMode } });
+
+      await expect(handle.start()).resolves.toBe(true);
+      expect(device.cleanup).not.toHaveBeenCalled();
+      expect(handle.status().tun).toBe('unguarded');
+      expect(handle.status().tunBlockedBy).toBe('kill-switch');
+    }
+  });
+
+  it('carries the real reason when the hold throws, without inventing one', async () => {
+    const device = fakeDevice();
+    h.startGateway.mockImplementation(async () => ({ ok: true, gatewayPort: GATEWAY_PORT, run: device.run }));
+    const { handle } = setup({
+      opts: {
+        armRouteMode: () => {
+          throw new Error('kill-switch hold could not be persisted: EACCES');
+        },
+      },
+    });
+    await handle.start();
+    expect(handle.status().tunError).toContain('EACCES');
+    expect(handle.status().tunError).toMatch(/falls back to the direct path/);
+  });
+
+  it('still reports a drop when an unguarded capture dies', async () => {
+    // Self-healing off: this is the drop contract itself, unchanged.
+    const { handle, dropped } = setup({ opts: { armRouteMode: () => 'no hold', watchdog: null } });
     await handle.start();
 
-    device.fireClose(7);
+    h.devices[0]!.fireClose(3);
+
+    // The kill switch decides what happens (and, having no hold, will not
+    // block) — but the transition is still reported, never silently swallowed.
+    expect(dropped).toEqual(['TUN gateway exited unexpectedly (code 3)']);
+    expect(handle.status().tun).toBeNull();
+  });
+
+  it('hands a device death to the drop callback, and withdraws capture (watchdog off)', async () => {
+    const { handle, events, dropped } = setup({ opts: { watchdog: null } });
+    await handle.start();
+
+    h.devices[0]!.fireClose(7);
 
     expect(handle.status()).toEqual({
       tun: null,
       tunError: 'TUN gateway exited unexpectedly (code 7)',
       tunBlockedBy: null,
       tunGatewayPort: null,
+      tunWatchdog: { rearming: false, autoAttempts: 0, maxAutoAttempts: 0, lastError: null },
     });
     expect(dropped).toEqual(['TUN gateway exited unexpectedly (code 7)']);
-    const last = events.at(-1);
+    // The loss is announced before any handoff work, so nothing keeps claiming
+    // capture while the drop is being handled.
+    expect(events.at(-1)).toEqual({ kind: 'dropped', error: 'TUN gateway exited unexpectedly (code 7)' });
+    const last = await theDegradedEvent(events);
     expect(last).toEqual({ kind: 'degraded', error: 'TUN gateway exited unexpectedly (code 7)' });
     // A lost capture reports no cause it did not diagnose.
     expect(last && 'blockedBy' in last ? last.blockedBy : undefined).toBeUndefined();
-    expect(device.cleanup).toHaveBeenCalledTimes(1);
+    expect(h.devices[0]!.cleanup).toHaveBeenCalledTimes(1);
   });
 
   it('does not report a drop for a device it stopped itself', async () => {
-    const device = fakeDevice();
-    h.startGateway.mockImplementation(async () => ({ ok: true, gatewayPort: GATEWAY_PORT, run: device.run }));
     const { handle, events, dropped } = setup();
     await handle.start();
 
     handle.stop();
-    expect(device.cleanup).toHaveBeenCalledTimes(1);
+    expect(h.devices[0]!.cleanup).toHaveBeenCalledTimes(1);
     expect(handle.status().tun).toBeNull();
 
-    device.fireClose(0); // the kernel/OS closes it a moment later
+    h.devices[0]!.fireClose(0); // the kernel/OS closes it a moment later
     expect(dropped).toEqual([]);
     expect(events.at(-1)?.kind).toBe('active'); // no degraded event was added
+    expect(h.startGateway).toHaveBeenCalledTimes(1); // and nothing was re-armed
   });
 
   it('keeps one device at a time: a restart tears the previous one down first', async () => {
@@ -242,12 +327,177 @@ describe('TunGatewayHandle', () => {
   });
 
   it('stops being active when the relay proof is gone but never claims a cause', async () => {
-    const device = fakeDevice();
-    h.startGateway.mockImplementation(async () => ({ ok: true, gatewayPort: GATEWAY_PORT, run: device.run }));
-    const { handle } = setup();
+    const { handle } = setup({ opts: { watchdog: null } });
     await handle.start();
-    device.fireClose(null);
+    h.devices[0]!.fireClose(null);
     expect(handle.active).toBe(false);
     expect(handle.status().tunError).toMatch(/code \?/);
   });
 });
+
+describe('TunGatewayHandle self-healing watchdog', () => {
+  /**
+   * The watchdog contract: a dropped capture is healed ONCE, the drop is still
+   * handed to the kill switch first (fail closed), nothing is ever claimed as
+   * captured while it is being re-established, and a failed or flapping attempt
+   * ends with the drop standing — never with a respawn loop.
+   */
+
+  it('heals a dropped capture with one automatic re-arm, reporting `recovering` while it tries', async () => {
+    // Hold the re-arm's relay proof open so the in-flight state is observable.
+    let releaseVerify: (() => void) | null = null;
+    const verify = vi.fn(async () => {
+      if (h.devices.length === 2) await new Promise<void>((resolve) => { releaseVerify = resolve; });
+      return '206.71.158.29';
+    });
+    const { handle, events, dropped } = setup({ verify });
+    await handle.start();
+    const first = h.devices[0]!;
+
+    first.fireClose(9);
+    // The drop reaches the kill switch BEFORE anything is healed.
+    await vi.waitFor(() => expect(h.devices).toHaveLength(2));
+
+    expect(dropped).toEqual(['TUN gateway exited unexpectedly (code 9)']);
+    const mid = handle.status();
+    expect(mid.tun).toBe('recovering'); // never `active` while nothing is captured
+    expect(mid.tunError).toBe('TUN gateway exited unexpectedly (code 9)');
+    expect(mid.tunWatchdog).toMatchObject({ rearming: true, autoAttempts: 1, maxAutoAttempts: 1 });
+    expect(handle.active).toBe(false);
+    // The re-arm does not get the long manual budget: a user is already living
+    // on this capture, so it is bounded tighter.
+    expect(h.startGateway.mock.calls[1]?.[3]).toBe(8_000);
+
+    releaseVerify?.();
+    await verifyDone(events);
+
+    const healed = handle.status();
+    expect(healed.tun).toBe('active');
+    expect(healed.tunError).toBeNull();
+    expect(healed.tunWatchdog).toMatchObject({ rearming: false, autoAttempts: 1, lastError: null });
+    expect(handle.active).toBe(true);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'active', 'dropped', 'recovering', 'recovered']);
+    expect(events.at(-1)).toMatchObject({ kind: 'recovered', attempt: 1 });
+  });
+
+  it('gives up honestly when the re-arm does not restore capture', async () => {
+    const { handle, events, dropped } = setup();
+    await handle.start();
+    h.startGateway.mockImplementation(async () => ({ ok: false, error: 'TUN gateway did not become ready in 8000ms' }));
+
+    h.devices[0]!.fireClose(9);
+    await vi.waitFor(() => expect(handle.status().tunError).toMatch(/automatic re-arm/));
+
+    const status = handle.status();
+    expect(status.tun).toBeNull(); // the drop stands
+    expect(status.tunBlockedBy).toBe('relay');
+    expect(status.tunError).toContain('TUN capture was lost');
+    expect(status.tunError).toContain('did not become ready in 8000ms');
+    expect(status.tunWatchdog).toMatchObject({ rearming: false, autoAttempts: 1, lastError: expect.stringContaining('did not become ready') });
+    // The loss was reported to the kill switch exactly once, and the failed
+    // attempt is not repeated.
+    expect(dropped).toHaveLength(1);
+    expect(h.startGateway).toHaveBeenCalledTimes(2);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'active', 'dropped', 'recovering', 'degraded']);
+  });
+
+  it('does not re-arm a second time when the healed capture dies again', async () => {
+    const { handle, events, dropped } = setup();
+    await handle.start();
+
+    h.devices[0]!.fireClose(1);
+    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+    expect(h.devices).toHaveLength(2);
+
+    // A flapping gateway gets its one attempt and no more.
+    h.devices[1]!.fireClose(1);
+    await theDegradedEvent(events);
+
+    expect(handle.status().tun).toBeNull();
+    expect(h.startGateway).toHaveBeenCalledTimes(2);
+    expect(dropped).toHaveLength(2);
+    expect(events.map((e) => e.kind)).toEqual([
+      'requested',
+      'active',
+      'dropped',
+      'recovering',
+      'recovered',
+      'dropped',
+      'degraded',
+    ]);
+  });
+
+  it('refills the budget once a capture has held long enough to count as healthy', async () => {
+    const { handle } = setup({ opts: { watchdog: { healthyMs: 0 } } });
+    await handle.start();
+
+    h.devices[0]!.fireClose(1);
+    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+    h.devices[1]!.fireClose(1); // long enough by this policy
+    await vi.waitFor(() => expect(h.devices).toHaveLength(3));
+
+    expect(h.startGateway).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+  });
+
+  it('abandons the re-arm when the user stops the tunnel while the drop is being handled', async () => {
+    // The drop notification is what the watchdog waits on first (fail closed
+    // BEFORE healing): hold it open, stop the tunnel, then let it finish. A
+    // stop is the user's truth and must win over a heal in flight.
+    let releaseDrop: (() => void) | null = null;
+    const { handle, dropped } = setup({
+      opts: {
+        onCapturedDrop: async (reason) => {
+          dropped.push(reason);
+          await new Promise<void>((resolve) => { releaseDrop = resolve; });
+        },
+      },
+    });
+    await handle.start();
+
+    h.devices[0]!.fireClose(2);
+    await vi.waitFor(() => expect(releaseDrop).not.toBeNull());
+    handle.stop();
+    releaseDrop!();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(h.startGateway).toHaveBeenCalledTimes(1); // nothing was re-armed
+    expect(handle.status().tun).toBeNull();
+    expect(handle.active).toBe(false);
+  });
+
+  it('bounds the re-arm’s relay proof so it cannot hang in `recovering`', async () => {
+    const verify = vi.fn(async () => {
+      if (h.devices.length === 2) await new Promise<void>(() => undefined); // never settles
+      return '206.71.158.29';
+    });
+    const { handle } = setup({ verify, opts: { watchdog: { rearmDeadlineMs: 60 } } });
+    await handle.start();
+
+    h.devices[0]!.fireClose(1);
+    await vi.waitFor(() => expect(handle.status().tunError).toMatch(/no relay proof within 60ms/));
+
+    const status = handle.status();
+    expect(status.tun).toBeNull();
+    expect(status.tunBlockedBy).toBe('relay');
+    expect(status.tunWatchdog.rearming).toBe(false);
+    // Rule 2 still applies to a re-armed device: it is stopped, not left owning
+    // the default route on an unproven path.
+    expect(h.devices[1]!.cleanup).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Wait until the watchdog has reported the healed capture. */
+async function verifyDone(events: TunGatewayEvent[]): Promise<void> {
+  await vi.waitFor(() => expect(events.at(-1)?.kind).toBe('recovered'));
+}
+
+/**
+ * Wait for the drop to be reported as standing. The death path notifies the
+ * kill switch first (fail closed) before it concludes anything, so the event is
+ * asynchronous by design.
+ */
+async function theDegradedEvent(events: TunGatewayEvent[]): Promise<TunGatewayEvent | undefined> {
+  await vi.waitFor(() => expect(events.at(-1)?.kind).toBe('degraded'));
+  return events.at(-1);
+}

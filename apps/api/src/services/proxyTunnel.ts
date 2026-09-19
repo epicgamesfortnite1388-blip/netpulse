@@ -113,6 +113,12 @@ export interface KillSwitchHandle {
 
 export interface TunnelDeps {
   nodeVault: NodeSecretVault | null;
+  /**
+   * User preference for the kill switch. Needed because a hold the user asked
+   * for is never skipped in silence: with no `killSwitch` service wired, this
+   * is the only way to tell "the guard is missing" from "no guard was wanted".
+   */
+  killSwitchEnabled?(): boolean;
   /** GET https://.../cdn-cgi/trace through an HTTP proxy port; returns the body */
   fetchThroughPort(port: number, url: string, timeoutMs: number): Promise<string>;
   setSystemProxy(proxyOrNull: string | null): Promise<{ ok: boolean; error?: string }>;
@@ -279,17 +285,28 @@ export class ProxyTunnelService {
           // Route mode: the gateway owns the default route and the system proxy
           // was NOT touched, so without this hold a crash would withdraw the
           // TUN routes and traffic would silently fall back to direct.
-          try {
-            const prev = await this.deps.getSystemProxy();
-            this.deps.killSwitch?.arm({ previousProxy: prev.proxy, label: this.tunLabel(), mode: 'route' });
-          } catch (err) {
-            // The capture is real; only the fail-closed hold failed, and the
-            // kill switch's own status reports that.
-            this.deps.log.warn(`kill switch could not be armed in route mode: ${message(err)}`);
+          //
+          // Nothing is swallowed here: the handle turns a refusal, a reason or a
+          // thrown error into the `unguarded` state, so the UI learns about a
+          // capture that is up without its guarantee.
+          if (!this.deps.killSwitch) {
+            return this.deps.killSwitchEnabled?.() === true
+              ? 'the kill switch is on, but no kill-switch service is wired into this tunnel'
+              : true;
           }
+          const prev = await this.deps.getSystemProxy();
+          this.deps.killSwitch.arm({ previousProxy: prev.proxy, label: this.tunLabel(), mode: 'route' });
+          return true;
         },
-        onCapturedDrop: (reason) => {
-          void this.deps.killSwitch?.onTunnelDropped(reason).catch(() => undefined);
+        onCapturedDrop: async (reason) => {
+          // AWAITED (the watchdog heals only after this settles): the block has
+          // to be in place before a re-armed capture is claimed, otherwise the
+          // status would say `active` over a machine that is still open.
+          try {
+            await this.deps.killSwitch?.onTunnelDropped(reason);
+          } catch {
+            // best effort — the watchdog's own deadline bounds this path
+          }
         },
         onState: (event) => this.onTunState(event),
       },
@@ -317,8 +334,43 @@ export class ProxyTunnelService {
       this.deps.publish('tunnel:tun_active', { nodeId, exitIp: event.exitIp });
       return;
     }
+    if (event.kind === 'dropped') {
+      // The capture is gone as of this event (the status above already stopped
+      // claiming it); the kill-switch handoff and the watchdog follow.
+      this.deps.log.warn(`TUN capture lost: ${event.error}`);
+      this.deps.publish('tunnel:tun_dropped', { nodeId, error: event.error });
+      return;
+    }
+    if (event.kind === 'recovering') {
+      // The capture is LOST at this moment (the drop already reached the kill
+      // switch); this event says the watchdog is re-establishing it, and the
+      // status never claims capture while it is true.
+      this.deps.log.warn(`TUN capture lost (${event.error}) — attempting the automatic re-arm ${event.attempt}/${event.maxAttempts}`);
+      this.deps.publish('tunnel:tun_recovering', {
+        nodeId,
+        error: event.error,
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+      });
+      return;
+    }
+    if (event.kind === 'recovered') {
+      this.deps.log.info(`TUN capture recovered automatically (exit ${event.exitIp}) after: ${event.afterError}`);
+      this.deps.publish('tunnel:tun_recovered', {
+        nodeId,
+        exitIp: event.exitIp,
+        attempt: event.attempt,
+        afterError: event.afterError,
+      });
+      return;
+    }
+    if (event.kind === 'unguarded') {
+      this.deps.log.warn(`TUN capture is up without its kill-switch hold: ${event.error}`);
+      return;
+    }
     if (event.kind === 'degraded') {
       // A lost capture has no diagnosed cause, so it must not claim one.
+      this.deps.log.warn(`TUN capture is not active: ${event.error}${event.blockedBy ? ` (blocked by ${event.blockedBy})` : ''}`);
       this.deps.publish(
         'tunnel:tun_degraded',
         event.blockedBy ? { nodeId, error: event.error, blockedBy: event.blockedBy } : { nodeId, error: event.error },

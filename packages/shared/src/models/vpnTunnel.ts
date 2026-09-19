@@ -79,27 +79,61 @@ export interface ProxyTunnelStatus {
    *
    *   `tun: 'active'`    — gateway verified: traffic through the TUN device
    *                        provably reached the internet (real trace through
-   *                        the gateway, not a device-up check)
+   *                        the gateway, not a device-up check) AND the hold
+   *                        that decides what happens on a drop is armed
+   *   `tun: 'unguarded'` — capturing, but the fail-closed hold could not be
+   *                        armed. Traffic really is flowing through the device;
+   *                        what is missing is the guarantee that a drop blocks
+   *                        instead of falling back to the direct path. Never
+   *                        report this as `active`: that would claim protection
+   *                        the machine does not have
    *   `tun: 'requested'` — asked for but not (yet) verified; the core may still
    *                        be starting or may have failed — see `tunError`
+   *   `tun: 'recovering'` — capture was lost and the watchdog is attempting its
+   *                        ONE bounded automatic re-arm. Nothing is captured
+   *                        while this is the state: the drop was already handed
+   *                        to the kill switch (fail closed first), and this says
+   *                        the app is trying to heal it, not that it is up
    *   `tun: null`        — proxy-only mode (system-proxy handoff, no route capture)
    */
-  tun?: 'requested' | 'active' | null;
+  tun?: 'requested' | 'recovering' | 'active' | 'unguarded' | null;
   /** Why TUN did not come up (elevation declined, no sing-box, device error). */
   tunError?: string | null;
   /**
    * What blocked TUN, as a stable code the UI can act on:
-   *   `admin` — the process lacks administrator rights (offer the elevation flow)
-   *   `core`  — no sing-box binary to act as the gateway (offer install)
-   *   `relay` — the gateway started but traffic never traversed the full path
-   *   null    — nothing blocked it (TUN active, or never requested)
+   *   `admin`        — lacks administrator rights (offer the elevation flow)
+   *   `core`         — no sing-box binary to act as the gateway (offer install)
+   *   `relay`        — the gateway started but traffic never traversed the full path
+   *   `kill-switch`  — the capture is up but the hold that blocks a drop could
+   *                    not be armed (fix the cause, or turn the switch off and
+   *                    accept that a drop falls back to direct)
+   *   null           — nothing blocked it (TUN active, or never requested)
    *
    * The UI must never string-match `tunError` to decide what to offer: the
    * message is for reading, this code is for acting.
    */
-  tunBlockedBy?: 'admin' | 'core' | 'relay' | null;
+  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | null;
   /** The loopback HTTP port of the TUN gateway (its own verified proxy inbound). */
   tunGatewayPort?: number | null;
+  /**
+   * What the capture watchdog has done (it heals a dropped gateway once, then
+   * lets the drop stand). Present so a recovery is visible AFTER the fact — the
+   * status returns to `active`, and without this nothing would say the app had
+   * to rebuild the capture or that it tried and failed.
+   */
+  tunWatchdog?: TunWatchdogState | null;
+}
+
+/** Automatic-recovery accounting for a dropped TUN capture. */
+export interface TunWatchdogState {
+  /** re-establishing capture right now (never `active` while true) */
+  rearming: boolean;
+  /** automatic re-arms used in this budget */
+  autoAttempts: number;
+  /** how many the budget allows before a drop simply stands */
+  maxAutoAttempts: number;
+  /** why the last automatic attempt did NOT restore capture (null when it did) */
+  lastError: string | null;
 }
 
 /* ------------------------------ discovery run ----------------------------- */

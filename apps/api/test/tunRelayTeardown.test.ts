@@ -191,6 +191,41 @@ describe('TUN gateway relay verification', () => {
     expect(s.tun).toBe('active');
   });
 
+  it('reports `unguarded` — not `active` — when the hold could not be armed over a live capture', async () => {
+    // The kill switch is ON (the user asked for the guarantee) but no service is
+    // wired to provide it. The capture is verified and stays up; the STATUS must
+    // say the guarantee is missing, because a drop would now fall back to the
+    // direct path. This is the case that used to be a log line and nothing else.
+    const { deps, events } = makeDeps(async () => OK_TRACE);
+    delete (deps as { killSwitch?: unknown }).killSwitch;
+    deps.killSwitchEnabled = () => true;
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.start(node(), { systemProxy: false, preferredEngine: 'auto', tun: true });
+
+    expect(h.cleanup).not.toHaveBeenCalled(); // traffic really is flowing
+    expect(s.tun).toBe('unguarded');
+    expect(s.tunBlockedBy).toBe('kill-switch');
+    expect(s.tunError).toMatch(/could not be armed/);
+    expect(s.tunError).toMatch(/falls back to the direct path/);
+    // Every later read of the status keeps saying it, and `active` is never
+    // claimed for an unguarded capture.
+    expect(svc.getStatus().tun).toBe('unguarded');
+    expect(events.some((e) => e.startsWith('tunnel:tun_active'))).toBe(false);
+  });
+
+  it('does not invent a missing guard when the kill switch is off', async () => {
+    // Nothing was asked for, so nothing is missing: a capture with the
+    // preference off is simply active.
+    const { deps } = makeDeps(async () => OK_TRACE);
+    delete (deps as { killSwitch?: unknown }).killSwitch;
+    deps.killSwitchEnabled = () => false;
+    const svc = new ProxyTunnelService(deps);
+    const s = await svc.start(node(), { systemProxy: false, preferredEngine: 'auto', tun: true });
+
+    expect(s.tun).toBe('active');
+    expect(s.tunBlockedBy).toBeNull();
+  });
+
   it('treats a gateway death as a drop: capture withdrawn and the kill switch told', async () => {
     // The gateway owns the default route, so its death withdraws the TUN routes
     // the moment it happens. Reporting `active` afterwards (or leaving the
@@ -211,7 +246,15 @@ describe('TUN gateway relay verification', () => {
     // The engine hop may still be relaying: the tunnel degrades, it does not die.
     expect(after.state).toBe('active');
     expect(onDropped).toHaveBeenCalledWith('TUN gateway exited unexpectedly (code 9)');
-    expect(events.some((e) => e.startsWith('tunnel:tun_degraded') && e.includes('exited unexpectedly'))).toBe(true);
+    expect(events.some((e) => e.startsWith('tunnel:tun_dropped'))).toBe(true);
+
+    // Then the watchdog does its one bounded re-arm — through this service's own
+    // relay seam — and the capture is back, with the healing on the record.
+    await vi.waitFor(() => expect(svc.getStatus().tun).toBe('active'));
+    expect(events.some((e) => e.startsWith('tunnel:tun_recovering'))).toBe(true);
+    expect(events.some((e) => e.startsWith('tunnel:tun_recovered'))).toBe(true);
+    expect(svc.getStatus().tunWatchdog).toMatchObject({ autoAttempts: 1, rearming: false, lastError: null });
+    expect(h.cleanup).toHaveBeenCalledTimes(1); // the dead device was torn down
   });
 
   it('does not report a drop when the tunnel is deliberately stopped', async () => {

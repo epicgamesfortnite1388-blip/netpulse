@@ -21,22 +21,33 @@ interface Recorded {
   writes: Array<string | null>;
 }
 
-function makeService(opts: { enabled?: boolean; bypass?: BypassRuleSet | null; writeOk?: boolean; current?: string | null } = {}): {
+function makeService(opts: { enabled?: boolean; bypass?: BypassRuleSet | null; writeOk?: boolean; current?: string | null; live?: boolean } = {}): {
   ks: KillSwitchService;
   rec: Recorded;
+  /** what the OS currently points at (meaningful when `live` is set) */
+  current: () => string | null;
 } {
   const rec: Recorded = { writes: [] };
+  // `live` models the OS: a write actually lands, so a later read sees it.
+  // Without this the harness cannot express the state that broke restore —
+  // after a drop the system proxy IS the sink we just wrote.
+  let current = opts.current ?? null;
   const ks = new KillSwitchService({
     setSystemProxy: async (p) => {
       rec.writes.push(p);
-      return opts.writeOk === false ? { ok: false, error: 'registry write failed (ProxyEnable)' } : { ok: true };
+      if (opts.writeOk === false) return { ok: false, error: 'registry write failed (ProxyEnable)' };
+      if (opts.live) current = p;
+      return { ok: true };
     },
-    getSystemProxy: async () => ({ proxy: opts.current ?? null }),
+    getSystemProxy: async () => ({ proxy: opts.live ? current : (opts.current ?? null) }),
     enabled: () => opts.enabled ?? true,
     bypass: () => opts.bypass ?? null,
   });
-  return { ks, rec };
+  return { ks, rec, current: () => current };
 }
+
+/** The sink clear on a route-mode re-arm is fire-and-forget; let it land. */
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe('kill switch', () => {
   it('blocks non-bypassed traffic when an armed tunnel drops', async () => {
@@ -193,5 +204,63 @@ describe('kill switch route mode (TUN owns the default route)', () => {
     expect(ks.status().mode).toBe('proxy');
     await ks.onTunnelStopped();
     expect(rec.writes).toContain('corp-proxy:8080');
+  });
+});
+
+/**
+ * The drop → watchdog heal → stop cycle, with the OS modelled truthfully.
+ * Found live on the installed exe: after the watchdog re-armed a TUN capture,
+ * the system proxy was left pointing at the kill switch's own sink
+ * (`ProxyEnable=1, ProxyServer=127.0.0.1:9`) while the status reported
+ * `armed: false, blocking: false` — every proxy-aware app on the machine was
+ * cut off with nothing left to explain why.
+ */
+describe('kill switch survives a drop → heal → stop cycle', () => {
+  const live = (opts: { enabled: boolean; current?: string | null }) => makeService({ ...opts, live: true });
+
+  it('a healed route-mode capture never adopts our own sink as the user setting', async () => {
+    const { ks, rec, current } = live({ enabled: true });
+    ks.arm({ previousProxy: null, label: 'proxy tunnel', mode: 'route' });
+    await ks.onTunnelDropped('TUN gateway exited unexpectedly (code 1)');
+    expect(rec.writes).toEqual([KILL_SWITCH_SINK]);
+    expect(current()).toBe(KILL_SWITCH_SINK);
+
+    // The watchdog heals: the tunnel re-arms with whatever the app READS now,
+    // which is the sink this service wrote.
+    const status = ks.arm({ previousProxy: KILL_SWITCH_SINK, label: 'proxy tunnel', mode: 'route' });
+    await flush();
+
+    expect(status.previousProxy).toBeNull(); // the user's real setting, not the sink
+    expect(status.armed).toBe(true);
+    expect(status.mode).toBe('route');
+    expect(current()).toBeNull(); // the re-arm cleared the sink
+
+    await ks.onTunnelStopped();
+    expect(current()).toBeNull(); // stop leaves the machine as it found it
+    expect(ks.status().armed).toBe(false);
+    expect(rec.writes.at(-1)).toBeNull();
+  });
+
+  it('gives back the user\u2019s own proxy through the same cycle', async () => {
+    const { ks, rec, current } = live({ enabled: true, current: 'corp-proxy:8080' });
+    ks.arm({ previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', mode: 'route' });
+    await ks.onTunnelDropped('TUN gateway exited unexpectedly (code 1)');
+    const status = ks.arm({ previousProxy: KILL_SWITCH_SINK, label: 'proxy tunnel', mode: 'route' });
+    await flush();
+
+    expect(status.previousProxy).toBe('corp-proxy:8080');
+    expect(current()).toBe('corp-proxy:8080'); // the heal restored it, not the sink
+
+    await ks.onTunnelStopped();
+    expect(current()).toBe('corp-proxy:8080');
+    expect(rec.writes.at(-1)).toBe('corp-proxy:8080');
+    expect(rec.writes.filter((w) => w === KILL_SWITCH_SINK)).toHaveLength(1);
+  });
+
+  it('a first arm that reads our stale sink never makes it the value to restore', async () => {
+    // A previous session died while blocking: no hold in memory, sink on disk.
+    const { ks } = live({ enabled: true, current: KILL_SWITCH_SINK });
+    const status = ks.arm({ previousProxy: KILL_SWITCH_SINK, label: 'proxy tunnel', mode: 'route' });
+    expect(status.previousProxy).toBeNull();
   });
 });

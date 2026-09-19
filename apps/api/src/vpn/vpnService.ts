@@ -1,10 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 
+import { spawnCoreProcess, startupReason } from '../services/coreProcess';
 import { runCommand } from '../util/exec';
 
+import type { CoreProcess } from '../services/coreProcess';
 import type { ChildProcess } from 'node:child_process';
 import type {
   VpnProviderInfo,
@@ -852,18 +853,19 @@ export function parseVlessUri(uri: string): ParsedShareLink | null {
   try {
     const u = new URL(uri);
     if (u.protocol !== 'vless:') return null;
-    const fields: Record<string, unknown> = {
-      id: decodeURIComponent(u.username),
-      flow: u.searchParams.get('flow') ?? '',
-    };
+    const secret = decodeURIComponent(u.username);
     const security = u.searchParams.get('security') ?? 'none';
     const transport = u.searchParams.get('type') ?? 'tcp';
+    // The outbound IS what gets stored and handed to the core. sing-box names
+    // the port `server_port`; the legacy v2ray `port` key is a hard decode
+    // error ("unknown field \"port\""), so a link imported with it could never
+    // start a core at all.
     const outbound: Record<string, unknown> = {
       type: 'vless',
       server: u.hostname,
-      port: u.port ? Number(u.port) : 443,
-      uuid: fields.id,
-      flow: fields.flow,
+      server_port: u.port ? Number(u.port) : 443,
+      uuid: secret,
+      flow: u.searchParams.get('flow') ?? '',
     };
     if (security === 'tls' || security === 'reality') {
       outbound.tls = {
@@ -872,19 +874,15 @@ export function parseVlessUri(uri: string): ParsedShareLink | null {
         insecure: u.searchParams.get('allowInsecure') === '1',
         ...(security === 'reality' ? { reality: { enabled: true, public_key: u.searchParams.get('pbk') ?? '', short_id: u.searchParams.get('sid') ?? '' } } : {}),
       };
-      fields.tls = true;
     }
     if (transport === 'ws') {
       outbound.transport = { type: 'ws', path: u.searchParams.get('path') ?? '/', headers: { Host: u.searchParams.get('host') ?? u.hostname } };
-      fields.transport = 'ws';
     } else if (transport === 'grpc') {
       outbound.transport = { type: 'grpc', service_name: u.searchParams.get('serviceName') ?? '' };
-      fields.transport = 'grpc';
     } else if (transport === 'tcp' && (u.searchParams.get('headerType') === 'http')) {
       outbound.transport = { type: 'http' };
-      fields.transport = 'http';
     }
-    return { protocol: 'vless', host: u.hostname, port: outbound.port as number, fields: outbound, secret: decodeURIComponent(u.username) };
+    return { protocol: 'vless', host: u.hostname, port: outbound['server_port'] as number, fields: outbound, secret };
   } catch {
     return null;
   }
@@ -902,7 +900,7 @@ export function parseVmessUri(uri: string): ParsedShareLink | null {
     const outbound: Record<string, unknown> = {
       type: 'vmess',
       server: host,
-      port,
+      server_port: port,
       uuid: id,
       security: String(json['scy'] ?? json['security'] ?? 'auto'),
       alter_id: Number(json['aid'] ?? 0),
@@ -933,14 +931,14 @@ export function parseTrojanUri(uri: string): ParsedShareLink | null {
     const outbound: Record<string, unknown> = {
       type: 'trojan',
       server: u.hostname,
-      port: u.port ? Number(u.port) : 443,
+      server_port: u.port ? Number(u.port) : 443,
       password,
       tls: { enabled: true, server_name: u.searchParams.get('sni') ?? u.hostname, insecure: u.searchParams.get('allowInsecure') === '1' },
     };
     if ((u.searchParams.get('type') ?? 'tcp') === 'ws') {
       outbound.transport = { type: 'ws', path: u.searchParams.get('path') ?? '/' };
     }
-    return { protocol: 'trojan', host: u.hostname, port: outbound.port as number, fields: outbound, secret: password };
+    return { protocol: 'trojan', host: u.hostname, port: outbound['server_port'] as number, fields: outbound, secret: password };
   } catch {
     return null;
   }
@@ -980,7 +978,7 @@ export function parseShadowsocksUri(uri: string): ParsedShareLink | null {
       port = Number(p);
     }
     if (!method || !password || !host || !Number.isFinite(port)) return null;
-    const outbound: Record<string, unknown> = { type: 'shadowsocks', server: host, port, method, password };
+    const outbound: Record<string, unknown> = { type: 'shadowsocks', server: host, server_port: port, method, password };
     void name;
     return { protocol: 'shadowsocks', host, port, fields: outbound, secret: password };
   } catch {
@@ -1035,6 +1033,9 @@ export function materializeSingboxConfig(storedText: string, secret: string): st
 }
 
 export class SingboxProvider implements VpnProvider {
+  /** How long sing-box gets to answer on its mixed port before start fails. */
+  private static readonly READY_TIMEOUT_MS = 4_000;
+
   readonly info: VpnProviderInfo = {
     id: 'singbox',
     name: 'sing-box',
@@ -1049,7 +1050,12 @@ export class SingboxProvider implements VpnProvider {
   private available = false;
   /** Resolved sing-box binary (managed cores dir first, then PATH). */
   private launchPath: string | null = null;
-  private child: ChildProcess | null = null;
+  /**
+   * The running sing-box, owned by the shared core-process owner — spawn,
+   * readiness, output capture and teardown all live there, so this provider
+   * keeps only what is its own (the config, the vault, the connection record).
+   */
+  private run: CoreProcess | null = null;
   private connectedAt: number | null = null;
   private connectedProfile: ImportedProfile | null = null;
   private mixedPort: number;
@@ -1188,62 +1194,38 @@ export class SingboxProvider implements VpnProvider {
     }
     this.hooks?.event?.('info', `Starting sing-box client for "${profile.name}" (proxy mode, 127.0.0.1:${this.mixedPort})`, { profileId: profile.id });
 
-    const { spawn } = await import('node:child_process');
-    const child = spawn(this.launchPath ?? 'sing-box', ['run', '-c', realConfigPath, '-D', this.configDir], { windowsHide: true, shell: false });
-    let stderrBuf = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderrBuf = (stderrBuf + chunk.toString()).slice(-4_000); // bounded
+    // Spawn, readiness and teardown belong to the shared core-process owner.
+    // The materialized config is deliberately NOT handed over as `tempDir`:
+    // it lives in this provider's private dir (never %TEMP%), and
+    // `removeTempConfig()` owns its lifetime on both paths below.
+    const started = await spawnCoreProcess({
+      bin: this.launchPath ?? 'sing-box',
+      args: ['run', '-c', realConfigPath, '-D', this.configDir],
+      readyPort: this.mixedPort,
+      readyTimeoutMs: SingboxProvider.READY_TIMEOUT_MS,
+      label: 'sing-box',
+      timeoutMessage: (ms, output) =>
+        startupReason(output, `local proxy port ${this.mixedPort} never opened in ${ms}ms`),
     });
 
-    // success = process alive AND local proxy port answering after grace period
-    const ok = await new Promise<boolean>((resolve) => {
-      let settled = false;
-      const done = (value: boolean): void => {
-        if (settled) return;
-        settled = true;
-        clearInterval(poll);
-        clearTimeout(timer);
-        resolve(value);
-      };
-      const timer = setTimeout(() => done(false), 4_000);
-      child.on('error', () => done(false));
-      child.on('close', (code) => {
-        if (!this.child) {
-          this.lastError = code != null ? `sing-box exited with code ${code}` : 'sing-box exited immediately';
-        }
-        done(false);
-      });
-      // probe the local mixed port until the deadline
-      const probe = (): void => {
-        const sock = net.createConnection({ host: '127.0.0.1', port: this.mixedPort, timeout: 500 }, () => {
-          sock.destroy();
-          done(true);
-        });
-        sock.on('error', () => sock.destroy());
-        sock.on('timeout', () => sock.destroy());
-      };
-      const poll = setInterval(probe, 400);
-      timer.unref();
-      poll.unref();
-    }).catch(() => false);
-
-    if (!ok || child.exitCode != null) {
-      child.kill();
-      const reason = this.lastError ?? (stderrBuf.match(/FATAL|ERROR.*/)?.[0]?.slice(0, 200) ?? 'local proxy port never opened');
-      this.lastError = null;
+    if (!started.ok) {
+      // `started.error` is the owner's classified reason (port already taken,
+      // spawn failure, the core's own dying words, or our timeout wording).
+      const reason = started.error;
       this.removeTempConfig();
       if (connId) this.hooks?.updateConnection?.(connId, { status: 'error', error: reason, disconnectedAt: Date.now() });
       this.hooks?.event?.('error', `sing-box failed to start for "${profile.name}": ${reason}`, { profileId: profile.id });
       throw vpnError(502, 'singbox_failed', `sing-box did not come up: ${reason}`);
     }
 
-    this.child = child;
+    const child = started.process.child;
+    this.run = started.process;
     this.connectedAt = Date.now();
     this.connectedProfile = profile;
     this.removeTempConfig();
     child.on('close', () => {
-      if (this.child === child) {
-        this.child = null;
+      if (this.run?.child === child) {
+        this.run = null;
         this.connectedAt = null;
         this.connectedProfile = null;
         this.hooks?.event?.('warn', `sing-box process for "${profile.name}" exited unexpectedly`);
@@ -1265,13 +1247,9 @@ export class SingboxProvider implements VpnProvider {
     };
   }
 
-  private lastError: string | null = null;
-
   async disconnect(): Promise<VpnStatus> {
-    if (this.child) {
-      this.child.kill();
-      this.child = null;
-    }
+    this.run?.cleanup();
+    this.run = null;
     this.connectedAt = null;
     this.connectedProfile = null;
     this.removeTempConfig();
@@ -1297,7 +1275,7 @@ export class SingboxProvider implements VpnProvider {
 
   async status(): Promise<VpnStatus> {
     return {
-      connected: this.child != null,
+      connected: this.run != null,
       serverId: this.connectedProfile?.id ?? null,
       serverName: this.connectedProfile?.name ?? null,
       protocol: this.connectedProfile?.protocol ?? 'sing-box',

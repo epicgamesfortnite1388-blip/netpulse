@@ -73,6 +73,67 @@ describe('buildTunGatewayConfig', () => {
   });
 });
 
+/**
+ * The two defects a live TUN bring-up exposed (gateway up, route claimed, no
+ * relay) — both visible in the gateway core's own log:
+ *   `router: outbound not found: direct` on every private-address packet, and
+ *   a name resolution that depended on the system resolver the device had just
+ *   captured.
+ */
+describe('TUN gateway config the live run had to prove', () => {
+  type Cfg = {
+    dns?: { servers: Array<Record<string, unknown>>; final?: string };
+    outbounds: Array<{ type: string; tag: string }>;
+    route: { rules: Array<Record<string, unknown>>; final?: string; default_domain_resolver?: { server?: string } };
+  };
+
+  it('always defines the direct outbound its private-address rule points at', () => {
+    // Without bypass rules configured the rule used to point at a tag nothing
+    // defined: sing-box dropped those packets ("outbound not found: direct"),
+    // including the device's own DNS, so the gateway relayed nothing.
+    const cfg = buildTunGatewayConfig(1, 2) as unknown as Cfg;
+    expect(cfg.outbounds.some((o) => o.tag === 'direct' && o.type === 'direct')).toBe(true);
+    const privateRule = cfg.route.rules.find((r) => r['ip_is_private'] === true);
+    expect(privateRule?.['outbound']).toBe('direct');
+    // …and exactly once, even when bypass rules add their own direct traffic.
+    const withBypass = buildTunGatewayConfig(1, 2, { bypass: { domains: ['internal.corp'], ips: [], ports: [], lan: true } }) as unknown as Cfg;
+    expect(withBypass.outbounds.filter((o) => o.tag === 'direct').length).toBe(1);
+  });
+
+  it('resolves names itself, through the hop, never through the captured system resolver', () => {
+    const cfg = buildTunGatewayConfig(18931, 18932) as unknown as Cfg;
+    expect(cfg.dns?.servers.length).toBeGreaterThan(0);
+    // Every server rides the hop: a local/undetoured server would answer outside
+    // the tunnel and re-enter the device it was meant to serve.
+    for (const server of cfg.dns?.servers ?? []) {
+      expect(server['detour']).toBe('engine-hop');
+    }
+    expect(cfg.dns?.servers.some((s) => s['type'] === 'https')).toBe(true);
+    expect(cfg.route.default_domain_resolver?.server).toBe(cfg.dns?.final);
+    // The catch-all rides the hop too — never decided by outbound ordering.
+    expect(cfg.route.final).toBe('engine-hop');
+  });
+
+  it('sniffs first, then hijacks the device\'s DNS queries', () => {
+    const cfg = buildTunGatewayConfig(1, 2) as unknown as Cfg;
+    expect(cfg.route.rules[0]?.['action']).toBe('sniff');
+    const hijack = cfg.route.rules.findIndex((r) => r['action'] === 'hijack-dns');
+    expect(hijack).toBeGreaterThan(0);
+    // Hijacking before the private-address rule matters: that rule sends private
+    // destinations direct, which would take the queries out of the tunnel.
+    expect(hijack).toBeLessThan(cfg.route.rules.findIndex((r) => r['ip_is_private'] === true));
+  });
+
+  it('refuses a malformed resolver rather than emitting a broken one', () => {
+    const cfg = buildTunGatewayConfig(1, 2, { resolver: { doh: 'not a url', plainFallback: '1.1.1.1' } }) as unknown as Cfg;
+    expect(cfg.dns).toBeUndefined();
+    expect(cfg.route.default_domain_resolver).toBeUndefined();
+    // The rest of the gateway is still a working proxy path.
+    expect(cfg.route.final).toBe('engine-hop');
+    expect(cfg.route.rules.some((r) => r['ip_is_private'] === true)).toBe(true);
+  });
+});
+
 describe('tunGatewayStartRefusal', () => {
   it('gives an actionable reason on a non-elevated Windows sidecar (or null when elevated/allowed)', () => {
     const refusal = tunGatewayStartRefusal();
