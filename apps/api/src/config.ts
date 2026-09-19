@@ -43,7 +43,11 @@ const EnvSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:5173,http://127.0.0.1:5173'),
-  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(24 * 7),
+  // 12 h, not a week: the cookie authenticates EVERY mutating route from
+  // loopback, so a stolen or leaked value should stop being useful the same day
+  // it was minted. The web UI re-mints silently on 401, and the desktop app
+  // uses the bearer token instead, so nothing depends on a long-lived cookie.
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(12),
   NETPULSE_SAFE_MODE: z
     .string()
     .default('false')
