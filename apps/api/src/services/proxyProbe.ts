@@ -21,7 +21,8 @@ import path from 'node:path';
 
 import { redactSecrets } from '../util/redact';
 import tls from 'node:tls';
-import { spawn } from 'node:child_process';
+
+import { reservePort, spawnCoreProcess } from './coreProcess';
 
 import type { ParsedNodeConfig } from '@netpulse/shared';
 
@@ -100,17 +101,8 @@ export interface ProxyProbeResult {
 
 const PROBE_TIMEOUT_MS = 12_000;
 
-/** Reserve an ephemeral loopback port for the mixed inbound. */
-async function reservePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address() as net.AddressInfo;
-      srv.close(() => resolve(addr.port));
-    });
-  });
-}
+/** How long the core gets to open its mixed inbound before this is a failure. */
+const ENGINE_READY_TIMEOUT_MS = 5_000;
 
 /** HTTPS request through an HTTP CONNECT tunnel. */
 export function httpsViaConnectRef(
@@ -122,8 +114,15 @@ export function httpsViaConnectRef(
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const socket = net.connect({ host: '127.0.0.1', port: proxyPort });
+    let tlsSocket: tls.TLSSocket | null = null;
+    // One deadline for the whole exchange: socket timeouts reset on activity,
+    // so an endpoint that keeps dribbling bytes could otherwise hold the
+    // promise open well past the caller's budget.
+    const deadline = setTimeout(() => fail(new Error('probe timed out')), timeoutMs);
 
     const fail = (err: Error) => {
+      clearTimeout(deadline);
+      tlsSocket?.destroy();
       socket.destroy();
       reject(err);
     };
@@ -146,25 +145,26 @@ export function httpsViaConnectRef(
         return fail(new Error(`proxy CONNECT rejected: ${statusLine.slice(0, 80)}`));
       }
       // TLS upgrade through the tunnel
-      const tlsSocket = tls.connect({ socket, servername: targetHost }, () => {
-        const tlsVersion = tlsSocket.getProtocol() ?? null;
-        tlsSocket.write(
+      tlsSocket = tls.connect({ socket, servername: targetHost }, () => {
+        const tlsVersion = tlsSocket?.getProtocol() ?? null;
+        tlsSocket?.write(
           `GET / HTTP/1.1\r\nHost: ${targetHost}\r\nUser-Agent: NetPulse-ProxyProbe/1.0\r\nConnection: close\r\n\r\n`,
         );
         let resp = '';
-        tlsSocket.on('data', (d: Buffer) => {
+        tlsSocket?.on('data', (d: Buffer) => {
           resp += d.toString('latin1');
           const first = resp.split('\r\n\r\n')[0] ?? '';
           const statusMatch = first.match(/HTTP\/1\.[01] (\d{3})/);
           const headersEnd = resp.indexOf('\r\n\r\n');
           if (statusMatch && headersEnd >= 0) {
             const done = Date.now();
-            tlsSocket.destroy();
+            clearTimeout(deadline);
+            tlsSocket?.destroy();
             socket.destroy();
             resolve({ status: Number(statusMatch[1]), latencyMs: done - started, tlsVersion });
           }
         });
-        tlsSocket.on('error', (err: Error) => fail(err));
+        tlsSocket?.on('error', (err: Error) => fail(err));
       });
       tlsSocket.setTimeout(timeoutMs, () => fail(new Error('TLS through proxy timed out')));
       tlsSocket.on('error', (err: Error) => fail(err));
@@ -219,7 +219,10 @@ export async function proxyProbe(
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-probe-'));
   const cfgPath = path.join(tmpDir, 'probe.json');
   const bin = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
-  let child: ReturnType<typeof spawn> | null = null;
+  // The core process lifecycle (spawn → inbound answering → kill + temp-config
+  // removal) belongs to ./coreProcess; this probe owns only its config and its
+  // measurement.
+  let cleanup: (() => void) | null = null;
   try {
     // Port reservation is INSIDE the try: under heavy socket pressure the
     // kernel can refuse the ephemeral bind (ENOBUFS) — that must surface as a
@@ -233,35 +236,25 @@ export async function proxyProbe(
     };
     fs.writeFileSync(cfgPath, JSON.stringify(cfg));
 
-    child = spawn(bin, ['run', '-c', cfgPath], { windowsHide: true, shell: false, stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderrBuf = '';
-    child.stderr?.on('data', (c: Buffer) => { stderrBuf = (stderrBuf + c.toString()).slice(-2_000); });
-
-    const engineReady = await new Promise<boolean>((resolve) => {
-      let settled = false;
-      const done = (v: boolean) => { if (!settled) { settled = true; clearInterval(poll); clearTimeout(timer); resolve(v); } };
-      const timer = setTimeout(() => done(false), 5_000);
-      child!.on('error', (err: Error) => {
-        // ENOENT etc — engine missing
-        stderrBuf = `engine spawn failed: ${err.message}`;
-        done(false);
-      });
-      child!.on('close', () => done(false));
-      const poll = setInterval(() => {
-        const sock = net.createConnection({ host: '127.0.0.1', port: mixedPort, timeout: 400 }, () => { sock.destroy(); done(true); });
-        sock.on('error', () => sock.destroy());
-        sock.on('timeout', () => sock.destroy());
-      }, 300);
+    const core = await spawnCoreProcess({
+      bin,
+      args: ['run', '-c', cfgPath],
+      readyPort: mixedPort,
+      readyTimeoutMs: ENGINE_READY_TIMEOUT_MS,
+      tempDir: tmpDir,
+      label: 'sing-box',
     });
-
-    if (!engineReady) {
-      const missing = stderrBuf.includes('engine spawn failed') || stderrBuf.includes('ENOENT');
+    if (!core.ok) {
+      // A core that could not be EXECUTED is missing (or blocked), which the UI
+      // answers with an install offer — never a claim about the node.
+      const missing = core.failure === 'spawn_error';
       return {
         status: 'failed', latencyMs: null, totalMs: Date.now() - started, tlsVersion: null, httpStatus: null,
         failureKind: missing ? 'engine_unavailable' : 'engine_start_failed',
-        error: missing ? 'sing-box is not installed — proxy tests require it' : redactSecrets(stderrBuf.match(/FATAL|ERROR.*/)?.[0] ?? 'engine did not become ready'),
+        error: missing ? 'sing-box is not installed — proxy tests require it' : core.error,
       };
     }
+    cleanup = core.process.cleanup;
 
     const result = await httpsViaConnectRef(mixedPort, targetHost, targetPort, timeoutMs);
     return { status: 'done', latencyMs: result.latencyMs, totalMs: Date.now() - started, tlsVersion: result.tlsVersion, httpStatus: result.status, failureKind: null, error: null };
@@ -278,9 +271,8 @@ export async function proxyProbe(
       error: redactSecrets(msg),
     };
   } finally {
-    if (child) {
-      try { child.kill(); } catch { /* already dead */ }
-    }
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    // Kills the child and removes the temp config. On a refusal that never
+    // spawned anything the owner already removed the dir.
+    cleanup?.();
   }
 }

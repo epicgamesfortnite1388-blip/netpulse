@@ -7,9 +7,19 @@
  * authenticated protocols), tunnels a real HTTPS request through the core,
  * and reports the engine used alongside the measurement.
  */
-import type { ParsedNodeConfig, ProxyEngineId, ProxyEngineStatus } from '@netpulse/shared';
+import { PROXY_ENGINES, type ParsedNodeConfig, type ProxyEngineId, type ProxyEngineStatus } from '@netpulse/shared';
 
-import { configIsTestable, engineSupports, engineSupportsConfig, findEngineBinary, startCore, type CoreRun, type ResolvedEngine } from './proxyCores';
+import {
+  PROXY_ENGINE_ORDER,
+  configIsTestable,
+  engineArgs,
+  engineSupports,
+  engineSupportsConfig,
+  findEngineBinary,
+  startCore,
+  type CoreRun,
+  type ResolvedEngine,
+} from './proxyCores';
 
 /** HTTPS-through-CONNECT probe (shared with the legacy single-engine path). */
 const httpsViaConnect = (
@@ -43,7 +53,7 @@ export interface EngineProbeResult {
 }
 
 /** Failover order: user preference first, then the rest by capability. */
-const ALL_ENGINES: readonly ProxyEngineId[] = ['xray', 'sing-box', 'v2ray'];
+const ALL_ENGINES = PROXY_ENGINE_ORDER;
 
 export function engineOrder(preferred: 'auto' | ProxyEngineId): ProxyEngineId[] {
   const rest = ALL_ENGINES.filter((e) => e !== preferred);
@@ -58,15 +68,16 @@ export function proxyEngineStatus(preferred: 'auto' | ProxyEngineId): ProxyEngin
   for (const id of engineOrder(preferred)) {
     const bin = findEngineBinary(id);
     const available = bin !== null;
+    // Labels and protocol coverage come from the shared engine table so the UI
+    // and the backend can never advertise different capabilities.
+    const meta = PROXY_ENGINES.find((e) => e.id === id);
     engines.push({
       id,
-      label: id === 'xray' ? 'Xray-core' : id === 'sing-box' ? 'sing-box' : 'V2Ray-core',
+      label: meta?.label ?? id,
       available,
       path: bin,
       version: null, // version spawn is deferred to the health page probe
-      protocols: id === 'sing-box'
-        ? ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic']
-        : ['vless', 'vmess', 'trojan', 'shadowsocks'],
+      protocols: meta ? [...meta.protocols] : [],
     });
     if (effective === null && available) effective = id;
   }
@@ -143,7 +154,7 @@ export async function proxyProbeWithEngine(
   // the probe while another installed core may accept it. ----
   let lastFailure: { failure: 'engine_unavailable' | 'engine_start_failed'; error: string; engine: ProxyEngineId } | null = null;
   for (const chosen of usable) {
-    const engine: ResolvedEngine = { id: chosen.id, bin: chosen.path!, args: ['run'] };
+    const engine: ResolvedEngine = { id: chosen.id, bin: chosen.path!, args: engineArgs(chosen.id) };
     opts.onEngineResolved?.(chosen.id);
 
     const run = await startCore(engine, config, opts.secret);

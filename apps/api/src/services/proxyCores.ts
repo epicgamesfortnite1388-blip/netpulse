@@ -12,15 +12,16 @@
  * If a core binary is not installed the probe reports `engine_unavailable`
  * instead of a fake success.
  */
-import { spawn } from 'node:child_process';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
+import { reservePort, spawnCoreProcess, startupReason } from './coreProcess';
+
+import type { CoreProcess } from './coreProcess';
 import { isProcessElevated } from '../util/privileges';
-import { redactSecrets } from '../util/redact';
 
 import { bypassIsEmpty, type BypassRuleSet, type ParsedNodeConfig, type ProxyEngineId } from '@netpulse/shared';
 
@@ -675,10 +676,15 @@ export function findEngineBinary(id: ProxyEngineId): string | null {
   return null;
 }
 
-/* ============================ spawn + readiness ============================ */
+/* ============================ spawn + readiness ============================
+ * The process lifecycle itself (spawn, bounded output, readiness, cleanup)
+ * belongs to ./coreProcess — one owner for every local core. What stays here is
+ * what is genuinely node-specific: config generation, port reservation, the
+ * failure classification callers read, and the retry policy.
+ */
 
 export interface CoreRun {
-  child: ReturnType<typeof spawn>;
+  child: CoreProcess['child'];
   inboundPort: number;
   /** kill the core + delete the temp config (idempotent) */
   cleanup: () => void;
@@ -691,28 +697,6 @@ export type CoreStartResult =
   | { ok: true; run: CoreRun }
   | { ok: false; failure: EngineStartFailure; error: string };
 
-/**
- * The line from a core's output that actually explains a startup failure.
- * Cores are inconsistent about it, so look for the known phrasings before
- * falling back to the caller's message.
- */
-function startupReason(output: string, fallback: string): string {
-  const lines = output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const matched = lines.find((l) => /FATAL|failed to start|unknown cipher|ERROR/i.test(l));
-  return redactSecrets(matched ?? fallback);
-}
-
-/** Reserve an ephemeral loopback port for the inbound. */
-export function reservePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address() as net.AddressInfo;
-      srv.close(() => resolve(addr.port));
-    });
-  });
-}
 
 /* ================================ TUN mode ================================= */
 
@@ -750,10 +734,13 @@ export function reservePort(): Promise<number> {
  * verification trace (and any caller that wants a plain proxy path) can go
  * through the gateway without the TUN device.
  */
+/** Resolver every TUN gateway must own (see the DNS note in the builder). */
+export const TUN_GATEWAY_RESOLVER: DnsThroughTunnel = { doh: 'https://1.1.1.1/dns-query', plainFallback: '1.1.1.1' };
+
 export function buildTunGatewayConfig(
   upstreamPort: number,
   gatewayPort: number,
-  opts?: { bypass?: BypassRuleSet | null; upstream?: 'http' | 'socks'; excludeAddresses?: string[] },
+  opts?: { bypass?: BypassRuleSet | null; upstream?: 'http' | 'socks'; excludeAddresses?: string[]; resolver?: DnsThroughTunnel },
 ): Record<string, unknown> {
   // Addresses the TUN device must never capture. Without this the device claims
   // the default route and then swallows the engine hop's own dial to the node
@@ -762,24 +749,55 @@ export function buildTunGatewayConfig(
   // and no packet ever reaches the node: the tunnel relays nothing and the
   // machine loses DNS and connectivity while the app reports TUN as inactive.
   const excludeAddresses = [...new Set((opts?.excludeAddresses ?? []).filter((a) => a.length > 0))];
+  const upstreamTag = 'engine-hop';
+  const dnsTag = 'gw-dns';
   const outbounds: Record<string, unknown>[] = [
     {
       type: opts?.upstream === 'socks' ? 'socks' : 'http',
-      tag: 'engine-hop',
+      tag: upstreamTag,
       server: '127.0.0.1',
       server_port: upstreamPort,
     },
+    // 'direct' is ALWAYS defined. The private-address rule below points at this
+    // tag, and with no bypass rules configured it used to point at nothing:
+    // sing-box then logged `router: outbound not found: direct` for every such
+    // packet and dropped it — including the device's own DNS traffic — so the
+    // gateway came up, claimed the route, and relayed nothing.
+    { type: 'direct', tag: 'direct' },
   ];
+  const bypassRules = opts?.bypass && !bypassIsEmpty(opts.bypass) ? buildSingboxRouteRules(opts.bypass) : [];
+
+  // The gateway must resolve names ITSELF, through the hop. auto_route hands it
+  // the default route, so a system-resolver lookup is captured by the device it
+  // just created; raw UDP:53 cannot be relayed by a TCP-only upstream (an
+  // Aether SOCKS hop answers `request rejected`), which left the relay
+  // verification with no working DNS. Both servers detour through the hop, and
+  // there is deliberately NO `local` fallback: a local resolver would answer
+  // outside the tunnel and its own packets would re-enter the device.
+  const resolver = opts?.resolver ?? TUN_GATEWAY_RESOLVER;
+  const dnsConfig = singletonResolverConfig(resolver, dnsTag, upstreamTag);
   const route: Record<string, unknown> = {
     auto_detect_interface: true,
-    // The gateway's own dial to the engine hop must not loop back through the
-    // TUN device: loopback traffic is excluded by rule, not by luck.
-    rules: [{ ip_is_private: true, outbound: 'direct' }, ...(opts?.bypass && !bypassIsEmpty(opts.bypass) ? buildSingboxRouteRules(opts.bypass) : [])],
+    ...(dnsConfig ? { default_domain_resolver: { server: dnsTag } } : {}),
+    rules: [
+      // Sniff before the protocol rule: `protocol: dns` only matches once the
+      // router knows what the packet is.
+      { action: 'sniff' },
+      // Queries the device receives are answered by the resolver above instead
+      // of being forwarded as raw UDP:53 the hop cannot carry.
+      ...(dnsConfig ? [{ protocol: 'dns', action: 'hijack-dns' }] : []),
+      // The gateway's own dial to the engine hop must not loop back through the
+      // TUN device: loopback traffic is excluded by rule, not by luck.
+      { ip_is_private: true, outbound: 'direct' },
+      ...bypassRules,
+    ],
+    // Everything else rides the hop. Set explicitly so the default outbound is
+    // never decided by outbound ordering.
+    final: upstreamTag,
   };
-  const outbounds2 = [...outbounds];
-  if (opts?.bypass && !bypassIsEmpty(opts.bypass)) outbounds2.push({ type: 'direct', tag: 'direct' });
   return {
     log: { level: 'warn', timestamp: true },
+    ...(dnsConfig ? { dns: dnsConfig } : {}),
     inbounds: [
       {
         type: 'tun',
@@ -798,8 +816,29 @@ export function buildTunGatewayConfig(
         listen_port: gatewayPort,
       },
     ],
-    outbounds: outbounds2,
+    outbounds,
     route,
+  };
+}
+
+/**
+ * The gateway's own resolver: DoH first, classic UDP second, both riding the
+ * hop. Returns null for a malformed DoH URL rather than emitting a broken
+ * resolver (the same refusal `singboxDnsConfig` makes for hop configs).
+ */
+function singletonResolverConfig(resolver: DnsThroughTunnel, dnsTag: string, detourTag: string): Record<string, unknown> | null {
+  let dohHost: string;
+  try {
+    dohHost = new URL(resolver.doh).hostname;
+  } catch {
+    return null;
+  }
+  return {
+    servers: [
+      { type: 'https', tag: dnsTag, server: dohHost, detour: detourTag },
+      { type: 'udp', tag: `${dnsTag}-plain`, server: resolver.plainFallback, detour: detourTag },
+    ],
+    final: dnsTag,
   };
 }
 
@@ -873,60 +912,36 @@ export async function startTunGateway(
   const cfgPath = path.join(tmpDir, 'gateway.json');
   fs.writeFileSync(cfgPath, JSON.stringify(buildTunGatewayConfig(upstreamPort, gatewayPort, { bypass, upstream, excludeAddresses })));
 
-  const child = spawn(singboxBin, ['run', '-c', cfgPath], {
-    windowsHide: true,
-    shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
+  // Readiness here proves the PROCESS is up (its mixed inbound answers TCP); it
+  // does NOT prove the TUN device claimed the route — the tunnel service
+  // verifies the TUN path with a real trace through the gateway after start.
+  const started = await spawnCoreProcess({
+    bin: singboxBin,
+    args: ['run', '-c', cfgPath],
+    readyPort: gatewayPort,
+    readyTimeoutMs,
+    tempDir: tmpDir,
+    label: 'TUN gateway',
+    // The device is the one thing this start can be blocked on that a plain
+    // core start never is, so name it in the timeout text.
+    timeoutMessage: (ms, output) =>
+      startupReason(output, `TUN gateway did not become ready in ${ms}ms (device creation may be blocked)`),
   });
-  let stderrTail = '';
-  const capture = (c: Buffer) => { stderrTail = (stderrTail + c.toString()).slice(-2_000); };
-  child.stdout?.on('data', capture);
-  child.stderr?.on('data', capture);
+  if (!started.ok) return { ok: false, error: started.error };
 
-  const cleanup = () => {
-    try { child.kill(); } catch { /* already dead */ }
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  const { child, cleanup } = started.process;
+  return {
+    ok: true,
+    run: {
+      child,
+      inboundPort: gatewayPort,
+      cleanup,
+      get stderrTail() {
+        return started.process.output;
+      },
+    },
+    gatewayPort,
   };
-
-  return await new Promise((resolve) => {
-    let settled = false;
-    const finishOk = () => {
-      if (settled) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      resolve({ ok: true, run: { child, inboundPort: gatewayPort, cleanup, get stderrTail() { return stderrTail; } }, gatewayPort });
-    };
-    const finishFail = (error: string) => {
-      if (settled) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      cleanup();
-      resolve({ ok: false, error });
-    };
-
-    const timer = setTimeout(() => {
-      finishFail(startupReason(stderrTail, `TUN gateway did not become ready in ${readyTimeoutMs}ms (device creation may be blocked)`));
-    }, readyTimeoutMs);
-
-    child.once('error', (err: Error) => finishFail(`TUN gateway spawn failed: ${err.message}`));
-    child.once('close', (code) => {
-      if (!settled) finishFail(`TUN gateway exited during startup (code ${code ?? '?'}) — ${startupReason(stderrTail, 'no output')}`);
-    });
-
-    // Readiness: the gateway's mixed inbound answering TCP. Note this proves
-    // the PROCESS is up; it does NOT prove the TUN device claimed the route —
-    // the tunnel service verifies the TUN path with a real trace after start.
-    const poll = setInterval(() => {
-      const sock = net.createConnection({ host: '127.0.0.1', port: gatewayPort, timeout: 400 }, () => {
-        sock.destroy();
-        finishOk();
-      });
-      sock.on('error', () => sock.destroy());
-      sock.on('timeout', () => sock.destroy());
-    }, 300);
-  });
 }
 
 /**
@@ -974,77 +989,45 @@ export async function startCore(
     fs.writeFileSync(cfgPath, JSON.stringify(cfgJson));
   }
 
-  const child = spawn(engine.bin, [...engine.args, '-c', cfgPath], {
-    windowsHide: true,
-    shell: false,
-    // stdout too: xray logs config failures to stdout, so piping only stderr
-    // reduced "unknown cipher method: aes-256-cfb" to a bare exit code 23.
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const started = await spawnCoreProcess({
+    bin: engine.bin,
+    args: [...engine.args, '-c', cfgPath],
+    readyPort: inboundPort,
+    readyTimeoutMs,
+    tempDir: tmpDir,
+    label: 'core',
   });
 
-  let stderrTail = '';
-  const capture = (c: Buffer) => { stderrTail = (stderrTail + c.toString()).slice(-2_000); };
-  child.stdout?.on('data', capture);
-  child.stderr?.on('data', capture);
+  if (!started.ok) {
+    // A port taken between the reservation above and the spawn is not the
+    // node's or the core's fault: regenerate the config on a fresh port and
+    // try ONCE more. (This rule used to be dead code: the handler that was
+    // meant to catch it ran after the one that had already reported the
+    // failure, so every clash was blamed on the config.)
+    if (started.failure === 'port_clash' && !opts?._portRetried) {
+      return startCore(engine, config, secret, readyTimeoutMs, { ...opts, _portRetried: true });
+    }
+    // A binary that could not be EXECUTED is a missing/blocked core, which is
+    // the one failure the UI answers with an install offer — not a node result.
+    const failure: EngineStartFailure =
+      started.failure === 'spawn_error' || started.failure === 'port_clash'
+        ? 'engine_unavailable'
+        : 'engine_start_failed';
+    return { ok: false, failure, error: started.error };
+  }
 
-  const cleanup = () => {
-    try { child.kill(); } catch { /* already dead */ }
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  const { child, cleanup } = started.process;
+  return {
+    ok: true,
+    run: {
+      child,
+      inboundPort,
+      cleanup,
+      get stderrTail() {
+        return started.process.output;
+      },
+    },
   };
-
-  return await new Promise<CoreStartResult>((resolve) => {
-    let settled = false;
-    const finishOk = () => {
-      if (settled) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      resolve({
-        ok: true,
-        run: { child, inboundPort, cleanup, get stderrTail() { return stderrTail; } },
-      });
-    };
-    const finishFail = (failure: EngineStartFailure, error: string) => {
-      if (settled) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      cleanup();
-      resolve({ ok: false, failure, error });
-    };
-
-    const timer = setTimeout(() => {
-      finishFail('engine_start_failed', startupReason(stderrTail, `core did not become ready in ${readyTimeoutMs}ms`));
-    }, readyTimeoutMs);
-
-    child.once('error', (err: Error) => {
-      finishFail('engine_unavailable', `core spawn failed: ${err.message}`);
-    });
-    child.once('close', (code) => {
-      if (!settled) finishFail('engine_start_failed', `core exited during startup (code ${code ?? '?'}) — ${startupReason(stderrTail, 'no output')}`);
-    });
-
-    // TOCTOU on the reserved port: between reservePort() and the bind another
-    // process can take it and the core dies on startup. Retry ONCE with a
-    // fresh port instead of reporting a confusing engine failure.
-    child.once('close', function onEarlyClose(code) {
-      if (settled || opts?._portRetried || code !== 1) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      cleanup();
-      void startCore(engine, config, secret, readyTimeoutMs, { ...opts, _portRetried: true }).then(resolve);
-    });
-
-    const poll = setInterval(() => {
-      const sock = net.createConnection({ host: '127.0.0.1', port: inboundPort, timeout: 400 }, () => {
-        sock.destroy();
-        finishOk();
-      });
-      sock.on('error', () => sock.destroy());
-      sock.on('timeout', () => sock.destroy());
-    }, 300);
-  });
 }
 
 /**

@@ -9,7 +9,7 @@ import { z } from 'zod';
  * `<core> version` before the install is reported as success.
  */
 
-export const EngineIdSchema = z.enum(['xray', 'sing-box', 'v2ray']);
+export const EngineIdSchema = z.enum(['xray', 'sing-box', 'v2ray', 'hysteria']);
 
 export type EngineId = z.infer<typeof EngineIdSchema>;
 

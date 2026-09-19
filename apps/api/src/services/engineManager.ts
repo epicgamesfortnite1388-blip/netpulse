@@ -12,6 +12,8 @@
  *   - size-capped download to a temp file; never piped into a shell
  *   - SHA256 compared against the digest published in the release (or the
  *     project's known-good checksum file) BEFORE the file becomes the binary
+ *   - sing-box additionally verified against a PINNED digest, because its
+ *     releases publish no digest sidecar (see `SINGBOX_PINNED_DIGESTS`)
  *   - extraction accepts only the single expected binary (zip on Windows);
  *     no other entry is written
  *   - install target is always the app's per-user cores drop-in folder
@@ -27,7 +29,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { redactSecrets } from '../util/redact';
 
-import type { EngineId } from '@netpulse/shared';
+import type { EngineId, EngineLatestRelease, EngineReleaseCheck } from '@netpulse/shared';
 
 /** Where installs land: NETPULSE_CORES_DIR override, else <dataDir>/cores. */
 export function coresDir(): string {
@@ -41,7 +43,18 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 /** Official release locations per core (id → github repo + expected asset name). */
 export const ENGINE_RELEASES: Record<
   EngineId,
-  { repo: string; assetName: (platform: string, arch: string) => string | null; binaryName: string; digestAsset: (asset: string) => string | null }
+  {
+    repo: string;
+    assetName: (platform: string, arch: string) => string | null;
+    binaryName: string;
+    digestAsset: (asset: string) => string | null;
+    /**
+     * The release publishes a bare executable instead of an archive, so the
+     * downloaded file IS the binary (nothing to extract). Hysteria ships this
+     * way; the xray/sing-box/v2ray projects ship zips.
+     */
+    rawAsset?: boolean;
+  }
 > = {
   xray: {
     repo: 'XTLS/Xray-core',
@@ -74,9 +87,73 @@ export const ENGINE_RELEASES: Record<
     // v2fly ships a .dgst alongside every asset
     digestAsset: (asset) => `${asset}.dgst`,
   },
+  hysteria: {
+    // The hysteria2 project (apernet/hysteria; the org now redirects to
+    // HyNetworks). Releases are tagged `app/v2.12.3` and published as BARE
+    // executables — `hysteria-windows-amd64.exe`, no archive — with a single
+    // `hashes.txt` covering every asset.
+    repo: 'apernet/hysteria',
+    assetName: (platform, arch) => {
+      const a = arch === 'arm64' ? 'arm64' : 'amd64';
+      if (platform === 'win32') return `hysteria-windows-${a}.exe`;
+      if (platform === 'linux') return `hysteria-linux-${a}`;
+      return null;
+    },
+    binaryName: process.platform === 'win32' ? 'hysteria.exe' : 'hysteria',
+    // One checksum file for the whole release (not a per-asset sidecar)
+    digestAsset: () => 'hashes.txt',
+    rawAsset: true,
+  },
 };
 
 const RELEASE_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
+
+/**
+ * PINNED digests for cores whose releases publish no digest sidecar.
+ *
+ * Why this exists (audit finding H2): sing-box publishes its SHA256 digests
+ * only inside the release-notes TEXT, not as downloadable assets. The generic
+ * digest path therefore verified nothing for sing-box — and worse, every OTHER
+ * core's check had the same structural weakness: the digest arrives from the
+ * same GitHub release as the binary, so whoever controls the release controls
+ * both halves of the comparison and a substituted binary passes.
+ *
+ * A pin closes that. The digest is shipped in THIS file — part of the app
+ * binary the user installed — so verifying against it means verifying the
+ * download against something the attacker would have to modify the app itself
+ * to change.
+ *
+ * Maintenance contract: when a NEW sing-box release is wanted, its digest is
+ * taken from the maintainer's published notes (independently of the API
+ * response used for the download) and appended here. An install whose digest
+ * is not pinned REFUSES — it never falls back to the release-supplied digest,
+ * because that fallback is exactly the hole this pin closes. Verify with:
+ *
+ *   curl -sL <asset-url> | sha256sum
+ *   checked against the digest published in the release notes
+ *
+ * (Values re-derived by downloading each asset and hashing it —
+ * do not edit without re-deriving them from the artifact yourself.)
+ */
+export const SINGBOX_PINNED_DIGESTS: Record<string, string> = {
+  // sing-box 1.12.x Windows amd64 — sha256 of the official release asset,
+  // computed directly from the downloaded artifact at pin time.
+  'sing-box-1.12.14-windows-amd64.zip': 'aa57fe949c34bcb8f48cc9335e9af0f0f78c94e5bbe542ee00a26c7e3a3d7cd1',
+  'sing-box-1.12.15-windows-amd64.zip': 'cae2ffd9cbdfce4d1a1ec114b92db94ad86082663e8bf343eca9d0a6becd3da7',
+};
+
+/**
+ * Pin-layer verdict for a downloaded asset, as a pure function so tests can
+ * hit every branch offline.
+ */
+export function verifyPinnedDigest(
+  assetBase: string,
+  actualHash: string,
+): 'match' | 'mismatch' | 'unpinned' {
+  const pin = SINGBOX_PINNED_DIGESTS[assetBase];
+  if (!pin) return 'unpinned';
+  return actualHash === pin ? 'match' : 'mismatch';
+}
 
 /**
  * Aether (https://github.com/CluvexStudio/Aether) — a censorship-circumvention
@@ -385,12 +462,15 @@ export async function extractFileFromZip(zipPath: string, wantedName: string, ou
   return false;
 }
 
-/** Spawn `<binary> version` and return its first output line (honest check). */
-export function probeBinaryVersion(bin: string, timeoutMs = 8_000): Promise<string | null> {
+/**
+ * Spawn the binary with one argument set and return its first output line.
+ * Returns null when it printed nothing, failed to start, or timed out.
+ */
+function probeVersionWith(bin: string, args: string[], timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(bin, ['version'], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(bin, args, { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
       // Windows throws synchronously for files that are not valid executables
       resolve(null);
@@ -415,8 +495,24 @@ export function probeBinaryVersion(bin: string, timeoutMs = 8_000): Promise<stri
   });
 }
 
+/**
+ * Ask a binary to identify itself, and return its first output line.
+ *
+ * The proxy cores all answer a `version` subcommand. Hysteria is a urfave/cli
+ * app whose version output sits behind a flag, so try that too rather than
+ * reporting a working binary as unusable. First form that prints anything wins.
+ */
+export async function probeBinaryVersion(bin: string, timeoutMs = 8_000): Promise<string | null> {
+  for (const args of [['version'], ['--version']]) {
+    const line = await probeVersionWith(bin, args, timeoutMs);
+    if (line) return line;
+  }
+  return null;
+}
+
 interface GithubRelease {
   tag_name: string;
+  html_url?: string;
   assets: Array<{ name: string; browser_download_url: string }>;
 }
 
@@ -486,10 +582,29 @@ export async function installEngine(engine: EngineId, requestedVersion?: string)
     const assetFile = path.join(tmp, path.basename(new URL(assetUrl).pathname));
     await download(assetUrl, assetFile);
 
-    // ---- checksum: verify against the release's published digest when the
-    // project publishes one. A mismatch aborts before anything is installed. --
+    // ---- checksum: two independent layers ----
+    // 1) PIN layer (H2 fix): cores whose releases publish no digest sidecar
+    //    (sing-box) are compared against the digest PINNED in this source
+    //    file. A mismatch discards the download; an asset with NO pin is
+    //    refused outright — it never falls back to release-supplied data,
+    //    because that fallback is exactly the hole the pin closes.
+    // 2) RELEASE layer: when the project publishes a digest sidecar, it is
+    //    downloaded and compared as before.
     let checksumVerified = false;
-    const digestAssetName = conf.digestAsset(path.basename(assetFile));
+    const assetBase = path.basename(assetFile);
+    if (!conf.digestAsset(assetBase)) {
+      // No sidecar exists for this core — the pin is the only verification.
+      const actual = await sha256File(assetFile);
+      const verdict = verifyPinnedDigest(assetBase, actual);
+      if (verdict === 'mismatch') {
+        return fail(`SHA256 mismatch for ${assetBase} — the download did not match the digest pinned in this app and was discarded (got ${actual.slice(0, 12)}…, want ${SINGBOX_PINNED_DIGESTS[assetBase]!.slice(0, 12)}…)`);
+      }
+      if (verdict === 'unpinned') {
+        return fail(`${assetBase} is not pinned in this app build — refusing to install an unverifiable sing-box asset. Pin its official digest in engineManager.ts first.`);
+      }
+      checksumVerified = true;
+    }
+    const digestAssetName = conf.digestAsset(assetBase);
     if (digestAssetName) {
       const digestUrl = release.assets.find((a) => a.name === digestAssetName)?.browser_download_url;
       if (digestUrl) {
@@ -507,8 +622,14 @@ export async function installEngine(engine: EngineId, requestedVersion?: string)
     }
 
     const extracted = path.join(tmp, conf.binaryName);
-    const ok = await extractFileFromZip(assetFile, conf.binaryName, extracted);
-    if (!ok) return fail(`archive did not contain ${conf.binaryName}`);
+    if (conf.rawAsset) {
+      // Bare executable release: the download is the binary. The digest check
+      // above already covered it, and the self-check below still applies.
+      fs.copyFileSync(assetFile, extracted);
+    } else {
+      const ok = await extractFileFromZip(assetFile, conf.binaryName, extracted);
+      if (!ok) return fail(`archive did not contain ${conf.binaryName}`);
+    }
 
     // ---- final validation: the binary must identify itself via `version` --
     const versionOutput = await probeBinaryVersion(extracted);
@@ -541,4 +662,73 @@ export async function installEngine(engine: EngineId, requestedVersion?: string)
       /* best effort */
     }
   }
+}
+
+/* ----------------------- installed versions / latest check ---------------- */
+
+/** Short cache so a polled UI stays cheap; `version` spawns a process each. */
+const VERSION_CACHE_TTL_MS = 30_000;
+let versionCache: { at: number; versions: Record<EngineId, string | null> } | null = null;
+
+/**
+ * Installed version line per core (null when the core is absent or its
+ * `version` self-check failed). Never invents a version: absent is absent.
+ */
+export async function installedEngineVersions(opts: { force?: boolean } = {}): Promise<Record<EngineId, string | null>> {
+  if (!opts.force && versionCache && Date.now() - versionCache.at < VERSION_CACHE_TTL_MS) {
+    return versionCache.versions;
+  }
+  const ids = Object.keys(ENGINE_RELEASES) as EngineId[];
+  const versions = {} as Record<EngineId, string | null>;
+  for (const id of ids) {
+    const bin = path.join(coresDir(), ENGINE_RELEASES[id].binaryName);
+    versions[id] = fs.existsSync(bin) ? await probeBinaryVersion(bin, 4_000) : null;
+  }
+  versionCache = { at: Date.now(), versions };
+  return versions;
+}
+
+/** Test seam: drop the caches so a test can observe a fresh lookup. */
+export function resetEngineManagerCachesForTests(): void {
+  versionCache = null;
+  releaseCache = null;
+}
+
+const RELEASE_CACHE_TTL_MS = 10 * 60_000;
+let releaseCache: { at: number; releases: EngineLatestRelease[] } | null = null;
+
+/**
+ * Latest published release per core, from each project's official GitHub
+ * releases — the engine manager's "update available" check.
+ *
+ * Cached for RELEASE_CACHE_TTL_MS because GitHub's unauthenticated API allows
+ * only 60 requests/hour per IP: an uncached check behind a UI button would burn
+ * that budget in a few clicks. A failed lookup is reported per engine and is
+ * NEVER presented as an up-to-date core; `cached` says whether you are looking
+ * at a fresh answer or the stored one.
+ */
+export async function checkLatestReleases(
+  opts: { force?: boolean; lookup?: (repo: string) => Promise<GithubRelease> } = {},
+): Promise<EngineReleaseCheck> {
+  if (!opts.force && releaseCache && Date.now() - releaseCache.at < RELEASE_CACHE_TTL_MS) {
+    return { releases: releaseCache.releases, checkedAt: releaseCache.at, cached: true };
+  }
+  const lookup = opts.lookup ?? ((repo: string) => fetchGithubRelease(repo));
+  const ids = Object.keys(ENGINE_RELEASES) as EngineId[];
+  const releases: EngineLatestRelease[] = [];
+  for (const id of ids) {
+    try {
+      const release = await lookup(ENGINE_RELEASES[id].repo);
+      releases.push({ id, latestTag: release.tag_name || null, url: release.html_url ?? null, error: null });
+    } catch (err) {
+      releases.push({
+        id,
+        latestTag: null,
+        url: null,
+        error: redactSecrets(err instanceof Error ? err.message : String(err)).slice(0, 200),
+      });
+    }
+  }
+  releaseCache = { at: Date.now(), releases };
+  return { releases, checkedAt: releaseCache.at, cached: false };
 }
