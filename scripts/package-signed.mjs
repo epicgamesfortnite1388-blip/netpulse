@@ -11,8 +11,11 @@
  *
  * Result: the installed exe keeps its signature end-to-end.
  *
- * Env: same identity resolution as sign-release.mjs (thumbprint or PFX),
- * TAURI_NSIS_DIR for the NSIS bin dir, TAURI_TARGET_DIR for target/release.
+ * Env: same identity resolution as sign-release.mjs — see scripts/lib/signingIdentity.mjs
+ * (thumbprint, Azure Trusted Signing, or PFX). TAURI_NSIS_DIR for the NSIS bin
+ * dir, TAURI_TARGET_DIR for target/release.
+ * Set NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1 for a RELEASE: a chain Windows does
+ * not trust still leaves SmartScreen warning, so the build fails instead.
  * Usage: node scripts/package-signed.mjs
  */
 import fs from 'node:fs';
@@ -20,6 +23,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { installerFileName } from './lib/installerName.mjs';
+import { resolveSigningIdentity, SigningIdentityError, NO_IDENTITY_HINTS } from './lib/signingIdentity.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const targetDir = process.env.TAURI_TARGET_DIR ?? path.join(root, 'src-tauri', 'target', 'release');
@@ -35,27 +39,28 @@ const die = (m) => { console.error(m); process.exit(1); };
 for (const f of [appExe, nsi]) if (!fs.existsSync(f)) die(`package-signed: missing ${f}`);
 if (process.platform !== 'win32') die('package-signed: Windows only');
 
-// Resolve the signing identity once so BOTH child signers (sign-release for
-// exe/installer and sign-uninstall via NSIS uninstfinalize) see it. The
-// resolution mirrors sign-release.mjs: store thumbprint, else PFX + password
-// (env, else the user-only password file).
-const childEnv = { ...process.env };
-if (!childEnv.NETPULSE_SIGN_THUMBPRINT) {
-  const pfx = childEnv.NETPULSE_SIGN_PFX ?? path.join(root, 'certs', 'netpulse-release.pfx');
-  if (fs.existsSync(pfx)) {
-    childEnv.NETPULSE_SIGN_PFX = pfx;
-    if (!childEnv.NETPULSE_SIGN_PFX_PASSWORD) {
-      const pwFile = childEnv.NETPULSE_SIGN_PW_FILE ?? path.join(process.env.USERPROFILE ?? '', '.netpulse-signing-pw');
-      if (!fs.existsSync(pwFile)) die('package-signed: PFX found but no password (set NETPULSE_SIGN_PFX_PASSWORD)');
-      childEnv.NETPULSE_SIGN_PFX_PASSWORD = fs.readFileSync(pwFile, 'ascii').trim();
-    }
-  } else {
-    die('package-signed: no signing identity (thumbprint or PFX) — refusing to build a partially signed installer');
-  }
+// Resolve the signing identity ONCE (one owner: lib/signingIdentity.mjs) so both
+// child signers — sign-release for the exe/installer, and sign-uninstall via
+// NSIS `uninstfinalize` — see exactly the same resolved values. The Azure route
+// is handed to makensis' environment too, because the uninstaller is generated
+// during compilation and must be signed by the same profile.
+let resolved;
+try {
+  resolved = resolveSigningIdentity({ env: process.env, repoRoot: root, log: (m) => console.log(m) });
+} catch (err) {
+  if (!(err instanceof SigningIdentityError)) throw err;
+  die(`package-signed: ${err.message}\n${err.hints.join('\n')}`);
 }
+const childEnv = resolved.env;
+if (!resolved.route) die(`package-signed: refusing to build a partially signed installer.\n${NO_IDENTITY_HINTS.join('\n')}`);
+const trustedRequired = childEnv.NETPULSE_REQUIRE_TRUSTED_SIGNATURE === '1';
+if (trustedRequired) console.log('package-signed: a TRUSTED (CA-issued) signature is required for this build');
+// The signer owns classification and the SmartScreen verdict; this pipeline just
+// asks it to enforce trust when the build is a release.
+const signerFlags = trustedRequired ? ['--require-trusted'] : [];
 
 step('sign app exe (post-bundle-patch)');
-let r = spawnSync('node', [path.join(root, 'scripts', 'sign-release.mjs'), appExe], { encoding: 'utf8', stdio: 'inherit' });
+let r = spawnSync('node', [path.join(root, 'scripts', 'sign-release.mjs'), ...signerFlags, appExe], { encoding: 'utf8', stdio: 'inherit', env: childEnv });
 if (r.status !== 0) die('package-signed: exe signing failed');
 
 step('rebuild NSIS installer from generated script (embeds signed exe)');
@@ -101,7 +106,7 @@ console.log(`promoted: ${rawInstaller} -> ${outInstaller}`);
 if (!fs.existsSync(outInstaller)) die(`package-signed: installer not produced at ${outInstaller}`);
 
 step('sign installer');
-r = spawnSync('node', [path.join(root, 'scripts', 'sign-release.mjs'), outInstaller], { encoding: 'utf8', stdio: 'inherit' });
+r = spawnSync('node', [path.join(root, 'scripts', 'sign-release.mjs'), ...signerFlags, outInstaller], { encoding: 'utf8', stdio: 'inherit', env: childEnv });
 if (r.status !== 0) die('package-signed: installer signing failed');
 
 step('done');

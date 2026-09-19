@@ -113,13 +113,28 @@ All must be green before tagging a release.
 
 A complete Authenticode pipeline ships in the repo:
 
-- **`scripts/sign-release.mjs`** — signs any artifact with SHA-256 + DigiCert
-  RFC3161 timestamp. Identity resolution: `NETPULSE_SIGN_THUMBPRINT` (store
-  cert, e.g. CA-issued) → `NETPULSE_SIGN_PFX`(+`_PASSWORD`) → local dev cert
+- **`scripts/sign-release.mjs`** — signs any artifact with SHA-256 + an RFC3161
+  timestamp, then classifies what it produced. Identity resolution lives in one
+  owner, `scripts/lib/signingIdentity.mjs`: `NETPULSE_SIGN_THUMBPRINT` (store
+  cert) → **Azure Trusted Signing** (`NETPULSE_SIGN_AZURE_DLIB`) →
+  `NETPULSE_SIGN_PFX`(+`_PASSWORD`) → local dev cert
   (`certs/netpulse-release.pfx`, password in user-only
-  `%USERPROFILE%\.netpulse-signing-pw`). `--verify-only` checks existing
-  signatures without modifying files; `--optional` no-ops when no cert exists
-  (used by the Tauri hook so unsigned builds remain possible).
+  `%USERPROFILE%\.netpulse-signing-pw`). Flags: `--verify-only` (report, never
+  modify), `--optional` (no cert configured is not an error), `--require-trusted`
+  (a chain Windows does not trust is a FAILURE) — also settable as
+  `NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1` for a release build. A route that is
+  *configured but unusable* always fails, even under `--optional`: a broken
+  signing profile must never quietly ship an unsigned build.
+- **`scripts/lib/signatureTrust.mjs`** — the single owner of what a signature
+  *means*, shared by the signer, the package pipeline and the release gate so
+  they cannot disagree. Classes: `trusted` (chain ends in a root the OS knows —
+  the only class that can earn SmartScreen reputation), `selfsigned`,
+  `untrusted-root`, `bad`, `missing`. PowerShell 5.1 collapses
+  `CRYPT_E_UNTRUSTEDROOT` into `UnknownError`, so signer-is-its-own-issuer is
+  what identifies a self-signed build.
+  `scripts/signature-trust.test.mjs` (`npm run test:signing`, a `desktop:package`
+  gate) pins that contract: 48 checks, including that a missing/blank signature
+  never reads as trusted and that a broken Azure profile is refused.
 - **`scripts/package-signed.mjs`** — the post-build pass that makes the
   installed exe actually carry the signature. Tauri patches the exe with
   bundle type info **after** `beforeBundleCommand`, so signing there alone is
@@ -130,8 +145,9 @@ A complete Authenticode pipeline ships in the repo:
   generated `uninstall.exe` is signed during compilation — NSIS 3.11 does not
   append the path; the command must carry a `%1` placeholder (quotes escaped
   as `$"` in the define, `%` left bare — `$%` leaks a literal `$`). The
-  helper is `scripts/sign-uninstall.ps1` (same identity resolution).
-  Verified: installed `uninstall.exe` carries the release signature.
+  helper is `scripts/sign-uninstall.ps1` (same identity resolution — store,
+  Azure or PFX). Verified: installed `uninstall.exe` carries the release
+  signature.
 - **Build wiring** — `npm run desktop:build` = web + backend bundle +
   `tauri build`; signing happens **after** the build via
   `scripts/package-signed.mjs` (part of `npm run desktop:package`). Do NOT
@@ -140,14 +156,81 @@ A complete Authenticode pipeline ships in the repo:
   unsigned. `npm run desktop:sign` = sign current artifacts in place.
 - **Verification gate** — `NETPULSE_REQUIRE_SIGNATURE=1 npm run desktop:verify`
   fails the pipeline if any artifact lacks a valid signature (advisory by
-  default).
+  default). Add `--require-trusted-signature` (or
+  `NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1`) for a real release: a present but
+  untrusted chain is cryptographically fine and still leaves SmartScreen
+  warning, so it must fail the build rather than pass as "signed".
 - **Reality check (honest):** the local dev certificate is **self-signed**, so
-  Windows reports `UnknownError` ("root certificate not trusted") — the
-  signature and timestamp are cryptographically intact and **tampering is
-  detected** (`HashMismatch` on any byte flip, verified). SmartScreen
-  reputation still requires a **CA-issued** (ideally EV) code-signing cert:
-  buy one, import to the store, set `NETPULSE_SIGN_THUMBPRINT`, rebuild.
+  Windows reports `UnknownError` ("certificate chain terminated in a root
+  certificate which is not trusted by the trust provider") — the signature and
+  timestamp are cryptographically intact and **tampering is detected**
+  (`HashMismatch` on any byte flip, verified), but **SmartScreen warns on every
+  machine**, because SmartScreen decides on the trust chain, not on the presence
+  of a signature. `Get-AuthenticodeSignature` → the checksum is valid; the
+  publisher is not established. No build can change that except one signed by a
+  certificate whose root Windows already trusts.
 - PFX/keys are git-ignored (`certs/`, `*.pfx`). Never commit signing material.
+
+#### Getting a certificate that actually clears SmartScreen
+
+Since June 2023 a purchased OV/EV code-signing key must live in FIPS 140-2
+Level 2 hardware, so "buy a PFX and download it" is no longer an option. Two
+routes work; both sign through the pipeline above unchanged.
+
+**A. Azure Trusted Signing (no hardware token, cheapest to operate)** — the
+supported default for this repo:
+
+1. In Azure, create a **Trusted Signing account** and, inside it, a
+   **certificate profile** of type *Public Trust*. Identity validation (legal
+   name, address, phone) is required once per account and is what establishes
+   the publisher SmartScreen sees.
+2. Install the **Trusted Signing client tools** (provides
+   `Azure.CodeSigning.Dlib.dll`) and the **Windows SDK** (provides `signtool.exe`;
+   `findSigntool()` locates it under `Windows Kits\10\bin`).
+3. Authenticate the environment (`az login`, or a service principal with the
+   *Trusted Signing Certificate Profile Signer* role).
+4. Export and build:
+
+   ```bash
+   export NETPULSE_SIGN_AZURE_DLIB="C:/Tools/AzureSigning/Azure.CodeSigning.Dlib.dll"
+   export NETPULSE_SIGN_AZURE_ENDPOINT="https://eus.codesigning.azure.net/"
+   export NETPULSE_SIGN_AZURE_ACCOUNT="<account>"
+   export NETPULSE_SIGN_AZURE_PROFILE="<profile>"
+   export NETPULSE_SIGN_AZURE_CERTIFICATE="<certificate name>"
+   export NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1   # release: fail unless trusted
+   npm run desktop:package
+   ```
+
+   (Or point `NETPULSE_SIGN_AZURE_METADATA` at a hand-written metadata JSON.)
+   The exe, the installer **and** the NSIS-generated `uninstall.exe` are signed
+   by the same profile — `sign-uninstall.ps1` reads the resolved values straight
+   out of makensis' environment.
+
+**B. Classic CA certificate (OV/EV)** — for a CA that still issues file-based
+keys (e.g. via a cloud HSM/Key Vault): import the certificate into
+`Cert:\CurrentUser\My`, then set `NETPULSE_SIGN_THUMBPRINT` to its thumbprint
+and `NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1`.
+
+Verify a finished install (the same command the pipeline uses):
+
+```bash
+node scripts/sign-release.mjs --verify-only --require-trusted \
+  "$LOCALAPPDATA/NetPulse/netpulse-desktop.exe" \
+  "$LOCALAPPDATA/NetPulse/uninstall.exe"
+```
+
+`status=Valid class=trusted` is what clears SmartScreen. Anything else exits
+non-zero and prints the SmartScreen consequence verbatim.
+
+**Local-only workaround (not a release fix):** importing the self-signed dev
+cert into `Cert:\LocalMachine\Trusted Root Certification Authorities` stops the
+warning *on that machine only* — every other machine still sees an untrusted
+publisher, so it must never be presented as a signed release:
+
+```powershell
+Import-Certificate -FilePath certs/netpulse-release.cer `
+  -CertStoreLocation Cert:\LocalMachine\Root   # requires elevation
+```
 
 ### macOS notarization
 

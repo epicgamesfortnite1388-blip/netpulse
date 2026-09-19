@@ -21,9 +21,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // --require-signature: additionally verify the built exe carries an
-// Authenticode signature (set by desktop:package; cross-platform). When the
+// Authenticode signature (set by desktop:package; cross-platform).
+// --require-trusted-signature: additionally demand that the chain is TRUSTED
+// (CA-issued / Azure Trusted Signing), because an intact self-signed signature
+// still makes SmartScreen warn — `--require-signature` alone cannot tell them
+// apart. When the
 // env var NETPULSE_REQUIRE_SIGNATURE=1 is set instead, honor it too.
+const requireTrustedSignature =
+  process.argv.includes('--require-trusted-signature') || process.env.NETPULSE_REQUIRE_TRUSTED_SIGNATURE === '1';
 const requireSignature =
+  requireTrustedSignature ||
   process.argv.includes('--require-signature') || process.env.NETPULSE_REQUIRE_SIGNATURE === '1';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,18 +100,23 @@ if (requireSignature) {
         '-NoProfile',
         '-Command',
         `$s = Get-AuthenticodeSignature -LiteralPath '${appExe.replace(/'/g, "''")}'; ` +
-          `if ($s -and $s.SignerCertificate) { Write-Output ($s.Status.ToString() + '|' + $s.SignerCertificate.Subject) } else { Write-Output 'MISSING|' }`,
+          `if ($s -and $s.SignerCertificate) { Write-Output ($s.Status.ToString() + '|' + $s.SignerCertificate.Subject + '|' + $s.SignerCertificate.Issuer + '|' + $s.StatusMessage) } else { Write-Output 'MISSING||||' }`,
       ],
       { encoding: 'utf8' },
     );
     const out = (ps.stdout || '').trim();
-    const [status, subject] = out.split('|');
-    const ok = status === 'Valid' || status === 'UnknownError'; // self-signed chain reports UnknownError (intact, root not distributed)
+    const [status, subject, issuer, statusMessage] = out.split('|');
+    // One owner decides what this means; the gate must never call an untrusted
+    // root a pass, whatever the two scripts believe separately.
+    const { classifySignature, smartScreenReport } = await import('./lib/signatureTrust.mjs');
+    const trust = classifySignature({ status, subject, issuer, statusMessage });
+    const ok = requireTrustedSignature ? trust.trusted : trust.level !== 'missing' && trust.level !== 'bad';
     check(
-      'app exe authenticode signature',
+      requireTrustedSignature ? 'app exe signature is TRUSTED (CA-issued)' : 'app exe authenticode signature',
       ok,
-      `${status ?? 'none'}${subject ? ` — ${subject}` : ''}`,
+      `${status ?? 'none'}${subject ? ` — ${subject}` : ''}; ${trust.reason}`,
     );
+    if (!trust.trusted) console.log(`  ${smartScreenReport(trust.level)}`);
   }
 }
 

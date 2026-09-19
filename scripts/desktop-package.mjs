@@ -8,7 +8,8 @@
  *   3. desktop:verify --require-signature
  *   4. package-signed         (sign exe, rebuild NSIS with signed exe, sign installer)
  *   5. post-install bootstrap (NSIS first-launch markers)
- *   6. test:release           (distribution lifecycle tests)
+ *   6. test:signing           ("signed ≠ trusted" contract for the signer/gate)
+ *   7. test:release           (distribution lifecycle tests)
  *
  * Replaces the previous POSIX-only `ENV=x cmd` chain which broke under
  * cmd.exe ("NETPULSE_REQUIRE_SIGNATURE is not recognized").
@@ -47,6 +48,7 @@ const steps = [
       NP_CERT_STATUS: 'signed',
     },
   },
+  { name: 'test:signing', cmd: [process.execPath, [path.join(root, 'scripts', 'signature-trust.test.mjs')]] },
   { name: 'test:release', cmd: [process.execPath, [path.join(root, 'scripts', 'release-distribution.test.mjs')]] },
 ];
 

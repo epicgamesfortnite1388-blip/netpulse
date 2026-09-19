@@ -28,6 +28,7 @@
     "desktop:sign": "node scripts/sign-release.mjs",
     "e2e": "node scripts/e2e-desktop.mjs",
     "test:release": "node scripts/release-distribution.test.mjs",
+    "test:signing": "node scripts/signature-trust.test.mjs",
     "test:deploy": "node scripts/deploy-battery.mjs",
     "audit:ci": "bash scripts/audit-ci.sh",
     "audit:tabs": "node scripts/audit-tab-persistence.mjs",
