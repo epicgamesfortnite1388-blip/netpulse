@@ -1,7 +1,7 @@
 {
   "name": "netpulse",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "VPN & Network Intelligence Platform",
   "workspaces": [
     "packages/*",

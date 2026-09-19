@@ -524,8 +524,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     // Encrypted at-rest vault for node credentials — the engine-intake routes
     // rebuild a node's share link from it when promoting a node into a profile.
     nodeVault,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sourceScheduler: sourceScheduler as any,
+    sourceScheduler,
   };
   await vpn.initAll();
 
