@@ -83,7 +83,14 @@ export function VpnHistoryCard() {
   const quick = history?.quickConnect;
 
   return (
-    <Card className="mb-6">
+    <Card
+      className="mb-6"
+      fold={{
+        id: 'vpn-history',
+        defaultOpen: false,
+        summary: `${runs.length} scan${runs.length === 1 ? '' : 's'} · ${quick?.totalRuns ?? 0} quick connect${(quick?.totalRuns ?? 0) === 1 ? '' : 's'} · ${gateways.length} gateways remembered`,
+      }}
+    >
       <CardHeader
         title="VPN history"
         icon={<History size={15} />}
@@ -117,7 +124,7 @@ export function VpnHistoryCard() {
               ) : (
                 <div className="space-y-2.5">
                   {rollups.map((r) => (
-                    <div key={r.profile} className="rounded-xl border border-line bg-surface-2 p-3">
+                    <div key={r.profile} className="rounded-lg bg-surface-2/70 p-3">
                       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                         <span className="text-sm font-medium text-text">{SCAN_PROFILES[r.profile]?.label ?? r.profile}</span>
                         <span className="text-xs text-muted">

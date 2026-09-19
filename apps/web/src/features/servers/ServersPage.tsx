@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -14,6 +15,7 @@ import { StatusDot } from '@/components/ui/StatusDot';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
+import { serverCheckErrorMessage, serverCheckMessage } from '@/features/nodes/nodeActionPolicy';
 import { usePersistentId } from '@/lib/usePersistentState';
 import { fmtDateTime } from '@/lib/format';
 import { useWsTestProgress } from '@/lib/ws';
@@ -107,7 +109,14 @@ function RecommendationCard({ servers }: { servers: ServerRecord[] }) {
   }
 
   return (
-    <Card className="mb-4">
+    <Card
+      className="mb-4"
+      fold={{
+        id: 'smart-selection',
+        defaultOpen: false,
+        summary: result ? `${result.results.length} servers ranked` : 'not run yet — measures every enabled server',
+      }}
+    >
       <CardHeader
         title="Smart selection"
         subtitle="Measures every server and recommends the best one — weights: latency 25 · loss 20 · jitter 15 · download 15 · upload 10 · route 10 · load 5"
@@ -241,9 +250,13 @@ export default function ServersPage() {
           };
         });
       }
-      toast('ok', `Checked ${servers.find((s) => s.id === id)?.name ?? id}`);
+      // The message comes from the STORED sample (may be offline / degraded),
+      // not from the request having completed — same policy as node tests.
+      const m = serverCheckMessage(servers.find((s) => s.id === id)?.name ?? id, latest);
+      toast(m.tone, m.title, m.body);
     } catch (err) {
-      toast('error', 'Check failed', err instanceof Error ? err.message : undefined);
+      const m = serverCheckErrorMessage(err);
+      toast(m.tone, m.title, m.body);
     } finally {
       setCheckedIds((prev) => ({ ...prev, [id]: false }));
     }
@@ -266,7 +279,7 @@ export default function ServersPage() {
   };
 
   return (
-    <div>
+    <DisclosureScope name="servers">
       <PageHeader
         title="Servers"
         description="VPS, VPN and diagnostic endpoints. Health is measured periodically with ping, TCP, loss and jitter probes."
@@ -280,6 +293,8 @@ export default function ServersPage() {
           </div>
         }
       />
+
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       {serversQuery.isError && <ErrorState error={serversQuery.error} retry={() => void serversQuery.refetch()} />}
       {serversQuery.isLoading && <LoadingState label="Loading servers" />}
@@ -295,7 +310,10 @@ export default function ServersPage() {
       {servers.length > 0 && (
         <div className="space-y-4">
           <RecommendationCard servers={servers} />
-          <Card className={monitorRunning ? 'border-accent/40' : ''}>
+          <Card
+            className={monitorRunning ? 'border-accent/40' : ''}
+            fold={{ id: 'server-list', pinned: true, defaultOpen: true }}
+          >
             <CardHeader
               title={`${servers.length} servers`}
               subtitle={monitorRunning ? 'Monitoring active — samples refresh every 12 s' : 'Monitoring idle — samples refresh on demand'}
@@ -367,7 +385,7 @@ export default function ServersPage() {
           </Card>
         </div>
       )}
-    </div>
+    </DisclosureScope>
   );
 }
 

@@ -22,7 +22,15 @@ export function IranConnectivityWidget() {
   const connections = latest?.connections ?? [];
 
   return (
-    <Card>
+    <Card
+      fold={{
+        id: 'iran-widget',
+        defaultOpen: false,
+        summary: summary
+          ? `${summary.reachable}/${summary.total} reachable across ${connections.length} connection${connections.length === 1 ? '' : 's'}`
+          : 'no test run yet',
+      }}
+    >
       <CardHeader
         title="Iran connectivity"
         subtitle="Reachability across your connections"

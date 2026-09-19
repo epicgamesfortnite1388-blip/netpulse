@@ -27,6 +27,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { EmptyState } from '@/components/ui/States';
@@ -570,7 +571,7 @@ export default function LiveMapPage() {
   /* ------------------------------- rendering ------------------------------- */
 
   const content = (
-    <div className="space-y-5">
+    <DisclosureScope name="map" className="space-y-5">
       {/* status strip */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-xs text-muted">
@@ -628,6 +629,7 @@ export default function LiveMapPage() {
         </p>
       )}
       {notice && <p className="rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-warn">{notice}</p>}
+      <DisclosureToolbar className="justify-start" />
 
       {/* toolbar */}
       <Card>
@@ -697,7 +699,7 @@ export default function LiveMapPage() {
 
       {/* map + side panels */}
       <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden" fold={{ id: 'globe', pinned: true }}>
           <CardHeader
             title="Global network map"
             subtitle="Measured routes, real geography confidence, live latency"
@@ -753,9 +755,14 @@ export default function LiveMapPage() {
             <EmptyState icon={<Crosshair size={18} />} title="Select a target" message="Choose a target on the left (or below) to measure, trace and inspect its route." />
           )}
 
-          {/* target picker */}
-          <Card>
-            <CardHeader title="Targets" subtitle={`${targets.length} from DNS / gaming / Cloudflare / VPN / servers`} />
+          {/* target picker */}            <Card
+              fold={{
+                id: 'targets',
+                pinned: true,
+                summary: `${targets.length} target${targets.length === 1 ? '' : 's'} from DNS / gaming / Cloudflare / VPN / servers`,
+              }}
+            >
+              <CardHeader title="Targets" subtitle={`${targets.length} from DNS / gaming / Cloudflare / VPN / servers`} />
             <CardBody className="max-h-72 overflow-auto">
               {targetsQuery.isLoading && <p className="text-xs text-faint">Loading targets…</p>}
               <ul className="space-y-0.5">
@@ -795,7 +802,16 @@ export default function LiveMapPage() {
 
           {selectedObs && (
             <>
-              <Card>
+              <Card
+                fold={{
+                  id: 'destination',
+                  // Open: this panel is why a target was selected at all — a
+                  // folded default would hide where the pin actually is. The
+                  // folded header still carries the target and its status.
+                  defaultOpen: true,
+                  summary: `${selectedObs.target.name} · ${selectedObs.statusLabel}`,
+                }}
+              >
                 <CardHeader
                   title="Destination"
                   actions={<Badge tone={STATUS_TONE[selectedObs.status]}>{selectedObs.statusLabel}</Badge>}
@@ -865,7 +881,16 @@ export default function LiveMapPage() {
                 </CardBody>
               </Card>
 
-              <Card>
+              <Card
+                fold={{
+                  id: 'measurements',
+                  defaultOpen: true,
+                  summary:
+                    selectedObs.measurements.length === 0
+                      ? 'no probes ran — no port configured for this target'
+                      : `${selectedObs.measurements.length} method${selectedObs.measurements.length === 1 ? '' : 's'} measured`,
+                }}
+              >
                 <CardHeader title="Measurements" subtitle="Median of real probe samples — method and port are shown, never assumed" />
                 <CardBody className="space-y-2">
                   {selectedObs.measurements.map((m) => (
@@ -885,7 +910,13 @@ export default function LiveMapPage() {
                 </CardBody>
               </Card>
 
-              <Card>
+              <Card
+                fold={{
+                  id: 'observed-route',
+                  defaultOpen: true,
+                  summary: `${selectedObs.hops.length} hops · ${portLabel(selectedObs)} · IPv${selectedObs.family}`,
+                }}
+              >
                 <CardHeader title="Route" subtitle={`${selectedObs.hops.length} hops · ${portLabel(selectedObs)} · IPv${selectedObs.family}`} />
                 <CardBody className="max-h-72 overflow-auto">
                   {selectedObs.hops.length === 0 && (
@@ -934,7 +965,12 @@ export default function LiveMapPage() {
 
       {/* bottom: latency graph + stats */}
       {selectedObs && (
-        <Card>
+        <Card
+          fold={{
+            id: 'latency-graph',
+            summary: `${historySamples.length} sample${historySamples.length === 1 ? '' : 's'} in this window${stats?.median != null ? ` · median ${fmtMs(stats.median)}` : ''}`,
+          }}
+        >
           <CardHeader
             title="Live latency graph"
             subtitle={`${selectedObs.target.name} — ${portLabel(selectedObs)}${selectedObs.vpnActive ? ' · through VPN' : ''}`}
@@ -980,7 +1016,18 @@ export default function LiveMapPage() {
 
       {/* compare / route change */}
       {selectedTargetId && compareQuery.data?.compared && (
-        <Card>
+        <Card
+          fold={{
+            id: 'route-comparison',
+            defaultOpen: true,
+            summary: (() => {
+              const changes = compareQuery.data?.diff?.changes?.length ?? 0;
+              return changes === 0
+                ? 'no route change between the last two measurements'
+                : `${changes} change${changes === 1 ? '' : 's'} between the last two measurements`;
+            })(),
+          }}
+        >
           <CardHeader title="Route comparison" subtitle="Latest two observations of this target" icon={<History size={15} />} />
           <CardBody className="space-y-2 text-[13px]">
             {compareQuery.data.directVpn && (
@@ -1014,7 +1061,15 @@ export default function LiveMapPage() {
       )}
 
       {/* game-server sweep */}
-      <Card>
+      <Card
+        fold={{
+          id: 'game-sweep',
+          defaultOpen: false,
+          summary: sweep
+            ? `${sweep.rows.length} result${sweep.rows.length === 1 ? '' : 's'}${sweep.completed ? ` · completed in ${((sweep.durationMs ?? 0) / 1000).toFixed(1)}s` : ' · running'}`
+            : 'not run yet — pings every game / VPN / Cloudflare target',
+        }}
+      >
         <CardHeader
           title="Game server sweep"
           subtitle="ICMP-first pings across every game/VPN/Cloudflare target, ranked — TCP fallback when ICMP is filtered"
@@ -1089,7 +1144,18 @@ export default function LiveMapPage() {
 
       {/* active connections */}
       {showConnections && (
-        <Card>
+        <Card
+          fold={{
+            id: 'live-connections',
+            defaultOpen: true,
+            summary: (() => {
+              const data = connectionsQuery.data;
+              if (data == null) return 'reading local connections…';
+              if (!data.available) return data.reason ?? 'not available on this platform';
+              return `${data.rows.length} connection${data.rows.length === 1 ? '' : 's'} with owning process, RTT and ASN`;
+            })(),
+          }}
+        >
           <CardHeader
             title="Live connections"
             subtitle="Established TCP + UDP sockets with owning process (name via tasklist), latest measured RTT, ASN — metadata only, never payloads · auto-refresh 10s"
@@ -1171,7 +1237,7 @@ export default function LiveMapPage() {
           <span className="text-muted">Route note:</span> {selectedObs.note}
         </p>
       )}
-    </div>
+    </DisclosureScope>
   );
 
   /* ----------------------------- NOC overlay ------------------------------- */

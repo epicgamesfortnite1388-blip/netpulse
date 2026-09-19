@@ -6,6 +6,7 @@ import { Globe, Info, MapPin, Server, ShieldAlert, ShieldCheck } from 'lucide-re
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingState } from '@/components/ui/States';
 import { api } from '@/lib/api';
@@ -242,11 +243,12 @@ export default function IpPage() {
   const v6 = useIp(6);
 
   return (
-    <div>
+    <DisclosureScope name="ip">
       <PageHeader
         title="IP intelligence"
         description="Your public addresses, network operator and geolocation — measured, with sources shown."
       />
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <FamilyCard family={4} query={v4} />
@@ -255,7 +257,9 @@ export default function IpPage() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <WebrtcLeakCard />
-        <Card>
+        <Card
+          fold={{ id: 'ip-reputation', defaultOpen: false, summary: 'unknown — no reputation provider configured yet' }}
+        >
           <CardHeader title="IP reputation" icon={<Server size={15} />} />
           <CardBody>
             <div className="flex items-start gap-2.5 text-sm text-muted">
@@ -270,7 +274,7 @@ export default function IpPage() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card fold={{ id: 'location-note', defaultOpen: false, summary: 'geolocation is ISP registry data, city-level at best' }}>
           <CardHeader title="Location privacy note" icon={<MapPin size={15} />} />
           <CardBody>
             <p className="text-sm leading-relaxed text-muted">
@@ -284,6 +288,6 @@ export default function IpPage() {
           </CardBody>
         </Card>
       </div>
-    </div>
+    </DisclosureScope>
   );
 }

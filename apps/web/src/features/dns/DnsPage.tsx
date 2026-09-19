@@ -5,6 +5,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -295,12 +296,13 @@ export default function DnsPage() {
   const ranked = results ? [...results].filter(rowIsOk).sort((a, b) => (a.latencyAvgMs ?? 1e9) - (b.latencyAvgMs ?? 1e9)) : [];
 
   return (
-    <div>
+    <DisclosureScope name="dns">
       <PageHeader
         title="DNS intelligence lab"
         description="Benchmark resolvers over UDP, DoH and DoT; verify DNSSEC; watch latency history; and get evidence-based resolver recommendations."
         actions={<ScheduleChip kind="dns" />}
       />
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       <Tabs
         value={tab}
@@ -701,7 +703,10 @@ export default function DnsPage() {
 
         {/* ------------------------------ custom -------------------------------- */}
         <TabPanel value="custom">
-          <Card className="mb-5">
+          <Card
+            className="mb-5"
+            fold={{ id: 'add-resolver', defaultOpen: false, summary: 'name, address and optional DoH/DoT — public addresses only' }}
+          >
             <CardHeader title="Add a custom resolver" subtitle="Public addresses only — private, loopback and metadata ranges are rejected." icon={<Plus size={15} />} />
             <CardBody>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -811,6 +816,6 @@ export default function DnsPage() {
           )}
         </TabPanel>
       </Tabs>
-    </div>
+    </DisclosureScope>
   );
 }

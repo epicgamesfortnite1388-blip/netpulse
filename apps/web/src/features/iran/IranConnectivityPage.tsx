@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
 import { EmptyState, ErrorState } from '@/components/ui/States';
@@ -289,7 +290,7 @@ export default function IranConnectivityPage() {
   const vpnConnections = connections.filter((c) => c.mode === 'vpn');
 
   return (
-    <div className="space-y-5">
+    <DisclosureScope name="iran" className="space-y-5">
       <PageHeader
         title="Iran Connectivity"
         description="Measure, classify, compare and recommend — filtering is always an inference, never an assertion"
@@ -308,6 +309,7 @@ export default function IranConnectivityPage() {
           </div>
         }
       />
+      <DisclosureToolbar className="-mt-2" />
 
       {/* one-click runner */}
       <Card>
@@ -398,7 +400,7 @@ export default function IranConnectivityPage() {
       ]}>
         <TabPanel value="overview">
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card>
+            <Card fold={{ id: 'targets', pinned: true }}>
               <CardHeader icon={<Filter size={16} />} title="Select targets" subtitle={`${selectedTargets.size} selected of ${catalog?.total ?? 0}`} />
               <CardBody className="max-h-[560px] space-y-3 overflow-y-auto">
                 {(catalog?.categories ?? []).map((cat) => (
@@ -435,7 +437,13 @@ export default function IranConnectivityPage() {
                 )}
               </CardBody>
             </Card>
-            <Card>
+            <Card
+              fold={{
+                id: 'connections',
+                defaultOpen: false,
+                summary: `${connections.length} connection${connections.length === 1 ? '' : 's'} compared on every target${vpnConnections.length > 0 ? ` · ${vpnConnections.length} VPN profile${vpnConnections.length === 1 ? '' : 's'}` : ''}`,
+              }}
+            >
               <CardHeader icon={<Gauge size={16} />} title="Connections" subtitle="What is compared on every target" />
               <CardBody className="space-y-2">
                 {connections.map((c) => (
@@ -459,7 +467,13 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="website">
-          <Card>
+          <Card
+            fold={{
+              id: 'website-tests',
+              pinned: true,
+              summary: activeCells.length === 0 ? 'no measurements yet' : `${activeCells.length} measurement${activeCells.length === 1 ? '' : 's'} across targets`,
+            }}
+          >
             <CardHeader
               icon={<Globe2 size={16} />}
               title="Website Tests"
@@ -510,7 +524,12 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="services">
-          <Card>
+          <Card
+            fold={{
+              id: 'service-tests',
+              summary: byCategory.length === 0 ? 'no measurements yet' : `${byCategory.length} categor${byCategory.length === 1 ? 'y' : 'ies'} with per-service evidence`,
+            }}
+          >
             <CardHeader icon={<Activity size={16} />} title="Service Tests" subtitle="Grouped by category with per-service evidence" />
             <CardBody className="space-y-5">
               {byCategory.length === 0 && <EmptyState title="No measurements yet" message="Run the Iran connectivity test to populate service results." />}
@@ -544,7 +563,12 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="dns">
-          <Card>
+          <Card
+            fold={{
+              id: 'dns-tests',
+              summary: activeCells.length === 0 ? 'no DNS measurements yet' : `${activeCells.length} measurement${activeCells.length === 1 ? '' : 's'} comparing system vs 1.1.1.1`,
+            }}
+          >
             <CardHeader
               icon={<Radar size={16} />}
               title="DNS Tests"
@@ -593,7 +617,12 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="filtering">
-          <Card>
+          <Card
+            fold={{
+              id: 'filtering-analysis',
+              summary: activeCells.length === 0 ? 'no analysis yet' : `${activeCells.length} measurement${activeCells.length === 1 ? '' : 's'} classified with confidence`,
+            }}
+          >
             <CardHeader icon={<ShieldAlert size={16} />} title="Filtering Analysis" subtitle="Evidence-based classification with confidence — never asserted from a single sample" />
             <CardBody className="space-y-3">
               {activeCells.length === 0 && <EmptyState title="No analysis yet" message="Run the test to see per-target classifications with confidence." />}
@@ -643,7 +672,17 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="vpn">
-          <Card>
+          <Card
+            fold={{
+              id: 'vpn-comparison',
+              summary:
+                vpnConnections.length === 0
+                  ? 'no VPN profiles configured — direct paths only'
+                  : activeCells.length === 0
+                    ? 'no comparison data yet'
+                    : `${vpnConnections.length} VPN path${vpnConnections.length === 1 ? '' : 's'} against ${activeCells.length} measurement${activeCells.length === 1 ? '' : 's'}`,
+            }}
+          >
             <CardHeader
               icon={<Table2 size={16} />}
               title="VPN Comparison"
@@ -705,7 +744,12 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="recommendations">
-          <Card>
+          <Card
+            fold={{
+              id: 'recommendations',
+              summary: recommendations.length === 0 ? 'none yet — complete a test session' : `${recommendations.length} recommendation${recommendations.length === 1 ? '' : 's'} from recent measurements`,
+            }}
+          >
             <CardHeader icon={<Lightbulb size={16} />} title="Recommendations" subtitle="Best connection per service and category — only from recent measurements" />
             <CardBody className="space-y-3">
               {recommendations.length === 0 && <EmptyState title="No recommendations yet" message="Complete a test session to generate recommendations." />}
@@ -737,7 +781,12 @@ export default function IranConnectivityPage() {
         <TabPanel value="history">
           {historyError != null && <div className="mb-4"><ErrorState error={historyError} retry={() => void loadHistory()} /></div>}
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card>
+            <Card
+              fold={{
+                id: 'sessions',
+                summary: sessions.length === 0 ? 'no sessions yet' : `${sessions.length} session${sessions.length === 1 ? '' : 's'} recorded`,
+              }}
+            >
               <CardHeader icon={<History size={16} />} title="Sessions" subtitle="Your personal connectivity history" />
               <CardBody className="space-y-2">
                 {sessions.length === 0 && <EmptyState title="No sessions yet" message="Run the Iran test to build a personal connectivity history." />}
@@ -761,7 +810,12 @@ export default function IranConnectivityPage() {
                 ))}
               </CardBody>
             </Card>
-            <Card>
+            <Card
+              fold={{
+                id: 'incidents',
+                summary: incidents.length === 0 ? 'no incidents detected' : `${incidents.length} detected change${incidents.length === 1 ? '' : 's'}`,
+              }}
+            >
               <CardHeader icon={<Activity size={16} />} title="Incidents" subtitle="Detected changes — a personal history, not a blocklist" />
               <CardBody className="space-y-2">
                 {incidents.length === 0 && <EmptyState title="No incidents detected" message="Changes between sessions (became unreachable, recovered, DNS/route changed, latency increased) appear here." />}
@@ -779,7 +833,6 @@ export default function IranConnectivityPage() {
           </div>
         </TabPanel>
       </Tabs>
-
-    </div>
+    </DisclosureScope>
   );
 }

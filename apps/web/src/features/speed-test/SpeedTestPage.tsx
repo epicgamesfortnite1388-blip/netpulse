@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -89,7 +90,7 @@ export default function SpeedTestPage() {
     : [];
 
   return (
-    <div>
+    <DisclosureScope name="speed-test">
       <PageHeader
         title="Speed test"
         description="Real throughput measurement — streaming downloads and uploads against Cloudflare speed endpoints. No simulated numbers."
@@ -100,6 +101,8 @@ export default function SpeedTestPage() {
           </Button>
         }
       />
+
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       {error && <ErrorState error={new Error(error)} retry={() => void runTest()} />}
 
@@ -117,7 +120,7 @@ export default function SpeedTestPage() {
       )}
 
       {state.running && live.length > 0 && (
-        <Card className="mb-5">
+        <Card className="mb-5" fold={{ id: 'live-throughput', summary: `${live.length} sample${live.length === 1 ? '' : 's'} so far` }}>
           <CardHeader
             title="Live throughput"
             subtitle="Samples stream in as bytes arrive — nothing is interpolated"
@@ -140,7 +143,13 @@ export default function SpeedTestPage() {
             <Metric label="Packet loss" value={result.packetLoss} unit="pct" status={result.packetLoss == null ? 'idle' : result.packetLoss === 0 ? 'good' : result.packetLoss <= 2 ? 'warn' : 'bad'} />
           </div>
 
-          <Card>
+          <Card
+            fold={{
+              id: 'throughput-samples',
+              defaultOpen: false,
+              summary: `${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples`,
+            }}
+          >
             <CardHeader
               title="Throughput samples"
               subtitle={`${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples · server: ${result.server}`}
@@ -168,7 +177,13 @@ export default function SpeedTestPage() {
         </Card>
       )}
 
-      <Card>
+      <Card
+        fold={{
+          id: 'speed-history',
+          defaultOpen: false,
+          summary: historyQuery.data ? `${historyQuery.data.tests.length} test${historyQuery.data.tests.length === 1 ? '' : 's'} recorded` : 'loading history',
+        }}
+      >
         <CardHeader title="History" icon={<HistoryIcon size={15} />} actions={<Badge tone="neutral">{historyQuery.data?.tests.length ?? 0}</Badge>} />
         <CardBody>
           {historyQuery.isLoading && <LoadingState label="Loading history" />}
@@ -197,7 +212,7 @@ export default function SpeedTestPage() {
         <Activity size={12} />
         Throughput numbers derive from bytes actually received/sent over the measurement window.
       </p>
-    </div>
+    </DisclosureScope>
   );
 }
 

@@ -9,6 +9,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -130,7 +131,7 @@ export default function DashboardPage() {
   const lossStatus = lastPing == null ? 'idle' : lastPing.lossPct === 0 ? 'good' : lastPing.lossPct <= 2 ? 'warn' : 'bad';
 
   return (
-    <div>
+    <DisclosureScope name="dashboard">
       <PageHeader
         title="Dashboard"
         description="How healthy is your connection right now?"
@@ -141,6 +142,8 @@ export default function DashboardPage() {
           </Button>
         }
       />
+
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       {statusQuery.isError && <ErrorState error={statusQuery.error} retry={() => void statusQuery.refetch()} />}
       {statusQuery.isLoading && <LoadingState label="Measuring your connection" />}
@@ -186,7 +189,7 @@ export default function DashboardPage() {
           <LiveMapWidget />
 
           {/* quick actions */}
-          <Card>
+          <Card fold={{ id: 'quick-actions', defaultOpen: false, summary: `${QUICK_ACTIONS.length} diagnostics, one click each` }}>
             <CardHeader
               title="Quick actions"
               subtitle="Jump into a focused diagnostic — progress and results are always real measurements"
@@ -205,7 +208,7 @@ export default function DashboardPage() {
 
           {/* chart + insights */}
           <div className="grid gap-5 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-2" fold={{ id: 'live-latency' }}>
               <CardHeader
                 title="Live latency"
                 subtitle="TCP connect time to 1.1.1.1:443, sampled every 5 seconds"
@@ -219,7 +222,7 @@ export default function DashboardPage() {
           </div>          {/* breakdown + events */}
           <div className="grid gap-5 lg:grid-cols-3">
             <HealthBreakdown status={statusQuery.data} />
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-2" fold={{ id: 'recent-activity', defaultOpen: false, summary: `${(eventsQuery.data?.events ?? []).length} recent events` }}>
               <CardHeader
                 title="Recent activity"
                 actions={
@@ -260,6 +263,6 @@ export default function DashboardPage() {
         </div>
       )
     }
-  </div>
-);
+    </DisclosureScope>
+  );
 }

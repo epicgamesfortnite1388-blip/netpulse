@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Progress } from '@/components/ui/Progress';
+import { Segmented } from '@/components/ui/Segmented';
 import { EmptyState, ErrorState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
@@ -50,6 +51,22 @@ const DISCOVERY_TOPIC = 'discovery';
 /** Outcome rows rendered before the list is truncated (count always real). */
 const MAX_OUTCOME_ROWS = 12;
 
+/**
+ * Protocol the scan may consider. 'all' is the unfiltered pool; the rest map to
+ * the API's own `protocol` filter, so narrowing the search is a real filter on
+ * the candidate query rather than a client-side trim of the results.
+ *
+ * UDP families are listed because discovering them is legitimate — using the
+ * result is what needs a capable core, and the run says so when one is missing.
+ */
+const PROTOCOL_FILTERS: Array<{ value: string; label: string }> = [
+  { value: 'all', label: 'All protocols' },
+  { value: 'vless', label: 'VLESS' },
+  { value: 'vmess', label: 'VMess' },
+  { value: 'trojan', label: 'Trojan' },
+  { value: 'hysteria2', label: 'Hysteria2' },
+];
+
 interface DiscoveryProgress {
   done: number;
   total: number;
@@ -65,6 +82,8 @@ export function DiscoveryCard() {
   const qc = useQueryClient();
   const toast = useToast();
   const [profile, setProfile] = usePersistentState<ScanProfileId>('vpn.scanProfile', 'balanced');
+  // 'all' or a protocol name the candidate query can filter on.
+  const [protocol, setProtocol] = usePersistentState<string>('vpn.discoveryProtocol', 'all');
   const [report, setReport] = useState<DiscoveryReport | null>(null);
   const [progress, setProgress] = useState<DiscoveryProgress | null>(null);
   /** Hard single-flight latch: survives a double click React has not re-rendered for yet. */
@@ -97,7 +116,12 @@ export function DiscoveryCard() {
       if (inFlight.current) return null;
       inFlight.current = true;
       try {
-        return await api.post<{ report: DiscoveryReport }>('/vpn/discover', { profile: selected });
+        return await api.post<{ report: DiscoveryReport }>('/vpn/discover', {
+          profile: selected,
+          // Only sent when narrowing: an explicit protocol turns the candidate
+          // query into a filtered one server-side.
+          ...(protocol === 'all' ? {} : { protocol }),
+        });
       } finally {
         inFlight.current = false;
       }
@@ -129,7 +153,18 @@ export function DiscoveryCard() {
   const rows = report ? report.outcomes.slice(0, MAX_OUTCOME_ROWS) : [];
 
   return (
-    <Card className="mb-6">
+    <Card
+      className="mb-6"
+      fold={{
+        id: 'discovery',
+        defaultOpen: false,
+        // The folded header reports the same real counters the report does, so a
+        // closed card never reads as "nothing happened".
+        summary: report
+          ? `${report.probed} probed · ${report.passed} validated${depth ? ` · deepest evidence: ${depth}` : ''}`
+          : 'not run yet — picks how deep each candidate is validated',
+      }}
+    >
       <CardHeader
         title="Node discovery"
         icon={<Radar size={15} />}
@@ -139,6 +174,24 @@ export function DiscoveryCard() {
         </Badge> : null}
       />
       <CardBody className="space-y-4">
+        {/* Which protocol family the scan may consider. Narrowing here is the
+            only way to look for a protocol the default pool under-represents
+            (a hysteria2 node, for instance). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-xs text-muted">Candidates to consider</span>
+          <Segmented
+            value={protocol}
+            onChange={setProtocol}
+            items={PROTOCOL_FILTERS}
+            ariaLabel="Discovery protocol filter"
+          />
+          {protocol === 'hysteria2' && (
+            <span className="text-[11px] leading-snug text-faint">
+              A hysteria2 result needs sing-box or the Hysteria2 client installed to test or tunnel.
+            </span>
+          )}
+        </div>
+
         <div role="radiogroup" aria-label="Discovery profile" className="space-y-2">
           {SCAN_PROFILE_IDS.map((id) => {
             const p = SCAN_PROFILES[id];
@@ -151,8 +204,8 @@ export function DiscoveryCard() {
                 aria-checked={isSelected}
                 disabled={busy}
                 onClick={() => setProfile(id)}
-                className={`w-full rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${
-                  isSelected ? 'border-accent/60 bg-accent/10' : 'border-line bg-surface-2 hover:border-accent/30'
+                className={`w-full rounded-lg border px-3 py-2 text-left transition disabled:opacity-60 ${
+                  isSelected ? 'border-accent/50 bg-accent-soft' : 'border-transparent bg-surface-2/70 hover:bg-surface-2'
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -193,7 +246,7 @@ export function DiscoveryCard() {
         </div>
 
         {busy && (
-          <div className="space-y-2 rounded-xl border border-line bg-surface-2 p-3">
+          <div className="space-y-2 rounded-lg bg-surface-2/70 p-3">
             <div className="flex items-center justify-between text-xs text-muted">
               <span>
                 {progress ? `Probing candidate ${progress.done} of ${progress.total}` : 'Starting scan…'}
@@ -217,7 +270,7 @@ export function DiscoveryCard() {
 
         {report && !busy && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-line bg-surface-2 p-3">
+            <div className="rounded-lg bg-surface-2/70 p-3">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted">
                 <span>
                   Profile: <span className="text-text">{SCAN_PROFILES[report.profile]?.label ?? report.profile}</span>
@@ -240,7 +293,7 @@ export function DiscoveryCard() {
             </div>
 
             {report.winner ? (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-ok/40 bg-ok/10 px-3 py-2.5 text-sm">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-r-lg border-l-2 border-ok/50 bg-ok/5 px-3 py-2.5 text-sm">
                 <span className="flex items-center gap-1.5 text-ok">
                   <CheckCircle2 size={13} /> Best candidate
                 </span>
@@ -254,7 +307,7 @@ export function DiscoveryCard() {
                 {depth && <span className="text-faint">validated: {depth === 'proxy' ? 'carries traffic' : depth === 'tls' ? 'TLS' : 'TCP'}</span>}
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warn/40 bg-warn/10 px-3 py-2.5 text-xs leading-relaxed text-warn">
+              <div className="flex flex-wrap items-center gap-2 rounded-r-lg border-l-2 border-warn/60 bg-warn/5 px-3 py-2.5 text-xs leading-relaxed text-warn">
                 <XCircle size={13} className="shrink-0" />
                 <span>
                   {state === 'no-candidates'
@@ -265,7 +318,7 @@ export function DiscoveryCard() {
             )}
 
             {breakdown.length > 0 && (
-              <div className="rounded-xl border border-line bg-surface-2 p-3">
+              <div className="rounded-lg bg-surface-2/70 p-3">
                 <p className="mb-1.5 text-[11px] uppercase tracking-wide text-faint">
                   Failure reasons (as reported, verbatim)
                 </p>
@@ -281,7 +334,7 @@ export function DiscoveryCard() {
             )}
 
             {rows.length > 0 && (
-              <div className="rounded-xl border border-line">
+              <div className="rounded-lg bg-surface-2/70">
                 <div className="border-b border-line px-3 py-2 text-[11px] uppercase tracking-wide text-faint">
                   Candidates probed
                 </div>

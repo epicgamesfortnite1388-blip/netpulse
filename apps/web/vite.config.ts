@@ -24,7 +24,10 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8787',
+        // Point the dev proxy at the API the developer is actually running —
+        // `npm run dev:api` on 8787 by default, or another instance by setting
+        // VITE_API_PORT (e.g. a second server on a scratch data dir).
+        target: `http://127.0.0.1:${process.env.VITE_API_PORT ?? 8787}`,
         ws: true,
       },
     },

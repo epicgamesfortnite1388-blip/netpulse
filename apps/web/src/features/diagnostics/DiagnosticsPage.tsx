@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -179,7 +180,7 @@ export default function DiagnosticsPage() {
     g == null ? 'neutral' : g === 'A' || g === 'B' ? 'ok' : g === 'C' ? 'warn' : 'danger';
 
   return (
-    <div>
+    <DisclosureScope name="diagnostics">
       <PageHeader
         title="Diagnostics"
         description="One-click complete diagnostic plus focused tools: bufferbloat grading, path-MTU discovery, CGNAT detection and continuous stability monitoring."
@@ -190,6 +191,8 @@ export default function DiagnosticsPage() {
           </Button>
         }
       />
+
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       {error != null && <ErrorState error={new Error(error)} retry={() => void runComplete()} />}
 
@@ -278,7 +281,13 @@ export default function DiagnosticsPage() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card
+          fold={{
+            id: 'mtu',
+            defaultOpen: false,
+            summary: mtu ? `path MTU ${mtu.mtu ?? '—'} bytes${mtu.probablePath ? ` · ${mtu.probablePath}` : ''}` : 'not probed yet — finds the largest unfragmented packet',
+          }}
+        >
           <CardHeader title="MTU discovery" icon={<Network size={15} />} />
           <CardBody>
             {mtu ? (
@@ -299,7 +308,15 @@ export default function DiagnosticsPage() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card
+          fold={{
+            id: 'cgnat',
+            defaultOpen: false,
+            summary: cgnat
+              ? `${cgnat.detected ? 'CGNAT detected' : 'no CGNAT detected'}${cgnat.publicIp ? ` · public IP ${cgnat.publicIp}` : ''}`
+              : 'not checked yet — looks for carrier-grade NAT',
+          }}
+        >
           <CardHeader title="CGNAT detection" icon={<Activity size={15} />} />
           <CardBody>
             {cgnat ? (
@@ -320,7 +337,7 @@ export default function DiagnosticsPage() {
 
       {toolError && <ErrorState error={new Error(toolError)} retry={() => setToolError(null)} />}
 
-      <Card className="mt-5">
+      <Card className="mt-5" fold={{ id: 'stability', pinned: true }}>
         <CardHeader
           title="Connection stability monitor"
           icon={<HeartPulse size={15} />}
@@ -351,6 +368,6 @@ export default function DiagnosticsPage() {
           )}
         </CardBody>
       </Card>
-    </div>
+    </DisclosureScope>
   );
 }

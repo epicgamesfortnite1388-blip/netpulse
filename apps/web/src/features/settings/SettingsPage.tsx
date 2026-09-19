@@ -5,6 +5,7 @@ import { Play, Save } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Switch } from '@/components/ui/Switch';
@@ -23,8 +24,18 @@ import type { SettingsPatch } from '@shared/schemas/settings';
 import type { GameDefinition } from '@netpulse/shared';
 import type { ReactNode } from 'react';
 
-function SectionNote({ children }: { children: ReactNode }) {
-  return <p className="mb-4 text-xs leading-relaxed text-faint">{children}</p>;
+/**
+ * A settings explanation. Settings pages drown in "why this exists" prose, and
+ * most visits are here to change one value — so the reasoning is folded behind a
+ * one-line label instead of pushing the controls down the page. Collapse all
+ * folds every note back at once.
+ */
+function SectionNote({ id, label = 'Why these settings', children }: { id: string; label?: string; children: ReactNode }) {
+  return (
+    <FoldNote id={id} label={label} className="mb-4">
+      {children}
+    </FoldNote>
+  );
 }
 
 /**
@@ -118,7 +129,7 @@ export default function SettingsPage() {
   const weightSum = Object.values(draft.optimization.weights).reduce((a, b) => a + b, 0);
 
   return (
-    <div>
+    <DisclosureScope name="settings">
       <PageHeader title="Settings" description="Defaults for tests, scoring and future VPN behavior. Additional sections are added as modules ship." />
 
       <Tabs
@@ -133,6 +144,9 @@ export default function SettingsPage() {
           { value: 'platform', label: 'Platform' },
         ]}
       >
+        {/* One scope for the whole page: every explanation below folds, and
+            Collapse all folds them together. */}
+        <DisclosureToolbar className="-mt-3 mb-2" />
         <TabPanel value="general">
           <Card>
             <CardHeader title="General" />
@@ -228,10 +242,11 @@ export default function SettingsPage() {
                   value={draft.proxyEngine.preferred}
                   onChange={(e) => patch('proxyEngine', { preferred: e.target.value as AppSettings['proxyEngine']['preferred'] })}
                 >
-                  <option value="auto">Automatic (Xray-core → sing-box → V2Ray-core)</option>
+                  <option value="auto">Automatic (Xray-core → Hysteria2 → sing-box → V2Ray-core)</option>
                   <option value="xray">Xray-core first</option>
                   <option value="sing-box">sing-box first</option>
                   <option value="v2ray">V2Ray-core first</option>
+                  <option value="hysteria">Hysteria2 first (hysteria2 nodes only)</option>
                 </Select>
               </Field>
               <Button variant="primary" loading={saving} onClick={() => void save({ network: draft.network, geoProvider: draft.geoProvider, proxyEngine: draft.proxyEngine })}>
@@ -297,7 +312,7 @@ export default function SettingsPage() {
               }
             />
             <CardBody className="max-w-xl">
-              <SectionNote>
+              <SectionNote id="weights">
                 Weights must sum to 100. The engine only counts components that were actually measured and
                 renormalizes the rest.
               </SectionNote>
@@ -332,7 +347,7 @@ export default function SettingsPage() {
           <Card>
             <CardHeader title="VPN" subtitle="Behavior preferences for the VPN engine" />
             <CardBody className="max-w-xl space-y-4">
-              <SectionNote>
+              <SectionNote id="vpn-behavior">
                 The kill switch applies to proxy-mode tunnels: when one routes the system proxy and drops,
                 non-bypassed traffic is fail-closed (pointed at a sink that answers nothing) instead of
                 falling back to a direct connection. Auto-connect brings the tunnel up on app start via the
@@ -397,7 +412,7 @@ export default function SettingsPage() {
               subtitle="Destinations that should not go through a public node"
             />
             <CardBody className="max-w-xl space-y-4">
-              <SectionNote>
+              <SectionNote id="split-tunnel">
                 Applies to the proxy tunnel only — node tests always dial the node, or they would be measuring a
                 different path than the one they report. Turns on split-tunnel routing in the local core
                 (xray / sing-box / v2ray); entries that are not a plausible domain or address are ignored rather
@@ -503,7 +518,7 @@ export default function SettingsPage() {
               subtitle="What this machine actually supports — no silent fallbacks"
             />
             <CardBody className="max-w-xl">
-              <SectionNote>
+              <SectionNote id="platform-caps">
                 Capabilities are detected live (a single ICMP probe against 1.1.1.1, VPN binary detection).
                 DoT works only when outbound TCP 853 is allowed by your network; DoH uses port 443.
               </SectionNote>
@@ -554,7 +569,7 @@ export default function SettingsPage() {
           <RecoveryCard />
         </TabPanel>
       </Tabs>
-    </div>
+    </DisclosureScope>
   );
 }
 
@@ -666,7 +681,7 @@ function AutoTestPanel({
         subtitle="Bounded batches that keep imported node measurements current — never-validated nodes first, then stale-good, then unstable"
       />
       <CardBody className="max-w-xl space-y-4">
-        <SectionNote>
+        <SectionNote id="auto-test">
           Runs cheap TCP reachability probes only — proxy tests (which launch a local
           engine) stay manual. Dead nodes unseen for 14 days are retired to the
           "stale" state; their history is kept. Changing these settings re-arms the

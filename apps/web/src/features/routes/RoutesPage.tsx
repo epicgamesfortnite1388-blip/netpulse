@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Info, Play, RefreshCw, Route as RouteIcon,
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -79,7 +80,12 @@ function HopRow({ hop, isLast }: { hop: TraceResult['hops'][number]; isLast: boo
 
 export default function RoutesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState(() => (searchParams.get('tab') === 'vpn-compare' ? 'vpn-compare' : 'trace'));
+  // Only the two query params the page actually deep-links on; anything else
+  // (or an unknown value) falls back to the first tab rather than guessing.
+  const [tab, setTab] = useState(() => {
+    const t = searchParams.get('tab');
+    return t === 'vpn-compare' || t === 'compare' ? t : 'trace';
+  });
   const [target, setTarget] = useState('1.1.1.1');
   const [family, setFamily] = useState<'auto' | '4' | '6'>('auto');
 
@@ -188,11 +194,12 @@ export default function RoutesPage() {
   }, []);
 
   return (
-    <div>
+    <DisclosureScope name="routes">
       <PageHeader
         title="Route checker"
         description="Traceroute with per-hop ASN enrichment, honest loss analysis and route scoring."
       />
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       <Tabs
         value={tab}
@@ -255,7 +262,7 @@ export default function RoutesPage() {
 
           {result && (
             <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-              <Card>
+              <Card fold={{ id: 'route-hops', pinned: true }}>
                 <CardHeader
                   title={`Route to ${result.trace.target}`}
                   subtitle={`${result.trace.totalHops} hops · ${fmtMs(result.trace.totalLatencyMs)} end-to-end${result.lossPctAtDestination != null ? ` · ${fmtPct(result.lossPctAtDestination)} loss at destination` : ''}`}
@@ -276,7 +283,16 @@ export default function RoutesPage() {
               </Card>
 
               <div className="space-y-5">
-                <Card>
+                <Card
+                  fold={{
+                    id: 'analysis',
+                    defaultOpen: false,
+                    summary:
+                      result.analysis.findings.length === 0
+                        ? 'no anomalies detected on this route'
+                        : `${result.analysis.findings.length} finding${result.analysis.findings.length === 1 ? '' : 's'} from this run`,
+                  }}
+                >
                   <CardHeader title="Analysis" subtitle="Derived from this run's measurements" />
                   <CardBody className="space-y-3">
                     {result.analysis.findings.length === 0 && <p className="text-sm text-muted">No anomalies detected on this route.</p>}
@@ -289,7 +305,13 @@ export default function RoutesPage() {
                   </CardBody>
                 </Card>
 
-                <Card>
+                <Card
+                  fold={{
+                    id: 'summary',
+                    defaultOpen: false,
+                    summary: `${result.trace.totalHops} hops · ${fmtMs(result.trace.totalLatencyMs)} end-to-end`,
+                  }}
+                >
                   <CardHeader title="Summary" />
                   <CardBody className="grid grid-cols-2 gap-4">
                     <Metric label="Hops" value={result.trace.totalHops} />
@@ -342,7 +364,17 @@ export default function RoutesPage() {
               </Card>
               <div className="grid gap-5 md:grid-cols-2">
                 {compareResult.sides.map((side, i) => (
-                  <Card key={side.label} className={compareResult.preferredIndex === i ? 'border-accent/50' : ''}>
+                  <Card
+                    key={side.label}
+                    className={compareResult.preferredIndex === i ? 'border-accent/50' : ''}
+                    fold={{
+                      id: `compare-${side.family ?? side.label}`,
+                      // Open: these two cards are the comparison's result; a
+                      // folded default would hide the numbers being compared.
+                      defaultOpen: true,
+                      summary: `${side.score != null ? `score ${side.score}/100` : 'no score'} · ${side.totalHops} hops · ${fmtMs(side.totalLatencyMs)}`,
+                    }}
+                  >
                     <CardHeader
                       title={side.label}
                       actions={
@@ -405,7 +437,7 @@ export default function RoutesPage() {
           {vpnResult && <VpnCompareView result={vpnResult} />}
         </TabPanel>
       </Tabs>
-    </div>
+    </DisclosureScope>
   );
 }
 
@@ -434,7 +466,7 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
       )}
 
       {result.deltas && (
-        <Card className="mb-5">
+        <Card className="mb-5" fold={{ id: 'vpn-deltas', pinned: true }}>
           <CardHeader
             title="Measured deltas (VPN − direct)"
             actions={
@@ -485,7 +517,15 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
               </CardBody>
             </Card>
           ) : (
-            <Card key={key} className={complete && result.deltas?.preferred === key ? 'border-accent/50' : ''}>
+            <Card
+              key={key}
+              className={complete && result.deltas?.preferred === key ? 'border-accent/50' : ''}
+              fold={{
+                id: `vpn-side-${key}`,
+                defaultOpen: true,
+                summary: `${side.trace.totalHops} hops · ${fmtMs(side.trace.totalLatencyMs)} · ${vpnTagLabel(side)}`,
+              }}
+            >
               <CardHeader
                 title={title}
                 subtitle={`Traced ${fmtDateTime(side.startedAt)} · ${side.trace.totalHops} hops`}

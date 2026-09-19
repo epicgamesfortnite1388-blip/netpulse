@@ -1,146 +1,184 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, KeyRound, Play, RefreshCw, Shield, ShieldCheck, ShieldOff, ShieldX, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import * as RTabs from '@radix-ui/react-tabs';
+import { Cpu, Globe, Route, Shield, ShieldCheck, ShieldOff } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { Field } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
-import { armElevationBridge } from '@/lib/elevationBroker';
 
-import { AetherCard } from './AetherCard';
-import { DiscoveryCard } from './DiscoveryCard';
-import { ProxyTunnelCard } from './ProxyTunnelCard';
-import { VpnHistoryCard } from './VpnHistoryCard';
+import { AetherSurface } from './AetherSurface';
+import { CoreSurface } from './CoreSurface';
+import { EngineIntakeCard } from './EngineIntakeCard';
+import { OverviewSurface } from './OverviewSurface';
+import { ProviderSurface } from './ProviderSurface';
+import { TunnelSurface } from './TunnelSurface';
+import { PROXY_CORE_IDS, PROXY_CORE_META, PROVIDER_LABEL, VPN_SURFACES } from './engineMeta';
+import { useAetherEngine, useKillSwitch, useProxyEngines, useVpnProviders, useVpnStatus } from './useVpnData';
 
-import type { VpnStatus } from '@shared/models/vpn';
+import type { VpnSurfaceId } from './engineMeta';
+import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { ProxyTunnelStatus, VpnStatus } from '@netpulse/shared';
 
-interface VpnProviderInfoDto {
-  id: string;
-  name: string;
-  kind: string;
-  capabilities: string[];
-  available: boolean;
-  protocols?: string[];
+/**
+ * VPN — one section, divided by engine.
+ *
+ * Two structural decisions own this file:
+ *
+ *  1. The rail is the navigation. Engines are grouped by HOW they reach the
+ *     internet (circumvention binary / public-node cores / native clients)
+ *     instead of being one flat strip of eight identical tabs, and each rail
+ *     item carries the live state of its own engine. Opening an engine is
+ *     therefore possible from anywhere on the page, not only from the Overview.
+ *  2. The system bar is the only cross-engine surface. "What is up right now"
+ *     and "what is blocking" exist in exactly one place, so no engine surface
+ *     has to repeat it and none of them can disagree with each other.
+ */
+
+interface RailItem {
+  id: VpnSurfaceId;
+  label: string;
+  icon: LucideIcon;
+  glyph: string;
+  dot: { tone: 'ok' | 'warn' | 'danger' | 'idle'; pulse?: boolean };
+  state: string;
 }
 
-interface ProfileDto {
-  id: string;
-  providerId: string;
-  name: string;
-  protocol: string;
-  endpoint: string | null;
-  createdAt: number;
+interface RailGroup {
+  heading: string;
+  items: RailItem[];
 }
 
-interface HealthDto {
-  connected: boolean;
-  providerId?: string | null;
-  serverName?: string | null;
-  protocol?: string | null;
-  endpoint?: string | null;
-  since?: number | null;
-  rxBytes: number | null;
-  txBytes: number | null;
-  handshakeAgeSec: number | null;
-  endpointLatencyMs: number | null;
-  note?: string;
+/** Everything the rail and the system bar need, resolved once. */
+function useVpnShellState() {
+  const statusQuery = useVpnStatus();
+  const killSwitchQuery = useKillSwitch();
+  const enginesQuery = useProxyEngines();
+  const providersQuery = useVpnProviders();
+  const aetherQuery = useAetherEngine();
+  const tunnelQuery = useQuery({
+    queryKey: ['tunnel', 'status'],
+    queryFn: () => api.get<{ tunnel: ProxyTunnelStatus }>('/vpn/tunnel/status'),
+    refetchInterval: 5_000,
+  });
+
+  return {
+    statusQuery,
+    status: statusQuery.data,
+    killSwitch: killSwitchQuery.data?.killSwitch,
+    engines: enginesQuery.data?.engines ?? [],
+    preferred: enginesQuery.data?.preferred ?? 'auto',
+    effective: enginesQuery.data?.effective ?? null,
+    providers: providersQuery.data?.providers ?? [],
+    aether: aetherQuery.data,
+    tunnel: tunnelQuery.data?.tunnel,
+  };
 }
 
-interface ConnectionRow {
-  id: string;
-  providerId: string;
-  serverName: string | null;
-  endpoint: string | null;
-  protocol: string;
-  status: string;
-  connectedAt: number | null;
-  disconnectedAt: number | null;
-  error: string | null;
-}
+/** The cross-engine bar: one bordered strip, hairline-separated segments. */
+function SystemBar({
+  status,
+  tunnel,
+  killSwitchBlocking,
+  blockingReason,
+}: {
+  status: VpnStatus | undefined;
+  tunnel: ProxyTunnelStatus | undefined;
+  killSwitchBlocking: boolean;
+  blockingReason: string | null | undefined;
+}) {
+  const connected = status?.connected === true;
+  const tunnelActive = tunnel?.state === 'active';
+  const provider = status?.providerId ? (PROVIDER_LABEL[status.providerId] ?? status.providerId) : null;
 
-const PROVIDER_HINTS: Record<string, string> = {
-  wireguard: 'Paste the [Interface]/[Peer] .conf text. The PrivateKey is moved into the encrypted vault.',
-  openvpn: 'Paste the .ovpn text (remote + <ca> block). Secrets stay in the encrypted vault.',
-  singbox: 'Paste a share link: vless://, vmess://, trojan:// or ss:// — or a sing-box outbound JSON. Runs unprivileged in proxy mode (127.0.0.1:2080).',
-};
+  const tone = killSwitchBlocking ? 'danger' : connected || tunnelActive ? 'ok' : 'idle';
+  const headline = killSwitchBlocking
+    ? 'Kill switch engaged — traffic is blocked'
+    : connected
+      ? `Tunnel up via ${provider ?? 'a provider'}`
+      : tunnelActive
+        ? 'Proxy tunnel active'
+        : 'No tunnel is up';
 
-function formatBytes(n: number | null): string {
-  if (n == null) return '—';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let v = n;
-  let u = 0;
-  while (v >= 1024 && u < units.length - 1) {
-    v /= 1024;
-    u += 1;
+  const segments: Array<{ label: string; value: ReactNode; tone?: 'ok' | 'warn' | 'danger' }> = [];
+
+  if (connected) {
+    segments.push({ label: 'Profile', value: status?.serverName ?? '—' });
+    segments.push({ label: 'Protocol', value: status?.protocol ?? '—' });
+    if (status?.verifiedPublicIp) segments.push({ label: 'Exit', value: <span className="metric-num">{status.verifiedPublicIp}</span>, tone: 'ok' });
+    if (status?.since != null) segments.push({ label: 'Up since', value: new Date(status.since).toLocaleTimeString() });
+    if (status?.verification === 'failed') segments.push({ label: 'Routing', value: 'not through the tunnel', tone: 'danger' });
   }
-  return `${v.toFixed(v >= 100 || u === 0 ? 0 : 1)} ${units[u]}`;
-}
 
-function VerificationBadge({ status }: { status: VpnStatus }) {
-  const v = status.verification ?? 'not_verified';
-  if (!status.connected) return null;
-  if (v === 'verified') {
-    return (
-      <Badge tone="ok">
-        <ShieldCheck size={11} /> verified
-      </Badge>
-    );
+  if (tunnelActive) {
+    segments.push({ label: 'Node', value: tunnel?.nodeName ?? tunnel?.nodeId ?? '—' });
+    segments.push({ label: 'Exit', value: <span className="metric-num">{tunnel?.exitIp ?? 'unverified'}</span> });
+    if (tunnel?.engine) segments.push({ label: 'Core', value: tunnel.engine });
+    if (tunnel?.chain) {
+      segments.push({
+        label: 'Chain',
+        value: tunnel.chain.exitDiffers ? 'nested · exit differs' : 'nested · exit identical',
+        tone: tunnel.chain.exitDiffers ? 'ok' : 'warn',
+      });
+    }
   }
-  if (v === 'failed') {
-    return (
-      <Badge tone="danger">
-        <ShieldX size={11} /> not routing
-      </Badge>
-    );
+
+  if (!connected && !tunnelActive) {
+    segments.push({ label: 'Mode', value: 'nothing is carrying traffic' });
   }
-  if (v === 'unavailable') {
-    return <Badge tone="warn">unverified (IP check unavailable)</Badge>;
-  }
-  return <Badge tone="neutral">unverified</Badge>;
+
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3">
+      <span className="flex items-center gap-2.5">
+        <StatusDot tone={tone} pulse={tunnel?.state === 'starting' || tunnel?.state === 'stopping'} />
+        <span className="text-sm text-text">{headline}</span>
+      </span>
+
+      {killSwitchBlocking && (
+        <Badge tone="danger">
+          <ShieldOff size={11} /> blocking
+        </Badge>
+      )}
+
+      {segments.map((s) => (
+        <span key={s.label} className="min-w-0 text-xs text-faint">
+          {s.label}:{' '}
+          <span className={s.tone === 'ok' ? 'text-ok' : s.tone === 'warn' ? 'text-warn' : s.tone === 'danger' ? 'text-danger' : 'text-muted'}>
+            {s.value}
+          </span>
+        </span>
+      ))}
+
+      {killSwitchBlocking && blockingReason && (
+        <span className="min-w-0 max-w-full truncate text-xs text-faint">Reason: {blockingReason}</span>
+      )}
+    </div>
+  );
 }
 
 export default function VpnPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const statusQuery = useQuery({
-    queryKey: ['vpn', 'status'],
-    queryFn: () => api.get<VpnStatus>('/vpn/status'),
-    refetchInterval: 4_000,
-  });
-  const providersQuery = useQuery({
-    queryKey: ['vpn', 'providers'],
-    queryFn: () => api.get<{ providers: VpnProviderInfoDto[] }>('/vpn/providers'),
-  });
-  const profilesQuery = useQuery({
-    queryKey: ['vpn', 'profiles'],
-    queryFn: () => api.get<{ profiles: ProfileDto[] }>('/vpn/profiles'),
-  });
-  const healthQuery = useQuery({
-    queryKey: ['vpn', 'health'],
-    queryFn: () => api.get<HealthDto>('/vpn/health'),
-    refetchInterval: 5_000,
-    enabled: statusQuery.data?.connected === true,
-  });
-  const connectionsQuery = useQuery({
-    queryKey: ['vpn', 'connections'],
-    queryFn: () => api.get<{ connections: ConnectionRow[] }>('/vpn/connections?limit=12'),
-    refetchInterval: 15_000,
-  });
+  const [surface, setSurface] = usePersistentState<VpnSurfaceId>('vpn.surface', 'overview');
 
-  const [showImport, setShowImport] = useState(false);
-  // Provider choice persists; the pasted config deliberately does NOT — it
-  // routinely contains private keys, and sessionStorage persists to the
-  // webview profile directory on disk.
-  const [importProvider, setImportProvider] = usePersistentState<string>('vpn.importProvider', 'wireguard');
-  const [importName, setImportName] = useState('');
-  const [configText, setConfigText] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
+  const {
+    statusQuery,
+    status,
+    killSwitch,
+    engines,
+    preferred,
+    effective,
+    providers,
+    aether,
+    tunnel,
+  } = useVpnShellState();
+
+  const connected = status?.connected === true;
+  const tunnelActive = tunnel?.state === 'active';
 
   const disconnect = useMutation({
     mutationFn: () => api.post<{ status: VpnStatus }>('/vpn/disconnect'),
@@ -148,332 +186,219 @@ export default function VpnPage() {
     onError: (err) => toast('error', 'Disconnect failed', err instanceof Error ? err.message : undefined),
   });
 
-  const connect = useMutation({
-    mutationFn: async (profileId: string) => {
-      // Desktop: drive the ONE UAC prompt through the Rust bridge. The bridge
-      // call runs in parallel with the connect request (which long-polls until
-      // the backend receives the bridge's outcome).
-      const arm = armElevationBridge();
-      if (arm) {
-        const bridgePromise = arm.run();
-        const res = await api.post<{ status: VpnStatus; outcome?: string }>('/vpn/connect', {
-          profileId,
-          elevation: { opId: arm.opId },
-        });
-        void bridgePromise.catch(() => undefined);
-        return res;
-      }
-      return api.post<{ status: VpnStatus; outcome?: string }>('/vpn/connect', { profileId });
-    },
-    onSuccess: (data) => {
-      void qc.invalidateQueries({ queryKey: ['vpn'] });
-      if (data.status.verification === 'failed') {
-        toast('warn', 'Tunnel up, but not routing', data.status.verificationNote ?? 'Public IP did not change.');
-      } else {
-        toast('ok', `Connected via ${data.status.protocol ?? 'VPN'}`, data.status.verificationNote ?? undefined);
-      }
-    },
-    onError: (err) => {
-      void qc.invalidateQueries({ queryKey: ['vpn'] });
-      const code = err instanceof Error && 'code' in err ? String((err as { code?: unknown }).code) : '';
-      const message = err instanceof Error ? err.message : String(err);
-      if (code === 'elevation_declined') {
-        toast('warn', 'Tunnel not installed', 'The elevation prompt was declined. Press Connect again and accept the Windows prompt.');
-      } else if (code === 'elevation_failed' || code === 'tunnel_not_up' || code === 'elevation_required') {
-        toast('error', 'Elevated connect failed', message);
-      } else {
-        toast('error', 'Connect failed', message);
-      }
-    },
-  });
+  const core = (id: string) => engines.find((e) => e.id === id);
+  const provider = (id: string) => providers.find((p) => p.id === id);
+  const installedCores = engines.filter((e) => e.available);
 
-  const reconnect = useMutation({
-    mutationFn: (profileId: string) => api.post<{ status: VpnStatus }>('/vpn/reconnect', { profileId }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['vpn'] }),
-    onError: (err) => toast('error', 'Reconnect failed', err instanceof Error ? err.message : undefined),
-  });
-
-  const removeProfile = useMutation({
-    mutationFn: (profileId: string) => api.delete<{ ok: boolean }>(`/vpn/profiles/${profileId}`),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['vpn', 'profiles'] });
-      toast('ok', 'Profile deleted');
+  const groups: RailGroup[] = [
+    {
+      heading: 'Dispatch',
+      items: [
+        {
+          id: 'overview',
+          label: 'Overview',
+          icon: Shield,
+          glyph: 'from-slate-400/20 to-slate-300/5 text-slate-200',
+          dot: { tone: connected || tunnelActive ? 'ok' : 'idle' },
+          state: connected || tunnelActive ? 'a tunnel is up' : 'no tunnel',
+        },
+      ],
     },
-    onError: (err) => toast('error', 'Delete failed', err instanceof Error ? err.message : undefined),
-  });
-
-  const importProfile = useMutation({
-    mutationFn: () =>
-      api.post<{ profile: ProfileDto }>('/vpn/profiles', {
-        providerId: importProvider,
-        name: importName || 'Imported profile',
-        configText,
+    {
+      heading: 'Circumvention',
+      items: [
+        {
+          id: 'aether',
+          label: 'Aether',
+          icon: Globe,
+          glyph: 'from-violet-500/30 to-cyan-400/10 text-violet-200',
+          dot: {
+            tone: status?.providerId === 'aether' && connected ? 'ok' : aether?.installed ? 'idle' : 'warn',
+          },
+          state:
+            status?.providerId === 'aether' && connected
+              ? 'connected'
+              : aether?.installed
+                ? `v${aether.version ?? '?'} installed`
+                : 'not installed',
+        },
+      ],
+    },
+    {
+      heading: 'Node path',
+      items: [
+        {
+          id: 'tunnel',
+          label: 'Proxy Tunnel',
+          icon: Route,
+          glyph: 'from-cyan-500/25 to-sky-400/10 text-cyan-300',
+          dot: { tone: tunnelActive ? 'ok' : tunnel?.state === 'down' ? 'danger' : installedCores.length ? 'idle' : 'warn' },
+          state: tunnelActive ? `active · ${tunnel?.exitIp ?? 'unverified'}` : tunnel?.state === 'down' ? 'fault' : installedCores.length ? 'ready' : 'no core',
+        },
+        // Derived from the shared engine catalog, so a newly supported core
+        // cannot be missing from this list.
+        ...PROXY_CORE_IDS.map((id) => {
+          const info = core(id);
+          const available = info?.available === true;
+          return {
+            id,
+            label: PROXY_CORE_META[id].shortLabel,
+            icon: Cpu,
+            glyph: PROXY_CORE_META[id].glyph,
+            dot: { tone: available ? (effective === id ? 'ok' : 'idle') : 'warn' } as const,
+            state: available ? (preferred === id ? 'preferred' : effective === id ? 'in use' : 'installed') : 'not installed',
+          };
+        }),
+      ],
+    },
+    {
+      heading: 'Native clients',
+      items: (['wireguard', 'openvpn'] as const).map((id) => {
+        const info = provider(id);
+        const available = info?.available === true;
+        const isConnected = status?.providerId === id && connected;
+        return {
+          id,
+          label: id === 'wireguard' ? 'WireGuard' : 'OpenVPN',
+          icon: ShieldCheck,
+          glyph: id === 'wireguard' ? 'from-rose-500/25 to-orange-400/10 text-rose-300' : 'from-amber-500/25 to-yellow-400/10 text-amber-300',
+          dot: { tone: isConnected ? 'ok' : available ? 'idle' : 'warn' } as const,
+          state: isConnected ? 'connected' : available ? 'available' : 'not detected',
+        };
       }),
-    onSuccess: (data) => {
-      setConfigText('');
-      setImportName('');
-      setShowImport(false);
-      setImportError(null);
-      void qc.invalidateQueries({ queryKey: ['vpn', 'profiles'] });
-      toast('ok', `Profile "${data.profile.name}" imported`);
     },
-    onError: (err) => setImportError(err instanceof Error ? err.message : 'Import failed'),
-  });
+  ];
 
-  const status = statusQuery.data;
-  const connected = status?.connected ?? false;
-  const profiles = profilesQuery.data?.profiles ?? [];
-  const activeProfileId = status?.serverId ?? null;
+  const railItems = groups.flatMap((g) => g.items);
+  const missing = VPN_SURFACES.filter((s) => !railItems.some((i) => i.id === s.id));
 
   return (
     <div>
       <PageHeader
         title="VPN"
-        description="Import profiles and control tunnels through the backend's provider layer. WireGuard and OpenVPN drive the installed native clients; sing-box runs VLESS/VMess/Trojan/Shadowsocks links in unprivileged proxy mode. Private key material never leaves the encrypted vault."
+        description="Every tunnel engine on this machine, divided by how it reaches the internet. One tunnel runs at a time; a surface only reports a tunnel it observed."
         actions={
           // Also offered while the kill switch is blocking: that state has no
           // connected tunnel, and Disconnect is the way out of it.
-          connected || status?.killSwitchActive ? (
+          connected || killSwitch?.blocking ? (
             <Button variant="danger" onClick={() => disconnect.mutate()} loading={disconnect.isPending}>
+              <Shield size={13} />
               {connected ? 'Disconnect' : 'Release kill switch'}
             </Button>
           ) : null
         }
       />
 
-      {statusQuery.isError && <ErrorState error={statusQuery.error} retry={() => void statusQuery.refetch()} />}
-      {statusQuery.isLoading && <LoadingState label="Reading VPN state" />}
-
-      <AetherCard />
-      <ProxyTunnelCard />
-      <DiscoveryCard />
-      <VpnHistoryCard />
-
-      {status && (
-        <Card className={`mb-6 ${connected ? 'border-ok/40' : ''}`}>
-          <CardHeader
-            title="Connection status"
-            icon={connected ? <Shield size={15} /> : <ShieldOff size={15} />}
-            actions={
-              <div className="flex items-center gap-2">
-                <VerificationBadge status={status} />
-                <Badge tone={connected ? 'ok' : 'neutral'}>{connected ? 'Connected' : 'Disconnected'}</Badge>
-              </div>
-            }
-          />
-          <CardBody>
-            {connected ? (
-              <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm text-muted">
-                <span>Profile: <span className="text-text">{status.serverName ?? '—'}</span></span>
-                <span>Protocol: <span className="text-text">{status.protocol ?? '—'}</span></span>
-                {status.endpoint && <span>Endpoint: <span className="text-text">{status.endpoint}</span></span>}
-                {status.since != null && <span>Since: <span className="text-text">{new Date(status.since).toLocaleTimeString()}</span></span>}
-                {status.verifiedPublicIp && <span>Tunnel IP: <span className="text-text">{status.verifiedPublicIp}</span></span>}
-                {status.killSwitchActive && <Badge tone="danger">kill switch blocking</Badge>}
-              </div>
-            ) : (
-              <p className="text-sm leading-relaxed text-muted">
-                {status.supported
-                  ? 'No tunnel is currently up. Import a profile below and connect to it.'
-                  : 'No VPN engine was detected on this machine. Install WireGuard, OpenVPN or sing-box, then import a profile — the backend drives the installed client, it never fakes a connection.'}
-              </p>
-            )}
-            {status.verificationNote && (
-              <p className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-relaxed ${status.verification === 'failed' ? 'border-danger/40 bg-danger/10 text-danger' : 'border-line bg-surface-2 text-muted'}`}>
-                {status.verificationNote}
-              </p>
-            )}
-          </CardBody>
-        </Card>
+      {statusQuery.isError && (
+        <p className="mb-5 rounded-r-lg border-l-2 border-danger/60 bg-danger/5 px-3.5 py-2.5 text-xs text-danger">
+          VPN status could not be read: {statusQuery.error instanceof Error ? statusQuery.error.message : 'unknown error'}.
+          The surfaces below show nothing rather than stale state.
+        </p>
       )}
 
-      {connected && healthQuery.data && (
-        <Card className="mb-6">
-          <CardHeader title="Tunnel health" icon={<RefreshCw size={15} />} subtitle="Live metrics reported by the active engine" />
-          <CardBody>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-faint">Received</p>
-                <p className="metric-num text-lg text-text">{formatBytes(healthQuery.data.rxBytes)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-faint">Sent</p>
-                <p className="metric-num text-lg text-text">{formatBytes(healthQuery.data.txBytes)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-faint">Handshake age</p>
-                <p className="metric-num text-lg text-text">{healthQuery.data.handshakeAgeSec != null ? `${healthQuery.data.handshakeAgeSec}s` : '—'}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-faint">Endpoint latency</p>
-                <p className="metric-num text-lg text-text">{healthQuery.data.endpointLatencyMs != null ? `${healthQuery.data.endpointLatencyMs.toFixed(1)} ms` : '—'}</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      <SystemBar
+        status={status}
+        tunnel={tunnel}
+        killSwitchBlocking={killSwitch?.blocking === true}
+        blockingReason={killSwitch?.reason}
+      />
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Profiles"
-            actions={
-              <Button variant="ghost" onClick={() => setShowImport((v) => !v)}>
-                <Download size={13} />
-                Import
-              </Button>
-            }
-          />
-          <CardBody>
-            {showImport && (
-              <div className="mb-4 space-y-3 rounded-xl border border-line bg-surface-2 p-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Provider">
-                    <select
-                      className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm"
-                      value={importProvider}
-                      onChange={(e) => setImportProvider(e.target.value)}
-                    >
-                      {providersQuery.data?.providers
-                        .filter((p) => p.capabilities.includes('import-config'))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                            {p.protocols?.length ? ` (${p.protocols.join('/')})` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  <Field label="Name">
-                    <input
-                      className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm"
-                      value={importName}
-                      onChange={(e) => setImportName(e.target.value)}
-                      placeholder="My tunnel"
-                    />
-                  </Field>
-                </div>
-                <Field label="Configuration" hint={PROVIDER_HINTS[importProvider]}>
-                  <textarea
-                    className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs"
-                    rows={6}
-                    value={configText}
-                    onChange={(e) => setConfigText(e.target.value)}
-                    placeholder={importProvider === 'singbox' ? 'vless://…, vmess://…, trojan://… or ss://…' : ''}
-                  />
-                </Field>
-                {importError && <p className="text-xs text-danger">{importError}</p>}
-                <Button
-                  variant="primary"
-                  onClick={() => importProfile.mutate()}
-                  loading={importProfile.isPending}
-                  disabled={configText.trim().length === 0}
-                >
-                  Import profile
-                </Button>
-              </div>
-            )}
-
-            {profilesQuery.isLoading ? (
-              <LoadingState label="Loading profiles" />
-            ) : profiles.length ? (
-              <ul className="space-y-2">
-                {profiles.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-text">{p.name}</p>
-                      <p className="truncate text-xs text-faint">
-                        {p.protocol} · {p.endpoint ?? 'endpoint hidden'}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {activeProfileId === p.id && connected ? (
-                        <Button variant="ghost" onClick={() => reconnect.mutate(p.id)} loading={reconnect.isPending}>
-                          <RefreshCw size={12} />
-                          Reconnect
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          onClick={() => connect.mutate(p.id)}
-                          loading={connect.isPending && connect.variables === p.id}
-                          disabled={connected}
-                        >
-                          <Play size={12} />
-                          Connect
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          if (window.confirm(`Delete profile "${p.name}"? Its stored secrets will also be removed.`)) {
-                            removeProfile.mutate(p.id);
-                          }
-                        }}
-                        loading={removeProfile.isPending && removeProfile.variables === p.id}
-                        aria-label={`Delete profile ${p.name}`}
+      <RTabs.Root value={surface} onValueChange={(v) => setSurface(v as VpnSurfaceId)} orientation="vertical">
+        <div className="grid gap-6 lg:grid-cols-[212px_minmax(0,1fr)] lg:items-start">
+          {/* ------------------------------- rail ------------------------------ */}
+          <RTabs.List
+            aria-label="VPN engines"
+            className="-mx-4 flex gap-x-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:sticky lg:top-20 lg:block lg:overflow-visible lg:px-0 lg:pb-0"
+          >
+            {groups.map((group) => (
+              <div key={group.heading} className="flex shrink-0 gap-1.5 lg:mb-4 lg:block lg:shrink lg:gap-0">
+                <p className="hidden px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-faint lg:block">
+                  {group.heading}
+                </p>
+                <div className="flex gap-1.5 lg:block lg:space-y-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <RTabs.Trigger
+                        key={item.id}
+                        value={item.id}
+                        title={`${item.label} — ${item.state}`}
+                        className="group flex w-auto shrink-0 items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text data-[state=active]:border-line-strong data-[state=active]:bg-surface data-[state=active]:text-text lg:w-full"
                       >
-                        <Trash2 size={12} />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState
-                icon={<KeyRound size={18} />}
-                title="No profiles"
-                message="Import a WireGuard, OpenVPN or sing-box configuration to get started."
-              />
+                        <span
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${item.glyph} group-data-[state=active]:opacity-100 lg:opacity-80`}
+                        >
+                          <Icon size={13} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+                        <span className="hidden text-[10px] text-faint lg:inline group-data-[state=active]:text-muted">
+                          <StatusDot tone={item.dot.tone} pulse={item.dot.pulse} size={6} />
+                        </span>
+                      </RTabs.Trigger>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {/* Rail items the user has never seen before this build are appended
+                rather than dropped, so a new surface is reachable immediately. */}
+            {missing.length > 0 && (
+              <p className="hidden text-[10px] text-faint lg:block">
+                Not in the rail: {missing.map((m) => m.label).join(', ')}
+              </p>
             )}
-          </CardBody>
-        </Card>
+          </RTabs.List>
 
-        <div className="space-y-5">
-          <Card>
-            <CardHeader title="Engines" subtitle="Detected VPN clients on this machine" />
-            <CardBody>
-              {providersQuery.isLoading && <LoadingState label="Detecting providers" />}
-              {providersQuery.data && (
-                <ul className="space-y-2">
-                  {providersQuery.data.providers.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-sm text-text">{p.name}</p>
-                        <p className="truncate text-xs text-faint">{p.protocols?.length ? p.protocols.join(' · ') : p.capabilities.join(' · ') || 'status only'}</p>
-                      </div>
-                      <Badge tone={p.available ? 'ok' : 'neutral'}>{p.available ? 'available' : 'not installed'}</Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardBody>
-          </Card>
+          {/* ------------------------------ engines ---------------------------- */}
+          <div className="min-w-0">
+            <RTabs.Content value="overview" className="animate-fade-up focus-visible:outline-none">
+              <OverviewSurface onOpen={(id) => setSurface(id)} />
+            </RTabs.Content>
 
-          <Card>
-            <CardHeader title="Recent connections" />
-            <CardBody>
-              {connectionsQuery.data?.connections.length ? (
-                <ul className="space-y-1.5">
-                  {connectionsQuery.data.connections.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="min-w-0 truncate text-muted">
-                        {c.serverName ?? c.providerId} · {c.protocol}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <Badge tone={c.status === 'connected' ? 'ok' : c.status === 'error' ? 'danger' : 'neutral'}>{c.status}</Badge>
-                        <span className="text-faint">{c.connectedAt ? new Date(c.connectedAt).toLocaleString() : '—'}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <EmptyState title="No connection history" message="Connect a tunnel to see session records here." />
-              )}
-            </CardBody>
-          </Card>
+            <RTabs.Content value="aether" className="animate-fade-up focus-visible:outline-none">
+              <AetherSurface />
+            </RTabs.Content>
+
+            <RTabs.Content value="tunnel" className="animate-fade-up focus-visible:outline-none">
+              <TunnelSurface />
+            </RTabs.Content>
+
+            <RTabs.Content value="xray" className="animate-fade-up focus-visible:outline-none">
+              <CoreSurface engine="xray" />
+            </RTabs.Content>
+
+            <RTabs.Content value="sing-box" className="animate-fade-up focus-visible:outline-none">
+              <CoreSurface engine="sing-box">
+                <div className="mb-4 mt-1 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-line" />
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-faint">Managed tunnel · share links</span>
+                  <div className="h-px flex-1 bg-line" />
+                </div>
+                <div className="space-y-7">
+                  <EngineIntakeCard />
+                  <ProviderSurface providerId="singbox" />
+                </div>
+              </CoreSurface>
+            </RTabs.Content>
+
+            <RTabs.Content value="hysteria" className="animate-fade-up focus-visible:outline-none">
+              <CoreSurface engine="hysteria" />
+            </RTabs.Content>
+
+            <RTabs.Content value="v2ray" className="animate-fade-up focus-visible:outline-none">
+              <CoreSurface engine="v2ray" />
+            </RTabs.Content>
+
+            <RTabs.Content value="wireguard" className="animate-fade-up focus-visible:outline-none">
+              <ProviderSurface providerId="wireguard" />
+            </RTabs.Content>
+
+            <RTabs.Content value="openvpn" className="animate-fade-up focus-visible:outline-none">
+              <ProviderSurface providerId="openvpn" />
+            </RTabs.Content>
+          </div>
         </div>
-      </div>
+      </RTabs.Root>
     </div>
   );
 }

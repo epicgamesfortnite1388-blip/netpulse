@@ -1,7 +1,9 @@
-import { Check, HelpCircle, Minus, X } from 'lucide-react';
+import { Check, ChevronDown, HelpCircle, Minus, X } from 'lucide-react';
 
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { CollapsibleCard, useDisclosure, useDisclosureScopeName } from '@/components/ui/Disclosure';
 
+import type { DisclosureSpec } from '@/lib/disclosure';
 import type { ReactNode } from 'react';
 
 /**
@@ -91,6 +93,13 @@ export function EngineHero({
  * separated by a hairline. Use it on surfaces that hold their own panels — a
  * bordered section with bordered panels inside it is the box-inside-a-box this
  * primitive exists to prevent.
+ *
+ * FOLDING (`collapsible`): a page with eight equally-open sections reads as
+ * complicated, so secondary ones fold. Pass `id` (stable, unique on the page),
+ * `defaultOpen={false}` for anything that is reference material rather than the
+ * task, and a `summary` so the folded header still says what is inside. `pinned`
+ * keeps the section out of the page-level fold. `badge` survives folding — a
+ * collapsed section must never hide live state.
  */
 export function Section({
   title,
@@ -100,6 +109,12 @@ export function Section({
   children,
   className = '',
   variant = 'card',
+  collapsible = false,
+  defaultOpen = true,
+  pinned = false,
+  id,
+  summary,
+  badge,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -108,22 +123,53 @@ export function Section({
   children: ReactNode;
   className?: string;
   variant?: 'card' | 'flat';
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  pinned?: boolean;
+  /** Required when `collapsible`: stable identity within the page. */
+  id?: string;
+  summary?: string;
+  badge?: ReactNode;
 }) {
+  const scope = useDisclosureScopeName();
+  const sectionId = id ?? (typeof title === 'string' ? title : 'section');
+
   if (variant === 'flat') {
     return (
-      <section className={`mb-7 border-t border-line pt-4 ${className}`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            {icon && <span className="mt-0.5 text-accent">{icon}</span>}
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
-              {subtitle && <p className="mt-0.5 max-w-3xl text-xs leading-relaxed text-muted">{subtitle}</p>}
-            </div>
-          </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-        </div>
-        <div className="mt-3.5">{children}</div>
-      </section>
+      <FlatSection
+        title={title}
+        subtitle={subtitle}
+        icon={icon}
+        actions={actions}
+        className={className}
+        collapsible={collapsible}
+        summary={summary}
+        badge={badge}
+        spec={{ id: sectionId, defaultOpen, pinned }}
+        scope={scope}
+      >
+        {children}
+      </FlatSection>
+    );
+  }
+
+  if (collapsible) {
+    return (
+      <CollapsibleCard
+        title={title}
+        subtitle={subtitle}
+        icon={icon}
+        actions={actions}
+        summary={summary}
+        badge={badge}
+        id={sectionId}
+        scope={scope}
+        defaultOpen={defaultOpen}
+        pinned={pinned}
+        className={className}
+      >
+        {children}
+      </CollapsibleCard>
     );
   }
 
@@ -132,6 +178,82 @@ export function Section({
       <CardHeader title={title} subtitle={subtitle} icon={icon} actions={actions} />
       <CardBody>{children}</CardBody>
     </Card>
+  );
+}
+
+/**
+ * The `variant="flat"` section, with optional folding. Flat sections carry no
+ * container of their own, so folding them is a chevron in the heading rather
+ * than another bordered header.
+ */
+function FlatSection({
+  title,
+  subtitle,
+  icon,
+  actions,
+  children,
+  className,
+  collapsible,
+  summary,
+  badge,
+  spec,
+  scope,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  icon?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  className: string;
+  collapsible: boolean;
+  summary?: string;
+  badge?: ReactNode;
+  spec: DisclosureSpec;
+  scope: string;
+}) {
+  const [open, setOpen] = useDisclosure(spec, scope);
+  const folded = collapsible && !open;
+  const bodyId = `flat-${scope}-${spec.id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const heading = (
+    <>
+      {collapsible && (
+        <ChevronDown size={14} aria-hidden className={`mt-1 shrink-0 text-faint transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
+      )}
+      {icon && <span className="mt-0.5 text-accent">{icon}</span>}
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-semibold tracking-tight">{title}</span>
+          {badge}
+        </span>
+        {subtitle && !folded && <span className="mt-0.5 block max-w-3xl text-xs leading-relaxed text-muted">{subtitle}</span>}
+        {folded && summary && <span className="mt-0.5 block text-xs text-faint">{summary}</span>}
+      </span>
+    </>
+  );
+  return (
+    <section className={`mb-7 border-t border-line pt-4 ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left transition-colors hover:text-text"
+          >
+            {heading}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-start gap-2.5">{heading}</div>
+        )}
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      </div>
+      {!folded && (
+        <div id={bodyId} className="mt-3.5">
+          {children}
+        </div>
+      )}
+    </section>
   );
 }
 

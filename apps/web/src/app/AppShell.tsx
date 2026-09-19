@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   Activity,
+  ChevronDown,
   Cloud,
+  Cpu,
   Download,
   Flag,
   Gauge,
@@ -31,6 +33,7 @@ import { useStartupHealth } from '@/lib/useStartupHealth';
 import { DemoBadge } from '@/components/ui/Badge';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { api } from '@/lib/api';
+import { usePersistentState } from '@/lib/usePersistentState';
 import { useThemeApplier } from '@/app/useTheme';
 
 import type { ReactNode } from 'react';
@@ -42,9 +45,28 @@ interface NavItem {
   end?: boolean;
 }
 
+/**
+ * A parent row that expands into its own destinations.
+ *
+ * `children` is what makes an entry a section rather than a link — the node
+ * area (Explorer / Sources / Engines) is one dataset with several views, so the
+ * sidebar shows that grouping instead of flattening them into Infrastructure.
+ */
+interface NavSection {
+  label: string;
+  icon: ReactNode;
+  children: NavItem[];
+}
+
+type NavEntry = NavItem | NavSection;
+
+function isSection(entry: NavEntry): entry is NavSection {
+  return 'children' in entry;
+}
+
 interface NavGroup {
   heading: string;
-  items: NavItem[];
+  items: NavEntry[];
 }
 
 const NAV: NavGroup[] = [
@@ -81,8 +103,15 @@ const NAV: NavGroup[] = [
       { to: '/servers', label: 'Servers', icon: <Server size={16} /> },
       { to: '/vpn', label: 'VPN', icon: <Shield size={16} /> },
       { to: '/optimizer', label: 'Optimizer', icon: <Activity size={16} /> },
-      { to: '/nodes', label: 'Node Explorer', icon: <Radar size={16} /> },
-      { to: '/nodes-sources', label: 'Node Sources', icon: <Download size={16} /> },
+      {
+        label: 'Nodes',
+        icon: <Radar size={16} />,
+        children: [
+          { to: '/nodes', label: 'Explorer', icon: <Radar size={14} /> },
+          { to: '/nodes-sources', label: 'Sources', icon: <Download size={14} /> },
+          { to: '/engines', label: 'Engines', icon: <Cpu size={14} /> },
+        ],
+      },
     ],
   },
   {
@@ -116,7 +145,112 @@ function useMeta() {
   return meta;
 }
 
+function isChildActive(child: NavItem, pathname: string): boolean {
+  return pathname === child.to || pathname.startsWith(`${child.to}/`);
+}
+
+/** Every collapsible section in the nav, derived so the two never drift apart. */
+const NAV_SECTIONS = NAV.flatMap((group) => group.items).filter(isSection);
+
+const linkClass = (isActive: boolean) =>
+  `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+    isActive ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
+  }`;
+
+/**
+ * A collapsible nav section: the parent toggles, the children navigate.
+ *
+ * The parent still lights up when one of its children is the current page, so a
+ * collapsed section never hides where you are.
+ */
+function NavSectionEntry({
+  section,
+  pathname,
+  open,
+  onToggle,
+  onNavigate,
+}: {
+  section: NavSection;
+  pathname: string;
+  open: boolean;
+  onToggle: () => void;
+  onNavigate?: () => void;
+}) {
+  const active = section.children.some((child) => isChildActive(child, pathname));
+  const panelId = `nav-section-${section.label.toLowerCase()}`;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+          active && !open
+            ? 'bg-accent-soft/60 text-accent-strong'
+            : active
+              ? 'text-text hover:bg-surface-2'
+              : 'text-muted hover:bg-surface-2 hover:text-text'
+        }`}
+      >
+        <span className="shrink-0">{section.icon}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{section.label}</span>
+        <ChevronDown size={14} className={`shrink-0 text-faint transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+
+      {open && (
+        <div id={panelId} className="mt-0.5 ml-[19px] space-y-0.5 border-l border-line pl-2">
+          {section.children.map((child) => (
+            <NavLink
+              key={child.to}
+              to={child.to}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors ${
+                  isActive ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
+                }`
+              }
+            >
+              <span className="shrink-0">{child.icon}</span>
+              {child.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { pathname } = useLocation();
+  // Which sections the user closed. Absent = open, so the default is expanded
+  // and the stored value only ever records an explicit collapse.
+  const [collapsed, setCollapsed] = usePersistentState<Record<string, boolean>>('nav.collapsed', {});
+
+  // Entering a section reveals it: a collapsed section containing the current
+  // page would hide the user's own location. Only fires on route change, so
+  // collapsing a section while staying inside it still works.
+  useEffect(() => {
+    const entering = NAV_SECTIONS.filter((section) =>
+      section.children.some((child) => isChildActive(child, pathname)),
+    );
+    if (entering.length === 0) return;
+    setCollapsed((prev) => {
+      if (!entering.some((section) => prev[section.label] === true)) return prev;
+      const next = { ...prev };
+      for (const section of entering) next[section.label] = false;
+      return next;
+    });
+  }, [pathname, setCollapsed]);
+
+  const toggle = useCallback(
+    (label: string) => {
+      setCollapsed((prev) => ({ ...prev, [label]: !(prev[label] ?? true) }));
+    },
+    [setCollapsed],
+  );
+
   return (
     <nav className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -135,24 +269,29 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {group.heading}
             </div>
             <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                      isActive
-                        ? 'bg-accent-soft text-accent-strong'
-                        : 'text-muted hover:bg-surface-2 hover:text-text'
-                    }`
-                  }
-                >
-                  <span className="shrink-0">{item.icon}</span>
-                  {item.label}
-                </NavLink>
-              ))}
+              {group.items.map((item) =>
+                isSection(item) ? (
+                  <NavSectionEntry
+                    key={item.label}
+                    section={item}
+                    pathname={pathname}
+                    open={collapsed[item.label] !== true}
+                    onToggle={() => toggle(item.label)}
+                    onNavigate={onNavigate}
+                  />
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={onNavigate}
+                    className={({ isActive }) => linkClass(isActive)}
+                  >
+                    <span className="shrink-0">{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
             </div>
           </div>
         ))}

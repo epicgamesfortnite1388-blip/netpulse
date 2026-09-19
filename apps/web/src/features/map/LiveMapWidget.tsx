@@ -28,7 +28,13 @@ export function LiveMapWidget() {
   const latency = (o: MapObservation) => o.measurements.find((m) => m.method === 'tcp' || m.method === 'dns')?.latencyMs ?? null;
 
   return (
-    <Card>
+    <Card
+      fold={{
+        id: 'live-map-widget',
+        defaultOpen: false,
+        summary: `${obs.length} measured target${obs.length === 1 ? '' : 's'} · VPN ${local?.vpn.connected ? 'connected' : 'disconnected'}`,
+      }}
+    >
       <CardHeader
         title="Live map"
         subtitle="Where your traffic is going right now"

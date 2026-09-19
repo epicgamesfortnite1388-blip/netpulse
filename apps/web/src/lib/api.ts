@@ -52,7 +52,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     // sidecar may have respawned — possibly on a NEW ephemeral port. Re-run
     // bootstrap once and retry before surfacing the error, so a watchdog
     // respawn can never leave the UI latched to a dead endpoint.
-    if (t.mode === 'desktop' && !_retried) {
+    //
+    // Only idempotent requests are retried. A timeout AFTER a POST was
+    // delivered would replay the action (double connect / double UAC prompt),
+    // which serializeVpnOp on the server exists to prevent.
+    const method = (init.method ?? 'GET').toUpperCase();
+    if (t.mode === 'desktop' && !_retried && (method === 'GET' || method === 'HEAD')) {
       resetTransport();
       return request<T>(path, { ...options, _retried: true });
     }

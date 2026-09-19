@@ -111,7 +111,7 @@ const ICONS = {
 
 export function InsightsCard({ insights }: { insights: Insight[] }) {
   return (
-    <Card>
+    <Card fold={{ id: 'insights', summary: `${insights.length} observations` }}>
       <CardHeader title="Insights" subtitle="Generated from your live measurements" />
       <CardBody>
         <ul className="space-y-2.5">

@@ -7,6 +7,7 @@ import { Cloud, Download, Gauge, MapPin, Radar, ShieldCheck, ShieldX, Star, X } 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { Field } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -284,10 +285,10 @@ export default function CloudflarePage() {
   const edgeLabel = edge?.label ?? null;
 
   return (
-    <div>
+    <DisclosureScope name="cloudflare">
       <PageHeader
         title="Cloudflare endpoints"
-        description="Discover Cloudflare edge IPs, learn which region each one routes to, then validate the shortlist with a real download — a clean edge must answer /cdn-cgi/trace, survive an idle hold, and actually carry traffic (SenPaiScanner-style methodology)."
+        description="Find Cloudflare edge addresses, see which datacenter each one routes to, then validate the shortlist with a real download."
         actions={
           running ? (
             <Button variant="danger" onClick={() => void cancelScan()}>
@@ -301,9 +302,22 @@ export default function CloudflarePage() {
           )
         }
       />
+      <DisclosureToolbar className="-mt-3 mb-2" />
+
+      <FoldNote id="validation-method" label="What counts as a clean edge" className="mb-4">
+        A candidate is only listed as usable after it answers{' '}
+        <span className="font-mono">/cdn-cgi/trace</span>, survives an idle hold, and carries a real download. Candidates are
+        sampled on an even stride across each range, so Cloudflare&apos;s published /13s scan without touching every address.
+      </FoldNote>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Card>
+        <Card
+          fold={{
+            id: 'scan-config',
+            defaultOpen: false,
+            summary: `${cidrText.split('\n').map((l) => l.trim()).filter(Boolean).length} range${cidrText.split('\n').filter((l) => l.trim()).length === 1 ? '' : 's'} · ports ${portText.trim() || '—'} · max ${maxCandidates} candidates`,
+          }}
+        >
           <CardHeader title="Scan configuration" subtitle="Only Cloudflare-published ranges or ranges you are authorized to test" />
           <CardBody className="space-y-3">
             <Field label="CIDRs (one per line)">
@@ -342,7 +356,7 @@ export default function CloudflarePage() {
           </CardBody>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" fold={{ id: 'scan-results', pinned: true }}>
           <CardHeader
             title={scan ? `Scan ${scan.id.slice(0, 8)}` : 'Live results'}
             icon={<Cloud size={15} />}
@@ -551,7 +565,14 @@ export default function CloudflarePage() {
         </Card>
       </div>
 
-      <Card className="mt-5">
+      <Card
+        className="mt-5"
+        fold={{
+          id: 'scan-history',
+          defaultOpen: false,
+          summary: scansQuery.data ? `${scansQuery.data.scans.length} scan${scansQuery.data.scans.length === 1 ? '' : 's'} recorded` : 'loading history',
+        }}
+      >
         <CardHeader title="Scan history" />
         <CardBody>
           {scansQuery.isLoading && <LoadingState label="Loading scans" />}
@@ -583,6 +604,6 @@ export default function CloudflarePage() {
           )}
         </CardBody>
       </Card>
-    </div>
+    </DisclosureScope>
   );
 }

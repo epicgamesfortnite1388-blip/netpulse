@@ -135,7 +135,13 @@ export function ConnectionCard({ status }: { status: NetworkStatus | undefined }
 export function HealthBreakdown({ status }: { status: NetworkStatus | undefined }) {
   const components = status?.health.components ?? [];
   return (
-    <Card>
+    <Card
+      fold={{
+        id: 'health-components',
+        defaultOpen: false,
+        summary: `${components.filter((c) => c.measured).length} of ${components.length} components measured`,
+      }}
+    >
       <CardHeader title="Health components" subtitle="Only measured values contribute to the score" icon={<Shield size={15} />} />
       <CardBody>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">

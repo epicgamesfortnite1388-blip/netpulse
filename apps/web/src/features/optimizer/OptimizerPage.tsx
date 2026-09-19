@@ -6,6 +6,7 @@ import { Gauge, Play, Swords } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { EmptyState, ErrorState } from '@/components/ui/States';
 import { Progress } from '@/components/ui/Progress';
 import { Field } from '@/components/ui/Field';
@@ -104,7 +105,7 @@ export default function OptimizerPage() {
   const error = submitError ?? state.error;
 
   return (
-    <div>
+    <DisclosureScope name="optimizer">
       <PageHeader
         title="Optimizer"
         description="Measure every candidate with the full probe battery, score them with the weighted engine and rank them. Weights are configurable in Settings."
@@ -115,6 +116,7 @@ export default function OptimizerPage() {
           </Button>
         }
       />
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       {running && (
         <Card className="mb-5">
@@ -145,7 +147,7 @@ export default function OptimizerPage() {
       {result && (
         <div className="space-y-5">
           {result.best && (
-            <Card className="border-ok/40">
+            <Card className="border-ok/40" fold={{ id: 'recommendation', pinned: true }}>
               <CardHeader title="Recommendation" icon={<Swords size={15} />} subtitle="Based on this run's live measurements and the configured weights" />
               <CardBody className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
                 <span className="text-lg font-semibold text-ok">{result.best.candidate.name}</span>
@@ -157,7 +159,7 @@ export default function OptimizerPage() {
             </Card>
           )}
 
-          <Card>
+          <Card fold={{ id: 'ranked-results', pinned: true }}>
             <CardHeader title="Ranked results" subtitle={`${result.results.length} candidates · weights: ${Object.entries(result.weights ?? {}).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(' · ') || 'unavailable'}`} />
             <CardBody className="overflow-x-auto p-0">
               <table className="w-full text-sm">
@@ -195,7 +197,17 @@ export default function OptimizerPage() {
         </div>
       )}
 
-      <Card className="mt-5">
+      <Card
+        className="mt-5"
+        fold={{
+          id: 'custom-candidates',
+          defaultOpen: false,
+          summary:
+            candidateText.trim().length === 0
+              ? 'nothing pasted yet'
+              : `${candidateText.split('\n').map((l) => l.trim()).filter(Boolean).length} candidate line${candidateText.split('\n').filter((l) => l.trim()).length === 1 ? '' : 's'} pasted`,
+        }}
+      >
         <CardHeader title="Custom candidates" subtitle="One per line: host[:port] or name,host[:port]" />
         <CardBody className="space-y-3">
           <Field label="Candidate list">
@@ -213,6 +225,6 @@ export default function OptimizerPage() {
           </Button>
         </CardBody>
       </Card>
-    </div>
+    </DisclosureScope>
   );
 }

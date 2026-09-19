@@ -14,6 +14,7 @@ import {
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { useToast } from '@/components/Toaster';
@@ -24,12 +25,13 @@ import { desktopInfo, tauriInvoke } from '@/lib/transport';
 
 import type { ScheduledRunStatus, VpnSelfTestResult } from '@shared/models/settings';
 
-type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-function invokeFn(): InvokeFn | null {
-  // tauriInvoke resolves __TAURI_INTERNALS__ / __TAURI__.core.invoke / top-level
-  // — the top-level-only check silently returned null in packaged builds.
-  return tauriInvoke as InvokeFn | null;
-}
+/*
+ * Desktop-bridge calls on this page always branch on the RESULT of
+ * `tauriInvoke`, never on the function: it is always defined and resolves the
+ * Tauri global lazily, so it returns null (in web mode) from the call itself.
+ * Guarding on the function crashed this page with a null `.then` and let the
+ * export action claim a save that never happened.
+ */
 
 interface SelfTestPayload {
   last: VpnSelfTestResult | null;
@@ -133,7 +135,17 @@ function VpnSelfTestCard() {
   };
 
   return (
-    <Card>
+    <Card
+      fold={{
+        id: 'vpn-selftest',
+        defaultOpen: false,
+        summary: isRunning
+          ? 'dry-run in progress…'
+          : last
+            ? `last ${last.state} · checked ${new Date(last.checkedAt).toLocaleTimeString()} · ${last.tookMs} ms`
+            : 'no self-test has run yet',
+      }}
+    >
       <CardHeader
         title="VPN tunnel self-test"
         subtitle="Scheduled dry-run — engine, key material, endpoint reachability. Never changes tunnel state."
@@ -205,9 +217,13 @@ export default function SystemHealthPage() {
   }, []);
 
   const loadLogTail = () => {
-    const invoke = invokeFn();
-    if (!invoke) return;
-    void invoke<string[]>('read_log_tail', { lines: 60 })
+    const p = tauriInvoke<string[]>('read_log_tail', { lines: 60 });
+    if (!p) {
+      // Web mode: no log file to tail. Say so instead of crashing the page.
+      setLogTail(null);
+      return;
+    }
+    void p
       .then((lines) => setLogTail(Array.isArray(lines) ? lines : []))
       .catch(() => setLogTail(null));
   };
@@ -226,47 +242,46 @@ export default function SystemHealthPage() {
 
   const doExport = () =>
     runAction('export', async () => {
-      const invoke = invokeFn();
-      if (!invoke) {
+      const call = tauriInvoke<string>('save_diagnostic_report');
+      if (!call) {
         toast('error', 'Diagnostic export is a desktop-app feature');
         return;
       }
-      const p = await invoke<string>('save_diagnostic_report');
-      void p;
+      await call;
       toast('ok', 'Diagnostic report saved');
     });
 
   const doOpenLogs = () =>
     runAction('logs', async () => {
-      const invoke = invokeFn();
-      if (!invoke) {
+      const call = tauriInvoke<{ data_dir: string; log_dir: string }>('data_paths');
+      if (!call) {
         toast('error', 'Available in the desktop app');
         return;
       }
-      const paths = await invoke<{ data_dir: string; log_dir: string }>('data_paths');
-      await invoke('reveal_path', { path: paths.log_dir || paths.data_dir });
+      const paths = await call;
+      await tauriInvoke('reveal_path', { path: paths.log_dir || paths.data_dir });
     });
 
   const doRestartBackend = () =>
     runAction('restart', async () => {
-      const invoke = invokeFn();
-      if (!invoke) {
+      const call = tauriInvoke('restart_backend');
+      if (!call) {
         toast('error', 'Available in the desktop app');
         return;
       }
-      await invoke('restart_backend');
+      await call;
       toast('ok', 'Backend restarting…');
       setTimeout(refresh, 3000);
     });
 
   const doRepair = () =>
     runAction('repair', async () => {
-      const invoke = invokeFn();
-      if (!invoke) {
+      const call = tauriInvoke('restart_backend');
+      if (!call) {
         toast('error', 'Available in the desktop app');
         return;
       }
-      await invoke('restart_backend');
+      await call;
       toast('ok', 'Internal services restarted');
       setTimeout(refresh, 3000);
     });
@@ -281,7 +296,7 @@ export default function SystemHealthPage() {
   const pl = phaseLabel[phase] ?? { text: phase, tone: 'idle' as const };
 
   return (
-    <div>
+    <DisclosureScope name="health">
       <PageHeader
         title="System Health"
         description="Live diagnostics for this installation — what is working, what is not, and what to do about it."
@@ -324,6 +339,8 @@ export default function SystemHealthPage() {
         </CardBody>
       </Card>
 
+      <DisclosureToolbar className="-mt-3 mb-2" />
+
       {/* Scheduled VPN dry-run self-test */}
       <div className="mt-5">
         <VpnSelfTestCard />
@@ -333,7 +350,18 @@ export default function SystemHealthPage() {
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         {report ? (
           report.checks.map((c) => (
-            <Card key={c.id}>
+            <Card
+              key={c.id}
+              fold={{
+                id: `check-${c.id}`,
+                // Open: each card is one check's verdict — the page's whole
+                // purpose — so a folded default would hide the answer. When
+                // folded, the header still states the check's own verdict and
+                // what it measured, never a placeholder.
+                defaultOpen: true,
+                summary: `${c.state} · ${c.detail.length > 96 ? `${c.detail.slice(0, 96)}…` : c.detail}`,
+              }}
+            >
               <CardHeader title={c.label} />
               <CardBody>
                 <div className="flex items-start justify-between gap-3">
@@ -372,7 +400,14 @@ export default function SystemHealthPage() {
       </div>
 
       {/* Environment */}
-      <Card className="mt-5">
+      <Card
+        className="mt-5"
+        fold={{
+          id: 'environment',
+          defaultOpen: false,
+          summary: `v${desktop?.appVersion ?? report?.version ?? '—'} · ${desktop ? `${desktop.os} ${desktop.arch}` : osName || 'platform unknown'} · backend ${runtime ? (runtime.sidecar_running ? `running on ${runtime.sidecar_port ?? '?'}` : 'not running') : 'unknown'}`,
+        }}
+      >
         <CardHeader title="Environment" subtitle="Version, platform and build information" />
         <CardBody className="grid gap-3 sm:grid-cols-2">
           {[
@@ -411,7 +446,14 @@ export default function SystemHealthPage() {
       </Card>
 
       {/* Boot log tail */}
-      <Card className="mt-5">
+      <Card
+        className="mt-5"
+        fold={{
+          id: 'startup-log',
+          defaultOpen: false,
+          summary: logTail === null ? (isDesktop ? 'log unavailable' : 'available in the installed app only') : `${logTail.length} line${logTail.length === 1 ? '' : 's'} captured`,
+        }}
+      >
         <CardHeader
           title="Startup log (last 60 lines)"
           subtitle="Secret-shaped lines are redacted before they reach this page"
@@ -428,6 +470,6 @@ export default function SystemHealthPage() {
           </pre>
         </CardBody>
       </Card>
-    </div>
+    </DisclosureScope>
   );
 }

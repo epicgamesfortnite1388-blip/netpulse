@@ -17,6 +17,17 @@
   --color-warn: #fbbf24;
   --color-danger: #f87171;
 
+  /*
+   * Aether surface palette — a violet/cyan/pink spectrum used only by the
+   * VPN → Aether surface. Kept separate from `accent` so the rest of the app
+   * keeps its single-accent identity.
+   */
+  --color-aether: #a855f7;
+  --color-aether-2: #22d3ee;
+  --color-aether-3: #f472b6;
+  --color-aether-soft: rgba(168, 85, 247, 0.14);
+  --color-aether-line: rgba(168, 85, 247, 0.34);
+
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
 }
@@ -42,6 +53,11 @@ html[data-theme='light'] {
   --color-ok: #059669;
   --color-warn: #b45309;
   --color-danger: #dc2626;
+  --color-aether: #7c3aed;
+  --color-aether-2: #0891b2;
+  --color-aether-3: #db2777;
+  --color-aether-soft: rgba(124, 58, 237, 0.10);
+  --color-aether-line: rgba(124, 58, 237, 0.28);
 }
 
 /* backdrop glows tuned per theme */
@@ -78,6 +94,11 @@ html[data-theme='light'] ::selection {
     --color-ok: #059669;
     --color-warn: #b45309;
     --color-danger: #dc2626;
+    --color-aether: #7c3aed;
+    --color-aether-2: #0891b2;
+    --color-aether-3: #db2777;
+    --color-aether-soft: rgba(124, 58, 237, 0.10);
+    --color-aether-line: rgba(124, 58, 237, 0.28);
   }
 }
 
@@ -139,4 +160,207 @@ body {
 }
 .animate-fade-up {
   animation: fade-up 0.25s ease-out both;
+}
+
+/*
+ * ============================ Aether surface =============================
+ * The "premium / otherworldly" layer for the VPN → Aether tab. Every rule is
+ * opt-in via its own class, so no other page's appearance changes. Motion is
+ * disabled wholesale under prefers-reduced-motion (the WebGL core honours the
+ * same media query in JS).
+ */
+
+@keyframes aether-drift {
+  0% { transform: translate3d(-6%, -4%, 0) scale(1.06) rotate(0deg); }
+  50% { transform: translate3d(5%, 3%, 0) scale(1.16) rotate(180deg); }
+  100% { transform: translate3d(-6%, -4%, 0) scale(1.06) rotate(360deg); }
+}
+
+@keyframes aether-halo {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.05); }
+}
+
+@keyframes aether-scanline {
+  0% { transform: translateY(-120%); opacity: 0; }
+  30% { opacity: 0.5; }
+  100% { transform: translateY(230%); opacity: 0; }
+}
+
+@keyframes aether-sheen {
+  0% { transform: translateX(-140%); }
+  100% { transform: translateX(240%); }
+}
+
+/* Layered aurora + gradient shell that frames the WebGL core. */
+.aether-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid var(--color-aether-line);
+  background:
+    radial-gradient(130% 130% at 10% -10%, var(--color-aether-soft), transparent 58%),
+    radial-gradient(120% 140% at 100% 0%, rgba(34, 211, 238, 0.10), transparent 62%),
+    linear-gradient(180deg, var(--color-surface), var(--color-surface));
+}
+
+.aether-aurora { animation: aether-drift 30s ease-in-out infinite; }
+.aether-halo { animation: aether-halo 6s ease-in-out infinite; }
+.aether-scanline { animation: aether-scanline 5s linear infinite; }
+.aether-sheen { animation: aether-sheen 4.2s ease-in-out infinite; }
+
+/* Faint technical grid, faded out toward the edges. */
+.aether-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 30px 30px;
+  -webkit-mask-image: radial-gradient(120% 100% at 50% 0%, #000 20%, transparent 76%);
+  mask-image: radial-gradient(120% 100% at 50% 0%, #000 20%, transparent 76%);
+}
+
+/* Gradient text used for the Aether wordmark and headline numbers. */
+.aether-text {
+  background: linear-gradient(100deg, var(--color-aether-2), var(--color-aether) 55%, var(--color-aether-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* A hairline that reads as an energy conduit. */
+.aether-conduit {
+  background: linear-gradient(90deg, transparent, var(--color-aether-line) 22%, var(--color-aether-2) 50%, var(--color-aether-line) 78%, transparent);
+}
+
+/*
+ * The Aether stage: one immersive panel that frames the live core. It stays
+ * dark in both themes on purpose — additive light on a white surface has no
+ * contrast, and the stage is the product's flagship visual.
+ */
+.aether-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--color-aether-line);
+  background:
+    radial-gradient(115% 120% at 6% -12%, rgba(168, 85, 247, 0.26), transparent 58%),
+    radial-gradient(105% 130% at 100% -6%, rgba(34, 211, 238, 0.16), transparent 60%),
+    radial-gradient(90% 100% at 62% 124%, rgba(244, 114, 182, 0.13), transparent 62%),
+    linear-gradient(180deg, #0c0722 0%, #05030f 100%);
+}
+
+/* vignette + top conduit, so the panel edge never reads as a hard crop */
+.aether-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(130% 105% at 50% 42%, transparent 44%, rgba(3, 2, 10, 0.62) 100%);
+}
+
+.aether-stage::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--color-aether-line) 20%, var(--color-aether-2) 50%, var(--color-aether-line) 80%, transparent);
+}
+
+@keyframes aether-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* Slow radar sweep behind the core. */
+.aether-sweep {
+  animation: aether-rotate 22s linear infinite;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(34, 211, 238, 0.20) 42deg,
+    transparent 120deg,
+    transparent 190deg,
+    rgba(168, 85, 247, 0.24) 250deg,
+    transparent 330deg
+  );
+}
+
+.aether-orbit { animation: aether-rotate 28s linear infinite; }
+.aether-orbit-slow { animation: aether-rotate 48s linear infinite reverse; }
+
+@keyframes aether-ping {
+  0% { transform: scale(0.72); opacity: 0.55; }
+  70% { opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+.aether-ping { animation: aether-ping 3.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+
+@keyframes aether-cta-sheen {
+  0% { transform: translateX(-130%); }
+  60%, 100% { transform: translateX(240%); }
+}
+
+/* Primary Aether action: a slow sheen, not a loop that distracts. */
+.aether-cta {
+  position: relative;
+  overflow: hidden;
+}
+
+.aether-cta::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: 36%;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.20), transparent);
+  animation: aether-cta-sheen 4.2s ease-in-out infinite;
+}
+
+/* HUD chip floating over the stage. */
+.aether-chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(6, 4, 18, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+/* Aether label for a metric value inside the stage. */
+.aether-hud-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: #eef2ff;
+}
+
+/* Loading placeholder shared by the VPN surfaces. */
+@keyframes skeleton-sheen {
+  0% { background-position: -140% 0; }
+  100% { background-position: 240% 0; }
+}
+
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.07), rgba(148, 163, 184, 0.17), rgba(148, 163, 184, 0.07));
+  background-size: 220% 100%;
+  animation: skeleton-sheen 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aether-aurora,
+  .aether-halo,
+  .aether-scanline,
+  .aether-sheen,
+  .aether-sweep,
+  .aether-orbit,
+  .aether-orbit-slow,
+  .aether-ping,
+  .skeleton {
+    animation: none;
+  }
+  .aether-cta::after {
+    animation: none;
+    opacity: 0;
+  }
 }

@@ -8,6 +8,10 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
+import { PrivilegeGate } from './AdminAccessPanel';
+import { TUN_TONE_CLASS, killSwitchClaim, tunClaim, tunRemedy, watchdogClaim } from './tunStatus';
+import { tunnelReconnectMessage, tunnelStartMessage } from '@/features/nodes/nodeActionPolicy';
+import { useKillSwitch } from './useVpnData';
 
 import { readPersistedState } from '@/lib/usePersistentState';
 
@@ -66,6 +70,10 @@ export function ProxyTunnelCard() {
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   /** NESTED mode: chain an entry hop and an exit hop so the exit differs from the edge. */
   const [nested, setNested] = useState(false);
+  // TUN mode: capture ALL system traffic via a sing-box TUN gateway in front
+  // of the engine hop (needs admin on Windows). Degrades honestly to proxy
+  // mode — the status' tunError explains why whenever the gateway could not.
+  const [tun, setTun] = useState(false);
   const [entryNodeId, setEntryNodeId] = useState<string>('');
   const [exitNodeId, setExitNodeId] = useState<string>('');
   /** Outcome of the last quick connect — every attempt it made, kept visible. */
@@ -108,21 +116,12 @@ export function ProxyTunnelCard() {
       mode?: 'nested';
       entryNodeId?: string;
       exitNodeId?: string;
+      tun?: boolean;
     }) => api.post<{ tunnel: ProxyTunnelStatus }>('/vpn/tunnel/start', body),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['tunnel'] });
-      if (data.tunnel.state === 'active') {
-        const chain = data.tunnel.chain;
-        toast(
-          'ok',
-          chain ? 'Nested tunnel verified' : 'Tunnel verified',
-          chain
-            ? `Entry ${chain.entryExitIp ?? '?'} → exit ${chain.exitIp ?? '?'}${chain.exitDiffers ? ' (differs)' : ' (identical)'}`
-            : `Exit ${data.tunnel.exitIp ?? '?'}${data.tunnel.exitCountry ? ` (${data.tunnel.exitCountry})` : ''} via ${data.tunnel.engine}`,
-        );
-      } else {
-        toast('error', 'Tunnel failed', data.tunnel.error ?? 'The core started but traffic could not traverse the node.');
-      }
+      const m = tunnelStartMessage(data.tunnel);
+      toast(m.tone, m.title, m.body);
     },
     onError: (err) => toast('error', 'Tunnel start failed', err instanceof Error ? err.message : undefined),
   });
@@ -136,7 +135,7 @@ export function ProxyTunnelCard() {
         // inside quick connect searches. Read at click time so the choice made
         // a moment ago in the sibling card is the one that applies.
         const profile = readPersistedState<ScanProfileId>('vpn.scanProfile', 'balanced');
-        return await api.post<{ tunnel: ProxyTunnelStatus; quick: QuickConnectResult }>('/vpn/tunnel/quick', { systemProxy: true, profile });
+        return await api.post<{ tunnel: ProxyTunnelStatus; quick: QuickConnectResult }>('/vpn/tunnel/quick', { systemProxy: true, tun, profile });
       } finally {
         quickInFlight.current = false;
       }
@@ -169,8 +168,8 @@ export function ProxyTunnelCard() {
     mutationFn: () => api.post<{ tunnel: ProxyTunnelStatus }>('/vpn/tunnel/reconnect'),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['tunnel'] });
-      if (data.tunnel.state === 'active') toast('ok', 'Reconnected', `Exit ${data.tunnel.exitIp ?? '?'}`);
-      else toast('error', 'Reconnect failed', data.tunnel.error ?? undefined);
+      const m = tunnelReconnectMessage(data.tunnel);
+      toast(m.tone, m.title, m.body);
     },
     onError: (err) => toast('error', 'Reconnect failed', err instanceof Error ? err.message : undefined),
   });
@@ -185,6 +184,15 @@ export function ProxyTunnelCard() {
   const candidates = candidatesQuery.data?.nodes ?? [];
   const gateways = gatewaysQuery.data?.gateways ?? [];
   const active = tunnel?.state === 'active';
+  const killSwitchQuery = useKillSwitch();
+  const ks = killSwitchQuery.data?.killSwitch;
+  // What TUN mode may CLAIM, from its one owner (./tunStatus): an unarmed hold
+  // keeps a verified capture out of `active`, so the state line and the
+  // kill-switch line are read through the same policy the tests pin.
+  const tunView = tunnel ? tunClaim(tunnel) : null;
+  const ksView = killSwitchClaim(ks);
+  const tunFix = tunnel ? tunRemedy(tunnel.tunBlockedBy) : null;
+  const watchdog = watchdogClaim(tunnel?.tunWatchdog, tunnel?.tun);
 
   const nodeName =
     tunnel?.nodeName ??
@@ -202,7 +210,7 @@ export function ProxyTunnelCard() {
       />
       <CardBody>
         {tunnel && tunnel.state !== 'idle' && (
-          <div className="mb-4 flex flex-wrap gap-x-8 gap-y-2 rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm text-muted">
+          <div className="mb-4 flex flex-wrap gap-x-8 gap-y-2 rounded-lg bg-surface-2/70 px-3 py-2.5 text-sm text-muted">
             <span>
               Node: <span className="text-text">{nodeName ?? '—'}</span>
             </span>
@@ -216,6 +224,32 @@ export function ProxyTunnelCard() {
             <span>
               System proxy: <span className="text-text">{tunnel.systemProxy ? `on (127.0.0.1:${tunnel.inboundPort ?? '?'})` : 'off'}</span>
             </span>
+            {tunView && (
+              <span>
+                TUN:{' '}
+                <span className={TUN_TONE_CLASS[tunView.tone]}>{tunView.label}</span>
+              </span>
+            )}
+            {tunView && (tunnel.tun === 'active' || tunnel.tun === 'unguarded') && ksView && (
+              <span className="w-full text-xs">
+                Kill switch: <span className={TUN_TONE_CLASS[ksView.tone]}>{ksView.text}</span>
+              </span>
+            )}
+            {watchdog && (
+              <span className={`w-full text-xs ${TUN_TONE_CLASS[watchdog.tone]}`}>
+                {/* The capture heals back to `active`, so this is the only place
+                    a rebuild — or a rebuild that failed — stays visible. */}
+                Watchdog: {watchdog.text}
+              </span>
+            )}
+            {tunnel.tunError && (
+              <span className={`w-full text-xs ${tunView?.tone === 'danger' ? 'text-danger' : 'text-warn'}`}>
+                {/* A degraded TUN state is the alarm state, not a footnote: the
+                    capture may be up while its guarantee is missing. */}
+                TUN: {tunnel.tunError}
+                {tunFix && <span className="text-muted"> {tunFix}</span>}
+              </span>
+            )}
             {tunnel.verifiedAt != null && (
               <span>
                 Verified: <span className="text-text">{new Date(tunnel.verifiedAt).toLocaleTimeString()}</span>
@@ -239,7 +273,7 @@ export function ProxyTunnelCard() {
             )}
             {tunnel.error && <span className="w-full text-xs text-danger">{tunnel.error}</span>}
             {tunnel.chain && (
-              <div className="w-full rounded-xl border border-line bg-surface px-3 py-2">
+              <div className="w-full rounded-lg bg-surface-2/70 px-3 py-2">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
                   <GitBranch size={12} />
                   Nested chain — {tunnel.chain.hops.length} local cores
@@ -291,7 +325,7 @@ export function ProxyTunnelCard() {
             </div>
 
             {quickResult && (
-              <div className="rounded-xl border border-line bg-surface-2 p-3">
+              <div className="rounded-lg bg-surface-2/70 p-3">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
                   <ListChecks size={12} />
                   Quick connect attempts ({quickResult.attempts.length}) — {quickResult.profile} scan
@@ -335,6 +369,24 @@ export function ProxyTunnelCard() {
               </span>
             </label>
 
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[var(--color-accent,#6366f1)]"
+                checked={tun}
+                onChange={(e) => setTun(e.target.checked)}
+                disabled={busy}
+              />
+              <span className="flex items-center gap-1.5">
+                <Globe size={12} />
+                TUN mode — capture ALL system traffic (games, desktop apps) through the tunnel. Needs administrator rights; falls back to system proxy if it cannot come up.
+              </span>
+            </label>
+
+            {/* The privilege that stands between the user and TUN mode, with the
+                fix attached — never a dead-end sentence. */}
+            {tun && <PrivilegeGate id="tun-gateway" />}
+
             {nested ? (
               <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label className="block">
@@ -372,7 +424,7 @@ export function ProxyTunnelCard() {
                 <div className="flex items-end">
                   <Button
                     variant="primary"
-                    onClick={() => start.mutate({ mode: 'nested', entryNodeId, exitNodeId, systemProxy: true })}
+                    onClick={() => start.mutate({ mode: 'nested', entryNodeId, exitNodeId, systemProxy: !tun, tun })}
                     loading={start.isPending}
                     disabled={busy || !entryNodeId || !exitNodeId || entryNodeId === exitNodeId}
                   >
@@ -408,8 +460,8 @@ export function ProxyTunnelCard() {
                   variant={selectedNodeId ? 'primary' : 'secondary'}
                   onClick={() =>
                     selectedNodeId
-                      ? start.mutate({ nodeId: selectedNodeId, systemProxy: true })
-                      : start.mutate({ auto: true, systemProxy: true })
+                      ? start.mutate({ nodeId: selectedNodeId, systemProxy: !tun, tun })
+                      : start.mutate({ auto: true, systemProxy: !tun, tun })
                   }
                   loading={start.isPending}
                   disabled={busy}
@@ -427,7 +479,7 @@ export function ProxyTunnelCard() {
             )}
 
             {gateways.length > 0 && (
-              <div className="rounded-xl border border-line bg-surface-2 p-3">
+              <div className="rounded-lg bg-surface-2/70 p-3">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
                   <History size={12} />
                   Remembered gateways (verified, most useful first)

@@ -6,6 +6,7 @@ import CloudflarePage from '@/features/cloudflare/CloudflarePage';
 import DashboardPage from '@/features/dashboard/DashboardPage';
 import DiagnosticsPage from '@/features/diagnostics/DiagnosticsPage';
 import DnsPage from '@/features/dns/DnsPage';
+import EngineManagerPage from '@/features/engines/EngineManagerPage';
 import EventsPage from '@/features/events/EventsPage';
 import GamingPage from '@/features/gaming/GamingPage';
 import HistoryPage from '@/features/history/HistoryPage';
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
       { path: 'optimizer', element: <OptimizerPage /> },
       { path: 'history', element: <HistoryPage /> },
       { path: 'events', element: <EventsPage /> },
+      { path: 'engines', element: <EngineManagerPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'health', element: <SystemHealthPage /> },
     ],

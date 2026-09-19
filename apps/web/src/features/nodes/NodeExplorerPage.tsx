@@ -1,47 +1,72 @@
-import { useCallback, useEffect, useState } from 'react';
-
-import { useNavigate } from 'react-router';
-
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpDown,
+  ChevronRight,
   Clock,
+  Cpu,
   Download,
   Flag,
   Globe2,
   Info,
+  Link2,
   LocateFixed,
   RefreshCw,
   Search,
   Shield,
   ShieldCheck,
   ShieldX,
+  SlidersHorizontal,
   Star,
   TrendingUp,
-  ChevronRight,
   Wifi,
 } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { Field } from '@/components/ui/Field';
-import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
+import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
+import { NodesNav } from '@/features/nodes/NodesChrome';
 import { EngineBadge as SharedEngineBadge, ENGINE_LABELS } from '@/components/EngineBadge';
+import { Field } from '@/components/ui/Field';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Segmented } from '@/components/ui/Segmented';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
+import { MiniMetric, Section, StatTile } from '@/components/ui/Surface';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
+import { fmtMs, fmtPct } from '@/lib/format';
+import { useNodeActions } from '@/features/nodes/useNodeActions';
+import { engineInstallErrorMessage, engineInstallMessage } from '@/features/nodes/nodeActionPolicy';
+import type { EngineInstallResult } from '@/features/nodes/nodeActionPolicy';
 import { GeoStatusBadge, geoReasonOf } from '@/lib/geoStatus';
 import { usePersistentState } from '@/lib/usePersistentState';
-import { fmtMs, fmtPct } from '@/lib/format';
+
+import { canBecomeEngineProfile } from '@netpulse/shared';
 
 import type {
   NodeProtocol,
-  NodeStatus,
-  NodeSortField,
   NodeSortDir,
-  NodeTestResult,
+  NodeSortField,
+  NodeStatus,
   PublicNode,
   ProxyEngineStatus,
 } from '@netpulse/shared';
+
+/**
+ * Node Explorer — the public-node database, split by which local core last
+ * tested a node.
+ *
+ * The previous version rendered a 16-column table inside a page whose wrapper
+ * used theme tokens that do not exist (`bg-base`, `text-foreground`,
+ * `text-status-ok`, …), so most of it silently rendered unstyled. It also
+ * re-derived paging from the rows on screen. Here the server owns filtering,
+ * sorting and paging through react-query keys, and every class maps to a real
+ * design token.
+ *
+ * The runtime tabs are a filter, not a view switch, so the list is rendered
+ * once beneath a segmented control instead of once per tab.
+ */
 
 /** Summary counts returned by GET /nodes/stats */
 interface NodesStatsSummary {
@@ -55,6 +80,13 @@ interface NodesStatsSummary {
   protocolBreakdown: Record<string, number>;
   countryBreakdown: Record<string, number>;
   transportBreakdown: Record<string, number>;
+}
+
+interface NodeListResponse {
+  nodes: PublicNode[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 const PROTOCOL_OPTIONS: { value: NodeProtocol | 'all'; label: string }[] = [
@@ -104,11 +136,14 @@ const FRESHNESS_OPTIONS: { value: string; label: string }[] = [
   { value: 'stale', label: 'Stale (>24h)' },
 ];
 
-const ENGINE_OPTIONS: { value: string; label: string }[] = [
+/** Runtime filter values the API accepts (matches `public_nodes.last_engine`). */
+type RuntimeTab = 'all' | 'xray' | 'sing-box' | 'v2ray';
+
+const RUNTIME_TABS: { value: RuntimeTab; label: string }[] = [
   { value: 'all', label: 'All runtimes' },
-  { value: 'xray', label: 'xray' },
+  { value: 'xray', label: 'Xray' },
   { value: 'sing-box', label: 'sing-box' },
-  { value: 'v2ray', label: 'v2ray' },
+  { value: 'v2ray', label: 'V2Ray' },
 ];
 
 const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortDir }[] = [
@@ -125,84 +160,65 @@ const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortD
   { value: 'lastSeen', label: 'Last seen', defaultDir: 'desc' },
 ];
 
-function StatusIcon({ status }: { status: NodeStatus }) {
+/** Status glyph. Tones map to real tokens (the old `text-status-*` did not exist). */
+function StatusGlyph({ status }: { status: NodeStatus }) {
+  const base = 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-2';
   switch (status) {
     case 'healthy':
     case 'proxy-tested':
-      return <ShieldCheck size={13} className="text-status-ok" />;
+      return <span className={base}><ShieldCheck size={15} className="text-ok" /></span>;
     case 'degraded':
     case 'tcp-tested':
-    case 'tcp-tested':
-      return <Shield size={13} className="text-status-warn" />;
+      return <span className={base}><Shield size={15} className="text-warn" /></span>;
     case 'failed':
-      return <ShieldX size={13} className="text-status-danger" />;
+      return <span className={base}><ShieldX size={15} className="text-danger" /></span>;
+    case 'stale':
+      return <span className={base}><Clock size={15} className="text-warn" /></span>;
     case 'discovered':
     case 'parsed':
     case 'validated':
-      return <Info size={13} className="text-status-neutral" />;
-    case 'stale':
-      return <Clock size={13} className="text-status-warn" />;
+      return <span className={base}><Info size={15} className="text-muted" /></span>;
     default:
-      return <Globe2 size={13} className="text-status-neutral" />;
+      return <span className={base}><Globe2 size={15} className="text-muted" /></span>;
   }
 }
 
-function ProtocolBadge({ protocol }: { protocol: NodeProtocol }) {
-  const colors: Record<NodeProtocol, string> = {
-    vless: 'text-blue-400 bg-blue-500/10',
-    vmess: 'text-purple-400 bg-purple-500/10',
-    trojan: 'text-orange-400 bg-orange-500/10',
-    shadowsocks: 'text-green-400 bg-green-500/10',
-    shadowsocksr: 'text-green-400 bg-green-500/10',
-    hysteria2: 'text-cyan-400 bg-cyan-500/10',
-    tuic: 'text-indigo-400 bg-indigo-500/10',
-    wireguard: 'text-yellow-400 bg-yellow-500/10',
-    unknown: 'text-gray-400 bg-gray-500/10',
-  };
+const PROTOCOL_STYLES: Record<string, string> = {
+  vless: 'text-sky-300 bg-sky-500/10 border-sky-500/25',
+  vmess: 'text-violet-300 bg-violet-500/10 border-violet-500/25',
+  trojan: 'text-orange-300 bg-orange-500/10 border-orange-500/25',
+  shadowsocks: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+  shadowsocksr: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
+  hysteria2: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25',
+  tuic: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25',
+  wireguard: 'text-amber-300 bg-amber-500/10 border-amber-500/25',
+  unknown: 'text-muted bg-surface-2 border-line',
+};
 
+function ProtocolBadge({ protocol }: { protocol: NodeProtocol }) {
+  const style = PROTOCOL_STYLES[protocol] ?? PROTOCOL_STYLES['unknown'];
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colors[protocol] || 'text-gray-400 bg-gray-500/10'}`}>
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${style}`}>
       {protocol.toUpperCase()}
     </span>
   );
 }
 
 function FreshnessDot({ freshness }: { freshness: string }) {
-  switch (freshness) {
-    case 'fresh':
-      return <span className="inline-block w-2 h-2 rounded-full bg-status-ok" title="Fresh" />;
-    case 'recent':
-      return <span className="inline-block w-2 h-2 rounded-full bg-status-warn" title="Recent" />;
-    case 'aging':
-      return <span className="inline-block w-2 h-2 rounded-full bg-amber-500" title="Aging" />;
-    case 'stale':
-      return <span className="inline-block w-2 h-2 rounded-full bg-gray-500" title="Stale" />;
-    default:
-      return <span className="inline-block w-2 h-2 rounded-full bg-gray-600" />;
-  }
-}
-
-/** Local core that produced the node's most recent proxy measurement. */
-function EngineBadge(props: { engine: 'xray' | 'sing-box' | 'v2ray' }) {
-  return <SharedEngineBadge engine={props.engine} title={`Last proxy test ran through the ${ENGINE_LABELS[props.engine]} runtime`} />;
+  const tone =
+    freshness === 'fresh' ? 'bg-ok' : freshness === 'recent' ? 'bg-warn' : freshness === 'aging' ? 'bg-warn/60' : 'bg-faint';
+  return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone}`} title={freshness} />;
 }
 
 export default function NodeExplorerPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
-  // State
-  const [loading, setLoading] = useState(true);
-  const [loadingError, setLoadingError] = useState<unknown>(null);
-  const [stats, setStats] = useState<NodesStatsSummary | null>(null);
-  const [engines, setEngines] = useState<ProxyEngineStatus | null>(null);
-
-  const [nodes, setNodes] = useState<PublicNode[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = usePersistentState<number>('nodes.page', 0);
   const [pageSize] = useState(50);
 
-  // Filters/Sort persist across tab switches — returning to the Explorer keeps
+  // Filters/sort persist across tab switches — returning to the Explorer keeps
   // the user's working set instead of silently resetting to defaults.
   const [search, setSearch] = usePersistentState<string>('nodes.search', '');
   const [protocol, setProtocol] = usePersistentState<string>('nodes.protocol', 'all');
@@ -210,595 +226,546 @@ export default function NodeExplorerPage() {
   const [transport, setTransport] = usePersistentState<string>('nodes.transport', 'all');
   const [security, setSecurity] = usePersistentState<string>('nodes.security', 'all');
   const [freshness, setFreshness] = usePersistentState<string>('nodes.freshness', 'all');
-  const [engine, setEngine] = usePersistentState<string>('nodes.engine', 'all');
+  const [runtime, setRuntime] = usePersistentState<RuntimeTab>('nodes.engine', 'all');
   const [sortField, setSortField] = usePersistentState<NodeSortField>('nodes.sortField', 'score');
   const [sortDir, setSortDir] = usePersistentState<NodeSortDir>('nodes.sortDir', 'desc');
-  const [minScore] = useState<number | undefined>(undefined);
-  const [maxLatency] = useState<number | undefined>(undefined);
-  const [minReliability] = useState<number | undefined>(undefined);
+  const [showFilters, setShowFilters] = usePersistentState<boolean>('nodes.showFilters', false);
 
-  // Load stats + nodes from API
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setLoadingError(null);
+  const [installingEngine, setInstallingEngine] = useState<string | null>(null);
 
-      const [statsRes, nodesRes, enginesRes] = await Promise.all([
-        api.get<NodesStatsSummary>('/nodes/stats'),
-        api.get<{ nodes: PublicNode[]; total: number }>(`/nodes?limit=${pageSize}&offset=${page * pageSize}${protocol === 'all' ? '' : `&protocol=${encodeURIComponent(protocol)}`}${status === 'all' ? '' : `&status=${encodeURIComponent(status)}`}${transport === 'all' ? '' : `&transport=${encodeURIComponent(transport)}`}${security === 'all' ? '' : `&security=${encodeURIComponent(security)}`}${freshness === 'all' ? '' : `&freshness=${encodeURIComponent(freshness)}`}${engine === 'all' ? '' : `&engine=${encodeURIComponent(engine)}`}${search ? `&search=${encodeURIComponent(search)}` : ''}${minScore ? `&minScore=${minScore}` : ''}${maxLatency ? `&maxLatency=${maxLatency}` : ''}${minReliability ? `&minReliability=${minReliability}` : ''}${sortField ? `&sortField=${sortField}` : ''}${sortDir ? `&sortDir=${sortDir}` : ''}`),
-        api.get<ProxyEngineStatus>('/nodes/engines').catch(() => null),
-      ]);
+  // Server-side filtering/sorting/paging — the query key IS the filter set, so
+  // a cached page is reused until a filter actually changes. Memoized so the
+  // callbacks that patch the cached page keep stable identities.
+  const listKey = useMemo(
+    () =>
+      [
+        'nodes',
+        'list',
+        { page, pageSize, protocol, status, transport, security, freshness, engine: runtime, search, sortField, sortDir },
+      ] as const,
+    [page, pageSize, protocol, status, transport, security, freshness, runtime, search, sortField, sortDir],
+  );
 
-      setStats(statsRes);
-      setNodes(nodesRes.nodes || []);
-      setTotal(nodesRes.total || 0);
-      setEngines(enginesRes);
-    } catch (err) {
-      setLoadingError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, protocol, status, transport, security, freshness, engine, search, sortField, sortDir, minScore, maxLatency, minReliability]);
+  const statsQuery = useQuery({
+    queryKey: ['nodes', 'stats'],
+    queryFn: () => api.get<NodesStatsSummary>('/nodes/stats'),
+    staleTime: 15_000,
+  });
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const enginesQuery = useQuery({
+    queryKey: ['nodes', 'engines'],
+    queryFn: () => api.get<ProxyEngineStatus>('/nodes/engines'),
+    staleTime: 60_000,
+  });
 
-  // The server owns filtering, sorting and paging, and `total` is the real count
-  // of stored nodes matching the current filters. This page used to re-apply the
-  // filters and re-sort the response in the browser and then slice that response
-  // again by the global offset — with a 50-row page, page 2 sliced at index 50
-  // and rendered nothing, and the page count came from the rows on screen rather
-  // than from the database.
-  const displayedNodes = nodes;
+  const listQuery = useQuery({
+    queryKey: listKey,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set('limit', String(pageSize));
+      params.set('offset', String(page * pageSize));
+      if (protocol !== 'all') params.set('protocol', protocol);
+      if (status !== 'all') params.set('status', status);
+      if (transport !== 'all') params.set('transport', transport);
+      if (security !== 'all') params.set('security', security);
+      if (freshness !== 'all') params.set('freshness', freshness);
+      if (runtime !== 'all') params.set('engine', runtime);
+      if (search.trim()) params.set('search', search.trim());
+      params.set('sortField', sortField);
+      params.set('sortDir', sortDir);
+      return api.get<NodeListResponse>(`/nodes?${params.toString()}`);
+    },
+    // Keep the previous page on screen while the next one loads — paging must
+    // not blank the table.
+    placeholderData: keepPreviousData,
+  });
+
+  const nodes = useMemo(() => listQuery.data?.nodes ?? [], [listQuery.data]);
+  const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const stats = statsQuery.data;
+  const engines = enginesQuery.data;
 
-  const handleTestNode = useCallback(async (nodeId: string, type: 'tcp' | 'tls' | 'proxy' | 'icmp' = 'tcp') => {
-    try {
-      const result = await api.post<NodeTestResult>(`/nodes/${nodeId}/test`, { type });
-      toast('ok', `Tested ${nodeId}`, `Latency: ${result.latencyMs?.toFixed(1)} ms`);
-    } catch (err) {
-      toast('error', 'Test failed', err instanceof Error ? err.message : undefined);
-    }
-  }, [toast]);
+  const activeFilterCount = [
+    protocol !== 'all',
+    status !== 'all',
+    transport !== 'all',
+    security !== 'all',
+    freshness !== 'all',
+    runtime !== 'all',
+    search.trim().length > 0,
+  ].filter(Boolean).length;
 
-  const handleFavorite = useCallback(async (nodeId: string, favorite: boolean) => {
-    try {
-      await api.post(`/nodes/${nodeId}/favorite`, { favorite });
-      loadData();
-    } catch (err) {
-      toast('error', 'Failed to update favorite', err instanceof Error ? err.message : undefined);
-    }
-  }, [loadData, toast]);
+  const patchNode = useCallback(
+    (node: PublicNode) => {
+      qc.setQueryData<NodeListResponse | undefined>(listKey, (prev) =>
+        prev ? { ...prev, nodes: prev.nodes.map((n) => (n.id === node.id ? node : n)) } : prev,
+      );
+    },
+    [qc, listKey],
+  );
 
-  // Per-row geo re-check (same endpoint + outcome-honest toasts as the detail
-  // page, so the action works without navigating away from the list). Only the
-  // re-checked row refreshes — swapping the whole table on every lookup would
-  // reset scroll position and in-flight row states.
-  const [geoCheckingId, setGeoCheckingId] = useState<string | null>(null);
-  const handleGeoRecheck = useCallback(async (nodeId: string) => {
-    if (geoCheckingId) return;
-    setGeoCheckingId(nodeId);
-    try {
-      const res = await api.post<{ result: { outcome: string; reason: string }; node: PublicNode | null }>(`/nodes/${nodeId}/geo-recheck`, {});
-      if (res.node) {
-        setNodes((prev) => prev.map((n) => (n.id === nodeId ? res.node! : n)));
-      }
-      const r = res.result;
-      if (r.outcome === 'resolved' || r.outcome === 'vouched') {
-        toast('ok', 'Location updated', r.outcome === 'vouched' ? 'User-attested coordinates applied.' : 'Fresh GeoIP lookup completed.');
-      } else if (r.outcome === 'refused') {
-        toast('warn', 'No location available', r.reason === 'anycast' ? 'This IP is anycast — GeoIP answers for it are artifacts, so it stays Unknown.' : 'This IP belongs to a global edge network — GeoIP would report a registry office, not a location.');
-      } else if (r.outcome === 'busy') {
-        toast('warn', 'Geo worker busy', 'A background lookup is running — this node is queued. Try again in a moment.');
-      } else {
-        toast('error', 'Lookup failed', r.reason === 'private_only' ? 'Node has only private addresses — nothing to geolocate.' : 'The geolocation service did not answer. It retries in the background.');
-      }
-    } catch (err) {
-      toast('error', 'Re-check failed', err instanceof Error ? err.message : undefined);
-    } finally {
-      setGeoCheckingId(null);
-    }
-  }, [geoCheckingId, toast]);
-
-  const handleExport = useCallback(async (format: 'uri' | 'plaintext' | 'base64' | 'json' | 'clash' | 'singbox') => {
-    try {
-      const nodeIds = nodes.map((n) => n.id).join(',');
-      const result = await api.get<string>(`/nodes/export?nodeIds=${encodeURIComponent(nodeIds)}&format=${format}`);
-
-      const blob = new Blob([result], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nodes-${format}-${Date.now()}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-      // Export works on the rows the API returned for this page — say so rather
-      // than implying the whole filtered set was written out.
-      toast('ok', 'Exported', `${format} — ${nodes.length} nodes on this page`);
-    } catch (err) {
-      toast('error', 'Export failed', err instanceof Error ? err.message : undefined);
-    }
-  }, [nodes, toast]);
+  // Every per-row action (test, geo re-check, favorite, copy link, export) comes
+  // from one hook: it owns the in-flight state and the outcome wording, so a row
+  // cannot describe the same refusal differently from the detail page. The only
+  // page-specific behaviour is `onChanged` — the re-checked row is patched in
+  // place so scroll position and other rows' spinners survive, while a list
+  // refetch would replace the page under the user.
+  const actions = useNodeActions<PublicNode>({
+    onChanged: (node) => {
+      if (node) patchNode(node);
+    },
+  });
 
   const handleRefresh = useCallback(() => {
     setPage(0);
-    void loadData();
-  }, [loadData]);
+    void qc.invalidateQueries({ queryKey: ['nodes'] });
+  }, [qc, setPage]);
+
+  const clearFilters = useCallback(() => {
+    setProtocol('all');
+    setStatus('all');
+    setTransport('all');
+    setSecurity('all');
+    setFreshness('all');
+    setRuntime('all');
+    setSearch('');
+    setPage(0);
+  }, [setFreshness, setPage, setProtocol, setSearch, setSecurity, setStatus, setTransport, setRuntime]);
 
   // Engine install/update: the backend downloads from the official release,
-  // verifies the published SHA256 digest, and validates the binary with a
-  // real `version` spawn before reporting success.
-  const [installingEngine, setInstallingEngine] = useState<string | null>(null);
+  // verifies the published SHA256 digest, and validates the binary with a real
+  // `version` spawn before reporting success.
   const handleEngineInstall = useCallback(
     async (engineId: string) => {
       if (installingEngine) return;
       setInstallingEngine(engineId);
       try {
-        const r = await api.post<{ engine: string; status: string; version: string | null; checksumVerified: boolean; versionOutput: string | null; error: string | null }>(
-          '/nodes/engines/install',
-          { engine: engineId },
-        );
-        if (r.status === 'failed') {
-          toast('error', `${engineId} install failed`, r.error ?? undefined);
-        } else if (r.status === 'already_current') {
-          toast('ok', `${engineId} is current`, r.versionOutput ?? undefined);
-        } else {
-          toast('ok', `${engineId} ${r.status}`, `${r.version ?? ''}${r.checksumVerified ? ' · checksum verified' : ''}`);
-        }
+        const r = await api.post<EngineInstallResult>('/nodes/engines/install', { engine: engineId });
+        const m = engineInstallMessage(r);
+        toast(m.tone, m.title, m.body);
       } catch (err) {
-        toast('error', 'Install failed', err instanceof Error ? err.message : undefined);
+        const m = engineInstallErrorMessage(err);
+        toast(m.tone, m.title, m.body);
       } finally {
         setInstallingEngine(null);
-        void loadData();
+        void qc.invalidateQueries({ queryKey: ['nodes'] });
       }
     },
-    [installingEngine, loadData, toast],
+    [installingEngine, qc, toast],
   );
 
-  if (loading) {
-    return <LoadingState label="Loading nodes..." />;
-  }
-  if (loadingError) {
-    return <ErrorState error={loadingError} retry={loadData} />;
-  }
+  if (listQuery.isLoading) return <LoadingState label="Loading nodes…" />;
+  if (listQuery.isError) return <ErrorState error={listQuery.error} retry={() => void listQuery.refetch()} />;
 
   return (
-    <div className="min-h-screen bg-base text-foreground">
-<CardHeader title="Node Explorer" subtitle={`${stats?.total ?? '—'} public configs discovered · ${stats?.healthy ?? '—'} healthy · ${stats?.favoriteCount ?? '—'} favorited`} />
+    <DisclosureScope name="nodes:explorer" className="animate-fade-up">
+      <PageHeader
+        title="Node Explorer"
+        description={`Public proxy configs discovered from subscription sources, each attributable to the local core that last tested it.${
+          stats ? ` ${stats.total} stored · ${stats.healthy} healthy · ${stats.degraded} degraded · ${stats.failed} failed.` : ''
+        }`}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              loading={actions.busyKind('export')}
+              onClick={() => void actions.downloadExport(nodes.map((n) => n.id), 'uri', 'nodes', `${nodes.length} nodes on this page`)}
+            >
+              <Download size={13} />
+              Export page
+            </Button>
+            <Button variant="secondary" onClick={handleRefresh} loading={listQuery.isFetching}>
+              <RefreshCw size={13} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      {/* Proxy core engines — honest availability for proxy tests */}
-      {engines && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-          <span className="font-medium">Proxy cores:</span>
-          {engines.engines.map((e) => (
+      <NodesNav />
+      <DisclosureToolbar className="mb-2" />
+
+      <div className="mb-5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile label="Total nodes" value={stats?.total ?? '—'} hint="stored in the database" />
+        <StatTile
+          label="Healthy"
+          value={stats?.healthy ?? '—'}
+          tone={stats && stats.healthy > 0 ? 'ok' : 'faint'}
+          hint={stats ? `${stats.discovered} never tested` : undefined}
+        />
+        <StatTile
+          label="Stale"
+          value={stats?.stale ?? '—'}
+          tone={stats && stats.stale > 0 ? 'warn' : 'faint'}
+          hint="not seen in over 24h"
+        />
+        <StatTile label="Favorited" value={stats?.favoriteCount ?? '—'} hint="pinned by you" />
+      </div>
+
+      {/* Proxy cores — honest availability, and the only place they get installed.
+          Folded by default: it is reference material for what is otherwise a
+          browsing page, and the folded header still reports the real counts. */}
+      <Section
+        title="Proxy cores"
+        icon={<Cpu size={15} />}
+        subtitle="Local cores that test nodes and carry the proxy tunnel"
+        collapsible
+        defaultOpen={false}
+        id="proxy-cores"
+        summary={
+          engines
+            ? `${(engines.engines ?? []).filter((e) => e.available).length} of ${(engines.engines ?? []).length} installed${
+                engines.effective ? ` · proxy tests use ${ENGINE_LABELS[engines.effective]}` : ''
+              }`
+            : 'checking which local cores are installed'
+        }
+        badge={
+          engines ? (
+            <Badge tone={engines.effective ? 'ok' : 'warn'}>{engines.effective ? 'ready' : 'none installed'}</Badge>
+          ) : null
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {(engines?.engines ?? []).map((e) => (
             <span
               key={e.id}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${e.available ? 'bg-status-ok/10 text-status-ok' : 'bg-gray-500/10 text-gray-400'}`}
-              title={e.available ? `${e.label} at ${e.path}` : `${e.label} not installed`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                e.available ? 'border-ok/30 bg-ok/10 text-ok' : 'border-line bg-surface-2 text-muted'
+              }`}
+              title={e.available ? `${e.label} at ${e.path ?? 'unknown path'}` : `${e.label} not installed`}
             >
-              <span className={`inline-block w-1.5 h-1.5 rounded-full ${e.available ? 'bg-status-ok' : 'bg-gray-500'}`} />
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${e.available ? 'bg-ok' : 'bg-faint'}`} />
               {e.label}
-              {e.available && (
-                <button
-                  className="ml-1 underline decoration-dotted hover:text-foreground"
-                  title={`Reinstall / update ${e.label} from its official release`}
-                  onClick={() => void handleEngineInstall(e.id)}
-                  disabled={installingEngine !== null}
-                >
-                  {installingEngine === e.id ? 'installing…' : 'update'}
-                </button>
-              )}
+              <button
+                type="button"
+                className="underline decoration-dotted underline-offset-2 hover:text-text disabled:opacity-50"
+                title={`${e.available ? 'Reinstall / update' : 'Install'} ${e.label} from its official release (checksum-verified)`}
+                onClick={() => void handleEngineInstall(e.id)}
+                disabled={installingEngine !== null}
+              >
+                {installingEngine === e.id ? 'installing…' : e.available ? 'update' : 'install'}
+              </button>
             </span>
           ))}
-          {engines.engines.filter((e) => !e.available).length > 0 && (
-            <span className="inline-flex items-center gap-2">
-              <span className="text-gray-500">not installed:</span>
-              {engines.engines
-                .filter((e) => !e.available)
-                .map((e) => (
-                  <button
-                    key={e.id}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 disabled:opacity-50"
-                    title={`Download and install ${e.label} from its official release (checksum-verified)`}
-                    onClick={() => void handleEngineInstall(e.id)}
-                    disabled={installingEngine !== null}
-                  >
-                    <Download size={11} />
-                    {installingEngine === e.id ? 'installing…' : `install ${e.label}`}
-                  </button>
-                ))}
-            </span>
-          )}
-          <span className="text-gray-500">
-            {engines.effective
-              ? `proxy tests will use ${ENGINE_LABELS[engines.effective]}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
-              : 'install xray, sing-box or v2ray to enable proxy tests'}
+          <span className="text-xs text-faint">
+            {engines?.effective
+              ? `Proxy tests will use ${ENGINE_LABELS[engines.effective]}${engines.preferred !== 'auto' ? ` (preferred: ${engines.preferred})` : ''}`
+              : 'Install xray, sing-box or v2ray to enable proxy tests'}
           </span>
+        </div>
+      </Section>
+
+      {/* Runtime division — the engine filter, whose counts come from the API. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Segmented<RuntimeTab>
+          ariaLabel="Filter nodes by the local core that last tested them"
+          value={runtime}
+          onChange={(v) => {
+            setRuntime(v);
+            setPage(0);
+          }}
+          items={RUNTIME_TABS}
+        />
+        <Button variant="ghost" onClick={() => setShowFilters((v) => !v)}>
+          <SlidersHorizontal size={13} />
+          Filters
+          {activeFilterCount > 0 && <Badge tone="accent">{activeFilterCount}</Badge>}
+        </Button>
+      </div>
+
+      {showFilters && (
+        <Section
+          title="Filters"
+          subtitle="Applied by the server — the counts below are real row counts, not the rows on screen"
+          actions={
+            activeFilterCount > 0 ? (
+              <Button variant="ghost" onClick={clearFilters}>
+                Clear all
+              </Button>
+            ) : null
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Search">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(0);
+                  }}
+                  placeholder="IP, hostname, fingerprint, ASN…"
+                  className="h-9 w-full rounded-lg border border-line bg-surface-2 pl-8 pr-3 text-sm text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                />
+              </div>
+            </Field>
+            <Field label="Protocol">
+              <select
+                value={protocol}
+                onChange={(e) => {
+                  setProtocol(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {PROTOCOL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Status">
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Transport">
+              <select
+                value={transport}
+                onChange={(e) => {
+                  setTransport(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {TRANSPORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Security">
+              <select
+                value={security}
+                onChange={(e) => {
+                  setSecurity(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {SECURITY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Freshness">
+              <select
+                value={freshness}
+                onChange={(e) => {
+                  setFreshness(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {FRESHNESS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Sort by">
+              <select
+                value={sortField}
+                onChange={(e) => {
+                  const field = e.target.value as NodeSortField;
+                  setSortField(field);
+                  const opt = SORT_OPTIONS.find((o) => o.value === field);
+                  setSortDir(opt?.defaultDir ?? 'desc');
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Direction" hint="Runtime grouping always reads xray → sing-box → v2ray → untested">
+              <Button variant="secondary" onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}>
+                <ArrowUpDown size={13} className={`transition-transform ${sortDir === 'asc' ? 'rotate-180' : ''}`} />
+                {sortDir === 'asc' ? 'Ascending' : 'Descending'}
+              </Button>
+            </Field>
+          </div>
+        </Section>
+      )}
+
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold tracking-tight">Nodes</h3>
+        <span className="text-xs text-faint">
+          {total === 0 ? 'no matches' : `showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`}
+        </span>
+      </div>
+
+      {nodes.length === 0 ? (
+        <EmptyState
+          title="No nodes found"
+          message={
+            activeFilterCount > 0
+              ? 'No node matches the current filters. Clear them to see the whole database.'
+              : 'Import a subscription source on the Node Sources page to populate the database.'
+          }
+          action={activeFilterCount > 0 ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : undefined}
+        />
+      ) : (
+        <div className="space-y-2.5">
+          {nodes.map((node) => (
+            <div
+              key={node.id}
+              className="rounded-xl border border-line bg-surface p-3.5 transition-colors hover:border-line-strong"
+            >
+              <div className="flex items-start gap-3">
+                <StatusGlyph status={node.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <span className="break-all font-mono text-sm text-text">{node.host}</span>
+                    <span className="font-mono text-xs text-faint">:{node.port}</span>
+                    <ProtocolBadge protocol={node.protocol} />
+                    <Badge tone={node.security === 'reality' ? 'accent' : node.security === 'tls' ? 'ok' : 'neutral'}>{node.security}</Badge>
+                    <span className="text-xs text-faint">{node.transport}</span>
+                    {node.favorite && <Star size={12} className="fill-warn text-warn" />}
+                  </div>
+
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
+                    {node.ipv4[0] && <span className="font-mono">{node.ipv4[0]}</span>}
+                    {node.country ? (
+                      <span className="flex items-center gap-1">
+                        <Flag size={11} />
+                        {node.country}
+                        {node.city ? ` · ${node.city}` : ''}
+                      </span>
+                    ) : (
+                      // Refused / unresolved geo: show WHY instead of a bare dash.
+                      <GeoStatusBadge reason={geoReasonOf(node.geoStatusReason, node.lat != null)} />
+                    )}
+                    <span className="flex items-center gap-1.5">
+                      <FreshnessDot freshness={node.freshness} />
+                      {node.freshness}
+                    </span>
+                    <span className="capitalize">{node.status}</span>
+                    {node.remark && <span className="max-w-[280px] truncate">{node.remark}</span>}
+                  </div>
+
+                  <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+                    <MiniMetric label="Score" value={node.score.toFixed(0)} />
+                    <MiniMetric label="Proxy" value={node.medianProxyMs != null ? fmtMs(node.medianProxyMs) : '—'} />
+                    <MiniMetric label="TCP" value={node.medianTcpMs != null ? fmtMs(node.medianTcpMs) : '—'} />
+                    <MiniMetric label="Loss" value={node.recentLossPct > 0 ? fmtPct(node.recentLossPct) : '0%'} />
+                    <MiniMetric label="Reliability" value={fmtPct(node.reliabilityPct)} />
+                    <MiniMetric label="Sources" value={String(node.sourceCount)} />
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  {node.lastEngine ? (
+                    <SharedEngineBadge
+                      engine={node.lastEngine}
+                      title={`Last proxy test ran through the ${ENGINE_LABELS[node.lastEngine]} runtime`}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-faint" title="Never proxy-tested — no engine has run against this node">
+                      never tested
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-warn"
+                      title={node.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-label={node.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      onClick={() => void actions.toggleFavorite(node)}
+                    >
+                      <Star size={14} className={node.favorite ? 'fill-warn text-warn' : ''} />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-ok disabled:opacity-40"
+                      title="Test TCP"
+                      aria-label="Test TCP"
+                      disabled={actions.anyBusy}
+                      onClick={() => void actions.test(node.id, 'tcp')}
+                    >
+                      {actions.busy(node.id, 'test') ? <RefreshCw size={14} className="animate-spin" /> : <Wifi size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
+                      title="Copy this node's share link (rebuilt from the stored config)"
+                      aria-label={`Copy share link for ${node.host}`}
+                      disabled={actions.anyBusy}
+                      onClick={() => void actions.copyShareLink(node.id)}
+                    >
+                      {actions.busy(node.id, 'copy') ? <RefreshCw size={14} className="animate-spin" /> : <Link2 size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
+                      title={node.country || node.lat != null ? 'Re-check location (fresh GeoIP lookup)' : 'Look up location now'}
+                      aria-label="Re-check location"
+                      disabled={actions.anyBusy}
+                      onClick={() => void actions.recheckGeo(node.id)}
+                    >
+                      {actions.busy(node.id, 'geo') ? <RefreshCw size={14} className="animate-spin" /> : <LocateFixed size={14} />}
+                    </button>
+                    {/* Promote straight from the row: scanning a list is when a
+                        node is most likely to look worth keeping, and the share
+                        link is rebuilt server-side either way.
+
+                        Offered only for protocols a sing-box PROFILE can be
+                        built from. A hysteria2/tuic node has no share-link form
+                        that importer accepts, so the button would be a control
+                        that can never work — it stays disabled and says why
+                        instead. A promotable node whose credential was never
+                        vaulted still refuses with the server's own reason. */}
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
+                      title={
+                        canBecomeEngineProfile(node.protocol)
+                          ? 'Use in an engine — store this node as a named engine profile'
+                          : `${node.protocol} nodes have no share-link form an engine profile can be built from`
+                      }
+                      aria-label={`Add ${node.host} to an engine`}
+                      disabled={actions.anyBusy || !canBecomeEngineProfile(node.protocol)}
+                      onClick={() => void actions.promote(node.id)}
+                    >
+                      {actions.busy(node.id, 'promote') ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-text"
+                      title="View details"
+                      aria-label={`View details for ${node.host}`}
+                      onClick={() => navigate(`/nodes/${node.id}`)}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 py-4">
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded bg-status-ok/10">
-                <Wifi size={20} className="text-status-ok" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.total ?? 0}</p>
-                <p className="text-xs text-muted">Total nodes</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded bg-status-warn/10">
-                <ShieldCheck size={20} className="text-status-warn" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.healthy ?? 0}</p>
-                <p className="text-xs text-muted">Healthy</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded bg-amber-500/10">
-                <Clock size={20} className="text-amber-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.stale ?? 0}</p>
-                <p className="text-xs text-muted">Stale</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded bg-blue-500/10">
-                <Star size={20} className="text-blue-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.favoriteCount ?? 0}</p>
-                <p className="text-xs text-muted">Favorited</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card className="px-6 py-4">
-        <CardBody>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex-1 min-w-[200px]">
-              <Field label="Search">
-                <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                    placeholder="IP, hostname, fingerprint, ASN..."
-                    className="w-full pl-8 pr-3 py-2 bg-base-200 border-none rounded-md text-sm placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-              </Field>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Field label="Protocol">
-                <select
-                  value={protocol}
-                  onChange={(e) => { setProtocol(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {PROTOCOL_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Status">
-                <select
-                  value={status}
-                  onChange={(e) => { setStatus(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Transport">
-                <select
-                  value={transport}
-                  onChange={(e) => { setTransport(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {TRANSPORT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Security">
-                <select
-                  value={security}
-                  onChange={(e) => { setSecurity(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {SECURITY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Freshness">
-                <select
-                  value={freshness}
-                  onChange={(e) => { setFreshness(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {FRESHNESS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Runtime">
-                <select
-                  value={engine}
-                  onChange={(e) => { setEngine(e.target.value); setPage(0); }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                  title="Show only nodes whose last proxy test ran through this core"
-                >
-                  {ENGINE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Sort">
-                <select
-                  value={sortField}
-                  onChange={(e) => {
-                    const field = e.target.value as NodeSortField;
-                    setSortField(field);
-                    // Toggle direction if same field
-                    if (field === sortField) {
-                      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-                    } else {
-                      const opt = SORT_OPTIONS.find((o) => o.value === field);
-                      setSortDir(opt?.defaultDir || 'desc');
-                    }
-                    setPage(0);
-                  }}
-                  className="bg-base-200 border-none rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {SORT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Button variant="ghost" size="sm" onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}>
-                <ArrowUpDown size={14} className={`transition-transform ${sortDir === 'asc' ? 'rotate-180' : ''}`} />
-              </Button>
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => handleExport('uri')}>
-                <Download size={14} />
-                Export
-              </Button>
-              <Button variant="secondary" size="sm" onClick={handleRefresh}>
-                <RefreshCw size={14} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Nodes table */}
-      <Card className="px-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-base-300">
-                <th className="text-left py-3 px-4 w-10"></th>
-                <th className="text-left py-3 px-4">Host</th>
-                <th className="text-left py-3 px-4">Protocol</th>
-                <th className="text-left py-3 px-4">Port</th>
-                <th className="text-left py-3 px-4">Transport</th>
-                <th className="text-left py-3 px-4">Security</th>
-                <th className="text-left py-3 px-4">Country</th>
-                <th className="text-left py-3 px-4">Score</th>
-                <th className="text-left py-3 px-4">Proxy</th>
-                <th className="text-left py-3 px-4">Runtime</th>
-                <th className="text-left py-3 px-4">TCP</th>
-                <th className="text-left py-3 px-4">Loss</th>
-                <th className="text-left py-3 px-4">Reliability</th>
-                <th className="text-left py-3 px-4">Sources</th>
-                <th className="text-left py-3 px-4">Freshness</th>
-                <th className="text-right py-3 px-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedNodes.map((node, idx) => (
-                <tr
-                  key={node.id}
-                  className="border-b border-base-200 hover:bg-base-200/50 transition-colors"
-                  style={{ animationDelay: `${idx * 30}ms` }}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <StatusIcon status={node.status} />
-                      <span className="text-xs text-muted capitalize">{node.status}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col">
-                      <span className="font-mono text-xs break-all">{node.host}</span>
-                      {node.ipv4.length > 0 && (
-                        <span className="text-[10px] text-muted font-mono">{node.ipv4[0]}</span>
-                      )}
-                      {node.remark && (
-                        <span className="text-[10px] text-muted truncate max-w-[200px]">{node.remark}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <ProtocolBadge protocol={node.protocol} />
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{node.port}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs text-muted">{node.transport}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={node.security === 'reality' ? 'accent' : node.security === 'tls' ? 'ok' : 'neutral'}>
-                      {node.security}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    {node.country ? (
-                      <div className="flex items-center gap-1.5">
-                        <Flag size={12} className="text-muted" />
-                        <span className="text-xs">{node.country}</span>
-                        {node.city && <span className="text-[10px] text-muted">{node.city}</span>}
-                      </div>
-                    ) : (
-                      // Refused / unresolved geo: show WHY instead of a bare
-                      // dash that reads as missing data.
-                      <GeoStatusBadge reason={geoReasonOf(node.geoStatusReason, node.lat != null)} />
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <TrendingUp size={12} className="text-muted" />
-                      <span className="font-mono text-xs">{node.score.toFixed(0)}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {node.medianProxyMs != null ? fmtMs(node.medianProxyMs) : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {node.lastEngine ? (
-                      <EngineBadge engine={node.lastEngine} />
-                    ) : (
-                      <span className="text-xs text-muted" title="Never proxy-tested — no engine has run against this node">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {node.medianTcpMs != null ? fmtMs(node.medianTcpMs) : '—'}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {node.recentLossPct > 0 ? fmtPct(node.recentLossPct) : '0%'}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {fmtPct(node.reliabilityPct)}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    <span className="text-muted">{node.sourceCount}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <FreshnessDot freshness={node.freshness} />
-                      <span className="text-xs text-muted capitalize">{node.freshness}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {node.favorite ? (
-                        <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                      ) : (
-                        <Star size={14} className="text-muted hover:text-yellow-400 cursor-pointer" onClick={() => handleFavorite(node.id, true)} />
-                      )}
-                      <button
-                        className="text-muted hover:text-status-ok"
-                        onClick={() => handleTestNode(node.id, 'tcp')}
-                        title="Test TCP"
-                      >
-                        <Wifi size={14} />
-                      </button>
-                      <button
-                        className="text-muted hover:text-accent disabled:opacity-40 disabled:cursor-not-allowed"
-                        onClick={() => void handleGeoRecheck(node.id)}
-                        disabled={geoCheckingId != null}
-                        title={node.country || node.lat != null ? 'Re-check location (fresh GeoIP lookup)' : 'Look up location now'}
-                      >
-                        {geoCheckingId === node.id
-                          ? <RefreshCw size={14} className="animate-spin" />
-                          : <LocateFixed size={14} />}
-                      </button>
-                      <a
-                        href={`/nodes/${node.id}`}
-                        className="text-muted hover:text-status-warn"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          navigate(`/nodes/${node.id}`);
-                        }}
-                        title="View details"
-                      >
-                        <ChevronRight size={14} />
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {displayedNodes.length === 0 && !loading && (
-          <div className="p-8 text-center">
-            <EmptyState
-              title="No nodes found"
-              message="Try adjusting your filters or search terms."
-              action={
-                <Button variant="ghost" onClick={() => {
-                  setProtocol('all');
-                  setStatus('all');
-                  setTransport('all');
-                  setSecurity('all');
-                  setFreshness('all');
-                  setSearch('');
-                  setPage(0);
-                  void loadData();
-                }}>
-                  Clear filters
-                </Button>
-              }
-            />
-          </div>
-        )}
-      </Card>
-
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-6 py-4">
+        <div className="mt-4 flex items-center justify-between">
           <p className="text-xs text-muted">
-            Showing {(page * pageSize) + 1}–{Math.min((page + 1) * pageSize, total)} of {total} nodes
+            Page {page + 1} of {totalPages}
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-            >
+            <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
               Previous
             </Button>
-            <span className="text-xs text-muted">Page {page + 1} of {totalPages}</span>
             <Button
               variant="ghost"
               size="sm"
@@ -810,6 +777,14 @@ export default function NodeExplorerPage() {
           </div>
         </div>
       )}
-    </div>
+
+      <FoldNote id="reading-values" label="How to read these numbers" className="mt-4">
+        <span className="flex items-start gap-1.5">
+          <TrendingUp size={12} className="mt-0.5 shrink-0" />
+          Every value on this page is a stored measurement or a database count. A node with no proxy measurement shows
+          an em dash and &quot;never tested&quot; rather than a zero that would read as a fast result.
+        </span>
+      </FoldNote>
+    </DisclosureScope>
   );
 }

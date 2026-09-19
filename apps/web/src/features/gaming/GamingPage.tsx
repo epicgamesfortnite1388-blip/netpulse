@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ScheduleChip } from '@/components/ScheduleChip';
 import { Progress } from '@/components/ui/Progress';
@@ -201,7 +202,7 @@ export default function GamingPage() {
   const sessionEvents = session?.events ?? [];
 
   return (
-    <div>
+    <DisclosureScope name="gaming">
       <PageHeader
         title="Gaming network intelligence"
         description="Measure reachability and latency to documented publisher service endpoints per region, rank your best regions, then monitor stability while you play."
@@ -250,6 +251,8 @@ export default function GamingPage() {
           <ErrorState error={catalogError} retry={runTest} />
         </div>
       )}
+
+      <DisclosureToolbar className="-mt-3 mb-2" />
 
       <Tabs
         value={tab}
@@ -338,25 +341,36 @@ export default function GamingPage() {
 
               <div className="grid gap-4 lg:grid-cols-2">
                 {results.regions.map((r: GameRegionResult) => (
-                  <Card key={r.regionId} className={r.rankLabel === 'best-region' ? 'border-ok/40' : r.rankLabel === 'not-recommended' ? 'opacity-80' : ''}>
-                    <CardBody>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {r.rank != null && <span className="font-mono text-xs text-faint">#{r.rank}</span>}
-                            <span className="text-sm font-semibold">{r.regionName}</span>
-                            {r.rankLabel && <Badge tone={RANK_TONE[r.rankLabel]}>{r.rankLabel.replace('-', ' ')}</Badge>}
-                          </div>
-                          <div className="mt-1 flex items-center gap-2">
-                            <Badge tone={REACH_TONE[r.reachability] ?? 'neutral'}>{r.reachability.replace(/-/g, ' ')}</Badge>
-                          </div>
-                        </div>
+                  <Card
+                    key={r.regionId}
+                    className={r.rankLabel === 'best-region' ? 'border-ok/40' : r.rankLabel === 'not-recommended' ? 'opacity-80' : ''}
+                    fold={{
+                      id: `region-${r.regionId}`,
+                      // Open: the region list IS this test's result, so a folded
+                      // default would hide the answer. Folding is for parking the
+                      // regions you are not comparing right now — and the folded
+                      // header still carries this region's own numbers.
+                      defaultOpen: true,
+                      summary: `${r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : 'no response'} · ${r.reachability.replace(/-/g, ' ')}${r.score != null ? ` · score ${Math.round(r.score)}` : ''}`,
+                    }}
+                  >
+                    <CardHeader
+                      title={r.rank != null ? `#${r.rank} · ${r.regionName}` : r.regionName}
+                      subtitle={
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          {r.rankLabel && <Badge tone={RANK_TONE[r.rankLabel]}>{r.rankLabel.replace('-', ' ')}</Badge>}
+                          <Badge tone={REACH_TONE[r.reachability] ?? 'neutral'}>{r.reachability.replace(/-/g, ' ')}</Badge>
+                        </span>
+                      }
+                      actions={
                         <div className="text-right">
-                          <div className="font-mono text-xl">{r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : '—'}</div>
+                          <div className="font-mono text-base">{r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : '—'}</div>
                           {r.score != null && <div className="text-[11px] text-faint">score {Math.round(r.score)}</div>}
                         </div>
-                      </div>
-                      <p className="mt-2 text-[12px] leading-relaxed text-muted">{r.reason}</p>
+                      }
+                    />
+                    <CardBody>
+                      <p className="text-[12px] leading-relaxed text-muted">{r.reason}</p>
                       <ul className="mt-3 space-y-1 border-t border-line/60 pt-2">
                         {r.endpoints.map((e, i) => (
                           <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -423,7 +437,13 @@ export default function GamingPage() {
                 )}
               </div>
 
-              <Card>
+              <Card
+                fold={{
+                  id: 'session-latency',
+                  pinned: true,
+                  summary: `${session.samples.length} sample${session.samples.length === 1 ? '' : 's'} · every ${session.intervalMs / 1000}s`,
+                }}
+              >
                 <CardHeader title="Latency over time" subtitle="Live samples from the session target" icon={<TrendingUp size={15} />} />
                 <CardBody>
                   <LatencyChart data={sessionLatency} height={150} />
@@ -431,7 +451,12 @@ export default function GamingPage() {
               </Card>
 
               {sessionEvents.length > 0 && (
-                <Card>
+                <Card
+                  fold={{
+                    id: 'session-events',
+                    summary: `${sessionEvents.length} event${sessionEvents.length === 1 ? '' : 's'} recorded this session`,
+                  }}
+                >
                   <CardHeader title="Detected events" subtitle="Spikes, loss bursts and connectivity changes" />
                   <CardBody>
                     <ul className="space-y-2">
@@ -498,7 +523,7 @@ export default function GamingPage() {
           )}
         </TabPanel>
       </Tabs>
-    </div>
+    </DisclosureScope>
   );
 }
 
