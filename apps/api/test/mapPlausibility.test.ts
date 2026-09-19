@@ -114,6 +114,14 @@ function fakeRepo(rows: PublicNodeRow[] = []) {
   const geoWrites: GeoWrite[] = [];
   const repo = {
     list: vi.fn(() => ({ rows: [...store.values()] })) as unknown as PublicNodesRepository['list'],
+    // Mirrors PublicNodesRepository.listGeoScrubPage: geo-carrying rows only,
+    // keyset-paged by primary key.
+    listGeoScrubPage: ((afterId: string | null, limit: number) =>
+      [...store.values()]
+        .filter((r) => (afterId === null || r.id > afterId) && (r.country != null || r.lat != null || r.lon != null))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, limit)
+        .map((r) => ({ id: r.id, host: r.host, asn: r.asn, country: r.country, lat: r.lat, lon: r.lon }))) as PublicNodesRepository['listGeoScrubPage'],
     markGeoAttempt: (id: string) => { const r = store.get(id); if (r) r.geoLastAttempt = Date.now(); },
     updateGeo: (id: string, geo: Record<string, unknown>) => {
       geoWrites.push({ id, geo });

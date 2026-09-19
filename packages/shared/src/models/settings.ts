@@ -111,8 +111,12 @@ export interface AppSettings {
   };
   /** Public-node proxy-test core preference. */
   proxyEngine: {
-    /** 'auto' picks the first available engine (xray first for Reality/XTLS). */
-    preferred: 'auto' | 'sing-box' | 'xray';
+    /**
+     * 'auto' picks the first available engine (xray first for Reality/XTLS).
+     * `hysteria` only ever dials hysteria2 nodes, so preferring it does not
+     * change which core handles every other protocol.
+     */
+    preferred: 'auto' | 'sing-box' | 'xray' | 'v2ray' | 'hysteria';
   };
   /** Primary IP-geolocation provider with automatic failover. */
   geoProvider: {

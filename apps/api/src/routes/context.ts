@@ -59,6 +59,7 @@ import type { KillSwitchService } from '../services/killSwitch';
 import type { GatewayMemoryService } from '../services/gatewayMemory';
 import type { VpnHistoryService } from '../services/vpnHistory';
 import type { NodeDiscoveryService } from '../services/nodeDiscovery';
+import type { NodeSecretVault } from '../services/nodeSecretVault';
 import type { Logger } from '../logger';
 
 export interface AppContext {
@@ -126,6 +127,8 @@ export interface AppContext {
     /* Public-node subsystem services. Kept loose until the crawler pipeline is fully typed. */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nodes: any;
+    /** Encrypted at-rest vault for node credentials (uuid / password). */
+    nodeVault?: NodeSecretVault;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sourceScheduler?: any;
   };

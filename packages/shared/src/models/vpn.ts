@@ -1,3 +1,5 @@
+import type { TunWatchdogState } from './vpnTunnel';
+
 export interface VpnProviderInfo {
   id: string;
   name: string;
@@ -44,6 +46,28 @@ export interface VpnStatus {
   endpoint?: string | null;
   /** live latency to the VPN endpoint, when measured */
   endpointLatencyMs?: number | null;
+  /**
+   * System-wide (TUN) mode for THIS engine's tunnel.
+   *
+   * Proxy-mode engines (Aether's local SOCKS5, the local cores) only capture
+   * traffic that honours a proxy setting. TUN mode puts a sing-box TUN gateway
+   * in front of the engine's inbound so the OS default route carries everything.
+   * `active` is only ever set after traffic provably traversed the whole path
+   * AND the hold that decides what happens on a drop is armed; a capture whose
+   * hold could not be armed reports `unguarded` instead, because it must never
+   * read as protected. A lost capture that the watchdog is rebuilding reports
+   * `recovering` — nothing is captured in that state, whatever is being tried.
+   */
+  tun?: 'requested' | 'recovering' | 'active' | 'unguarded' | null;
+  /** Why TUN did not come up, in the OS's or the gateway's own words. */
+  tunError?: string | null;
+  /** Stable code the UI acts on: rights, missing core, relay failure, or an unarmed hold. */
+  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | null;
+  /**
+   * Automatic-recovery accounting for a dropped capture: how many re-arms the
+   * watchdog used, out of how many it is allowed, and why the last one failed.
+   */
+  tunWatchdog?: TunWatchdogState | null;
 }
 
 export interface VpnServerInfo {

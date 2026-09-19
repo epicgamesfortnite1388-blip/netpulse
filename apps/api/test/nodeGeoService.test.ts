@@ -148,6 +148,10 @@ function fakeRepo() {
       updateGeo: (id: string, geo: Record<string, unknown>) => {
         geoWrites.push({ id, geo });
       },
+      // The scrub pages by primary key over rows that carry geo data — the
+      // narrowing the repository does in SQL (see PublicNodesRepository
+      // .listGeoScrubPage), reproduced here so the contract stays exercised.
+      listGeoScrubPage: () => [],
     } as unknown as PublicNodesRepository,
   };
 }
@@ -303,7 +307,11 @@ describe('nodeGeoService', () => {
       row({ id: 'clean1', host: '188.42.89.157', asn: 60781, country: 'NL', city: 'Amsterdam', lat: 52.37, lon: 4.89 }),
       row({ id: 'anycast1', host: '1.1.1.1', asn: 13335, country: 'AU', city: 'Brisbane', lat: -27.4, lon: 153.06 }),
     ];
-    repo.list = vi.fn(() => ({ rows })) as unknown as PublicNodesRepository['list'];
+    repo.listGeoScrubPage = ((afterId: string | null, limit: number) =>
+      rows
+        .filter((r) => (afterId === null || r.id > afterId) && (r.country != null || r.lat != null || r.lon != null))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, limit)) as PublicNodesRepository['listGeoScrubPage'];
     const scrubbed = scrubAnycastGeo(repo);
     const scrubbedIds = geoWrites.map((w) => w.id);
     expect(scrubbed).toBe(3);

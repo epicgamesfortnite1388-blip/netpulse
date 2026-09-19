@@ -8,7 +8,7 @@ import type { IpWhoIsResult } from '../providers/ipinfo/ipwhoIs';
 import { familyOfIp, isPrivateIp } from '../util/targetGuard';
 import { classifyGeoTarget, geoForcedLocation, geoVouchedByOverride } from './geoGuard';
 
-import type { PublicNodeRow, PublicNodesRepository } from '../db/repositories';
+import type { GeoScrubRow, PublicNodeRow, PublicNodesRepository } from '../db/repositories';
 import type { Logger } from '../logger';
 
 /**
@@ -476,29 +476,24 @@ export async function recheckNodeGeo(
  * + force coordinates re-pins a node instead. Returns rows touched.
  */
 export function scrubAnycastGeo(nodesRepo: {
-  list(opts: { limit: number; offset?: number }): { rows: PublicNodeRow[] };
+  listGeoScrubPage(afterId: string | null, limit: number): GeoScrubRow[];
   updateGeo(id: string, geo: Record<string, unknown>): void;
 }): number {
   const pageSize = 2000;
-  const seen = new Set<string>();
+  let cursor: string | null = null;
   let scrubbed = 0;
 
   try {
-    // Pages over the whole table. A single capped window was the old behaviour,
-    // so on a large database most legacy rows were never repaired while the
-    // scrub was reported as done. The loop stops when a page brings no row it
-    // has not already seen, which is also the guarantee that a query that is
-    // not advancing cannot spin here.
-    for (let offset = 0; ; offset += pageSize) {
-      const page = nodesRepo.list({ limit: pageSize, offset }).rows;
+    // Keyset pages over the rows that can need repair. A single capped window
+    // was the old behaviour, so on a large database most legacy rows were
+    // never repaired while the scrub was reported as done; paging by primary
+    // key after the last id seen (rather than an offset over a set this loop
+    // is simultaneously shrinking) is what makes full-table coverage safe.
+    for (;;) {
+      const page = nodesRepo.listGeoScrubPage(cursor, pageSize);
       if (page.length === 0) break;
 
-      let unseen = 0;
       for (const row of page) {
-        if (seen.has(row.id)) continue;
-        seen.add(row.id);
-        unseen += 1;
-
         const cls = classifyGeoTarget(row.host, row.asn);
         if (cls === 'unicast' && inCountryBox(row.country, row.lat, row.lon)) continue;
         if (row.lat == null && row.lon == null && row.country == null) continue;
@@ -514,7 +509,8 @@ export function scrubAnycastGeo(nodesRepo: {
         scrubbed += 1;
       }
 
-      if (unseen === 0 || page.length < pageSize) break;
+      cursor = page[page.length - 1]!.id;
+      if (page.length < pageSize) break;
     }
   } catch {
     // scrub is best-effort; the geo worker refuses refused-classes going forward

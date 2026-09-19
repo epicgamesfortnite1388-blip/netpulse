@@ -231,9 +231,13 @@ export function cfStabilityHold(ip: string, port: number, holdMs = 1_200): Promi
     }
     let settled = false;
     const socket = tls.connect({ host: ip, port, servername: CF_DOWNLOAD_HOST, rejectUnauthorized: false });
+    // A TCP-accepting endpoint that never completes TLS (DPI blackhole) would
+    // otherwise hold this promise forever — the whole hold is deadline-bound.
+    const handshakeTimer = setTimeout(() => finish(false), holdMs + 4_000);
     const finish = (result: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(handshakeTimer);
       socket.destroy();
       resolve(result);
     };

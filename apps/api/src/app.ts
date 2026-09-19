@@ -166,6 +166,10 @@ export async function buildApp(opts: BuildOptions = {}) {
       `http://localhost:${config.port}`,
       `http://127.0.0.1:${config.port}`,
     ],
+    // Desktop mode: the Tauri shell sets NETPULSE_DESKTOP=1 on the sidecar and
+    // injects the per-launch secret. There, cookies leave the trust chain
+    // entirely — see AuthOptions.desktopMode.
+    desktopMode: process.env['NETPULSE_DESKTOP'] === '1',
   });
 
   const db = openDb(config);
@@ -399,6 +403,15 @@ export async function buildApp(opts: BuildOptions = {}) {
     getSystemProxy: () => getSystemProxy(),
     publish: (kind, payload) => bus.publish('nodes', { type: kind, ...payload }),
     killSwitch,
+    // Same live preference the Aether provider reads: a route-mode hold the
+    // user asked for must never be skipped without the status saying so.
+    killSwitchEnabled: () => {
+      try {
+        return settings.get().vpn?.killSwitch === true;
+      } catch {
+        return false;
+      }
+    },
     log: { info: (m) => log.info(m), warn: (m) => log.warn(m), error: (m) => log.error(m) },
     // Memory is written from the verified path only, so an entry always means
     // "this node provably carried traffic", never "this node looked fine".
@@ -508,6 +521,9 @@ export async function buildApp(opts: BuildOptions = {}) {
     map,
     iran,
     nodes: nodesService,
+    // Encrypted at-rest vault for node credentials — the engine-intake routes
+    // rebuild a node's share link from it when promoting a node into a profile.
+    nodeVault,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sourceScheduler: sourceScheduler as any,
   };

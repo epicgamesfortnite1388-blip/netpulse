@@ -95,9 +95,12 @@ interface NodeWebDTO {
 import { fingerprintHash, buildFingerprint, PROTOCOL_LABELS, TRANSPORT_LABELS, SECURITY_LABELS } from './nodeParsers';
 import { proxyProbeWithEngine } from './proxyEngineRunner';
 import type { NodeSecretVault } from './nodeSecretVault';
-import { fetchAndImportSource, hashContent, type FetchContext } from './nodeSourceRegistry';
+import { fetchAndImportSource, hashContent, partitionConfigs, type FetchContext } from './nodeSourceRegistry';
+import { buildShareLink, linkSourceFromRow } from './nodeLinkExport';
+
+import type { LinkExport, LinkSourceRow } from './nodeLinkExport';
 import type { RawDocumentsRepository, SourceFetchesRepository } from '../db/repositories';
-import type { AppSettings, PublicSource } from '@netpulse/shared';
+import type { AppSettings, ProxyEngineId, PublicSource } from '@netpulse/shared';
 import { geoStatusReasonFor } from './nodeGeoService';
 import { validateNodeHost, normalizeNodePort, familyOfIp, resolveTarget } from '../util/targetGuard';
 import type { Logger } from '../logger';
@@ -226,13 +229,52 @@ export class NodesService {
 
   /* ----------------------------- import ----------------------------- */
 
+  /**
+   * Import configs the user supplied directly (pasted links, or one node
+   * exported and re-added).
+   *
+   * Parsing happens through the same `partitionConfigs` the fetchers use, so a
+   * pasted link is validated at exactly the same boundary as a downloaded one,
+   * and storage runs through `importParsedConfigs` with NO source: a manual
+   * config has no feed behind it, and inventing one would put a fiction in the
+   * Sources page. Results stay split into imported / duplicates / invalid so the
+   * UI can report what really happened rather than "added".
+   */
+  async importManualConfigs(
+    rawConfigs: string[],
+  ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[] }> {
+    const candidates = rawConfigs.map((c) => c.trim()).filter((c) => c.length > 0);
+    if (candidates.length === 0) return { imported: 0, duplicates: 0, invalid: 0, nodeIds: [] };
+
+    const { valid, invalid } = partitionConfigs(candidates);
+    if (valid.length === 0) {
+      this.recordEvent('node.manual-import', { submitted: candidates.length, imported: 0, duplicates: 0, invalid });
+      return { imported: 0, duplicates: 0, invalid, nodeIds: [] };
+    }
+
+    const stored = await this.importParsedConfigs(null, valid, null);
+    const result = { ...stored, invalid: stored.invalid + invalid };
+    this.recordEvent('node.manual-import', {
+      submitted: candidates.length,
+      imported: result.imported,
+      duplicates: result.duplicates,
+      invalid: result.invalid,
+    });
+    return result;
+  }
+
   async importParsedConfigs(
-    sourceId: string,
+    sourceId: string | null,
     configs: Array<{ raw: string; parsed: { config: ParsedNodeConfig; secret: string } | null }>,
-    sourceUrl: string,
+    sourceUrl: string | null,
   ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[] }> {
     const now = Date.now();
-    const imported: string[] = [];
+    // `created` counts what this call actually added; `touched` also carries the
+    // ids of nodes it already knew. Both were the same array before, so a
+    // re-import reported "imported: 1, duplicates: 1" — a double count that also
+    // inflated the per-source imported totals shown in the UI.
+    const created: string[] = [];
+    const touched: string[] = [];
     let duplicates = 0;
     let invalid = 0;
 
@@ -259,22 +301,24 @@ export class NodesService {
         // computed `id` was identical for every row in a batch (same lengths,
         // same timestamp), so the primary-key conflict silently discarded all
         // but the first row and attribution was lost.
-        this.deps.sources.insert({
-          nodeId: existing.id,
-          sourceId,
-          sourceUrl,
-          sourceConfigRef: hashContent(item.raw),
-          parserVersion: '1.0.0',
-          normalizedHash: fpHash,
-          discoveredAt: now,
-        });
+        if (sourceId) {
+          this.deps.sources.insert({
+            nodeId: existing.id,
+            sourceId,
+            sourceUrl: sourceUrl ?? sourceId,
+            sourceConfigRef: hashContent(item.raw),
+            parserVersion: '1.0.0',
+            normalizedHash: fpHash,
+            discoveredAt: now,
+          });
+        }
 
         // Update node metadata
         this.deps.nodes.update(existing.id, {
           lastSeen: now,
-          sourceIds: [...new Set([...existing.sourceIds, sourceId])],
-          sourceUrls: [...new Set([...existing.sourceUrls, sourceUrl])],
-          sourceCount: (existing.sourceCount || 1) + 1,
+          sourceIds: sourceId ? [...new Set([...existing.sourceIds, sourceId])] : existing.sourceIds,
+          sourceUrls: sourceUrl ? [...new Set([...existing.sourceUrls, sourceUrl])] : existing.sourceUrls,
+          sourceCount: sourceId ? (existing.sourceCount || 1) + 1 : existing.sourceCount || 1,
           status: 'discovered', // Reset to discovered if previously stale
           updatedAt: now,
         });
@@ -300,7 +344,7 @@ export class NodesService {
           secretBackfilled: Boolean(item.parsed.secret),
         });
 
-        imported.push(existing.id);
+        touched.push(existing.id);
         continue;
       }
 
@@ -338,9 +382,9 @@ export class NodesService {
         encryption: config.encryption || null,
         ssrProtocol: config.ssrProtocol || null,
         remark: config.remark || null,
-        sourceIds: [sourceId],
-        sourceUrls: [sourceUrl],
-        sourceCount: 1,
+        sourceIds: sourceId ? [sourceId] : [],
+        sourceUrls: sourceUrl ? [sourceUrl] : [],
+        sourceCount: sourceId ? 1 : 0,
         firstSeen: now,
         lastSeen: now,
         lastValidated: null,
@@ -385,16 +429,19 @@ export class NodesService {
 
       this.deps.nodes.insert(node);
 
-      // Record provenance (id left to the table's autoincrement — see above)
-      this.deps.sources.insert({
-        nodeId,
-        sourceId,
-        sourceUrl,
-        sourceConfigRef: hashContent(item.raw),
-        parserVersion: '1.0.0',
-        normalizedHash: fpHash,
-        discoveredAt: now,
-      });
+      // Record provenance (id left to the table's autoincrement — see above).
+      // A manual import has no source row to attribute, so none is written.
+      if (sourceId) {
+        this.deps.sources.insert({
+          nodeId,
+          sourceId,
+          sourceUrl: sourceUrl ?? sourceId,
+          sourceConfigRef: hashContent(item.raw),
+          parserVersion: '1.0.0',
+          normalizedHash: fpHash,
+          discoveredAt: now,
+        });
+      }
 
       // Record address
       // Address rows take the autoincrement id for the same reason.
@@ -418,7 +465,8 @@ export class NodesService {
           // authentication failures honestly
         }
       }
-      imported.push(nodeId);
+      created.push(nodeId);
+      touched.push(nodeId);
     }
 
     // NOTE: no DNS resolution in the import path. Free-config hostnames are
@@ -427,18 +475,21 @@ export class NodesService {
     // TESTED (testNode → resolveTarget), which is the only consumer that
     // needs them. Import stays parse+store (sub-2 s for 8k configs).
 
-    // Update source stats
-    const src = this.deps.sourceRepo.get(sourceId);
-    if (src) {
+    // Update source stats (only when the import really came from a source)
+    const src = sourceId ? this.deps.sourceRepo.get(sourceId) : undefined;
+    if (src && sourceId) {
       this.deps.sourceRepo.update(sourceId, {
         discoveredConfigCount: (src.discoveredConfigCount ?? 0) + configs.length,
-        importedConfigCount: (src.importedConfigCount ?? 0) + imported.length,
+        importedConfigCount: (src.importedConfigCount ?? 0) + created.length,
         duplicateCount: (src.duplicateCount ?? 0) + duplicates,
         invalidCount: (src.invalidCount ?? 0) + invalid,
       });
     }
 
-    return { imported: imported.length, duplicates, invalid, nodeIds: imported };
+    // nodeIds lists only what this call actually CREATED — the UI links
+    // "added" rows to detail pages, and a duplicate row would link the same
+    // node twice (once as added, once as already-known).
+    return { imported: created.length, duplicates, invalid, nodeIds: created };
   }
 
   /* ----------------------------- testing ----------------------------- */
@@ -940,7 +991,7 @@ export class NodesService {
    * Which core to prefer for proxy tests. Reads the live setting each call
    * (cheap: settings are cached); 'auto' lets the runner pick xray first.
    */
-  private proxyEnginePreference(): 'auto' | 'sing-box' | 'xray' | 'v2ray' {
+  private proxyEnginePreference(): 'auto' | ProxyEngineId {
     try {
       const s = this.deps.settings?.get();
       return s?.proxyEngine?.preferred ?? 'auto';
@@ -976,11 +1027,11 @@ export class NodesService {
 
     if (result.latencyMs != null) {
       if (type === 'proxy') {
-        medianProxy = this.updateMedian(node.medianProxyMs, result.latencyMs, node.testCount, totalTests, wasSuccess);
+        medianProxy = this.updateMedian(node.medianProxyMs, result.latencyMs, node.successCount, node.successCount + (wasSuccess ? 1 : 0), wasSuccess);
       } else if (type === 'tcp') {
-        medianTcp = this.updateMedian(node.medianTcpMs, result.latencyMs, node.testCount, totalTests, wasSuccess);
+        medianTcp = this.updateMedian(node.medianTcpMs, result.latencyMs, node.successCount, node.successCount + (wasSuccess ? 1 : 0), wasSuccess);
       } else if (type === 'tls') {
-        medianTls = this.updateMedian(node.medianTlsMs, result.latencyMs, node.testCount, totalTests, wasSuccess);
+        medianTls = this.updateMedian(node.medianTlsMs, result.latencyMs, node.successCount, node.successCount + (wasSuccess ? 1 : 0), wasSuccess);
       }
     }
 
@@ -1113,8 +1164,9 @@ export class NodesService {
 
     if (currentMedian == null) return newValue;
 
-    // Simple incremental median approximation
-    // For a proper median, we'd store all samples
+    // Simple incremental median approximation. Weights by SUCCESS counts, not
+    // total tests — failures carry no latency, so counting them would pin the
+    // median to old values after a long failure streak.
     const weight = oldCount > 0 ? oldCount / newCount : 0;
     return currentMedian * weight + newValue * (1 - weight);
   }
@@ -1743,52 +1795,37 @@ export class NodesService {
     }
   }
 
-  private toUri(node: {
-    protocol: NodeProtocol;
-    host: string;
-    port: number;
-    security: string;
-    transport: string;
-    sni: string | null;
-    path: string | null;
-    hostHeader: string | null;
-    flow: string | null;
-    alpn: string[];
-    remark: string | null;
-    encryption: string | null;
-    ssrProtocol: string | null;
-  }): string {
-    // Build a share-link URI from node config
-    // Note: This does NOT include secrets — those must be provided separately
-    switch (node.protocol) {
-      case 'vless':
-        return `vless://<password>@${node.host}:${node.port}?security=${node.security}&type=${node.transport}${node.sni ? `&sni=${node.sni}` : ''}${node.path ? `&path=${node.path}` : ''}${node.hostHeader ? `&host=${node.hostHeader}` : ''}${node.flow ? `&flow=${node.flow}` : ''}#${node.remark || node.host}`;
+  /**
+   * One node as a usable share link.
+   *
+   * This used to emit literal placeholders (`vless://<password>@…`), so every
+   * export was unusable while still looking like a config. The real builder in
+   * nodeLinkExport.ts reconstructs the link from the row plus the vaulted
+   * credential and round-trips it through the parser; a node that cannot be
+   * rebuilt (no vaulted secret, SSR, WireGuard) yields a `#` comment naming the
+   * reason, so an export never silently contains a broken node.
+   */
+  private toUri(node: LinkSourceRow & { id: string }): string {
+    const result = this.buildLink(node);
+    return result.ok ? result.link : `# ${node.host}:${node.port} not exported — ${result.reason}`;
+  }
 
-      case 'vmess':
-        // VMess URIs are base64-encoded JSON; we can't reconstruct without the UUID
-        return `vmess://<uuid-needed>@${node.host}:${node.port}?security=${node.security}&type=${node.transport}${node.sni ? `&sni=${node.sni}` : ''}#${node.remark || node.host}`;
+  /**
+   * One stored node's share link, or the serializer's reason it cannot be
+   * rebuilt (no vaulted credential, SSR/WireGuard, a link that did not
+   * round-trip). A bulk export needs a file-shaped string and turns a failure
+   * into a `#` comment; a copy action has to tell the two apart, so it asks
+   * here instead of parsing the comment back out.
+   *
+   * `null` means the node is not in the database.
+   */
+  shareLink(nodeId: string): LinkExport | null {
+    const row = this.deps.nodes.get(nodeId);
+    return row ? this.buildLink(row) : null;
+  }
 
-      case 'trojan':
-        return `trojan://<password>@${node.host}:${node.port}?sni=${node.sni}&type=${node.transport}${node.path ? `&path=${node.path}` : ''}#${node.remark || node.host}`;
-
-      case 'shadowsocks':
-        return `ss://<method>:<password>@${node.host}:${node.port}#${node.remark || node.host}`;
-
-      case 'shadowsocksr':
-        return `ssr://<base64-encoded-config>#${node.remark || node.host}`;
-
-      case 'hysteria2':
-        return `hysteria2://<password>@${node.host}:${node.port}?sni=${node.sni}#${node.remark || node.host}`;
-
-      case 'tuic':
-        return `tuic://<password>@${node.host}:${node.port}?sni=${node.sni}&alpn=${node.alpn?.[0] || 'h3'}#${node.remark || node.host}`;
-
-      case 'wireguard':
-        return `wireguard://<private-key>@${node.host}:${node.port}?ip=0.0.0.0/0&dns=1.1.1.1#${node.remark || node.host}`;
-
-      default:
-        return `${node.protocol}://${node.host}:${node.port}`;
-    }
+  private buildLink(node: LinkSourceRow & { id: string }): LinkExport {
+    return buildShareLink(linkSourceFromRow(node), this.deps.nodeVault?.get(node.id) ?? null);
   }
 
   private toExportJSON(node: {
@@ -1853,7 +1890,15 @@ export class NodesService {
     };
   }
 
+  /** The vaulted credential a config format needs, or null when absent —
+   *  a placeholder like `<uuid>` would produce a config that looks valid but
+   *  cannot connect. */
+  private secretFor(nodeId: string): string | null {
+    return this.deps.nodeVault?.get(nodeId) ?? null;
+  }
+
   private toClashConfig(nodes: Array<{
+    id: string;
     protocol: NodeProtocol;
     host: string;
     port: number;
@@ -1868,15 +1913,19 @@ export class NodesService {
     alpn: string[];
   }>): string {
     const proxies: string[] = nodes.map((n) => {
+      // Vaulted credential first: like the URI path, a config that looks valid
+      // but carries a placeholder is worse than an explicit skip.
+      const secret = this.secretFor(n.id);
+      if (!secret?.trim()) return `  # ${n.remark || n.host}:${n.port} not exported — no credential is stored for this node`;
       switch (n.protocol) {
         case 'vless':
-          return `  - name: ${n.remark || n.host}\n    type: vless\n    server: ${n.host}\n    port: ${n.port}\n    uuid: <uuid>\n    tls: ${n.security === 'tls' || n.security === 'reality'}\n    ${n.sni ? `sni: ${n.sni}` : ''}\n    ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
+          return `  - name: ${n.remark || n.host}\n    type: vless\n    server: ${n.host}\n    port: ${n.port}\n    uuid: ${secret}\n    tls: ${n.security === 'tls' || n.security === 'reality'}\n    ${n.sni ? `sni: ${n.sni}` : ''}\n    ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
         case 'vmess':
-          return `  - name: ${n.remark || n.host}\n    type: vmess\n    server: ${n.host}\n    port: ${n.port}\n    uuid: <uuid>\n    alterId: ${n.alterId ?? 0}\n    tls: ${n.security === 'tls'}\n    ${n.sni ? `sni: ${n.sni}` : ''}\n    ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
+          return `  - name: ${n.remark || n.host}\n    type: vmess\n    server: ${n.host}\n    port: ${n.port}\n    uuid: ${secret}\n    alterId: ${n.alterId ?? 0}\n    tls: ${n.security === 'tls'}\n    ${n.sni ? `sni: ${n.sni}` : ''}\n    ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
         case 'trojan':
-          return `  - name: ${n.remark || n.host}\n    type: trojan\n    server: ${n.host}\n    port: ${n.port}\n    password: <password>\n    tls: true\n    ${n.sni ? `sni: ${n.sni}` : ''}`;
+          return `  - name: ${n.remark || n.host}\n    type: trojan\n    server: ${n.host}\n    port: ${n.port}\n    password: "${secret}"\n    tls: true\n    ${n.sni ? `sni: ${n.sni}` : ''}`;
         case 'shadowsocks':
-          return `  - name: ${n.remark || n.host}\n    type: shadowsocks\n    server: ${n.host}\n    port: ${n.port}\n    password: <password>\n    cipher: ${n.encryption || 'aes-256-gcm'}`;
+          return `  - name: ${n.remark || n.host}\n    type: shadowsocks\n    server: ${n.host}\n    port: ${n.port}\n    password: "${secret}"\n    cipher: ${n.encryption || 'aes-256-gcm'}`;
         default:
           return `  - name: ${n.remark || n.host}\n    type: ${n.protocol}\n    server: ${n.host}\n    port: ${n.port}`;
       }
@@ -1902,15 +1951,18 @@ export class NodesService {
   }>): string {
     // Generate sing-box outbound configs
     const outbounds = nodes.map((n) => {
+      // Vaulted credential first — same rule as the Clash path.
+      const secret = this.secretFor(n.id);
+      if (!secret?.trim()) return `  # ${n.remark || n.id} (${n.host}:${n.port}) not exported — no credential is stored for this node`;
       switch (n.protocol) {
         case 'vless':
-          return `  - name: ${n.remark || n.id}\n    type: vless\n    server: ${n.host}\n    port: ${n.port}\n    uuid: <uuid>\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}\n      ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}\n      ${n.flow ? `flow: ${n.flow}` : ''}`;
+          return `  - name: ${n.remark || n.id}\n    type: vless\n    server: ${n.host}\n    port: ${n.port}\n    uuid: ${secret}\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}\n      ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}\n      ${n.flow ? `flow: ${n.flow}` : ''}`;
         case 'vmess':
-          return `  - name: ${n.remark || n.id}\n    type: vmess\n    server: ${n.host}\n    port: ${n.port}\n    uuid: <uuid>\n    alter_id: ${n.alterId ?? 0}\n    security: auto\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}\n      ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
+          return `  - name: ${n.remark || n.id}\n    type: vmess\n    server: ${n.host}\n    port: ${n.port}\n    uuid: ${secret}\n    alter_id: ${n.alterId ?? 0}\n    security: auto\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}\n      ${n.transport !== 'tcp' ? `transport: ${n.transport}` : ''}`;
         case 'trojan':
-          return `  - name: ${n.remark || n.id}\n    type: trojan\n    server: ${n.host}\n    port: ${n.port}\n    password: <password>\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}`;
+          return `  - name: ${n.remark || n.id}\n    type: trojan\n    server: ${n.host}\n    port: ${n.port}\n    password: "${secret}"\n    tls:\n      enabled: true\n      server_name: ${n.sni || n.host}`;
         case 'shadowsocks':
-          return `  - name: ${n.remark || n.id}\n    type: shadowsocks\n    server: ${n.host}\n    port: ${n.port}\n    password: <password>\n    cipher: ${n.encryption || 'aes-256-gcm'}`;
+          return `  - name: ${n.remark || n.id}\n    type: shadowsocks\n    server: ${n.host}\n    port: ${n.port}\n    password: "${secret}"\n    cipher: ${n.encryption || 'aes-256-gcm'}`;
         default:
           return `  - name: ${n.remark || n.id}\n    type: ${n.protocol}\n    server: ${n.host}\n    port: ${n.port}`;
       }
@@ -2046,7 +2098,7 @@ export class NodesService {
       favorite: node.favorite,
       userNotes: node.userNotes,
       lastProxyMs: node.lastProxyMs,
-      lastEngine: node.lastEngine === 'xray' || node.lastEngine === 'sing-box' ? node.lastEngine : null,
+      lastEngine: node.lastEngine === 'xray' || node.lastEngine === 'sing-box' || node.lastEngine === 'v2ray' ? node.lastEngine : null,
       lastTcpMs: node.lastTcpMs,
       lastTlsMs: node.lastTlsMs,
       testCount: node.testCount,

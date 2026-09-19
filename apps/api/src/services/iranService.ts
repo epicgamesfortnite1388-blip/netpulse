@@ -35,23 +35,21 @@ import type { Logger } from '../logger';
 const PROBE_TIMEOUT_MS = 4_000;
 const ALT_RESOLVER = '1.1.1.1';
 
-/** Redirects may only continue to public hosts — never private/reserved ranges. */
-function isSafeRedirect(url: string): boolean {
+/** Redirects may only continue to public hosts — never private/reserved ranges.
+ *  Hostnames are RESOLVED and every answer checked, so an internal name that
+ *  slips past the suffix list cannot be probed. (Async for that reason.) */
+async function isSafeRedirect(url: string): Promise<boolean> {
   try {
     const u = new URL(url);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    if (net.isIP(u.hostname) !== 0) {
-      return !isPrivateIp(u.hostname);
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost')) return false;
+    try {
+      const resolved = await dns.lookup(host, { all: true, verbatim: true });
+      return resolved.length > 0 && resolved.every((r) => !isPrivateIp(r.address));
+    } catch {
+      return false; // unresolvable — do not follow
     }
-    // resolve synchronously is not possible; block the obvious private literals
-    const h = u.hostname.toLowerCase();
-    return !(
-      h === 'localhost' ||
-      h.endsWith('.localhost') ||
-      h === 'metadata.google.internal' ||
-      h.endsWith('.internal') ||
-      h.endsWith('.local')
-    );
   } catch {
     return false;
   }
@@ -544,13 +542,16 @@ export class IranService {
             if (status != null && status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {
               redirectChain.push(target);
               const next = new URL(res.headers.location, target).toString();
-              // never follow redirects into private networks
-              if (!isSafeRedirect(next)) {
-                finish(false, Math.round(ms * 100) / 100, status, null, `redirect to unsafe host: ${next}`);
-                return;
-              }
+              // never follow redirects into private networks — the target is
+              // resolved and every answer checked before the next hop runs
               res.resume();
-              request(next, redirectsLeft - 1);
+              void isSafeRedirect(next).then((nextSafe) => {
+                if (!nextSafe) {
+                  finish(false, Math.round(ms * 100) / 100, status, null, `redirect to unsafe host: ${next}`);
+                  return;
+                }
+                request(next, redirectsLeft - 1);
+              });
               return;
             }
             const contentType = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : null;

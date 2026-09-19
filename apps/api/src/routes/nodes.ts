@@ -12,7 +12,7 @@ import { recheckNodeGeo } from '../services/nodeGeoService';
 import type { NodeProtocol, NodeSecurity, NodeSort, NodeStatus, PublicSource } from '@netpulse/shared';
 import { EngineInstallRequestSchema } from '@netpulse/shared';
 import { proxyEngineStatus } from '../services/proxyEngineRunner';
-import { installEngine } from '../services/engineManager';
+import { checkLatestReleases, installEngine, installedEngineVersions } from '../services/engineManager';
 
 const NodeFilterSchema = z.object({
   field: z.string().min(1).max(64),
@@ -148,6 +148,25 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     if (!node) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
 
     return node;
+  });
+
+  /**
+   * One node as a share link — the same rebuild "Add to engine" and bulk export
+   * use, so a link copied here is exactly what the engines would receive.
+   *
+   * 200 with `ok: false` + `reason` when the node exists but has no usable link
+   * (credential never reached the vault, SSR, WireGuard): the reason is the
+   * answer, and a copy button has to be able to show it rather than treat it as
+   * a transport failure. 404 only when there is no such node.
+   */
+  app.get('/api/v1/nodes/:id/link', async (req, reply) => {
+    if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
+
+    const { id } = req.params as { id: string };
+    const result = nodesService.shareLink(id);
+    if (!result) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
+
+    return { nodeId: id, ...result };
   });
 
   // Search nodes
@@ -324,6 +343,33 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   // Export nodes
+  /**
+   * Add configs the user supplied (a share link they found, or one copied out
+   * of another client) straight into the node pool.
+   *
+   * Imported rows go through the same parser and dedup path as a fetched
+   * source, and a manual node carries NO source attribution — it did not come
+   * from a feed. The response separates imported / duplicates / invalid so the
+   * UI can say what really happened.
+   */
+  app.post(
+    '/api/v1/nodes/import',
+    { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
+
+      const parsed = z
+        .object({ configs: z.array(z.string().min(4).max(4096)).min(1).max(200) })
+        .safeParse(req.body);
+      if (!parsed.success) throw parsed.error;
+
+      const result = await nodesService.importManualConfigs(parsed.data.configs);
+
+      reply.status(201);
+      return result;
+    },
+  );
+
   app.get('/api/v1/nodes/export', async (req, _reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
@@ -883,11 +929,26 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   // STATS / COUNTS
   // ================================================================
 
-  // Proxy-core engine availability (xray / sing-box). Cheap PATH checks; the
-  // UI shows which engine proxy tests will use and links install guidance.
+  // Proxy-core engine availability (xray / sing-box / v2ray) with the
+  // installed version of each. Availability is a cheap PATH check; versions
+  // come from the engine manager's short-lived cache (each is a bounded
+  // `<core> version` spawn). The UI shows which engine proxy tests will use.
   app.get('/api/v1/nodes/engines', async () => {
     const preferred = ctx.services.settings.get().proxyEngine?.preferred ?? 'auto';
-    return proxyEngineStatus(preferred);
+    const status = proxyEngineStatus(preferred);
+    const versions = await installedEngineVersions();
+    return {
+      ...status,
+      engines: status.engines.map((e) => ({ ...e, version: versions[e.id] ?? null })),
+    };
+  });
+
+  // Latest OFFICIAL release per core (the engine manager page's "update
+  // available" check). Cached server-side; each engine reports its own lookup
+  // failure instead of a stale tag being shown as current.
+  app.get('/api/v1/nodes/engines/releases', async (req) => {
+    const q = req.query as { force?: string };
+    return checkLatestReleases({ force: q.force === '1' || q.force === 'true' });
   });
 
   // Install or update a proxy core from its official release. The request

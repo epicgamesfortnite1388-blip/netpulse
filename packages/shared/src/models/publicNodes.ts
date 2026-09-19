@@ -611,6 +611,8 @@ export type NodeEventKind =
   | 'node.discovered'
   | 'node.imported'
   | 'node.duplicate'
+  /** Configs the user supplied directly (pasted link / promoted node). */
+  | 'node.manual-import'
   | 'node.test.started'
   | 'node.test.completed'
   | 'node.test.failed'

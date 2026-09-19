@@ -124,12 +124,12 @@ describe('import provenance', () => {
 
     const result = await service.importParsedConfigs('ermaozi', configs, 'https://example.test/sub');
 
-    // Existing contract: `imported` counts every valid config that was processed
-    // — including ones that matched a node already known — and `duplicates` is
-    // the subset of those. New nodes are `imported - duplicates`.
-    expect(result.imported).toBe(2);
+    // Disjoint accounting: `imported` counts only rows this call created,
+    // `duplicates` counts re-seen nodes, and the two never overlap (the old
+    // "imported includes duplicates" shape double-counted in every UI total).
+    expect(result.imported).toBe(0);
     expect(result.duplicates).toBe(2);
-    expect(result.imported - result.duplicates).toBe(0);
+    expect(result.imported - result.duplicates).toBe(-2);
     expect(insertedCount()).toBe(0);
     expect(provenanceRows).toHaveLength(2);
     for (const row of provenanceRows) {

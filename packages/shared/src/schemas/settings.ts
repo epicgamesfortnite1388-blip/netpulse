@@ -128,7 +128,7 @@ export const SettingsSchema = z.object({
     scanProfile: scanProfileSchema,
   }),
   proxyEngine: z.object({
-    preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray']),
+    preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray', 'hysteria']),
   }),
   geoProvider: z.object({
     /** 'auto' = ipwho.is first (richer verdicts) with geojs.io failover. */
@@ -237,7 +237,7 @@ export const SettingsPatchSchema = z
       .partial(),
     proxyEngine: z
       .object({
-        preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray']),
+        preferred: z.enum(['auto', 'sing-box', 'xray', 'v2ray', 'hysteria']),
       })
       .partial(),
     geoProvider: z

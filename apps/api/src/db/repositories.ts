@@ -888,6 +888,19 @@ export class RawDocumentsRepository {
   }
 }
 
+/**
+ * The columns the boot geo-scrub classifies on — see
+ * `PublicNodesRepository.listGeoScrubPage`.
+ */
+export interface GeoScrubRow {
+  id: string;
+  host: string;
+  asn: number | null;
+  country: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
 export interface PublicNodeRow {
   id: string;
   canonicalFingerprint: string;
@@ -1147,6 +1160,42 @@ export class PublicNodesRepository {
    *  geo worker never hammers the same dead host in a tight loop. */
   markGeoAttempt(id: string, at: number): void {
     this.handle.db.update(publicNodes).set({ geoLastAttempt: at }).where(eq(publicNodes.id, id)).run();
+  }
+
+  /**
+   * One keyset page of the boot geo-scrub, in the narrow projection the
+   * scrub's classifier actually reads.
+   *
+   * Two properties keep this off the boot critical path (the scrub runs before
+   * the sidecar listens): only rows that CAN need repair are returned — a row
+   * with no country/lat/lon is a no-op for the scrub — and only the six
+   * columns it classifies on are selected, instead of the wide row (JSON
+   * address lists, source URLs, counters). On a 41k-node store the previous
+   * full-row paging cost ~2.6 s of boot; this projection is ~40 ms.
+   *
+   * Paging is by primary key after `afterId` rather than OFFSET: the scrub
+   * clears the geo of rows it touches, which removes them from this predicate,
+   * and an offset window over a shrinking set would skip rows.
+   */
+  listGeoScrubPage(afterId: string | null, limit: number): GeoScrubRow[] {
+    const conditions = [
+      or(isNotNull(publicNodes.country), isNotNull(publicNodes.lat), isNotNull(publicNodes.lon))!,
+    ];
+    if (afterId !== null) conditions.push(gt(publicNodes.id, afterId));
+    return this.handle.db
+      .select({
+        id: publicNodes.id,
+        host: publicNodes.host,
+        asn: publicNodes.asn,
+        country: publicNodes.country,
+        lat: publicNodes.lat,
+        lon: publicNodes.lon,
+      })
+      .from(publicNodes)
+      .where(and(...conditions))
+      .orderBy(asc(publicNodes.id))
+      .limit(Math.max(1, Math.min(limit, MAX_LIST_LIMIT)))
+      .all();
   }
 
   /** Nodes whose IP-based geolocation should (re-)run: never attempted,

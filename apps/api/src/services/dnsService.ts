@@ -53,24 +53,25 @@ export class DnsService {    constructor(
     void total;
     const latencies: number[] = [];
     let timeouts = 0;
+    let errors = 0;
     let anyOk = false;
     let dnssec: boolean | null = null;
 
-    const runQuery = async (): Promise<{ ms: number; ok: boolean }> => {
+    const runQuery = async (): Promise<{ ms: number; ok: boolean; timeout: boolean }> => {
       if (opts.transport === 'doh') {
-        if (!spec.dohUrl) return { ms: 0, ok: false };
+        if (!spec.dohUrl) return { ms: 0, ok: false, timeout: false };
         const res = await dohQuery(spec.dohUrl, 'example.com', DnsType.A, { timeoutMs: opts.timeoutMs });
-        return { ms: res.ms, ok: res.response?.rcode === 0 };
+        return { ms: res.ms, ok: res.response?.rcode === 0, timeout: res.error === 'timeout' };
       }
       if (opts.transport === 'dot') {
-        if (!spec.dotHost) return { ms: 0, ok: false };
+        if (!spec.dotHost) return { ms: 0, ok: false, timeout: false };
         const res = await dotQuery(spec.dotHost, 'example.com', DnsType.A, { timeoutMs: opts.timeoutMs });
-        return { ms: res.ms, ok: res.response?.rcode === 0 };
+        return { ms: res.ms, ok: res.response?.rcode === 0, timeout: res.error === 'timeout' };
       }
       const server = spec.ipv4;
-      if (!server) return { ms: 0, ok: false };
+      if (!server) return { ms: 0, ok: false, timeout: false };
       const res = await udpQuery(server, 'example.com', DnsType.A, { timeoutMs: opts.timeoutMs });
-      return { ms: res.ms, ok: res.response?.rcode === 0 };
+      return { ms: res.ms, ok: res.response?.rcode === 0, timeout: res.error === 'timeout' };
     };
 
     for (let i = 0; i < opts.probes; i++) {
@@ -78,8 +79,10 @@ export class DnsService {    constructor(
       if (res.ok) {
         latencies.push(res.ms);
         anyOk = true;
-      } else {
+      } else if (res.timeout) {
         timeouts += 1;
+      } else {
+        errors += 1;
       }
       if (testId && total) {
         this.deps.bus.publish(testId, {
@@ -112,7 +115,6 @@ export class DnsService {    constructor(
     const avg = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : null;
     const jitter = latencies.length >= 2 ? percentile(latencies.map((v, i, arr) => i === 0 ? 0 : Math.abs(v - arr[i - 1]!)), 50) : null;
     const successCount = latencies.length;
-    const errors = opts.probes - successCount - timeouts;
     const reliability = opts.probes > 0 ? Math.round((successCount / opts.probes) * 1000) / 10 : null;
     const score = successCount > 0 && avg != null ? Math.round(Math.max(0, 100 - (avg * 0.5) - (jitter ?? 0) * 2 - (timeouts / opts.probes) * 100) * 10) / 10 : null;
     const hadAnySuccess = successCount > 0;
