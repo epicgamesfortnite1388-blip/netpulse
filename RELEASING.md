@@ -199,7 +199,9 @@ supported default for this repo:
 4. Export and build:
 
    ```bash
-   export NETPULSE_SIGN_AZURE_DLIB="C:/Tools/AzureSigning/Azure.CodeSigning.Dlib.dll"
+   export NETPULSE_SIGN_AZURE_DLIB="$LOCALAPPDATA/NetPulse/signing/dlib/bin/x64/Azure.CodeSigning.Dlib.dll"
+   # (installed per-user; see docs/AZURE_SIGNING_SETUP.md for the full
+   #  remaining-steps runbook — account, identity validation, profile)
    export NETPULSE_SIGN_AZURE_ENDPOINT="https://eus.codesigning.azure.net/"
    export NETPULSE_SIGN_AZURE_ACCOUNT="<account>"
    export NETPULSE_SIGN_AZURE_PROFILE="<profile>"
