@@ -5,11 +5,17 @@
  * Chain:
  *   1. desktop:build          (version + backend bundle + tauri build)
  *   2. desktop:verify         (staging, tauri.conf, live sidecar boot + auth)
- *   3. desktop:verify --require-signature
- *   4. package-signed         (sign exe, rebuild NSIS with signed exe, sign installer)
- *   5. post-install bootstrap (NSIS first-launch markers)
- *   6. test:signing           ("signed ≠ trusted" contract for the signer/gate)
- *   7. test:release           (distribution lifecycle tests)
+ *   3. package-signed         (sign exe, rebuild NSIS with signed exe, sign installer)
+ *   4. desktop:verify --require-signature
+ *   5. release:feed           (updater artifact + minisign signature + latest.json)
+ *   6. post-install bootstrap (NSIS first-launch markers)
+ *   7. test:signing           ("signed ≠ trusted" contract for the signer/gate)
+ *   8. test:release           (distribution lifecycle tests)
+ *   9. test:feed              (minisign/feed contract)
+ *
+ * Step 5 must follow step 3: the updater artifact has to be built from the
+ * REBUILT installer, or an update would replace the signed exe with the
+ * pre-signature one.
  *
  * Replaces the previous POSIX-only `ENV=x cmd` chain which broke under
  * cmd.exe ("NETPULSE_REQUIRE_SIGNATURE is not recognized").
@@ -36,6 +42,15 @@ const steps = [
     cmd: [process.execPath, [path.join(root, 'scripts', 'verify-desktop-pipeline.mjs'), '--require-signature']],
   },
   {
+    // AFTER package-signed: the updater artifact must wrap the FINAL installer
+    // (the one embedding the signed exe), and its minisign signature is checked
+    // against the pubkey the app itself will verify with. --optional keeps a
+    // key-less dev build working; NETPULSE_REQUIRE_UPDATER_FEED=1 makes a
+    // release fail instead.
+    name: 'release:feed',
+    cmd: [process.execPath, [path.join(root, 'scripts', 'update-feed.mjs'), '--optional']],
+  },
+  {
     name: 'post-install-bootstrap',
     cmd: [
       process.execPath,
@@ -50,6 +65,7 @@ const steps = [
   },
   { name: 'test:signing', cmd: [process.execPath, [path.join(root, 'scripts', 'signature-trust.test.mjs')]] },
   { name: 'test:release', cmd: [process.execPath, [path.join(root, 'scripts', 'release-distribution.test.mjs')]] },
+  { name: 'test:feed', cmd: [process.execPath, [path.join(root, 'scripts', 'update-feed.test.mjs')]] },
 ];
 
 for (const step of steps) {

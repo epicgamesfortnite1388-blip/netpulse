@@ -1,0 +1,177 @@
+/**
+ * Updater bridge — the UI's single seam to tauri-plugin-updater.
+ *
+ * The plugin is invoked through the `withGlobalTauri` bundle (`window.__TAURI__.updater`),
+ * which the plugin injects when present — no npm dependency needed, matching how
+ * transport.ts reaches the core APIs. Every call is null-safe: in web mode (or a
+ * shell without the plugin) there is simply no updater, and callers get `null`
+ * states they can render honestly.
+ *
+ * Contract (from tauri-plugin-updater 2.11 source, commands.rs):
+ *   check()            -> Update | null   (Update = rid + currentVersion + version + date + body)
+ *   downloadAndInstall -> Started{contentLength} / Progress{chunkLength} / Finished events
+ *   restart_after_install: true          -> the app relaunches itself after install
+ */
+
+export interface UpdateInfo {
+  /** Version found on the feed (semver string). */
+  version: string;
+  /** Version currently running. */
+  currentVersion: string;
+  /** Release notes body from latest.json (markdown/plain text), if any. */
+  body: string | null;
+  /** RFC3339 publish date from the manifest, if any. */
+  date: string | null;
+}
+
+export interface DownloadProgress {
+  /** Total bytes when the feed declares them; null when it does not. */
+  contentLength: number | null;
+  /** Received so far. */
+  received: number;
+  /** true on the terminal Finished event. */
+  done: boolean;
+}
+
+interface PluginUpdate {
+  rid: number;
+  available: boolean;
+  currentVersion: string;
+  version: string;
+  date: string | null;
+  body: string | null;
+  downloadAndInstall(
+    onEvent?: (ev: unknown) => void,
+    opts?: { restartAfterInstall?: boolean; timeout?: number },
+  ): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface UpdaterPlugin {
+  check(opts?: { timeout?: number }): Promise<PluginUpdate | null>;
+}
+
+interface UpdaterGlobals {
+  __TAURI__?: { updater?: UpdaterPlugin };
+}
+
+function plugin(): UpdaterPlugin | null {
+  const w = window as unknown as UpdaterGlobals;
+  return w.__TAURI__?.updater ?? null;
+}
+
+/** True only when the real desktop updater plugin is reachable. */
+export function updaterAvailable(): boolean {
+  return plugin() !== null;
+}
+
+/**
+ * Poll the feed once. Returns:
+ *   - { kind: 'up-to-date' } — feed answered, no newer version
+ *   - { kind: 'available', update } — a real update with notes
+ *   - { kind: 'unavailable', reason } — no desktop bridge, or the check failed
+ *     (offline, feed unset/placeholder, feed unreachable). The reason string is
+ *     the plugin's own error text, never invented here.
+ */
+export type CheckResult =
+  | { kind: 'up-to-date' }
+  | { kind: 'available'; update: UpdateInfo }
+  | { kind: 'unavailable'; reason: string };
+
+export async function checkForUpdate(): Promise<CheckResult> {
+  const p = plugin();
+  if (!p) return { kind: 'unavailable', reason: 'no-updater' };
+  try {
+    // Bounded timeout: a feed that never answers must not hold the launch poll.
+    const found = await p.check({ timeout: 15_000 });
+    if (!found) return { kind: 'up-to-date' };
+    return {
+      kind: 'available',
+      update: {
+        version: found.version,
+        currentVersion: found.currentVersion,
+        body: found.body ?? null,
+        date: found.date ?? null,
+      },
+    };
+  } catch (err) {
+    return { kind: 'unavailable', reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Download + install the update, then relaunch the app
+ * (`restart_after_install: true` — the plugin runs the NSIS installer and
+ * restarts). Reports progress as received bytes; `contentLength` may be null
+ * when the feed does not declare it.
+ */
+export async function installUpdate(
+  update: UpdateInfo,
+  onProgress?: (p: DownloadProgress) => void,
+): Promise<void> {
+  const p = plugin();
+  if (!p) throw new Error('no-updater');
+  // The Update object (with its resource id) only lives in the plugin's
+  // resources table — re-check to fetch it fresh rather than caching an rid
+  // across poll cycles (the feed may have changed between poll and click).
+  const found = await p.check({ timeout: 15_000 });
+  if (!found || found.version !== update.version) {
+    throw new Error('update-changed');
+  }
+  let received = 0;
+  let contentLength: number | null = null;
+  await found.downloadAndInstall(
+    (ev: unknown) => {
+      const e = ev as { event: string; data: { contentLength?: unknown; chunkLength?: unknown } };
+      if (e.event === 'started') {
+        contentLength = typeof e.data.contentLength === 'number' ? e.data.contentLength : null;
+        received = 0;
+      } else if (e.event === 'progress') {
+        received += typeof e.data.chunkLength === 'number' ? e.data.chunkLength : 0;
+      } else if (e.event === 'finished') {
+        onProgress?.({ contentLength, received, done: true });
+        return;
+      }
+      onProgress?.({ contentLength, received, done: false });
+    },
+    { restartAfterInstall: true },
+  );
+}
+
+/**
+ * Pure policy: what the user is told about the update state.
+ *
+ * Kept beside the `CheckResult` union it switches on (it IS the wording of
+ * that union), so the honest-wording rules are testable without a DOM and no
+ * component can drift from the bridge's contract. Every branch states what
+ * actually happened — a failed check never reads as "up to date", and an
+ * unavailable updater in web mode says nothing at all (rendering an update
+ * surface where none can exist would be noise).
+ */
+export function updateNotice(result: CheckResult | null, dismissed: boolean): string | null {
+  if (result === null || dismissed) return null;
+  switch (result.kind) {
+    case 'available':
+      return `NetPulse ${result.update.version} is available`;
+    case 'up-to-date':
+      return null; // healthy default: silence, not a nightly "you are current" banner
+    case 'unavailable':
+      // Web mode (no desktop bridge) can never update itself — not an error.
+      return result.reason === 'no-updater' ? null : `Update check failed: ${result.reason}`;
+  }
+}
+
+/** Small presentational helper shared by both surfaces: the honest status line
+ * for a completed check when nothing is downloading. */
+export function statusLine(result: CheckResult | null): string | null {
+  if (result === null) return null;
+  switch (result.kind) {
+    case 'available':
+      return `NetPulse ${result.update.version} is available`;
+    case 'up-to-date':
+      return 'You are on the latest version.';
+    case 'unavailable':
+      // Web mode (no desktop bridge) can never update itself — not an error.
+      return result.reason === 'no-updater' ? null : `Update check failed: ${result.reason}`;
+  }
+}

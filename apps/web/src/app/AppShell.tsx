@@ -32,6 +32,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { useStartupHealth } from '@/lib/useStartupHealth';
 import { DemoBadge } from '@/components/ui/Badge';
 import { StatusDot } from '@/components/ui/StatusDot';
+import { UpdateBanner } from '@/features/settings/UpdateBanner';
 import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { useThemeApplier } from '@/app/useTheme';
@@ -396,6 +397,9 @@ export function AppShell() {
             </NavLink>
           </div>
         </header>
+
+        {/* Update surface: silent until the feed reports a real version. */}
+        <UpdateBanner />
 
         {meta?.safeMode && (
           <div className="flex items-center justify-center gap-2 border-b border-warn/30 bg-warn/10 px-4 py-2 text-xs text-warn">

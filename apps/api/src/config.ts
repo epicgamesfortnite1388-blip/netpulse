@@ -52,6 +52,14 @@ const EnvSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
+  /**
+   * Local update-feed directory: when set, the sidecar serves `latest.json`
+   * and the signed update artifact from this folder at the public
+   * `/api/v1/update-feed/*` routes, so the desktop updater works fully
+   * offline (no GitHub release needed). Unset = the routes 404 and the
+   * updater honestly reports "no feed".
+   */
+  NETPULSE_RELEASE_DIR: z.string().optional(),
 });
 
 /**
@@ -84,6 +92,8 @@ export interface AppConfig {
    * starts; Safe Mode only degrades backend capabilities.
    */
   safeMode: boolean;
+  /** Directory the local update feed serves from (undefined = feed off). */
+  releaseDir?: string;
 }
 
 export function loadConfig(
@@ -111,6 +121,7 @@ export function loadConfig(
     sessionTtlMs: parsed.SESSION_TTL_HOURS * 3600 * 1000,
     isTest: env.VITEST === 'true',
     safeMode: parsed.NETPULSE_SAFE_MODE,
+    releaseDir: parsed.NETPULSE_RELEASE_DIR ? path.resolve(parsed.NETPULSE_RELEASE_DIR) : undefined,
     ...overrides,
   };
   // Derive dependent paths from the FINAL dataDir — otherwise an override

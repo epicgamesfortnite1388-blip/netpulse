@@ -13,6 +13,7 @@ import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
+import { UpdateChecker } from '@/features/settings/UpdateBanner';
 import { api } from '@/lib/api';
 import { tauriInvoke } from '@/lib/transport';
 import { useScheduleStatus } from '@/lib/useScheduleStatus';
@@ -566,7 +567,11 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
-          <RecoveryCard />
+          <UpdateChecker />
+
+          <div className="mt-6">
+            <RecoveryCard />
+          </div>
         </TabPanel>
       </Tabs>
     </DisclosureScope>

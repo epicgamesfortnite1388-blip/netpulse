@@ -55,6 +55,7 @@ import { registerVpnRoutes } from './routes/vpn';
 import { registerTunnelRoutes } from './routes/tunnel';
 import { registerWebrtcRoutes } from './routes/webrtc';
 import { registerNodesRoutes } from './routes/nodes';
+import { registerUpdateFeedRoutes } from './routes/updateFeed';
 
 import { DiagnosticsService } from './services/diagnosticsService';
 import { DnsService } from './services/dnsService';
@@ -99,7 +100,15 @@ export interface BuildOptions {
   daemonToken?: string;
 }
 
-const PUBLIC_API_PATHS = new Set(['/api/v1/meta', '/api/v1/auth/session']);
+const PUBLIC_API_PATHS = new Set([
+  '/api/v1/meta',
+  '/api/v1/auth/session',
+  // The Tauri updater process polls these; it is not the webview and cannot
+  // hold the per-launch bearer secret. Serves only release metadata whose
+  // signature the CLIENT verifies against the compiled-in pubkey.
+  '/api/v1/update-feed/latest.json',
+  '/api/v1/update-feed/artifact',
+]);
 /**
  * Paths that skip the cookie/bearer auth hook because they authenticate
  * differently: the WS upgrade authenticates with a single-use ticket inside
@@ -684,6 +693,8 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerTunnelRoutes(app, ctx);
   registerWebrtcRoutes(app, ctx);
   registerNodesRoutes(app, ctx);
+  // Local update feed (public — the updater is not the webview; see route docs).
+  registerUpdateFeedRoutes(app, ctx);
 
 
   if (hasSpa) {

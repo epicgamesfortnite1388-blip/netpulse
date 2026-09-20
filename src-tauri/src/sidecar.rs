@@ -348,7 +348,11 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(), String> {
     cmd.env("NETPULSE_PORT", inner.port.to_string())
         .env("NETPULSE_DESKTOP", "1")
         .env("NODE_ENV", "production")
-        .env("NETPULSE_DATA_DIR", data_dir);
+        .env("NETPULSE_DATA_DIR", data_dir.clone())
+        // Local update feed: the sidecar serves latest.json + the signed
+        // artifact from this dir under the app data dir; the updater endpoint
+        // baked into the binary points the updater at the sidecar itself.
+        .env("NETPULSE_RELEASE_DIR", format!("{}\\releases", data_dir));
 
     // Absolute node_modules dir for the bundle's fallback module resolver;
     // migrations folder travels with the bundled backend resources.

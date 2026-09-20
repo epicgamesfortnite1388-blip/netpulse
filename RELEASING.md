@@ -238,23 +238,119 @@ Wired for when credentials exist: `APPLE_CERTIFICATE`, `APPLE_ID`,
 `APPLE_PASSWORD` env vars enable notarization. Builds without credentials are
 **unsigned** — documented in release notes, never claimed otherwise.
 
-## 5. Auto-update system
+## 5. Auto-update system (GitHub Releases feed)
 
-Wired and dormant in `tauri.conf.json` (`plugins.updater` with pubkey +
-endpoints placeholders, `createUpdaterArtifacts: true`) and in
-`src-tauri/Cargo.toml` (`tauri-plugin-updater` dependency). Activation:
+Implemented: `tauri-plugin-updater` is registered in `src-tauri/src/main.rs`, the
+minisign **public** key is in `tauri.conf.json` → `plugins.updater.pubkey`, and
+the endpoint is **derived, never hand-typed**: `scripts/release.mjs` stamps it
+from the release repository (`NETPULSE_RELEASE_REPO`, else the root
+`package.json` `repository` field) as
+`https://github.com/<owner>/<repo>/releases/latest/download/latest.json`.
+Because the stamp and the publisher read the same source, the app cannot end up
+polling a feed nobody uploads to.
 
-1. Generate a signing keypair: `npx @tauri-apps/cli signer generate -w ~/.tauri/netpulse.key`
-2. Put the **public** key in `tauri.conf.json` → `plugins.updater.pubkey`.
-   Keep the private key in CI secrets only.
-3. Point `endpoints` at your update manifest host (e.g. GitHub Releases with
-   `latest.json`).
-4. Uncomment the updater plugin registration in `src-tauri/src/main.rs`
-   (marked with a `// UPDATER:` comment).
-5. `tauri build` then emits `.sig` signatures + `latest.json` metadata.
+### Activating the feed
 
-Until configured, the app ships update-inert — no phone-home, no update
-prompts. That is the documented honest state.
+```bash
+npm run release:version -- --repo <owner>/<repo>
+```
+
+That records the slug in the root `package.json` `repository` field and stamps
+the endpoint in the same run. Until it is set, `npm run test:feed` prints a note
+and `release:feed` skips with an advisory — a *release* build
+(`NETPULSE_REQUIRE_UPDATER_FEED=1`) fails instead, so a placeholder endpoint can
+never ship. The slug is never guessed: a wrong one would point the updater at a
+repository somebody else controls.
+
+The running app is still the authority on whether an update is *offered*: it
+verifies each artifact against the `pubkey` above, so a manifest published by a
+third party cannot install anything.
+
+### What a release must carry
+
+`npm run release:feed` (run automatically by `desktop:package`, after
+`package-signed`) produces three files in
+`src-tauri/target/release/bundle/updater/`:
+
+| file | what it is |
+|---|---|
+| `NetPulse_<version>_x64-setup.exe.zip` | the updater artifact: the FINAL signed installer, zipped (the updater unpacks it and runs the `.exe` inside) |
+| `…exe.zip.sig` | its minisign signature |
+| `latest.json` | the manifest the app fetches |
+
+Attach all three to the GitHub release tagged `v<version>`. The endpoint
+resolves to the *newest* release, so the released manifest must carry the
+highest version.
+
+### Why the artifact is built here, not by `tauri build`
+
+`bundle.createUpdaterArtifacts` is deliberately **false**. `tauri build` would
+zip the installer it just bundled, but `package-signed` REBUILDS that installer
+so it embeds the post-bundle-patched, Authenticode-signed exe. A `tauri build`
+artifact therefore contains the *pre-signature* installer — updating from it
+would silently replace a signed exe with an unsigned one. Zipping the final
+installer in the feed stage is what keeps the signature on the update path.
+
+### Two encodings that will bite you
+
+The plugin base64-decodes the `signature` field **and** the `pubkey` before
+parsing them as minisign documents. The Tauri CLI already writes `<artifact>.sig`
+and `<key>.pub` in exactly that encoded form, so:
+
+- `latest.json` → `platforms["windows-x86_64"].signature` = **the `.sig` file's
+  content, verbatim**. Base64-encoding it again produces a manifest every client
+  rejects.
+- `tauri.conf.json` → `plugins.updater.pubkey` = the `.pub` file's content.
+
+`scripts/lib/minisign.mjs` accepts either form and normalizes, and
+`scripts/update-feed.test.mjs` pins this against a real keypair and the real
+signer.
+
+### Verification before publishing (all hard-fail)
+
+`release:feed` refuses to write a manifest unless:
+
+1. the artifact zip **contains the installer** (otherwise an update installs
+   nothing),
+2. its minisign signature **verifies against the pubkey baked into the app** —
+   the same check the plugin performs before running it,
+3. the signature's key id matches that pubkey (a release signed with a
+   different key is invisible to every installed client),
+4. the signature's global comment signature verifies (catches a `.sig` whose
+   trusted comment was edited after signing) — this is the check most
+   reimplementations omit,
+5. with `NETPULSE_REQUIRE_TRUSTED_SIGNATURE=1`, the installer's Authenticode
+   chain is verified by `scripts/sign-release.mjs` (one owner for that verdict).
+
+### Environment
+
+| variable | use |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | minisign private key **content** (CI secret) |
+| `TAURI_SIGNING_PRIVATE_KEY_PATH` | …or a path to the key file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | key password, if set |
+| `NETPULSE_RELEASE_REPO` | `owner/repo` override for the stamped endpoint |
+| `NETPULSE_REQUIRE_UPDATER_FEED=1` | a release build: missing key or repo is fatal (otherwise the stage skips with an advisory, like the signer's `--optional`) |
+
+Locally the key lives at `~/.tauri/netpulse.key` (outside the repo, never
+committed); in CI it belongs in secrets.
+
+### Honest state of the runtime
+
+The feed and its verification are real. What is **not** yet built is the in-app
+call: nothing in `apps/web` invokes the updater plugin's `check()`, so the app
+cannot *prompt* about an update yet — it will keep running whatever version is
+installed.
+
+Tauri v2 also has no runtime `plugins.updater.active` / `dialog` switch. The
+plugin's own config struct reads only `pubkey`, `endpoints`,
+`dangerousInsecureTransportProtocol`, `dangerousAcceptInvalidCerts`,
+`dangerousAcceptInvalidHostnames` and `windows`; `active`/`dialog` were v1-era
+keys that this config used to carry, and they were removed rather than flipped
+to `true`, because a flag that does nothing is worse than no flag. The plugin is
+registered unconditionally and stays inert until JS calls it. So "wired" here
+means the feed, the signing and the verification are real — not that users see
+update prompts.
 
 ## 6. What updates preserve (verified by `test:release`)
 

@@ -69,12 +69,11 @@
   },
   "plugins": {
     "updater": {
-      "active": false,
-      "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ0M0M2ODg4RDU2ODZFQzQKUldURWJtalZpR2c4MU5vdUFvUEhQb1NteE5hdWtlSExIdXRKTmFiM0wydE5SbnZ0clVZdmxPTlMK",
       "endpoints": [
-        "https://releases.example.com/netpulse/{{target}}/{{arch}}/{{current_version}}"
-      ]
+        "https://github.com/epicgamesfortnite1388-blip/netpulse/releases/latest/download/latest.json"
+      ],
+      "dangerousInsecureTransportProtocol": true
     }
   }
 }
