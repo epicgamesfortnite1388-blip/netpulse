@@ -1,6 +1,6 @@
 [package]
 name = "netpulse-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "NetPulse — VPN & Network Intelligence Platform (desktop)"
 authors = ["NetPulse"]
 edition = "2021"
