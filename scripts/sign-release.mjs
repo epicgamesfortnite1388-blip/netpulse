@@ -128,9 +128,27 @@ foreach ($f in $files) {
   if (-not (Test-Path $f)) { Write-Output ("skip: " + $f); continue }
   # IncludeChain signer: a self-signed root has no CA chain to embed; embedding
   # attempts yield UnknownError. CA-issued certs still validate fine from the signer cert.
-  $sig = Set-AuthenticodeSignature -FilePath $f -Certificate $cert -IncludeChain signer \`
-    -TimeStampServer 'http://timestamp.digicert.com' -HashAlgorithm SHA256
-  Write-Output ("sign: " + (Split-Path $f -Leaf) + " -> " + $sig.Status)
+  #
+  # Timestamping is a third-party network call, and it fails transiently: a
+  # release build was observed dying with "no timestamp" while the identical
+  # call succeeded seconds later. Try the servers in order, then the pair once
+  # more, and name the server that answered. A signature without a timestamp is
+  # still not shippable, so every attempt failing stays a hard failure.
+  $servers = @('http://timestamp.digicert.com', 'http://timestamp.sectigo.com')
+  $sig = $null
+  $used = $null
+  foreach ($pass in 1, 2) {
+    foreach ($server in $servers) {
+      $sig = Set-AuthenticodeSignature -FilePath $f -Certificate $cert -IncludeChain signer \`
+        -TimeStampServer $server -HashAlgorithm SHA256
+      $stamped = Get-AuthenticodeSignature $f
+      if ($stamped.TimeStamperCertificate) { $used = $server; break }
+    }
+    if ($used) { break }
+  }
+  $stampNote = 'NONE (every timestamp server failed)'
+  if ($used) { $stampNote = $used }
+  Write-Output ("sign: " + (Split-Path $f -Leaf) + " -> " + $sig.Status + " (timestamp: " + $stampNote + ")")
 }
 `;
     const tmp = path.join(os.tmpdir(), `np-sign-${Date.now()}.ps1`);

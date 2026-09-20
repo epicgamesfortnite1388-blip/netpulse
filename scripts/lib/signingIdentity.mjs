@@ -45,6 +45,12 @@ export const NO_IDENTITY_HINTS = [
 export function findSigntool(env = process.env) {
   if (env.NETPULSE_SIGNTOOL && fs.existsSync(env.NETPULSE_SIGNTOOL)) return env.NETPULSE_SIGNTOOL;
   const found = [];
+  // Per-user install (no elevation): the repo's documented NuGet layout —
+  // RELEASING.md "Code signing" — drops signtool here.
+  if (env.LOCALAPPDATA) {
+    const perUser = path.join(env.LOCALAPPDATA, 'NetPulse', 'signing', 'signtool-x64', 'signtool.exe');
+    if (fs.existsSync(perUser)) found.push(perUser);
+  }
   for (const root of [env['ProgramFiles(x86)'], env['ProgramFiles']].filter(Boolean)) {
     const base = path.join(root, 'Windows Kits', '10', 'bin');
     if (!fs.existsSync(base)) continue;
@@ -55,7 +61,8 @@ export function findSigntool(env = process.env) {
       }
     }
   }
-  // Newest SDK wins when several are installed.
+  // Newest SDK wins when several are installed (per-user entry sorts first —
+  // there is at most one).
   found.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   return found[0] ?? null;
 }

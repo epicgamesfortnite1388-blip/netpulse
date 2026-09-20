@@ -180,13 +180,20 @@ routes work; both sign through the pipeline above unchanged.
 **A. Azure Trusted Signing (no hardware token, cheapest to operate)** — the
 supported default for this repo:
 
-1. In Azure, create a **Trusted Signing account** and, inside it, a
+1. In Azure, create a **Trusted Signing / Artifact Signing account** (the
+   service was renamed *Artifact Signing* in 2026) and, inside it, a
    **certificate profile** of type *Public Trust*. Identity validation (legal
    name, address, phone) is required once per account and is what establishes
-   the publisher SmartScreen sees.
-2. Install the **Trusted Signing client tools** (provides
-   `Azure.CodeSigning.Dlib.dll`) and the **Windows SDK** (provides `signtool.exe`;
-   `findSigntool()` locates it under `Windows Kits\10\bin`).
+   the publisher SmartScreen sees. Register the `Microsoft.CodeSigning`
+   resource provider on the subscription first. Geographic limits apply to
+   Public Trust identities (orgs: US/CA/EU/UK/JP/KR/SG/CH/NO/IL/AU/NZ; dev
+   individuals: US/CA only) — Private Trust has none.
+2. Install the two tools — **per user, no elevation needed** (already done on
+   the dev machine, see below) — the **Artifact/Trusted Signing client**
+   (provides `Azure.CodeSigning.Dlib.dll`; NuGet package
+   `Microsoft.ArtifactSigning.Client`, formerly `Microsoft.Trusted.Signing.Client`)
+   and `signtool.exe` from NuGet `Microsoft.WindowsSDK.BuildTools` (a full
+   Windows SDK install also works; `findSigntool()` checks both locations).
 3. Authenticate the environment (`az login`, or a service principal with the
    *Trusted Signing Certificate Profile Signer* role).
 4. Export and build:
