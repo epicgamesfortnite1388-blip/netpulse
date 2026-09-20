@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 
 import { installerFileName } from './lib/installerName.mjs';
 import { isEncryptedSecretKey, toMinisignText, verifyMinisign } from './lib/minisign.mjs';
+import { inspectZip, writeZipSingleStored } from './lib/zipWrite.mjs';
 import {
   buildLatestJson,
   feedEndpoint,
@@ -118,24 +119,11 @@ if (!checkOnly) {
   step(`pack the installer into ${artifactName}`);
   // The updater unpacks the archive and runs the first .exe it finds at the top
   // level, so the entry name must be the installer itself (not a folder).
-  const ps = [
-    "$ErrorActionPreference = 'Stop'",
-    `$src = ${JSON.stringify(installer.replace(/\\/g, '/'))}`,
-    `$dst = ${JSON.stringify(artifact.replace(/\\/g, '/'))}`,
-    'if (Test-Path $dst) { Remove-Item $dst -Force }',
-    'Compress-Archive -Path $src -DestinationPath $dst -CompressionLevel Optimal',
-    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-    '$zip = [System.IO.Compression.ZipFile]::OpenRead($dst)',
-    '$names = $zip.Entries | ForEach-Object { $_.FullName }',
-    '$zip.Dispose()',
-    'Write-Output ("entries:" + ($names -join "|"))',
-  ].join('\n');
-  const tmp = path.join(os.tmpdir(), `np-zip-${Date.now()}.ps1`);
-  fs.writeFileSync(tmp, ps, 'utf8');
-  const zipped = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmp], { encoding: 'utf8', timeout: 300_000 });
-  fs.rmSync(tmp, { force: true });
-  if (zipped.status !== 0) die(`update-feed: zipping failed\n${(zipped.stderr || zipped.stdout || '').slice(-800)}`);
-  console.log((zipped.stdout || '').trim());
+  // STORED (method 0) is mandatory, not a size choice: the updater's zip crate is
+  // built with no decompression feature, so a deflate entry is rejected live as
+  // "Compression method not supported" (see scripts/lib/zipWrite.mjs).
+  const packedSize = writeZipSingleStored(artifact, installerFileName(root), fs.readFileSync(installer), fs.statSync(installer).mtime);
+  console.log(`packed: ${installerFileName(root)} (${fs.statSync(installer).size} B -> ${packedSize} B archive)`);
 }
 
 if (!fs.existsSync(artifact)) die(`update-feed: updater artifact missing: ${artifact}`);
@@ -165,6 +153,20 @@ step('verify the artifact the feed will advertise');
       'An update would install nothing — refusing to publish a manifest for it.');
   }
   console.log(`artifact contains: ${expected}`);
+
+  // (a2) The method must be STORED. The updater's zip crate is compiled with no
+  // decompression feature and rejects a deflate entry at extract time, so a
+  // compression-method regression here would only surface on a user's machine
+  // mid-update. Fail the pipeline instead.
+  const zip = inspectZip(artifact);
+  if (zip.entries !== 1 || zip.method !== 0 || zip.centralMethod !== 0) {
+    die(`update-feed: artifact must be a single STORED (method 0) entry, got ${zip.entries} entr${zip.entries === 1 ? 'y' : 'ies'} method ${zip.centralMethod}.\n` +
+      'The updater cannot read any other method — the archive would be rejected mid-update.');
+  }
+  if (zip.localSize !== zip.localCompressed || zip.centralSize !== zip.localSize) {
+    die('update-feed: artifact header sizes disagree; a truncated archive is not publishable.');
+  }
+  console.log(`artifact: STORED entry "${zip.name}", ${zip.localSize} B`);
 
   // (b) the installer's own Authenticode verdict, using the existing owner
   // rather than a second reading of Windows' signature fields.

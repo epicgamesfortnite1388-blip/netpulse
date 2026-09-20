@@ -13,6 +13,7 @@
 
 mod elevation;
 mod sidecar;
+mod updater_feed;
 
 use serde::Serialize;
 use sidecar::{log_error, log_info, log_warn};
@@ -589,7 +590,9 @@ fn main() {
             open_external,
             admin_status,
             relaunch_as_admin,
-            elevation::vpn_elevation_bridge
+            elevation::vpn_elevation_bridge,
+            updater_feed::feed_check,
+            updater_feed::feed_install
         ])
         .setup(|app| {
             let handle = app.handle().clone();

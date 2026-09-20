@@ -52,12 +52,20 @@ interface UpdaterPlugin {
 }
 
 interface UpdaterGlobals {
-  __TAURI__?: { updater?: UpdaterPlugin };
+  __TAURI__?: { updater?: UpdaterPlugin; core?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> } };
 }
 
 function plugin(): UpdaterPlugin | null {
   const w = window as unknown as UpdaterGlobals;
   return w.__TAURI__?.updater ?? null;
+}
+
+/** The shell's proxy-safe commands (see src-tauri/src/updater_feed.rs): the
+ *  local feed lives on the sidecar's loopback port, which a system proxy
+ *  would otherwise swallow. Present only in builds that ship the fix. */
+function feedInvoke(): ((cmd: string, args?: unknown) => Promise<unknown>) | null {
+  const w = window as unknown as UpdaterGlobals;
+  return w.__TAURI__?.core?.invoke ?? null;
 }
 
 /** True only when the real desktop updater plugin is reachable. */
@@ -82,6 +90,26 @@ export async function checkForUpdate(): Promise<CheckResult> {
   const p = plugin();
   if (!p) return { kind: 'unavailable', reason: 'no-updater' };
   try {
+    // The shell's feed_check bypasses the system proxy for loopback feeds
+    // (the plugin's own check cannot). Falls back to the plugin command when
+    // the running shell predates it.
+    const invoke = feedInvoke();
+    if (invoke) {
+      const feed = (await invoke('feed_check')) as {
+        available: boolean; version: string; currentVersion: string; body?: string | null;
+      } | null;
+      if (!feed) return { kind: 'unavailable', reason: 'feed_check returned nothing' };
+      if (!feed.available) return { kind: 'up-to-date' };
+      return {
+        kind: 'available',
+        update: {
+          version: feed.version,
+          currentVersion: feed.currentVersion,
+          body: feed.body ?? null,
+          date: null,
+        },
+      };
+    }
     // Bounded timeout: a feed that never answers must not hold the launch poll.
     const found = await p.check({ timeout: 15_000 });
     if (!found) return { kind: 'up-to-date' };
@@ -111,6 +139,15 @@ export async function installUpdate(
 ): Promise<void> {
   const p = plugin();
   if (!p) throw new Error('no-updater');
+  // Shell path: feed_install downloads (signature-verified in Rust), runs the
+  // installer and restarts. Progress is coarse (no per-chunk events yet).
+  const invoke = feedInvoke();
+  if (invoke) {
+    onProgress?.({ contentLength: null, received: 0, done: false });
+    await invoke('feed_install');
+    onProgress?.({ contentLength: null, received: 0, done: true });
+    return;
+  }
   // The Update object (with its resource id) only lives in the plugin's
   // resources table — re-check to fetch it fresh rather than caching an rid
   // across poll cycles (the feed may have changed between poll and click).

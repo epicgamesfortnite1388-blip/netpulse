@@ -126,9 +126,18 @@ pub const LOG_CAP_BYTES: u64 = 512 * 1024;
 
 impl SidecarState {
     pub fn new() -> Self {
-        // Reserve an ephemeral port by binding and releasing; the sidecar is
-        // started immediately after with PORT set to this value.
-        let port = reserve_ephemeral_port();
+        // The local update feed bakes `http://127.0.0.1:<port>/...` into the
+        // binary (the updater plugin has no runtime endpoint override), so the
+        // sidecar must LISTEN on the port the endpoint names. Try the fixed
+        // feed port first — the previous instance released it seconds ago, so
+        // the OS normally offers it right back — and fall back to an ephemeral
+        // port only if something else took it (the feed then 404s honestly:
+        // the updater reports its real connection error instead of a fake).
+        let port = [LOCAL_FEED_PORT, 0]
+            .iter()
+            .find(|p| port_bindable(**p))
+            .copied()
+            .unwrap_or_else(reserve_ephemeral_port);
         Self {
             inner: Mutex::new(SidecarInner {
                 child: None,
@@ -144,6 +153,14 @@ impl SidecarState {
         }
     }
 }
+
+/// The loopback port the built-in updater endpoint names
+/// (`http://127.0.0.1:47615/api/v1/update-feed/latest.json`). Must match
+/// LOCAL_FEED_PORT in scripts/lib/updateFeed.mjs — test:feed pins the pair.
+#[cfg(target_os = "windows")]
+const LOCAL_FEED_PORT: u16 = 47_615;
+#[cfg(not(target_os = "windows"))]
+const LOCAL_FEED_PORT: u16 = 0; // non-Windows dev builds: ephemeral, feed unused
 
 fn generate_token() -> String {
     let mut bytes = [0u8; 32];

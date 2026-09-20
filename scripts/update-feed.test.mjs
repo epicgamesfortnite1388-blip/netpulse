@@ -24,12 +24,14 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { decodePublicKey, decodeSignature, isEncryptedSecretKey, toMinisignField, toMinisignText, verifyMinisign } from './lib/minisign.mjs';
+import { inspectZip, writeZipSingleStored } from './lib/zipWrite.mjs';
 import {
   buildLatestJson,
   feedEndpoint,
@@ -80,9 +82,13 @@ eq(
 {
   const local = resolveReleaseRepo({ env: { NETPULSE_RELEASE_REPO: 'local' }, repoRoot: null });
   check('NETPULSE_RELEASE_REPO=local selects the local feed', local.slug === 'local' && local.local === true);
-  eq('the local feed endpoint is the sidecar route', feedEndpoint('local'), 'http://127.0.0.1:update-feed/api/v1/update-feed/latest.json');
-  eq('the local artifact URL is the sidecar route', releaseAssetUrl('local', '1.2.3', 'ignored.zip'), 'http://127.0.0.1:update-feed/artifact');
-  eq('localEndpointForPort rewrites the placeholder host', localEndpointForPort(53944), 'http://127.0.0.1:53944/api/v1/update-feed/latest.json');
+  // The updater plugin has no runtime endpoint override, so the local feed's
+  // baked URL must be COMPLETE (real fixed port), not a placeholder. The port
+  // lives in exactly two places — this lib and sidecar.rs's LOCAL_FEED_PORT —
+  // and must never drift.
+  eq('the local feed endpoint is the complete sidecar URL', feedEndpoint('local'), 'http://127.0.0.1:47615/api/v1/update-feed/latest.json');
+  eq('the local artifact URL names the file in the query', releaseAssetUrl('local', '1.2.3', 'artifact.zip'), 'http://127.0.0.1:47615/api/v1/update-feed/artifact?file=artifact.zip');
+  eq('localEndpointForPort still rewrites for callers that need it', localEndpointForPort(53944), 'http://127.0.0.1:53944/api/v1/update-feed/latest.json');
 }
 
 {
@@ -280,6 +286,43 @@ console.log('\nround-trip against the real Tauri signer');
   }
 }
 
+/* ------------------------- the updater artifact zip ------------------------ */
+
+// The updater's zip crate is compiled with no decompression feature, so any
+// compressed entry is rejected at extract time with "Compression method not
+// supported" — an update that downloads, verifies its signature, and then dies
+// on a user's machine. These pin the two things that make extraction work:
+// STORED entries, and an entry that IS the installer byte for byte.
+console.log('\nthe updater artifact archive');
+{
+  const zipPath = path.join(tmp, 'artifact-probe.zip');
+  const payload = crypto.randomBytes(4096);
+  const when = new Date(2026, 0, 2, 3, 4, 6); // even seconds: DOS timestamps have 2s granularity
+  writeZipSingleStored(zipPath, 'NetPulse_0.0.0_x64-setup.exe', payload, when);
+  const z = inspectZip(zipPath);
+
+  eq('single entry', z.entries, 1);
+  eq('the entry is the installer itself', z.name, 'NetPulse_0.0.0_x64-setup.exe');
+  eq('the entry is STORED (method 0)', z.method, 0);
+  eq('the central directory agrees on the method', z.centralMethod, 0);
+  check('no data descriptor (sizes are in the local header)', z.flags === 0, `flags ${z.flags}`);
+  eq('stored size == installer size', z.localSize, payload.length);
+  eq('central-directory size agrees', z.centralSize, payload.length);
+  eq('compressed size == uncompressed size', z.localCompressed, payload.length);
+  eq('the CRC in the local header is the installer CRC', z.localCrc, zlib.crc32(payload) >>> 0);
+  eq('the CRC in the central directory agrees', z.centralCrc, z.localCrc);
+
+  const raw = fs.readFileSync(zipPath);
+  const nameLen = raw.readUInt16LE(26);
+  const body = raw.subarray(30 + nameLen, 30 + nameLen + payload.length);
+  check('the stored bytes ARE the installer bytes', body.equals(payload));
+  eq('the archive is exactly headers + payload', z.bytes, 30 + nameLen + payload.length + 46 + nameLen + 22);
+
+  // A directory entry or a nested path would make the updater's "first .exe in
+  // the extraction dir" scan miss the installer.
+  check('the entry is a bare file name, not a path', !z.name.includes('/') && !z.name.includes('\\'));
+}
+
 /* ------------------------------ config wiring ----------------------------- */
 
 console.log('\nshipped configuration');
@@ -308,8 +351,8 @@ console.log('\nshipped configuration');
   }
   const placeholder = /example\.com|REPLACE_WITH/i.test(endpoints[0] ?? '');
   if (isLocal) {
-    // Local feed: the endpoint is the sidecar route; the port is per-launch
-    // so the baked URL carries the `update-feed` host placeholder by contract.
+    // The updater plugin has no runtime endpoint override, so local mode
+    // bakes the complete fixed-port URL (see LOCAL_FEED_PORT).
     eq('the endpoint is the local sidecar feed route', endpoints[0], feedEndpoint('local'));
   } else if (slug) {
     // Configured: the endpoint must match the repository exactly, or the app
@@ -339,7 +382,14 @@ console.log('\nshipped configuration');
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
     });
     if (signed.status === 0 && fs.existsSync(`${probe}.sig`)) {
-      const verdict = verifyMinisign(fs.readFileSync(probe), fs.readFileSync(`${probe}.sig`, 'utf8'), pubkeyText);
+      // The key the app actually trusts: the `pubkey` field in the shipped
+      // config (base64 of the minisign text). This pair check read an undefined
+      // name, so it threw a ReferenceError instead of testing anything — and it
+      // only ran when the local key could sign, i.e. in exactly the release
+      // build it exists to protect.
+      const confPubkey = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8')).plugins?.updater?.pubkey ?? '';
+      const shippedPubkey = toMinisignText(confPubkey, 'shipped pubkey');
+      const verdict = verifyMinisign(fs.readFileSync(probe), fs.readFileSync(`${probe}.sig`, 'utf8'), shippedPubkey);
       check('the local private key matches the shipped public key', verdict.ok, verdict.reason);
     } else {
       console.log('  note  local private key needs a password — pair check skipped');

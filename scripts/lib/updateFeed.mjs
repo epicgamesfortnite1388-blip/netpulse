@@ -71,12 +71,16 @@ export function assertUsableSlug(slug, source) {
 }
 
 /**
- * Resolve the release repository. Three cases, in order:
+ * Resolve the release repository. Four cases, in order:
  *   1. NETPULSE_RELEASE_REPO=local — the fully-offline feed: the sidecar
  *      itself serves latest.json + the artifact from the release dir at fixed
  *      loopback routes (no GitHub, no internet).
  *   2. NETPULSE_RELEASE_REPO=owner/repo — GitHub Releases feed.
- *   3. Root package.json `repository` field.
+ *   3. Root package.json `netpulse.releaseFeed: "local"` — a `--repo local`
+ *      choice recorded by release.mjs, honored on every later bare
+ *      `release:version` run (desktop:package re-runs it with no env) so the
+ *      stamped endpoint cannot silently flip back to GitHub.
+ *   4. Root package.json `repository` field.
  */
 export function resolveReleaseRepo({ env = process.env, repoRoot } = {}) {
   if (env.NETPULSE_RELEASE_REPO === 'local') {
@@ -87,9 +91,17 @@ export function resolveReleaseRepo({ env = process.env, repoRoot } = {}) {
     return { slug: assertUsableSlug(fromEnv, 'NETPULSE_RELEASE_REPO'), source: 'NETPULSE_RELEASE_REPO' };
   }
   let pkgRepo = null;
+  let pkgReleaseFeed = null;
   if (repoRoot) {
     const pkgPath = path.join(repoRoot, 'package.json');
-    if (fs.existsSync(pkgPath)) pkgRepo = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).repository;
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      pkgRepo = pkg.repository;
+      pkgReleaseFeed = pkg.netpulse?.releaseFeed;
+    }
+  }
+  if (pkgReleaseFeed === 'local') {
+    return { slug: 'local', source: 'package.json netpulse.releaseFeed', local: true };
   }
   return {
     slug: assertUsableSlug(parseRepoSlug(pkgRepo), 'package.json "repository"'),
@@ -102,23 +114,26 @@ export function resolveReleaseRepo({ env = process.env, repoRoot } = {}) {
  *
  * GitHub: the newest manifest sits at a stable "latest/download" URL, which is
  * why the endpoint never needs a version in it. Local: the sidecar serves the
- * manifest at a fixed loopback route (port is per-launch/ephemeral, so the
- * URL is version-less — see the port note in feedEndpointForPort).
+ * manifest at a FIXED loopback port (see LOCAL_FEED_PORT) — the plugin has no
+ * runtime endpoint override, so the baked URL must be complete and correct.
  */
 export function feedEndpoint(slug) {
   if (slug === 'local') {
-    return 'http://127.0.0.1:update-feed/api/v1/update-feed/latest.json';
+    return localEndpointForPort(LOCAL_FEED_PORT);
   }
   return `https://github.com/${slug}/releases/latest/download/latest.json`;
 }
 
 /**
- * Local mode's endpoint cannot be baked complete at build time: the sidecar
- * binds an EPHEMERAL loopback port each launch. The baked endpoint therefore
- * carries the literal `update-feed` host placeholder, and the Rust core
- * rewrites it with the real port when handing config to the updater. This
- * helper is the rewrite used at startup — and in tests as the contract.
+ * The sidecar's fixed loopback port for local-feed serving (and everything
+ * else it exposes). Fixed — not ephemeral — because the updater plugin reads
+ * its endpoints from the build-time config with no runtime override, so the
+ * baked URL must be complete. The OS offers this port back on launch (it was
+ * only just released by the previous instance); if something stole it, the
+ * sidecar fails honestly rather than silently moving the feed.
  */
+export const LOCAL_FEED_PORT = 47615;
+
 export function localEndpointForPort(port) {
   return `http://127.0.0.1:${port}/api/v1/update-feed/latest.json`;
 }
@@ -128,10 +143,12 @@ export function releaseTag(version) {
 }
 
 /** A release asset's permanent download URL (tag-pinned, not "latest").
- *  Local mode instead points at the sidecar's fixed artifact route. */
+ *  Local mode points at the sidecar's fixed artifact route and names the file
+ *  in the query — the route serves exactly that name, validated at the
+ *  boundary (the URL's path form would lose the version-specific name). */
 export function releaseAssetUrl(slug, version, fileName) {
   if (slug === 'local') {
-    return 'http://127.0.0.1:update-feed/artifact';
+    return `http://127.0.0.1:${LOCAL_FEED_PORT}/api/v1/update-feed/artifact?file=${encodeURIComponent(fileName)}`;
   }
   return `https://github.com/${slug}/releases/download/${releaseTag(version)}/${fileName}`;
 }

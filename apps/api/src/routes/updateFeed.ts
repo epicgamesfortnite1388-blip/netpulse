@@ -44,26 +44,29 @@ function sendJsonFile(
   reply: FastifyReply,
   file: string,
   notFoundBody: { error: { code: string; message: string } },
-): void {
+): FastifyReply {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {
-    void reply.code(404).send(notFoundBody);
-    return;
+    return reply.code(404).send(notFoundBody);
   }
+  const etag = `"${stat.size}-${stat.mtimeMs}"`;
   reply
     .header('content-type', 'application/json; charset=utf-8')
-    .header('content-length', stat.size)
     .header('cache-control', 'no-store')
     // ETag from size+mtime: a poll loop gets cheap 304s, and a re-published
     // feed changes mtime so clients never pin a stale manifest.
-    .header('etag', `"${stat.size}-${stat.mtimeMs}"`);
-  if (reply.request.headers['if-none-match'] === `"${stat.size}-${stat.mtimeMs}"`) {
-    void reply.code(304).send();
-    return;
+    .header('etag', etag);
+  if (reply.request.headers['if-none-match'] === etag) {
+    return reply.code(304).send();
   }
-  void reply.send(fs.createReadStream(file));
+  reply.header('content-length', stat.size);
+  // RETURN the send: inside an async handler, a bare `void reply.send(...)`
+  // followed by handler resolution makes Fastify resolve the empty payload
+  // over the stream — observed live as `content-length: 0` on a 200. Returning
+  // the reply is the documented contract for sending from async handlers.
+  return reply.send(fs.createReadStream(file));
 }
 
 export function registerUpdateFeedRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -71,46 +74,43 @@ export function registerUpdateFeedRoutes(app: FastifyInstance, ctx: AppContext):
    * The manifest the updater polls. Its `platforms.windows-x86_64.url` must
    * point back at these loopback routes — release:feed writes exactly that
    * when the repo slug is `local` (see scripts/lib/updateFeed.mjs).
-   */
-  app.get('/api/v1/update-feed/latest.json', async (_req, reply) => {
+   */  app.get('/api/v1/update-feed/latest.json', async (_req, reply) => {
     const file = resolveInReleaseDir(ctx, MANIFEST_FILE);
     if (!file) {
-      void reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
-      return;
+      return reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
     }
-    sendJsonFile(reply, file, { error: { code: 'no_manifest', message: 'No release has been published to the local feed yet' } });
+    return sendJsonFile(reply, file, { error: { code: 'no_manifest', message: 'No release has been published to the local feed yet' } });
   });
 
   /**
    * The signed artifact (the zipped installer). Served with a stream (37 MB)
    * and content-length so the updater's progress events are accurate.
+   *
+   * The file name comes from the manifest's URL query (`?file=...`), written
+   * there by release:feed — the same artifactName used at publish time. It is
+   * UNTRUSTED INPUT: reduced to a bare name and resolved strictly inside the
+   * release dir before anything is opened.
    */
-  app.get('/api/v1/update-feed/artifact', async (_req, reply) => {
+  app.get('/api/v1/update-feed/artifact', async (req, reply) => {
     const dir = ctx.config.releaseDir;
     if (!dir) {
-      void reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
-      return;
+      return reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
     }
-    // The artifact file name comes from the manifest itself, so the feed
-    // serves whatever release:feed published without hard-coding a version.
-    let manifest: { platforms?: { 'windows-x86_64'?: { url?: string } } };
+    const raw = (req.query as { file?: string } | undefined)?.file ?? '';
+    let decoded: string;
     try {
-      manifest = JSON.parse(fs.readFileSync(path.join(dir, MANIFEST_FILE), 'utf8'));
+      decoded = decodeURIComponent(raw);
     } catch {
-      void reply.code(404).send({ error: { code: 'no_manifest', message: 'No release has been published to the local feed yet' } });
-      return;
+      return reply.code(404).send({ error: { code: 'bad_manifest', message: 'Manifest artifact name is malformed' } });
     }
-    const url = manifest.platforms?.['windows-x86_64']?.url;
-    const fileName = url?.split('/').pop();
-    if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
-      void reply.code(404).send({ error: { code: 'bad_manifest', message: 'Manifest does not name a local artifact' } });
-      return;
+    const fileName = path.basename(decoded);
+    if (!fileName || fileName.startsWith('.') || fileName !== decoded) {
+      return reply.code(404).send({ error: { code: 'bad_manifest', message: 'Manifest does not name a local artifact' } });
     }
     const file = resolveInReleaseDir(ctx, fileName);
     if (!file) {
-      void reply.code(404).send({ error: { code: 'no_artifact', message: 'Manifest artifact is missing from the local feed' } });
-      return;
+      return reply.code(404).send({ error: { code: 'no_artifact', message: 'Manifest artifact is missing from the local feed' } });
     }
-    sendJsonFile(reply, file, { error: { code: 'no_artifact', message: 'Artifact file missing from the release directory' } });
+    return sendJsonFile(reply, file, { error: { code: 'no_artifact', message: 'Artifact file missing from the release directory' } });
   });
 }
