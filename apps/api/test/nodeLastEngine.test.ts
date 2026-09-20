@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { NodesService } from '../src/services/nodesService';
+import { toWebDTO } from '../src/services/nodeView';
+import { runProbe } from '../src/services/nodeTestProbes';
 
-import type { PublicNode, PublicNodeRow } from '../src/db/repositories';
+vi.mock('../src/services/nodeTestProbes', () => ({ runProbe: vi.fn() }));
+
+import type { PublicNode } from '../src/db/repositories';
 import type { NodeTestResult } from '../src/services/nodesService';
 import type { RealtimeBus } from '../src/realtime/bus';
 import type { Logger } from '../src/logger';
@@ -173,15 +177,13 @@ describe('node lastEngine attribution', () => {
 
   it('toWebDTO sanitizes an unknown engine value to null', () => {
     const node = nodeRow('v2ray-core-obsolete');
-    const { svc } = makeService(node);
-    const dto = (svc as unknown as { toWebDTO: (n: PublicNode) => { lastEngine: 'xray' | 'sing-box' | null } }).toWebDTO(node);
+    const dto = toWebDTO(node as unknown as Parameters<typeof toWebDTO>[0]);
     expect(dto.lastEngine).toBeNull();
   });
 
   it('toWebDTO passes a known engine through', () => {
     const node = nodeRow('sing-box');
-    const { svc } = makeService(node);
-    const dto = (svc as unknown as { toWebDTO: (n: PublicNode) => { lastEngine: 'xray' | 'sing-box' | null } }).toWebDTO(node);
+    const dto = toWebDTO(node as unknown as Parameters<typeof toWebDTO>[0]);
     expect(dto.lastEngine).toBe('sing-box');
   });
 });
@@ -235,10 +237,9 @@ describe('proxy test row finalization', () => {
     const { svc } = makeService(node);
     const svcAny = svc as unknown as Record<string, unknown>;
     const tests = (svcAny['deps'] as { tests: { update: ReturnType<typeof vi.fn> } }).tests;
-    vi.spyOn(svcAny, 'proxyTest').mockImplementation(async () => proxyResult('xray'));
-    vi.spyOn(svcAny, 'getTestEndpoint').mockImplementation(async () => ({
-      id: 'te1', name: 'te', url: 'https://www.cloudflare.com/cdn-cgi/trace', expectedStatus: 200, timeoutMs: 5_000, maxBytes: 1_024, enabled: true, createdAt: 0,
-    }));
+    // The probe itself is nodeTestProbes' concern; this test is about the row
+    // lifecycle the service owns, so stub the probe at the module boundary.
+    vi.mocked(runProbe).mockResolvedValue(proxyResult('xray'));
 
     await svc.testNode('node:eng1', 'proxy');
 

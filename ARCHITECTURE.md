@@ -80,6 +80,39 @@ Long-running tests follow one uniform contract:
 3. Clients subscribe to `WS /api/v1/ws?testId=…` for progress and completion.
 4. Cancellation flows through `AbortSignal`s threaded from the registry into providers.
 
+### The node subsystem
+
+The node pipeline is the largest service surface, so it is split by concern with one
+owner each:
+
+```
+services/nodesService.ts   orchestration only: discovery, import, the test row
+                           lifecycle, listing, recommendations, favorites
+services/nodeTestProbes.ts pure probes (tcp/tls/proxy/icmp) + runProbe dispatch.
+                           No repository, no row lifecycle, no events — a probe
+                           returns a NodeTestResult and nothing else
+services/nodeScoring.ts    pure measurement policy: tenthsOfMs, updateMedian,
+                           freshnessOf, statusAfterTest, calculateScore,
+                           distributionOf, applyTestOutcome
+services/nodeView.ts       the single row → web DTO mapper (labels, enum coercion,
+                           runtime sanitizing, geo status)
+services/nodeExport.ts     row → export document (uri/plaintext/base64/json/clash/
+                           sing-box) plus the per-node share link
+services/nodeLinkExport.ts the share-link builder the two above share
+```
+
+The rule: **a probe never persists**. `testNode` writes the `running` row, calls
+`runProbe`, then writes the terminal state for every type — so a row cannot be left
+hanging by a probe that forgot to, and latency is measured only when traffic provably
+traversed the node. All aggregate math is a pure function of the previous aggregate plus
+the outcome, and the returned patch reproduces unchanged columns explicitly (a TCP test
+cannot blank the proxy engine or a proxy measurement).
+
+Filtering, sorting, paging and search are **SQL-owned** (repository) and run over every
+stored node; there is deliberately no in-memory duplicate policy, because two authorities
+over the same behavior drift apart. The map/detail consumers read the same `NodeWebDTO`
+that `nodeView.toWebDTO` produces.
+
 ## Platform abstraction
 
 `providers/platform/{types,index,windows,unix}.ts` defines the

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { tenthsOfMs } from '../src/services/nodesService';
+import { tenthsOfMs } from '../src/services/nodeScoring';
 
 /**
  * TCP/TLS test latency arithmetic.
