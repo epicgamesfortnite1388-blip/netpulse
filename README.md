@@ -70,7 +70,7 @@ uninstall/reinstall data survival, signed-exe launch).
 
 Artifacts: `src-tauri/target/release/netpulse-desktop.exe` and
 `src-tauri/target/release/bundle/nsis/NetPulse_<version>_x64-setup.exe` (version
-derived from `src-tauri/tauri.conf.json` — currently 0.2.2).
+derived from `src-tauri/tauri.conf.json`).
 Install via the installer (it always ships the WebView2Loader DLL); see [DESKTOP.md](./DESKTOP.md).
 
 The UI↔sidecar link is verified end-to-end on the packaged build — including the browser-layer
