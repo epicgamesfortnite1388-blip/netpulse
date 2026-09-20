@@ -161,19 +161,23 @@ pub async fn feed_install(app: AppHandle) -> Result<(), String> {
             .parent()
             .map(|d| d.to_path_buf())
             .unwrap_or_default();
-        let targets = [
-            app_dir.join("backend").join("node.exe"),
-            app_dir.join("netpulse-desktop.exe"),
-        ];
-        for t in targets {
-            if t.exists() {
-                let p = t.to_string_lossy().to_string();
-                if !wait_until_writable(&p, FILE_FREE_TIMEOUT) {
-                    return Err(format!(
-                        "update aborted: {} is still locked by another process",
-                        p
-                    ));
-                }
+        // Only the sidecar runtime needs to free up: the NSIS updater replaces
+        // backend\node.exe. The app exe is deliberately NOT probed — a running
+        // image can never be write-opened by its own process, so that probe
+        // could only ever abort a healthy update. update.install() spawns the
+        // installer and exits the app; the installer replaces the exe after we
+        // are gone (that is the plugin's own Windows flow).
+        let node = app_dir.join("backend").join("node.exe");
+        if node.exists() {
+            let p = node.to_string_lossy().to_string();
+            if !wait_until_writable(&p, FILE_FREE_TIMEOUT) {
+                // Refuse honestly AND leave the app healthy: bring the sidecar
+                // back up so a refused update never leaves a broken install.
+                let _ = crate::sidecar::spawn_sidecar(&app);
+                return Err(format!(
+                    "update aborted: {} is still locked by another process",
+                    p
+                ));
             }
         }
     }
