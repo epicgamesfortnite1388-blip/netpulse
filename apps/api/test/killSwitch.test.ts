@@ -264,3 +264,76 @@ describe('kill switch survives a drop → heal → stop cycle', () => {
     expect(status.previousProxy).toBeNull();
   });
 });
+
+/**
+ * Force-kill cleanup guard (boot recovery): every proxy write is covered by a
+ * persisted hold record, so the next boot can undo it no matter how the last
+ * session ended. The sink case was already covered; the guard extends to the
+ * ordinary handoff a force-kill leaves behind (observed live: a killed app
+ * left ProxyEnable=1 → 127.0.0.1:<port> with nothing listening, breaking
+ * every proxy-honoring app on the machine with no process to explain why).
+ */
+describe('force-kill cleanup guard (recoverAfterRestart)', () => {
+  interface Rec { writes: Array<string | null>; events: string[]; saved: unknown[] }
+  function makeRecoverable(opts: { hold: { previousProxy: string | null; label: string; blocking: boolean } | null; current: string | null }) {
+    const rec: Rec = { writes: [], events: [], saved: [] };
+    let current = opts.current;
+    let persisted = opts.hold;
+    const ks = new KillSwitchService({
+      setSystemProxy: async (p) => { rec.writes.push(p); current = p; return { ok: true }; },
+      getSystemProxy: async () => ({ proxy: current }),
+      enabled: () => false,
+      bypass: () => null,
+      event: (level, message) => rec.events.push(`${level}: ${message}`),
+      loadHold: () => persisted,
+      saveHold: (record) => { persisted = record; rec.saved.push(record); },
+    });
+    return { ks, rec, current: () => current };
+  }
+
+  it('restores the captured setting when a force-kill left a dead handoff', async () => {
+    // Last session: user had NO proxy, tunnel handed off to 127.0.0.1:54179,
+    // process was force-killed. The dead port is still on disk.
+    const { ks, rec } = makeRecoverable({ hold: { previousProxy: null, label: 'proxy tunnel', blocking: false }, current: '127.0.0.1:54179' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([null]);
+    expect(rec.events.some((e) => e.startsWith('info: Stale system-proxy handoff recovered'))).toBe(true);
+    expect(rec.saved.at(-1)).toBeNull(); // record consumed
+  });
+
+  it('restores the user proxy when the handoff hid it', async () => {
+    const { ks, rec } = makeRecoverable({ hold: { previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', blocking: false }, current: '127.0.0.1:9999' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual(['corp-proxy:8080']);
+  });
+
+  it('never stomps a proxy owned by someone else after our death', async () => {
+    // After our force-kill, another tool (or the user) set a non-loopback
+    // proxy. Our captured value must NOT overwrite it.
+    const { ks, rec } = makeRecoverable({ hold: { previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', blocking: false }, current: '10.0.0.2:3128' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]);
+    expect(rec.saved.at(-1)).toBeNull();
+  });
+
+  it('writes nothing when a clean shutdown already restored the value', async () => {
+    const { ks, rec } = makeRecoverable({ hold: { previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', blocking: false }, current: 'corp-proxy:8080' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]);
+    expect(rec.saved.at(-1)).toBeNull();
+  });
+
+  it('still repairs the fail-closed sink case', async () => {
+    const { ks, rec } = makeRecoverable({ hold: { previousProxy: 'corp-proxy:8080', label: 'proxy tunnel', blocking: true }, current: KILL_SWITCH_SINK });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual(['corp-proxy:8080']);
+    expect(rec.events.some((e) => e.startsWith('warn: Kill switch state recovered'))).toBe(true);
+  });
+
+  it('does nothing without a persisted record', async () => {
+    const { ks, rec } = makeRecoverable({ hold: null, current: '127.0.0.1:54179' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]);
+    expect(rec.events).toEqual([]);
+  });
+});

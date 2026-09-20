@@ -48,6 +48,14 @@ function normalizeProxyValue(value: string | null): string | null {
  */
 export const KILL_SWITCH_SINK = '127.0.0.1:9';
 
+/** The shape of a proxy handoff this app owns (after `socks=` stripping): a
+ *  loopback endpoint. Third-party proxies (corp, other VPN tools) are not. */
+function isLoopbackProxy(value: string | null): boolean {
+  if (!value) return false;
+  const host = value.split(':')[0]?.trim().toLowerCase() ?? '';
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+}
+
 export interface KillSwitchStatus {
   /** the user enabled it in Settings → VPN */
   enabled: boolean;
@@ -263,10 +271,19 @@ export class KillSwitchService {
   }
 
   /**
-   * Boot recovery. If the last session died while fail-closed, the OS proxy is
-   * still pointed at the sink — the machine would be cut off with no process
-   * left to explain why. Put the user's own proxy back and say so; if no block
-   * was in effect, forget the stale record without writing anything.
+   * Boot recovery — the force-kill cleanup guard. The hold record persisted
+   * at arm time is the proof of WHAT we took over, so the next boot can undo
+   * it no matter how the last session ended:
+   *   - `blocking: true`  → the last session died fail-closed: the OS still
+   *     points at our sink and the machine is cut off. Restore.
+   *   - `blocking: false` → an ordinary system-proxy handoff was live. If the
+   *     process was force-killed, nothing ever ran its restore path and the
+   *     OS keeps pointing at a dead local port — every proxy-honoring app
+   *     breaks with no process left to explain why (observed live: a killed
+   *     app left ProxyEnable=1 → 127.0.0.1:<port> with nothing listening).
+   *     Restore the captured value in both cases; if the OS already shows the
+   *     user's own value (clean shutdown got there first), write nothing.
+   * The record is dropped either way — it describes the previous session.
    */
   async recoverAfterRestart(): Promise<KillSwitchStatus> {
     const record = this.deps.loadHold?.() ?? null;
@@ -277,13 +294,26 @@ export class KillSwitchService {
     } catch {
       current = null;
     }
-    const stranded = record.blocking && normalizeProxyValue(current) === KILL_SWITCH_SINK;
-    if (stranded) {
+    const ours = normalizeProxyValue(current);
+    const captured = normalizeProxyValue(record.previousProxy);
+    const strandedSink = record.blocking && ours === KILL_SWITCH_SINK;
+    /**
+     * A stale handoff is only claimed when the OS points at a LOOPBACK proxy
+     * that differs from what we captured — that is the shape of every handoff
+     * this app writes. If the OS shows a non-loopback proxy or nothing at all,
+     * some other tool may own the current state after our death, and writing
+     * our captured value could stomp theirs; restoring nothing never breaks
+     * networking, replacing a dead local port always fixes it.
+     */
+    const strandedHandoff = ours !== captured && isLoopbackProxy(ours);
+    if (strandedSink || strandedHandoff) {
       const set = await this.deps.setSystemProxy(record.previousProxy);
       this.deps.event?.(
-        set.ok ? 'warn' : 'error',
+        set.ok ? (strandedSink ? 'warn' : 'info') : 'error',
         set.ok
-          ? `Kill switch state recovered after a restart: the tunnel was gone but traffic was still blocked, so the previous proxy was restored`
+          ? strandedSink
+            ? `Kill switch state recovered after a restart: the tunnel was gone but traffic was still blocked, so the previous proxy was restored`
+            : `Stale system-proxy handoff recovered after a restart: the previous session exited without restoring it, so the captured setting was put back`
           : `Kill switch state recovered after a restart but the previous proxy could not be restored: ${set.error ?? 'unknown error'}`,
       );
     }
