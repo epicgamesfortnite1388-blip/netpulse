@@ -102,10 +102,25 @@ export const ResetSchema = z.object({ token: z.string().min(20).max(200), newPas
 
 export const RefreshSchema = z.object({ refreshToken: z.string().min(20).max(200) });
 
+/**
+ * E2E encrypted profile backup. `ciphertext` is an opaque blob the Worker
+ * cannot read (client-side AES-GCM over the full profile config); the schema
+ * accepts no plaintext config field by design, so a hostile client cannot
+ * stash unencrypted data here either.
+ */
+export const VaultPutSchema = z.object({
+  profileId: z.string().trim().min(1).max(80),
+  ciphertext: z.string().min(16).max(96_000).regex(/^[A-Za-z0-9+/=.\r\n]+$/, 'must be base64'),
+  updatedAt: z.number().int(),
+});
+
+export const VaultDeleteSchema = z.object({ profileId: z.string().trim().min(1).max(80) });
+
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 export type UserDto = z.infer<typeof UserSchema>;
 export type ProfileEnvelope = z.infer<typeof ProfileEnvelopeSchema>;
+export type VaultPut = z.infer<typeof VaultPutSchema>;
 
 export const errorBody = (code: string, message: string): { error: { code: string; message: string } } => ({
   error: { code, message },

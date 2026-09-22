@@ -17,6 +17,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
       '@shared': path.resolve(__dirname, '../../packages/shared/src'),
       '@netpulse/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      // Tests import the Worker's zod contract directly, so the desktop and
+      // cloud schemas cannot silently drift.
+      '@cloud-contract': path.resolve(__dirname, '../../cloud/worker/src/api.ts'),
     },
   },
   server: {

@@ -6,6 +6,7 @@ import { AppError, badRequest, newNotFound } from '../util/appError';
 import { adminStatus, invalidatePrivilegeCache } from '../util/privileges';
 import { engineSupports, findEngineBinary } from '../services/proxyCores';
 import type { LinkExport } from '../services/nodeLinkExport';
+import { BundleError, buildProfileBundle } from '../services/profileBundle';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -303,6 +304,30 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const profile = await importProfileVia(ctx, parsed.data.providerId, parsed.data.name, parsed.data.configText);
       reply.status(201);
       return { profile };
+    },
+  );
+
+  /**
+   * Full-config export for end-to-end ENCRYPTED cloud backup. The response
+   * carries the real credential (reconstructed from the vault) — it exists
+   * so the webview can encrypt it client-side before anything leaves the
+   * machine; the cloud only ever receives ciphertext. Loopback + bearer
+   * gated like every local route, and rate-limited harder than reads.
+   */
+  app.get(
+    '/api/v1/vpn/profiles/:id/bundle',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      try {
+        return buildProfileBundle(ctx.vpn, id);
+      } catch (err) {
+        if (err instanceof BundleError) {
+          if (err.code === 'not_found') throw newNotFound(`Profile "${id}" not found`);
+          throw new AppError(409, err.code, err.message);
+        }
+        throw err;
+      }
     },
   );
 

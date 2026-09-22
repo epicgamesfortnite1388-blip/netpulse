@@ -1,5 +1,7 @@
 import { env, SELF, createExecutionContext } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
+import { afterEach, describe, expect, it, beforeAll } from 'vitest';
+
+import { setMailer, setMailPost } from '../src/mail';
 
 /**
  * Security + behavior contract of the NetPulse cloud Worker, driven through
@@ -30,6 +32,12 @@ async function authFetch(token: string, path: string, init: RequestInit = {}): P
 beforeAll(async () => {
   await env.DB.prepare(`DELETE FROM users`).run();
   await env.DB.prepare(`DELETE FROM rate_limits`).run();
+});
+
+afterEach(() => {
+  // Never leak a mail seam into the next test.
+  setMailer(null);
+  setMailPost(null);
 });
 
 describe('health', () => {
@@ -252,16 +260,31 @@ describe('security abuse', () => {
     expect(lastStatus).toBe(429);
   });
 
-  it('password reset: token is single-use, expires, revokes sessions', async () => {
+  it('password reset: token is delivered by email, never by the audit log; single-use, revokes sessions', async () => {
     const { token } = await register('reset@example.com');
-    // issue
-    await SELF.fetch('https://worker.test/api/v1/auth/forgot-password', {
+    // Capture the email instead of reading the token back from any log.
+    let sentTo = '';
+    let sentHtml = '';
+    setMailer({
+      configured: () => true,
+      send: async (_env, to, resetToken, origin) => {
+        sentTo = to;
+        sentHtml = `${origin}/reset?token=${resetToken}`;
+        return { delivered: true, reason: 'mail_sent' };
+      },
+    });
+    const issued = await SELF.fetch('https://worker.test/api/v1/auth/forgot-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'reset@example.com' }),
     });
-    // fetch the raw token from the audit trail (this build's delivery channel)
+    expect(issued.status).toBe(200);
+    expect(sentTo).toBe('reset@example.com');
+    // THE FIX UNDER TEST: the audit trail must not carry the credential.
     const row = await env.DB.prepare(`SELECT detail FROM audit_events WHERE kind = 'reset.requested' ORDER BY at DESC LIMIT 1`).first<{ detail: string }>();
-    const raw = row?.detail.replace('token:', '') ?? '';
+    expect(row?.detail).toBe('mail_sent');
+    const raw = sentHtml.split('token=')[1] ?? '';
     expect(raw.length).toBeGreaterThan(20);
+    const leaked = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_events WHERE detail LIKE '%${raw}%'`).first<{ n: number }>();
+    expect(leaked?.n).toBe(0);
     // unknown token rejected
     const bad = await SELF.fetch('https://worker.test/api/v1/auth/reset-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -288,6 +311,95 @@ describe('security abuse', () => {
       body: JSON.stringify({ email: 'reset@example.com', password: 'AnotherPass123' }),
     });
     expect(login.status).toBe(200);
+  });
+
+  it('forgot-password without a mail transport: uniform response, honest audit, no token anywhere', async () => {
+    await register('nomail@example.com');
+    setMailer({ configured: () => false, send: async () => { throw new Error('send must not be called when unconfigured'); } });
+    const known = await SELF.fetch('https://worker.test/api/v1/auth/forgot-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'nomail@example.com' }),
+    });
+    const unknown = await SELF.fetch('https://worker.test/api/v1/auth/forgot-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'ghost@example.com' }),
+    });
+    // No enumeration: identical status + body regardless of account existence.
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(await known.json()).toEqual(await unknown.json());
+    const row = await env.DB.prepare(`SELECT detail FROM audit_events WHERE kind = 'reset.requested' ORDER BY at DESC LIMIT 1`).first<{ detail: string }>();
+    expect(row?.detail).toBe('mail_unconfigured');
+    const anyToken = await env.DB.prepare(`SELECT COUNT(*) AS n FROM audit_events WHERE detail LIKE 'token:%'`).first<{ n: number }>();
+    expect(anyToken?.n).toBe(0);
+  });
+
+  it('resend transport: correct request shape, link carries the token, failures are honest', async () => {
+    let captured: { url: string; auth: string; body: string } | null = null;
+    setMailPost(async (url, init) => {
+      captured = { url, auth: String((init.headers as Record<string, string>).Authorization), body: String(init.body) };
+      return new Response('{"id":"m1"}', { status: 200 });
+    });
+    const envLike = { RESEND_API_KEY: 're_test_key', MAIL_FROM: 'NetPulse <no-reply@worker.test>' } as never;
+    const { sendResetEmail } = await import('../src/mail');
+    const ok = await sendResetEmail(envLike, 'a@b.test', 'TOKENVALUE123', 'https://worker.test');
+    expect(ok.delivered).toBe(true);
+    expect(captured!.url).toBe('https://api.resend.com/emails');
+    expect(captured!.auth).toBe('Bearer re_test_key');
+    expect(captured!.body).toContain('"to":["a@b.test"]');
+    expect(captured!.body).toContain('https://worker.test/reset?token=TOKENVALUE123');
+    // Missing from address / HTTP failure / network throw degrade honestly.
+    expect((await sendResetEmail({ RESEND_API_KEY: 'k' } as never, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_from_missing');
+    setMailPost(async () => new Response('nope', { status: 403 }));
+    expect((await sendResetEmail(envLike, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_http_403');
+    setMailPost(async () => { throw new Error('boom'); });
+    expect((await sendResetEmail(envLike, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_error');
+  });
+
+  it('profile vaults: ciphertext roundtrip, isolation, no plaintext accepted path', async () => {
+    const a = await register('vault-a@example.com');
+    const b = await register('vault-b@example.com');
+    const cipher = 'v1.AAAAAAAAAAAAAAAAAAAAAA.AAAAbase64cipherTextZZZ==';
+    // PUT (upsert)
+    expect((await authFetch(a.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-x1', ciphertext: cipher, updatedAt: 111 }) })).status).toBe(200);
+    // GET returns it only for the owner
+    const aGet = await authFetch(a.token, '/api/v1/profile-vaults');
+    expect(aGet.status).toBe(200);
+    const aList = (await aGet.json()) as { vaults: Array<{ profileId: string; ciphertext: string }> };
+    expect(aList.vaults).toHaveLength(1);
+    expect(aList.vaults[0].ciphertext).toBe(cipher);
+    expect(((await authFetch(b.token, '/api/v1/profile-vaults')).json() as Promise<{ vaults: unknown[] }>).then((j) => j.vaults)).resolves.toHaveLength(0);
+    // Upsert replaces, keyed per user (B writing the same profileId sees only their own)
+    expect((await authFetch(a.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-x1', ciphertext: 'v1.BBBBBBBBBBBBBBBBBBBBBB.BBBBnewerBlob==', updatedAt: 222 }) })).status).toBe(200);
+    expect((await authFetch(b.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-x1', ciphertext: cipher, updatedAt: 222 }) })).status).toBe(200);
+    const after = ((await (await authFetch(a.token, '/api/v1/profile-vaults')).json()) as { vaults: Array<{ ciphertext: string }> }).vaults;
+    expect(after).toHaveLength(1);
+    expect(after[0].ciphertext).toContain('BBBB');
+    // A hostile client cannot stash plaintext: the schema has no config field
+    // and the blob must be base64.
+    expect((await authFetch(a.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'p', ciphertext: '<not base64>', updatedAt: 1 }) })).status).toBe(400);
+    // Delete removes only the owner's row.
+    expect((await authFetch(b.token, '/api/v1/profile-vaults/delete', { method: 'POST', body: JSON.stringify({ profileId: 'np-local-x1' }) })).status).toBe(200);
+    expect(((await (await authFetch(b.token, '/api/v1/profile-vaults')).json()) as { vaults: unknown[] }).vaults).toHaveLength(0);
+    expect(((await (await authFetch(a.token, '/api/v1/profile-vaults')).json()) as { vaults: unknown[] }).vaults).toHaveLength(1);
+    // Unauthenticated access is refused like every other route.
+    expect((await SELF.fetch('https://worker.test/api/v1/profile-vaults')).status).toBe(401);
+  });
+
+  it('account deletion wipes the profile vaults with the rest of the user data', async () => {
+    const a = await register('vault-del@example.com');
+    await authFetch(a.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-d1', ciphertext: 'v1.CCCCCCCCCCCCCCCCCCCCCC.CCC==', updatedAt: 1 }) });
+    expect((await authFetch(a.token, '/api/v1/account', { method: 'DELETE' })).status).toBe(200);
+    const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM profile_vaults`).first<{ n: number }>();
+    expect(row?.n).toBe(0);
+  });
+
+  it('serves the reset page with a locked-down CSP and no server-side token interpolation', async () => {
+    const res = await SELF.fetch('https://worker.test/reset?token=SHOULD_NOT_BE_ECHOED_123456789012345678901234');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/html');
+    expect(res.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+    const html = await res.text();
+    expect(html).toContain('/api/v1/auth/reset-password');
+    expect(html).not.toContain('SHOULD_NOT_BE_ECHOED');
   });
 
   it('password change requires the current password and revokes other sessions', async () => {

@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { VaultPutSchema } from '@cloud-contract';
 import { CloudError } from '@/lib/cloud/client';
+import {
+  decryptProfileBlob,
+  deriveRawKey,
+  encryptProfileBlob,
+  importRawKey,
+  randomSaltB64,
+  VaultCryptoError,
+} from '@/lib/cloud/profileVaultCrypto';
 import { classifySyncError, mergeSettings, pendingCount, queueFavorite, queuePreference } from '@/lib/cloud/syncEngine';
 import { adoptAuthResponse, clearSession, currentSession, hasFreshAccess } from '@/lib/cloud/sessionStore';
 import type { CloudAuthResponse } from '@/lib/cloud/types';
@@ -128,5 +137,46 @@ describe('session restore across restarts', () => {
     expect(s).not.toBeNull();
     expect(s?.user.email).toBe('a@b.c');
     expect(hasFreshAccess()).toBe(false); // forces the silent refresh path
+  });
+});
+
+describe('E2E profile vault crypto', () => {
+  const userId = 'usr_vault';
+  const profileId = 'np-local-p1';
+
+  it('roundtrips a full config through encrypt/decrypt with the derived key', async () => {
+    const salt = randomSaltB64();
+    const raw = await deriveRawKey('Sup3rSecurePass', salt);
+    const key = await importRawKey(raw);
+    const config = JSON.stringify({ providerId: 'singbox', name: 'relay-fr', configText: 'vless://uuid-secret@host:443?security=tls#name' });
+    const blob = await encryptProfileBlob(key, userId, profileId, config);
+    expect(blob.startsWith('v1.')).toBe(true);
+    expect(blob).not.toContain('uuid-secret');
+    expect(blob).not.toContain('vless://');
+    const round = await decryptProfileBlob(key, userId, profileId, blob);
+    expect(JSON.parse(round)).toEqual(JSON.parse(config));
+  });
+
+  it('binds blobs to account and profile via AAD', async () => {
+    const key = await importRawKey(await deriveRawKey('Sup3rSecurePass', randomSaltB64()));
+    const blob = await encryptProfileBlob(key, userId, profileId, 'secret-config');
+    // another profile id cannot authenticate the blob
+    await expect(decryptProfileBlob(key, userId, 'np-local-p2', blob)).rejects.toBeInstanceOf(VaultCryptoError);
+    // another account cannot either
+    await expect(decryptProfileBlob(key, 'usr_other', profileId, blob)).rejects.toBeInstanceOf(VaultCryptoError);
+    // a different password derives a different key: garbage in, VaultCryptoError out
+    const otherKey = await importRawKey(await deriveRawKey('AnotherPass123x', randomSaltB64()));
+    await expect(decryptProfileBlob(otherKey, userId, profileId, blob)).rejects.toBeInstanceOf(VaultCryptoError);
+    // malformed blobs are refused, not crashed on
+    await expect(decryptProfileBlob(key, userId, profileId, 'v2.x.y')).rejects.toBeInstanceOf(VaultCryptoError);
+  });
+
+  it('the cloud contract accepts only opaque base64 blobs — no plaintext config field exists', () => {
+    const ok = VaultPutSchema.safeParse({ profileId: 'np-local-p1', ciphertext: 'v1.AAAAAAAA.AAAAAAAA==', updatedAt: 1 });
+    expect(ok.success).toBe(true);
+    const plaintext = VaultPutSchema.safeParse({ profileId: 'p', ciphertext: 'vless://uuid@host:443', updatedAt: 1 });
+    expect(plaintext.success).toBe(false);
+    const tooBig = VaultPutSchema.safeParse({ profileId: 'p', ciphertext: `v1.${'A'.repeat(97_000)}`, updatedAt: 1 });
+    expect(tooBig.success).toBe(false);
   });
 });

@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CloudOff, Copy, LogOut, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { CloudOff, Copy, Download, KeyRound, LogOut, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +22,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { useToast } from '@/components/Toaster';
 import { CloudError, cloudApi } from '@/lib/cloud/client';
-import { pendingCount, lastSyncError, syncNow } from '@/lib/cloud/syncEngine';
+import { pendingCount, lastSyncError, restoreProfileFromVault, syncNow } from '@/lib/cloud/syncEngine';
 import { useCloudSession } from '@/lib/cloud/useCloudSession';
 import type { CloudDevice, CloudSession } from '@/lib/cloud/types';
 
@@ -154,6 +154,129 @@ function SessionRow({ session, onRevoke }: { session: CloudSession; onRevoke: (i
         </Button>
       )}
     </div>
+  );
+}
+
+/* ----------------------- encrypted profile backup ------------------------ */
+
+interface VaultRow {
+  profileId: string;
+  ciphertext: string;
+  updatedAt: number;
+}
+
+function EncryptedBackupCard() {
+  const { session, vault, unlockVault, refreshVault } = useCloudSession();
+  const toast = useToast();
+  const [rows, setRows] = useState<VaultRow[] | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [unlockPw, setUnlockPw] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [v, p] = await Promise.all([cloudApi.vaults(), cloudApi.profiles()]);
+      setRows(v.vaults);
+      const map: Record<string, string> = {};
+      for (const prof of p.profiles) map[prof.id] = prof.name;
+      setNames(map);
+    } catch {
+      setRows(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session && vault === 'ready') void load();
+  }, [session, vault, load]);
+
+  if (!session) return null;
+
+  const unlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUnlocking(true);
+    try {
+      await unlockVault(unlockPw);
+      toast('ok', 'Backup unlocked', 'Encrypted profile sync is active on this device.');
+      setUnlockPw('');
+    } catch {
+      toast('error', 'Unlock failed', 'Check the password and your connection.');
+    } finally {
+      setUnlocking(false);
+      void refreshVault();
+    }
+  };
+
+  const restore = async (profileId: string) => {
+    setRestoring(profileId);
+    try {
+      const r = await restoreProfileFromVault(profileId);
+      if (r.ok) toast('ok', `Restored "${r.name}"`, 'Imported locally; the cloud backup moved to its new id.');
+      else if (r.error === 'decrypt_failed') toast('error', 'Restore failed', 'The backup did not decrypt — wrong key or corrupted blob.');
+      else toast('error', 'Restore failed', r.error);
+    } finally {
+      setRestoring(null);
+    }
+  };
+
+  const summary = vault === 'ready' ? `${rows?.length ?? '…'} encrypted backup(s)` : vault === 'locked' ? 'locked on this device' : 'sign in to use';
+
+  return (
+    <Card fold={{ id: 'account-e2e', defaultOpen: false, summary }}>
+      <CardHeader title="Encrypted profile backup" icon={<ShieldCheck size={16} />} />
+      <CardBody>
+        <div className="flex flex-col gap-2 text-sm">
+          {vault === 'ready' ? (
+            <>
+              <p>
+                Full configs — including credentials — are encrypted in this app with a key derived from your account password before upload. The
+                cloud stores ciphertext only; it can back them up but never read them.
+              </p>
+              {rows === null && <p className="text-xs text-[var(--text-muted)]">Backups load on the next sync.</p>}
+              {rows?.length === 0 && <p className="text-xs text-[var(--text-muted)]">No backups yet — run “Sync now”.</p>}
+              {rows !== null && rows.length > 0 && (
+                <ul className="flex flex-col gap-1">
+                  {rows.map((r) => (
+                    <li key={r.profileId} className="flex items-center justify-between gap-2 rounded border border-[var(--border)] px-2 py-1.5">
+                      <span className="truncate">
+                        {names[r.profileId] ?? r.profileId} <span className="text-xs text-[var(--text-muted)]">· {fmtTime(r.updatedAt)}</span>
+                      </span>
+                      <Button variant="ghost" onClick={() => void restore(r.profileId)} disabled={restoring === r.profileId}>
+                        <Download size={14} /> {restoring === r.profileId ? 'Restoring…' : 'Restore'}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : vault === 'locked' ? (
+            <>
+              <p>
+                This device syncs settings and profile names, but holds no key for encrypted config backups. Enter your account password once to
+                unlock — the key stays on this device.
+              </p>
+              <form className="flex max-w-sm flex-col gap-3" onSubmit={unlock}>
+                <Field label="Account password">
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={unlockPw}
+                    onChange={(e) => setUnlockPw(e.target.value)}
+                    className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Button type="submit" disabled={unlocking || !unlockPw}>
+                  <KeyRound size={14} /> {unlocking ? 'Unlocking…' : 'Unlock'}
+                </Button>
+              </form>
+            </>
+          ) : (
+            <p className="text-xs text-[var(--text-muted)]">Encrypted backup activates when you sign in.</p>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -324,7 +447,8 @@ function AccountDashboard() {
             </p>
             {lastSyncError() && !syncState.running && <p className="text-xs text-amber-400">Last attempt: {lastSyncError()}</p>}
             <p className="text-xs text-[var(--text-muted)]">
-              Synced to the cloud: settings, favorites, profile <em>names</em>, preferences. VPN configs and credentials never leave this machine.
+              Synced to the cloud: settings, favorites, profile <em>names</em>, preferences. Full configs leave only as end-to-end encrypted blobs (
+              see below) — they are unreadable to the cloud.
             </p>
             <div className="flex gap-2">
               <Button onClick={doSync} disabled={syncState.running}>
@@ -337,6 +461,8 @@ function AccountDashboard() {
           </div>
         </CardBody>
       </Card>
+
+      <EncryptedBackupCard />
 
       <Card fold={{ id: 'account-danger', defaultOpen: false, summary: 'irreversible account actions' }}>
         <CardHeader title="Danger zone" />

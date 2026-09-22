@@ -18,8 +18,14 @@ import {
   ResetSchema,
   SettingsSchema,
   UpsertProfileSchema,
+  VaultDeleteSchema,
+  VaultPutSchema,
   errorBody,
 } from './api';
+import {
+  mailConfigured,
+  sendResetEmail,
+} from './mail';
 import {
   RESET_TTL_MS,
   audit,
@@ -127,7 +133,7 @@ export default {
         } catch {
           dbOk = false;
         }
-        return json(dbOk ? 200 : 503, { ok: dbOk, service: 'netpulse-cloud', time: Date.now() });
+        return json(dbOk ? 200 : 503, { ok: dbOk, service: 'netpulse-cloud', time: Date.now(), mail: mailConfigured(env) });
       }
 
       // -------- lazy housekeeping (cheap; runs on state-changing calls) --------
@@ -226,10 +232,6 @@ export default {
         if (!limit.ok) return fail(429, 'rate_limited', 'Too many reset requests — try later');
         const normalized = normalizeEmail(body.email);
         const user = await env.DB.prepare(`SELECT id FROM users WHERE normalized_email = ?`).bind(normalized).first<{ id: string }>();
-        // Always 200: no enumeration. If there is no mail transport in this
-        // build, the ONLY delivery path is the audit-log delivery channel
-        // documented in the README — acceptable for a self-hosted launch and
-        // explicitly stated in the report.
         if (user) {
           const token = randomToken();
           const peppered = await sha256Hex(`${token}${env.RESET_PEPPER}`);
@@ -237,7 +239,20 @@ export default {
             .prepare(`INSERT INTO password_reset_tokens (id, user_id, token_hash, created_at, expires_at, requested_ip) VALUES (?, ?, ?, ?, ?, ?)`)
             .bind(newId('rst'), user.id, peppered, Date.now(), Date.now() + RESET_TTL_MS, ip)
             .run();
-          await audit(env.DB, 'reset.requested', user.id, ip, `token:${token}`);
+          // The token is a single-use credential: it goes ONLY into the email
+          // body. The audit event records the delivery outcome — never the
+          // token (the audit log is readable via wrangler and used to leak
+          // `token:<raw>` here).
+          let delivery = 'mail_unconfigured';
+          if (mailConfigured(env)) {
+            try {
+              const r = await sendResetEmail(env, normalized, token, new URL(req.url).origin);
+              delivery = r.reason;
+            } catch {
+              delivery = 'mail_failed:exception';
+            }
+          }
+          await audit(env.DB, 'reset.requested', user.id, ip, delivery);
           await sweepExpired(env.DB);
         }
         return json(200, { ok: true, message: 'If the account exists, a reset has been issued' });
@@ -266,6 +281,21 @@ export default {
         await revokeAllSessions(env.DB, row.user_id, 'password-reset');
         await audit(env.DB, 'reset.completed', row.user_id, ip);
         return json(200, { ok: true });
+      }
+
+      // -------- reset page (served here so emailed links just work) --------
+      if (path === '/reset' && (req.method === 'GET' || req.method === 'HEAD')) {
+        return new Response(resetPageHtml(), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer',
+            'X-Content-Type-Options': 'nosniff',
+            // No external assets; scripts/styles are inline, API is same-origin.
+            'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",
+          },
+        });
       }
 
       // ==================== AUTHENTICATED ROUTES ====================
@@ -423,6 +453,37 @@ export default {
         return json(200, { ok: true, updatedAt: t });
       }
 
+      // -------- profile vaults (E2E ciphertext only; keys never reach here) --------
+      if (path === '/api/v1/profile-vaults' && req.method === 'PUT') {
+        const body = VaultPutSchema.parse(await readJson(req));
+        const t = Date.now();
+        await env.DB
+          .prepare(
+            `INSERT INTO profile_vaults (user_id, profile_id, ciphertext, updated_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (user_id, profile_id) DO UPDATE SET
+               ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
+          )
+          .bind(userId, body.profileId, body.ciphertext, body.updatedAt)
+          .run();
+        return json(200, { ok: true, updatedAt: t });
+      }
+
+      if (path === '/api/v1/profile-vaults' && req.method === 'GET') {
+        const rows = await env.DB
+          .prepare(`SELECT profile_id, ciphertext, updated_at FROM profile_vaults WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500`)
+          .bind(userId)
+          .all<{ profile_id: string; ciphertext: string; updated_at: number }>();
+        return json(200, {
+          vaults: (rows.results ?? []).map((r) => ({ profileId: r.profile_id, ciphertext: r.ciphertext, updatedAt: r.updated_at })),
+        });
+      }
+
+      if (path === '/api/v1/profile-vaults/delete' && req.method === 'POST') {
+        const body = VaultDeleteSchema.parse(await readJson(req));
+        const res = await env.DB.prepare(`DELETE FROM profile_vaults WHERE user_id = ? AND profile_id = ?`).bind(userId, body.profileId).run();
+        return json(200, { ok: true, removed: (res.meta.changes ?? 0) > 0 });
+      }
+
       // -------- favorites --------
       if (path === '/api/v1/favorites' && req.method === 'GET') {
         const rows = await env.DB
@@ -539,3 +600,74 @@ export default {
     }
   },
 };
+
+/**
+ * The password-reset page the reset emails link to, served by this Worker so
+ * the flow needs no extra infrastructure. The token is NEVER interpolated
+ * server-side — the page reads it from the query string client-side, so no
+ * escaping bug can turn it into HTML injection.
+ */
+function resetPageHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>NetPulse — Reset password</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e7e9ee; display: flex; min-height: 100vh; margin: 0; align-items: center; justify-content: center; }
+  main { background: #171a21; border: 1px solid #2a2f3a; border-radius: 12px; padding: 32px; width: 340px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.sub { color: #9aa3b2; font-size: 13px; margin: 0 0 20px; }
+  label { display: block; font-size: 12px; color: #9aa3b2; margin: 12px 0 4px; }
+  input { width: 100%; box-sizing: border-box; background: #0f1115; color: #e7e9ee; border: 1px solid #2a2f3a; border-radius: 8px; padding: 9px 10px; font-size: 14px; }
+  button { margin-top: 18px; width: 100%; background: #4f7cff; color: #fff; border: 0; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  #msg { margin-top: 14px; font-size: 13px; min-height: 18px; }
+  .ok { color: #6fd18b; } .err { color: #ff7a7a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Reset your password</h1>
+  <p class="sub">Enter the code from your reset email and a new password.</p>
+  <form id="f">
+    <label for="token">Reset code</label>
+    <input id="token" name="token" autocomplete="off" spellcheck="false" required>
+    <label for="p1">New password</label>
+    <input id="p1" type="password" minlength="10" required>
+    <label for="p2">Confirm new password</label>
+    <input id="p2" type="password" minlength="10" required>
+    <button type="submit">Set new password</button>
+  </form>
+  <div id="msg" role="status"></div>
+</main>
+<script>
+  var q = new URLSearchParams(location.search);
+  if (q.get('token')) document.getElementById('token').value = q.get('token');
+  document.getElementById('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var msg = document.getElementById('msg');
+    var p1 = document.getElementById('p1').value, p2 = document.getElementById('p2').value;
+    msg.className = ''; msg.textContent = '';
+    if (p1 !== p2) { msg.className = 'err'; msg.textContent = 'Passwords do not match.'; return; }
+    var btn = e.target.querySelector('button');
+    btn.disabled = true;
+    fetch('/api/v1/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: document.getElementById('token').value.trim(), newPassword: p1 }),
+    })
+      .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (res) {
+        if (res.status === 200) { msg.className = 'ok'; msg.textContent = 'Password updated. You can now sign in on your device.'; e.target.reset(); }
+        else { msg.className = 'err'; msg.textContent = (res.body && res.body.error && res.body.error.message) || 'Reset failed.'; }
+      })
+      .catch(function () { msg.className = 'err'; msg.textContent = 'Network error — try again.'; })
+      .finally(function () { btn.disabled = false; });
+  });
+</script>
+</body>
+</html>`;
+}

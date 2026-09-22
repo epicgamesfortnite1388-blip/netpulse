@@ -204,4 +204,10 @@ export const cloudApi = {
   settings: () => request<{ payload: string; updatedAt: number }>('/api/v1/settings', { method: 'GET' }),
   putSettings: (payload: string, updatedAt: number) =>
     request<{ ok: boolean; updatedAt: number }>('/api/v1/settings', { method: 'PUT', json: { payload, updatedAt } }),
+  vaults: () =>
+    request<{ vaults: Array<{ profileId: string; ciphertext: string; updatedAt: number }> }>('/api/v1/profile-vaults', { method: 'GET' }),
+  putVault: (profileId: string, ciphertext: string, updatedAt: number) =>
+    request<{ ok: boolean }>('/api/v1/profile-vaults', { method: 'PUT', json: { profileId, ciphertext, updatedAt } }),
+  deleteVault: (profileId: string) =>
+    request<{ ok: boolean; removed: boolean }>('/api/v1/profile-vaults/delete', { method: 'POST', json: { profileId } }),
 };

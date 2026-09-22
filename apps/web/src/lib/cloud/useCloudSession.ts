@@ -11,6 +11,7 @@ import { create } from 'zustand';
 
 import { cloudAuth, CloudError } from './client';
 import { currentSession } from './sessionStore';
+import { ensureVaultKeyForAccount, loadVaultKey, type VaultKeyState } from './vaultKey';
 import type { CloudSessionState, CloudUser } from './types';
 
 interface CloudSessionStore {
@@ -18,25 +19,35 @@ interface CloudSessionStore {
   ready: boolean;
   /** Sign-in flows set this while the request is in flight. */
   busy: boolean;
+  /** E2E backup key availability on this device (drives the Account UI). */
+  vault: VaultKeyState;
   init: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   signOut: (opts?: { serverRevoke?: boolean }) => Promise<void>;
   refreshUser: (user: CloudUser) => void;
+  refreshVault: () => Promise<void>;
+  unlockVault: (password: string) => Promise<void>;
 }
 
 export const useCloudSession = create<CloudSessionStore>((set, get) => ({
   session: null,
   ready: false,
   busy: false,
+  vault: 'signed-out',
   init: () => {
     set({ session: currentSession(), ready: true });
+    void get().refreshVault();
   },
   login: async (email, password) => {
     set({ busy: true });
     try {
       await cloudAuth.login(email, password);
       set({ session: currentSession() });
+      // Derive the E2E backup key while the password is still in hand; a
+      // failure here must never block login — the vault stays locked with
+      // an honest status and can be unlocked later.
+      set({ vault: await ensureVaultKeyForAccount(password) });
     } finally {
       set({ busy: false });
     }
@@ -46,6 +57,7 @@ export const useCloudSession = create<CloudSessionStore>((set, get) => ({
     try {
       await cloudAuth.register(email, password);
       set({ session: currentSession() });
+      set({ vault: await ensureVaultKeyForAccount(password) });
     } finally {
       set({ busy: false });
     }
@@ -57,6 +69,13 @@ export const useCloudSession = create<CloudSessionStore>((set, get) => ({
   refreshUser: (user) => {
     const s = get().session;
     if (s) set({ session: { ...s, user } });
+  },
+  refreshVault: async () => {
+    const { state } = await loadVaultKey();
+    set({ vault: state });
+  },
+  unlockVault: async (password) => {
+    set({ vault: await ensureVaultKeyForAccount(password) });
   },
 }));
 

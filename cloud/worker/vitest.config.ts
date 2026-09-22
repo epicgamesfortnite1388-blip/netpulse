@@ -6,8 +6,16 @@ import cfg from '@cloudflare/vitest-pool-workers/config';
 import { defineWorkersConfig } from './test/defineConfig';
 
 // The workers runtime virtualizes fs, so the migration SQL is injected as a
-// compile-time constant instead of being read inside the runtime.
-const migrationSql = readFileSync(path.join(__dirname, 'migrations', '0001_init.sql'), 'utf8');
+// compile-time constant instead of being read inside the runtime. All
+// migrations run in filename order, exactly like `wrangler d1 migrations
+// apply` would on a fresh database.
+const migrationsDir = path.join(__dirname, 'migrations');
+const migrationSql = [
+  '0001_init.sql',
+  '0002_profile_vaults.sql',
+]
+  .map((f) => readFileSync(path.join(migrationsDir, f), 'utf8'))
+  .join('\n');
 
 export default defineWorkersConfig({
   define: { MIGRATION_SQL: JSON.stringify(migrationSql) },

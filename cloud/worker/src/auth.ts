@@ -18,6 +18,9 @@ export interface Env {
   DB: D1Database;
   AUTH_SECRET: string;
   RESET_PEPPER: string;
+  /** Optional mail transport (Resend). Absent = reset emails are disabled. */
+  RESEND_API_KEY?: string;
+  MAIL_FROM?: string;
 }
 
 export interface SessionRow {
