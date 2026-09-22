@@ -171,6 +171,19 @@ export function adminCapabilities(ctx: Partial<AdminContext> = {}): PrivilegeCap
   ];
 }
 
+/**
+ * What to DO about TUN's privilege requirement — the remedy the matrix above
+ * owns, for callers that must state it without rendering the whole capability
+ * list (a refused TUN start, a route that cannot be released without admin
+ * rights). Null when the privilege is not what is missing: a remedy about
+ * installing sing-box would be the wrong advice for a route that is already
+ * being held.
+ */
+export function tunGatewayRemedy(): string | null {
+  if (isProcessElevated()) return null;
+  return adminCapabilities().find((c) => c.id === 'tun-gateway')?.remedy ?? null;
+}
+
 /** Shape the API returns; kept next to the matrix so both stay in step. */
 export function adminStatus(ctx: Partial<AdminContext> = {}) {
   const elevated = isProcessElevated();

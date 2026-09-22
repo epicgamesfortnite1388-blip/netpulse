@@ -62,7 +62,7 @@ export interface VpnStatus {
   /** Why TUN did not come up, in the OS's or the gateway's own words. */
   tunError?: string | null;
   /** Stable code the UI acts on: rights, missing core, relay failure, or an unarmed hold. */
-  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | null;
+  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | 'stranded-route' | null;
   /**
    * Automatic-recovery accounting for a dropped capture: how many re-arms the
    * watchdog used, out of how many it is allowed, and why the last one failed.

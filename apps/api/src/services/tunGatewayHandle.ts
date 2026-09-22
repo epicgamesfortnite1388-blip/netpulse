@@ -38,9 +38,12 @@
  */
 import type { BypassRuleSet } from '@netpulse/shared';
 
+import { tunGatewayRemedy } from '../util/privileges';
 import { findEngineBinary, startTunGateway, tunGatewayStartRefusal } from './proxyCores';
+import { sweepOrphanedTunGateways, tunSweepReport } from './tunClaim';
 
 import type { CoreRun } from './proxyCores';
+import type { TunSweepSummary } from './tunClaim';
 
 /** The running device this state machine owns (the gateway is a core run). */
 export type TunGatewayDevice = Pick<CoreRun, 'child' | 'cleanup'>;
@@ -55,8 +58,12 @@ export type TunGatewayDevice = Pick<CoreRun, 'child' | 'cleanup'>;
  */
 export type TunState = 'requested' | 'recovering' | 'active' | 'unguarded' | null;
 
-/** Whose problem a degraded TUN mode is: privileges, the core, the path, the hold. */
-export type TunBlockedBy = 'admin' | 'core' | 'relay' | 'kill-switch' | null;
+/**
+ * Whose problem a degraded TUN mode is: privileges, the core, the path, the
+ * hold, or a route a force-killed session left behind that only an elevated
+ * process can release.
+ */
+export type TunBlockedBy = 'admin' | 'core' | 'relay' | 'kill-switch' | 'stranded-route' | null;
 
 /** What the watchdog has done, so a recovery is visible after the fact. */
 export interface TunWatchdogStatus {
@@ -181,6 +188,12 @@ export interface TunGatewayRuntime {
    * HTTP-CONNECT fetch) — the handle must not reach into either.
    */
   verifyRelay(gatewayPort: number): Promise<string | null>;
+  /**
+   * The route-claim sweep that runs before a manual capture starts. Defaults to
+   * the real sweep; injected so the pre-flight's rules are provable without an
+   * elevated orphan on the test machine.
+   */
+  sweepRouteClaims?: () => Promise<TunSweepSummary>;
 }
 
 /** The only core with a TUN inbound. */
@@ -190,6 +203,8 @@ const NO_UPSTREAM = 'engine hop has no inbound port to route through';
 const NO_CORE =
   'TUN mode needs sing-box (the only core with a TUN inbound) and it is not installed — install it on the sing-box tab, then reconnect in proxy mode.';
 const NO_EXIT_IP = 'trace through the TUN gateway did not contain an ip= line';
+const STRANDED_ROUTE =
+  'a route from a force-killed session is still held by an orphaned TUN gateway that could not be stopped, so TUN will not be started on top of it';
 
 /** How long the device gets to open its inbound before the start is a failure. */
 const READY_TIMEOUT_MS = 12_000;
@@ -307,6 +322,25 @@ export class TunGatewayHandle {
       });
     } else {
       this.opts.onState?.({ kind: 'requested' });
+    }
+
+    // Pre-flight: a default route stranded by a force-killed session must be
+    // released — or explained — before a device is put on top of it. This is
+    // also the RETRY point: boot is not the only chance to reap an orphan, so
+    // the attempt is repeated every time the user asks for TUN, and an elevated
+    // session (whose kill cannot be refused) releases the route then. Only a
+    // manual start pays for it: a watchdog re-arm rebuilds a capture this same
+    // session already owned, and the sweep at boot covered what preceded it.
+    if (mode === 'manual') {
+      const sweep = await (this.runtime.sweepRouteClaims
+        ?? (() => sweepOrphanedTunGateways({ liveOwnerPid: () => process.pid })))();
+      if (!this.owns(epoch)) return false;
+      if (sweep.refused > 0) {
+        const report = tunSweepReport(sweep, tunGatewayRemedy());
+        // The consequence belongs to the caller, not to the sweep: at boot the
+        // sweep is recovery, here it is a refusal to start on top of it.
+        return this.fail(mode, epoch, `TUN was not started — ${report?.message ?? STRANDED_ROUTE}`, 'stranded-route');
+      }
     }
 
     const refusal = tunGatewayStartRefusal();

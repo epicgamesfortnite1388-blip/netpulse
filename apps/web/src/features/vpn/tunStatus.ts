@@ -13,7 +13,7 @@
 export type TunTone = 'ok' | 'warn' | 'danger';
 
 export type TunState = 'requested' | 'recovering' | 'active' | 'unguarded' | null;
-export type TunBlockedBy = 'admin' | 'core' | 'relay' | 'kill-switch' | null;
+export type TunBlockedBy = 'admin' | 'core' | 'relay' | 'kill-switch' | 'stranded-route' | null;
 
 /** Automatic-recovery accounting, as the status carriers publish it. */
 export interface TunWatchdogSlice {
@@ -110,6 +110,11 @@ export function tunRemedy(blockedBy: TunBlockedBy | undefined): string | null {
       return 'Install sing-box on the sing-box tab — it is the only core with a TUN inbound.';
     case 'admin':
       return 'Grant administrator rights, then restart the tunnel with TUN enabled.';
+    case 'stranded-route':
+      // The action only. What the sweep established (and how sure it is about
+      // the route) is in the error text above, straight from the one owner that
+      // computed it — this line must not restate it as a stronger claim.
+      return 'Use "Grant admin rights" (below), then enable TUN again — releasing a route stranded by a force-killed session needs administrator rights.';
     case 'relay':
       return 'The gateway process did not relay traffic — the tunnel is still carrying your traffic in system-proxy mode.';
     case 'kill-switch':

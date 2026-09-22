@@ -19,7 +19,18 @@ const h = vi.hoisted(() => ({
   cleanup: vi.fn(),
   /** 'close' listeners of the fake gateway process, so a test can kill it. */
   closes: [] as Array<(code: number | null) => void>,
+  /**
+   * The route-claim pre-flight, held here so this file never runs the real
+   * sweep (which lists OS processes and would touch anything the machine
+   * really leaked). Defaults to "nothing stranded".
+   */
+  sweep: vi.fn(),
 }));
+
+vi.mock('../src/services/tunClaim', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/tunClaim')>();
+  return { ...actual, sweepOrphanedTunGateways: (...args: unknown[]) => h.sweep(...args) };
+});
 
 vi.mock('../src/services/proxyCores', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/services/proxyCores')>();
@@ -99,10 +110,28 @@ function makeDeps(trace: (port: number) => Promise<string>, arm = vi.fn(), onDro
 
 const OK_TRACE = 'ip=206.71.158.29\nloc=NL\ncolo=AMS\n';
 
+it('never starts TUN while a force-killed session still holds the default route', async () => {
+  const reason =
+    'gateway pid 42 is running but its command line cannot be verified from here — run the app as administrator to release the route';
+  h.sweep.mockResolvedValue({ reaped: 0, litter: 0, alive: 0, refused: 1, refusals: [{ dir: 'C:/tmp/netpulse-tun-gw-x', reason }] });
+  const { deps } = makeDeps(async () => OK_TRACE);
+  const svc = new ProxyTunnelService(deps);
+
+  const status = await svc.start(node(), { systemProxy: false, preferredEngine: 'auto', tun: true });
+
+  // The user asked for TUN and is told, concretely, why it was not applied —
+  // and no device was put on top of the stranded route.
+  expect(h.startTunGateway).not.toHaveBeenCalled();
+  expect(status.tunBlockedBy).toBe('stranded-route');
+  expect(status.tunError).toContain('cannot be verified');
+});
+
 beforeEach(() => {
   h.startTunGateway.mockReset();
   h.cleanup.mockReset();
   h.closes = [];
+  h.sweep.mockReset();
+  h.sweep.mockResolvedValue({ reaped: 0, litter: 0, alive: 0, refused: 0, refusals: [] });
   h.startTunGateway.mockImplementation(async () => ({
     ok: true,
     gatewayPort: GATEWAY_PORT,

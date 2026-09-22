@@ -77,6 +77,8 @@ import { NodeSecretVault } from './services/nodeSecretVault';
 import { ProxyTunnelService, fetchThroughHttpProxy } from './services/proxyTunnel';
 import { getSystemProxy, setSystemProxy } from './services/systemProxy';
 import { KillSwitchService } from './services/killSwitch';
+import { sweepOrphanedTunGateways, tunSweepReport } from './services/tunClaim';
+import { tunGatewayRemedy } from './util/privileges';
 import { SourceRefreshScheduler, seedKnownSources } from './services/nodeSourceRegistry';
 import { SettingsService } from './services/settingsService';
 import { SpeedService } from './services/speedService';
@@ -318,6 +320,21 @@ export async function buildApp(opts: BuildOptions = {}) {
 
   const events = new EventService(repos.events);
   const settings = new SettingsService(repos.settings);
+  // TUN route-claim recovery: a force-killed app orphans the ELEVATED TUN
+  // gateway, which keeps holding the default route while unmanaged. Sweep the
+  // persisted claims and SAY what happened — a route the sweep could not
+  // release (needs administrator rights) is a real degraded state, not a
+  // silent log line.
+  void sweepOrphanedTunGateways({ liveOwnerPid: () => process.pid })
+    .then((sweep) => {
+      // The wording (including WHY a refusal happened and what to do about it)
+      // is owned by the sweep module; this only records it.
+      const report = tunSweepReport(sweep, tunGatewayRemedy());
+      if (!report) return;
+      log[report.level]({ sweep }, 'tun route-claim sweep');
+      events.record(report.level, 'vpn', report.message);
+    })
+    .catch(() => undefined);
   // Geo lookups read the user's provider preference live (cheap: cached settings).
   setGeoPreferenceSource(() => settings.get().geoProvider?.preferred ?? 'auto');
   const ipInfo = new IpInfoService({ reputationProviders });

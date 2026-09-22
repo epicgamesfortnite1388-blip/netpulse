@@ -107,12 +107,16 @@ export interface ProxyTunnelStatus {
    *   `kill-switch`  — the capture is up but the hold that blocks a drop could
    *                    not be armed (fix the cause, or turn the switch off and
    *                    accept that a drop falls back to direct)
+   *   `stranded-route` — a force-killed session left an orphaned TUN gateway
+   *                    holding the default route and it could not be stopped
+   *                    (only an elevated session can release it); TUN is not
+   *                    started on top of it
    *   null           — nothing blocked it (TUN active, or never requested)
    *
    * The UI must never string-match `tunError` to decide what to offer: the
    * message is for reading, this code is for acting.
    */
-  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | null;
+  tunBlockedBy?: 'admin' | 'core' | 'relay' | 'kill-switch' | 'stranded-route' | null;
   /** The loopback HTTP port of the TUN gateway (its own verified proxy inbound). */
   tunGatewayPort?: number | null;
   /**

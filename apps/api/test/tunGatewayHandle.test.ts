@@ -35,8 +35,13 @@ vi.mock('../src/services/proxyCores', async (importOriginal) => {
 });
 
 import { TunGatewayHandle } from '../src/services/tunGatewayHandle';
+import { tunGatewayRemedy } from '../src/util/privileges';
 
 import type { TunGatewayEvent, TunGatewayOptions, TunGatewayRuntime } from '../src/services/tunGatewayHandle';
+import type { TunSweepSummary } from '../src/services/tunClaim';
+
+/** A sweep that found nothing — the pre-flight's benign default for tests. */
+const CLEAN_SWEEP: TunSweepSummary = { reaped: 0, litter: 0, alive: 0, refused: 0, refusals: [] };
 
 const GATEWAY_PORT = 45699;
 const UPSTREAM_PORT = 45678;
@@ -62,6 +67,8 @@ function fakeDevice() {
 function setup(overrides: {
   verify?: () => Promise<string | null>;
   opts?: Partial<TunGatewayOptions>;
+  /** The route-claim pre-flight. Defaults to "nothing stranded". */
+  sweep?: () => Promise<TunSweepSummary>;
 } = {}) {
   const events: TunGatewayEvent[] = [];
   const dropped: string[] = [];
@@ -77,6 +84,7 @@ function setup(overrides: {
   };
   const runtime: TunGatewayRuntime = {
     verifyRelay: overrides.verify ?? (async () => '206.71.158.29'),
+    sweepRouteClaims: overrides.sweep ?? (async () => CLEAN_SWEEP),
   };
   return { handle: new TunGatewayHandle(opts, runtime), events, dropped, arm };
 }
@@ -116,6 +124,60 @@ describe('TunGatewayHandle', () => {
     expect(h.startGateway).not.toHaveBeenCalled();
     expect(handle.status().tunBlockedBy).toBe('core');
     expect(handle.status().tunError).toMatch(/install it on the sing-box tab/);
+  });
+
+  it('refuses to put a device on top of a stranded route, naming the reason and the remedy', async () => {
+    const reason =
+      'gateway pid 42 is running but its command line cannot be verified from here — run the app as administrator to release the route';
+    const { handle, events } = setup({
+      sweep: async () => ({ reaped: 0, litter: 0, alive: 0, refused: 1, refusals: [{ dir: 'C:/tmp/netpulse-tun-gw-x', reason }] }),
+    });
+
+    await expect(handle.start()).resolves.toBe(false);
+
+    // Nothing was created over the stranded route, and the refusal is its own
+    // cause — not the generic "needs administrator rights" one.
+    expect(h.startGateway).not.toHaveBeenCalled();
+    const status = handle.status();
+    expect(status.tun).toBeNull();
+    expect(status.tunBlockedBy).toBe('stranded-route');
+    // The consequence is the caller's to state: the sweep reports what it
+    // found, the handle says the device was not put on top of it.
+    expect(status.tunError).toContain('TUN was not started');
+    expect(status.tunError).toContain('cannot be verified');
+    // The action comes from the privilege matrix's own remedy; a test process
+    // that already runs elevated has no remedy to offer (the route would have
+    // been released, not refused).
+    const remedy = tunGatewayRemedy();
+    if (remedy) expect(status.tunError).toContain(remedy);
+    expect(events.map((e) => e.kind)).toEqual(['requested', 'degraded']);
+    expect(events.at(-1)).toMatchObject({ kind: 'degraded', blockedBy: 'stranded-route' });
+  });
+
+  it('runs the pre-flight on every manual start — the retry that releases the route when it can', async () => {
+    const sweep = vi.fn(async () => ({ reaped: 1, litter: 0, alive: 0, refused: 0, refusals: [] }));
+    const { handle } = setup({ sweep });
+
+    // A reap is not a blocker: the route is released, then the device starts.
+    await expect(handle.start()).resolves.toBe(true);
+    await handle.stop();
+    await expect(handle.start()).resolves.toBe(true);
+
+    expect(sweep).toHaveBeenCalledTimes(2);
+    expect(h.startGateway).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-sweep on a watchdog re-arm (boot and manual starts covered it)', async () => {
+    const sweep = vi.fn(async () => CLEAN_SWEEP);
+    const { handle } = setup({ sweep });
+    await handle.start();
+    expect(sweep).toHaveBeenCalledTimes(1);
+
+    h.devices[0]!.fireClose(9);
+    await vi.waitFor(() => expect(h.devices).toHaveLength(2));
+
+    expect(h.startGateway).toHaveBeenCalledTimes(2);
+    expect(sweep).toHaveBeenCalledTimes(1);
   });
 
   it('reports nothing to front as `relay` instead of starting a device blindly', async () => {

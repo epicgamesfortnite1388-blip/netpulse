@@ -22,6 +22,7 @@ import { reservePort, spawnCoreProcess, startupReason } from './coreProcess';
 
 import type { CoreProcess } from './coreProcess';
 import { isProcessElevated } from '../util/privileges';
+import { TUN_GW_DIR_PREFIX, writeTunClaim } from './tunClaim';
 
 import { bypassIsEmpty, type BypassRuleSet, type ParsedNodeConfig, type ProxyEngineId } from '@netpulse/shared';
 
@@ -332,16 +333,31 @@ export function buildXrayOutbound(config: ParsedNodeConfig, secret: string | nul
 }
 
 /**
+ * The private CIDRs xray's `geoip:private` would have matched. The rules emit
+ * them EXPLICITLY because `geoip:private` needs a geoip.dat asset beside the
+ * xray binary — and the app installs none, so every xray start with a LAN
+ * bypass rule died instantly with exit 23 (`failed to load GeoIP: private`,
+ * observed live). Plain CIDR rules need no asset file; sing-box's equivalent
+ * (`ip_is_private`) is built-in and never had the dependency.
+ */
+export const XRAY_PRIVATE_CIDRS = [
+  '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16',
+  '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15',
+  '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/3', '::1/128', 'fc00::/7', 'fe80::/10',
+] as const;
+
+/**
  * Xray/v2ray routing rules for a bypass set. Xray matches `domain:example.com`
  * against the name AND every subdomain, which is exactly the suffix semantics
- * the settings UI describes; `geoip:private` covers loopback/RFC1918/ULA.
+ * the settings UI describes; the LAN rule lists the private CIDRs explicitly
+ * (see XRAY_PRIVATE_CIDRS for why `geoip:private` is not used).
  * Exported so the rule shape is unit-tested directly (it is easy to get subtly
  * wrong and a wrong rule silently routes the wrong traffic).
  */
 export function buildXrayRoutingRules(rs: BypassRuleSet): Record<string, unknown>[] {
   const domain = rs.domains.map((d) => `domain:${d}`);
   const ip = [...rs.ips];
-  if (rs.lan) ip.push('geoip:private');
+  if (rs.lan) ip.push(...XRAY_PRIVATE_CIDRS);
   const rules: Record<string, unknown>[] = [];
   if (domain.length > 0 || ip.length > 0 || rs.ports.length > 0) {
     const rule: Record<string, unknown> = { type: 'field', outboundTag: 'direct' };
@@ -908,9 +924,14 @@ export async function startTunGateway(
   excludeAddresses: string[] = [],
 ): Promise<{ ok: true; run: CoreRun; gatewayPort: number } | { ok: false; error: string }> {
   const gatewayPort = await reservePort();
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netpulse-tun-gw-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), TUN_GW_DIR_PREFIX));
   const cfgPath = path.join(tmpDir, 'gateway.json');
   fs.writeFileSync(cfgPath, JSON.stringify(buildTunGatewayConfig(upstreamPort, gatewayPort, { bypass, upstream, excludeAddresses })));
+  // Crash record written BEFORE the spawn: the wintun device — and with it the
+  // default route — exists the moment the process starts, so a force-kill
+  // during the readiness wait must already leave a claim behind. The pid is
+  // filled in below; identification never depends on it.
+  writeTunClaim(tmpDir, { gatewayPid: 0, ownerPid: process.pid, gatewayPort });
 
   // Readiness here proves the PROCESS is up (its mixed inbound answers TCP); it
   // does NOT prove the TUN device claimed the route — the tunnel service
@@ -930,6 +951,11 @@ export async function startTunGateway(
   if (!started.ok) return { ok: false, error: started.error };
 
   const { child, cleanup } = started.process;
+  // Complete the crash record with the gateway's pid. If this app dies without
+  // cleanup, the claim in the (leaked) config dir is what lets the next boot
+  // identify and reap the orphaned ELEVATED gateway — the only way to release
+  // its default route.
+  writeTunClaim(tmpDir, { gatewayPid: child.pid ?? 0, ownerPid: process.pid, gatewayPort });
   return {
     ok: true,
     run: {

@@ -7,6 +7,7 @@ import {
   buildSingboxRouteRules,
   buildXrayConfig,
   buildXrayRoutingRules,
+  XRAY_PRIVATE_CIDRS,
 } from '../src/services/proxyCores';
 import { ProxyTunnelService } from '../src/services/proxyTunnel';
 
@@ -64,13 +65,15 @@ describe('xray split-tunnel routing', () => {
     // `domain:` matches the name AND its subdomains in xray — the semantics
     // the settings UI promises.
     expect(rule['domain']).toEqual(['domain:bank.example.com', 'domain:stream.example']);
-    expect(rule['ip']).toEqual(['10.0.0.0/8', 'geoip:private']);
+    // Explicit private CIDRs — geoip:private would need geoip.dat beside the
+    // exe, which the app never ships (observed live: xray exit 23).
+    expect(rule['ip']).toEqual(['10.0.0.0/8', ...XRAY_PRIVATE_CIDRS]);
     expect(rule['port']).toBe('443');
   });
 
   it('LAN-only bypass emits a private-range rule and nothing else', () => {
     const lanOnly = buildXrayRoutingRules({ domains: [], ips: [], ports: [], lan: true });
-    expect(lanOnly).toEqual([{ type: 'field', outboundTag: 'direct', ip: ['geoip:private'] }]);
+    expect(lanOnly).toEqual([{ type: 'field', outboundTag: 'direct', ip: [...XRAY_PRIVATE_CIDRS] }]);
     expect(buildXrayRoutingRules({ domains: [], ips: [], ports: [], lan: false })).toEqual([]);
   });
 });
