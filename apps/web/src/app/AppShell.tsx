@@ -4,6 +4,7 @@ import {
   Activity,
   ChevronDown,
   Cloud,
+  CloudCog,
   Cpu,
   Download,
   Flag,
@@ -29,6 +30,8 @@ import {
 import { NavLink, Outlet, useLocation } from 'react-router';
 
 import { CommandPalette } from '@/components/CommandPalette';
+import { startSyncLoop, stopSyncLoop } from '@/lib/cloud/syncEngine';
+import { useCloudSession } from '@/lib/cloud/useCloudSession';
 import { useStartupHealth } from '@/lib/useStartupHealth';
 import { DemoBadge } from '@/components/ui/Badge';
 import { StatusDot } from '@/components/ui/StatusDot';
@@ -124,7 +127,10 @@ const NAV: NavGroup[] = [
   },
   {
     heading: 'System',
-    items: [{ to: '/settings', label: 'Settings', icon: <Settings size={16} /> }],
+    items: [
+      { to: '/account', label: 'Account', icon: <CloudCog size={16} /> },
+      { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
+    ],
   },
 ];
 
@@ -308,6 +314,15 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const location = useLocation();
+
+  // Cloud session hydration + the periodic sync loop. Both are no-ops when
+  // signed out; the VPN never waits on either.
+  const initSession = useCloudSession((s) => s.init);
+  useEffect(() => {
+    initSession();
+    startSyncLoop();
+    return stopSyncLoop;
+  }, [initSession]);
 
   useEffect(() => {
     setMobileOpen(false);

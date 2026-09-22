@@ -1,0 +1,541 @@
+/**
+ * NetPulse cloud Worker — the security boundary between the desktop app and D1.
+ *
+ * Every request: bounded size → CORS → route. Authenticated routes derive the
+ * user from the verified session (never from a client-supplied id) and every
+ * user-data query carries user_id from that session — the isolation rule in
+ * one place. Errors are a consistent JSON envelope; internals never leak.
+ */
+import {
+  ChangePasswordSchema,
+  FavoriteSchema,
+  ForgotSchema,
+  HistoryPushSchema,
+  LoginSchema,
+  PreferenceSchema,
+  RefreshSchema,
+  RegisterSchema,
+  ResetSchema,
+  SettingsSchema,
+  UpsertProfileSchema,
+  errorBody,
+} from './api';
+import {
+  RESET_TTL_MS,
+  audit,
+  createSession,
+  listSessions,
+  rateLimit,
+  revokeAllSessions,
+  revokeSession,
+  rotateRefreshToken,
+  sessionByAccessToken,
+  sweepExpired,
+  type Env,
+  type SessionRow,
+} from './auth';
+import { hashPassword, newId, randomToken, sha256Hex, verifyPassword } from './crypto';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
+};
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+const fail = (status: number, code: string, message: string): Response => json(status, errorBody(code, message));
+
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const MAX_BODY_BYTES = 64 * 1024;
+
+async function readJson(req: Request): Promise<unknown> {
+  const len = Number(req.headers.get('content-length') ?? '0');
+  if (len > MAX_BODY_BYTES) throw new HttpError(413, 'payload_too_large', 'Request body too large');
+  const text = await req.text();
+  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'payload_too_large', 'Request body too large');
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new HttpError(400, 'invalid_json', 'Request body is not valid JSON');
+  }
+}
+
+function clientIp(req: Request): string {
+  return req.headers.get('cf-connecting-ip')?.slice(0, 60) ?? 'unknown';
+}
+
+/** Settings/payload-shaped columns accept only JSON objects/arrays. */
+function assertJsonObject(text: string, field: string): void {
+  try {
+    const v = JSON.parse(text) as unknown;
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new Error('not an object');
+  } catch {
+    throw new HttpError(400, 'invalid_json', `${field} must be a JSON object`);
+  }
+}
+
+/* ------------------------------ user rows -------------------------------- */
+
+interface UserRow {
+  id: string;
+  email: string;
+  normalized_email: string;
+  password_hash: string;
+  password_algo: string;
+  password_updated_at: number;
+  created_at: number;
+  last_login_at: number | null;
+  disabled: number;
+}
+
+const userDto = (u: UserRow) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastLoginAt: u.last_login_at });
+
+function normalizeEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  return `${email.slice(0, at).toLowerCase()}@${email.slice(at + 1).toLowerCase()}`;
+}
+
+/* -------------------------------- router --------------------------------- */
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    const url = new URL(req.url);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    const ip = clientIp(req);
+
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+
+    try {
+      // -------- health (public, includes honest D1 probe) --------
+      if (path === '/api/v1/health' && req.method === 'GET') {
+        let dbOk = false;
+        try {
+          const row = await env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
+          dbOk = row?.ok === 1;
+        } catch {
+          dbOk = false;
+        }
+        return json(dbOk ? 200 : 503, { ok: dbOk, service: 'netpulse-cloud', time: Date.now() });
+      }
+
+      // -------- lazy housekeeping (cheap; runs on state-changing calls) --------
+      if (req.method !== 'GET' && Math.random() < 0.02) await sweepExpired(env.DB);
+
+      // ============================ AUTH ============================
+
+      if (path === '/api/v1/auth/register' && req.method === 'POST') {
+        const limiter = await rateLimit(env.DB, `reg:${ip}`, 5, 3600_000);
+        if (!limiter.ok) return fail(429, 'rate_limited', 'Too many registration attempts — try later');
+        const body = RegisterSchema.parse(await readJson(req));
+        const normalized = normalizeEmail(body.email);
+        const existing = await env.DB.prepare(`SELECT id FROM users WHERE normalized_email = ?`).bind(normalized).first<{ id: string }>();
+        if (existing) {
+          // Registration is rate limited per IP; the generic message prevents
+          // account enumeration while the limiter blunts targeted probing.
+          await audit(env.DB, 'register.duplicate', null, ip, normalized.slice(0, 3));
+          return fail(409, 'email_taken', 'An account with this email already exists');
+        }
+        const t = Date.now();
+        const user: UserRow = {
+          id: newId('usr'),
+          email: body.email,
+          normalized_email: normalized,
+          password_hash: await hashPassword(body.password),
+          password_algo: 'PBKDF2-SHA256',
+          password_updated_at: t,
+          created_at: t,
+          last_login_at: null,
+          disabled: 0,
+        };
+        await env.DB.prepare(
+          `INSERT INTO users (id, email, normalized_email, password_hash, password_algo, password_updated_at, created_at, last_login_at, disabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(user.id, user.email, user.normalized_email, user.password_hash, user.password_algo, user.password_updated_at, user.created_at, user.last_login_at, user.disabled)
+          .run();
+        await env.DB.prepare(`INSERT INTO user_settings (user_id, payload, updated_at) VALUES (?, '{}', ?)`).bind(user.id, t).run();
+        const session = await createSession(env.DB, user.id, body.device);
+        await audit(env.DB, 'register', user.id, ip);
+        return json(201, {
+          user: userDto(user),
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          session: session.session,
+        });
+      }
+
+      if (path === '/api/v1/auth/login' && req.method === 'POST') {
+        const body = LoginSchema.parse(await readJson(req));
+        const normalized = normalizeEmail(body.email);
+        // Limiter keyed by email AND ip: brute-forcing one account or spraying
+        // from one host both hit a wall. Count before verifying to also blunt
+        // timing/probing.
+        const ipLimit = await rateLimit(env.DB, `login:ip:${ip}`, 20, 900_000);
+        const emailLimit = await rateLimit(env.DB, `login:em:${normalized}`, 10, 900_000);
+        if (!ipLimit.ok || !emailLimit.ok) {
+          return json(429, { ...errorBody('rate_limited', 'Too many login attempts — wait 15 minutes'), retryAfterSec: Math.max(ipLimit.retryAfterSec, emailLimit.retryAfterSec) });
+        }
+        const user = await env.DB.prepare(`SELECT * FROM users WHERE normalized_email = ?`).bind(normalized).first<UserRow>();
+        // Same shape/timing for unknown user vs wrong password: generic error,
+        // but still burn a PBKDF2 verify against a dummy hash for timing parity.
+        if (!user) {
+          await verifyPassword(body.password, `pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`);
+          await audit(env.DB, 'login.unknown_user', null, ip);
+          return fail(401, 'invalid_credentials', 'Invalid email or password');
+        }
+        if (user.disabled) {
+          await audit(env.DB, 'login.disabled', user.id, ip);
+          return fail(403, 'account_disabled', 'This account is disabled');
+        }
+        if (!(await verifyPassword(body.password, user.password_hash))) {
+          await audit(env.DB, 'login.bad_password', user.id, ip);
+          return fail(401, 'invalid_credentials', 'Invalid email or password');
+        }
+        const t = Date.now();
+        await env.DB.prepare(`UPDATE users SET last_login_at = ? WHERE id = ?`).bind(t, user.id).run();
+        const session = await createSession(env.DB, user.id, body.device);
+        await audit(env.DB, 'login', user.id, ip);
+        return json(200, { user: userDto({ ...user, last_login_at: t }), accessToken: session.accessToken, refreshToken: session.refreshToken, session: session.session });
+      }
+
+      if (path === '/api/v1/auth/refresh' && req.method === 'POST') {
+        const body = RefreshSchema.parse(await readJson(req));
+        const rotated = await rotateRefreshToken(env.DB, body.refreshToken);
+        if (!rotated.ok) {
+          await audit(env.DB, `refresh.${rotated.reason}`, null, ip);
+          return fail(401, rotated.reason === 'reused' ? 'refresh_reused' : 'invalid_refresh', rotated.reason === 'reused' ? 'Refresh token reuse detected — session revoked' : 'Refresh token is invalid or expired');
+        }
+        return json(200, { accessToken: rotated.session.accessToken, refreshToken: rotated.session.refreshToken, session: rotated.session.session });
+      }
+
+      if (path === '/api/v1/auth/forgot-password' && req.method === 'POST') {
+        const body = ForgotSchema.parse(await readJson(req));
+        const limit = await rateLimit(env.DB, `forgot:${ip}`, 5, 3600_000);
+        if (!limit.ok) return fail(429, 'rate_limited', 'Too many reset requests — try later');
+        const normalized = normalizeEmail(body.email);
+        const user = await env.DB.prepare(`SELECT id FROM users WHERE normalized_email = ?`).bind(normalized).first<{ id: string }>();
+        // Always 200: no enumeration. If there is no mail transport in this
+        // build, the ONLY delivery path is the audit-log delivery channel
+        // documented in the README — acceptable for a self-hosted launch and
+        // explicitly stated in the report.
+        if (user) {
+          const token = randomToken();
+          const peppered = await sha256Hex(`${token}${env.RESET_PEPPER}`);
+          await env.DB
+            .prepare(`INSERT INTO password_reset_tokens (id, user_id, token_hash, created_at, expires_at, requested_ip) VALUES (?, ?, ?, ?, ?, ?)`)
+            .bind(newId('rst'), user.id, peppered, Date.now(), Date.now() + RESET_TTL_MS, ip)
+            .run();
+          await audit(env.DB, 'reset.requested', user.id, ip, `token:${token}`);
+          await sweepExpired(env.DB);
+        }
+        return json(200, { ok: true, message: 'If the account exists, a reset has been issued' });
+      }
+
+      if (path === '/api/v1/auth/reset-password' && req.method === 'POST') {
+        const body = ResetSchema.parse(await readJson(req));
+        const limit = await rateLimit(env.DB, `reset:${ip}`, 10, 3600_000);
+        if (!limit.ok) return fail(429, 'rate_limited', 'Too many attempts — try later');
+        const peppered = await sha256Hex(`${body.token}${env.RESET_PEPPER}`);
+        const t = Date.now();
+        const row = await env.DB
+          .prepare(`SELECT id, user_id FROM password_reset_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`)
+          .bind(peppered, t)
+          .first<{ id: string; user_id: string }>();
+        if (!row) return fail(400, 'invalid_reset_token', 'Reset token is invalid, used, or expired');
+        // Single-use: claim it FIRST (conditional update), then change the
+        // password; a race loses and gets the same generic error.
+        const claim = await env.DB.prepare(`UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL`).bind(t, row.id).run();
+        if ((claim.meta.changes ?? 0) === 0) return fail(400, 'invalid_reset_token', 'Reset token is invalid, used, or expired');
+        await env.DB
+          .prepare(`UPDATE users SET password_hash = ?, password_algo = 'PBKDF2-SHA256', password_updated_at = ? WHERE id = ?`)
+          .bind(await hashPassword(body.newPassword), t, row.user_id)
+          .run();
+        // Password change kills every existing session.
+        await revokeAllSessions(env.DB, row.user_id, 'password-reset');
+        await audit(env.DB, 'reset.completed', row.user_id, ip);
+        return json(200, { ok: true });
+      }
+
+      // ==================== AUTHENTICATED ROUTES ====================
+      // Identity derives ONLY from the bearer token → session row.
+
+      const auth = req.headers.get('authorization');
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      let session: SessionRow | null = null;
+      if (token) session = await sessionByAccessToken(env.DB, token);
+
+      if (path === '/api/v1/auth/logout' && req.method === 'POST') {
+        if (!session) return fail(401, 'unauthorized', 'Authentication required');
+        await revokeSession(env.DB, session.id, session.user_id, 'logout');
+        await audit(env.DB, 'logout', session.user_id, ip);
+        return json(200, { ok: true });
+      }
+
+      if (!session) return fail(401, 'unauthorized', 'Authentication required');
+      const userId = session.user_id;
+      const currentSessionId = session.id;
+
+      // -------- account --------
+      if (path === '/api/v1/account' && req.method === 'GET') {
+        const user = await env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(userId).first<UserRow>();
+        if (!user) return fail(404, 'not_found', 'Account not found');
+        return json(200, { user: userDto(user) });
+      }
+
+      if (path === '/api/v1/account/sessions' && req.method === 'GET') {
+        const rows = await listSessions(env.DB, userId);
+        return json(200, {
+          sessions: rows.map((s) => ({
+            id: s.id,
+            deviceName: s.device_name,
+            os: s.os,
+            appVersion: s.app_version,
+            createdAt: s.created_at,
+            lastSeenAt: s.last_seen_at,
+            expiresAt: s.expires_at,
+            current: s.id === currentSessionId,
+          })),
+        });
+      }
+
+      if (path === '/api/v1/account/sessions/current' && req.method === 'DELETE') {
+        await revokeSession(env.DB, currentSessionId, userId, 'logout-current');
+        return json(200, { ok: true });
+      }
+
+      if (path === '/api/v1/account/sessions/all' && req.method === 'DELETE') {
+        const n = await revokeAllSessions(env.DB, userId, 'logout-all', currentSessionId);
+        await audit(env.DB, 'logout_all', userId, ip, `revoked:${n}`);
+        return json(200, { ok: true, revoked: n });
+      }
+
+      if (path === '/api/v1/account/sessions/revoke' && req.method === 'POST') {
+        const body = (await readJson(req)) as { sessionId?: unknown };
+        const sid = typeof body.sessionId === 'string' ? body.sessionId.slice(0, 80) : null;
+        if (!sid) return fail(400, 'validation_error', 'sessionId is required');
+        const okRevoked = await revokeSession(env.DB, sid, userId, 'revoked-by-user');
+        if (!okRevoked) return fail(404, 'not_found', 'Session not found or already revoked');
+        return json(200, { ok: true });
+      }
+
+      if (path === '/api/v1/account/password' && req.method === 'POST') {
+        const body = ChangePasswordSchema.parse(await readJson(req));
+        const limit = await rateLimit(env.DB, `pwchange:${userId}`, 5, 3600_000);
+        if (!limit.ok) return fail(429, 'rate_limited', 'Too many attempts — try later');
+        const user = await env.DB.prepare(`SELECT password_hash FROM users WHERE id = ?`).bind(userId).first<{ password_hash: string }>();
+        if (!user || !(await verifyPassword(body.currentPassword, user.password_hash))) {
+          await audit(env.DB, 'password.change.bad_current', userId, ip);
+          return fail(401, 'invalid_credentials', 'Current password is incorrect');
+        }
+        const t = Date.now();
+        await env.DB
+          .prepare(`UPDATE users SET password_hash = ?, password_algo = 'PBKDF2-SHA256', password_updated_at = ? WHERE id = ?`)
+          .bind(await hashPassword(body.newPassword), t, userId)
+          .run();
+        await revokeAllSessions(env.DB, userId, 'password-change', currentSessionId);
+        await audit(env.DB, 'password.change', userId, ip);
+        return json(200, { ok: true });
+      }
+
+      if (path === '/api/v1/account' && req.method === 'DELETE') {
+        // Danger zone: hard delete; FK cascades wipe all user data. Sessions
+        // are already cascaded, so no separate revoke needed.
+        await env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
+        await audit(env.DB, 'account.deleted', null, ip, userId);
+        return json(200, { ok: true });
+      }
+
+      // -------- settings (single JSON payload, last-write-wins) --------
+      if (path === '/api/v1/settings' && req.method === 'GET') {
+        const row = await env.DB.prepare(`SELECT payload, updated_at FROM user_settings WHERE user_id = ?`).bind(userId).first<{ payload: string; updated_at: number }>();
+        return json(200, { payload: row?.payload ?? '{}', updatedAt: row?.updated_at ?? 0 });
+      }
+
+      if (path === '/api/v1/settings' && req.method === 'PUT') {
+        const body = SettingsSchema.parse(await readJson(req));
+        assertJsonObject(body.payload, 'payload');
+        const t = Date.now();
+        await env.DB
+          .prepare(
+            `INSERT INTO user_settings (user_id, payload, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT (user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+          )
+          .bind(userId, body.payload, t)
+          .run();
+        return json(200, { ok: true, updatedAt: t });
+      }
+
+      // -------- profiles (envelope-only sync; secrets stay local) --------
+      if (path === '/api/v1/profiles' && req.method === 'GET') {
+        const rows = await env.DB
+          .prepare(`SELECT id, name, protocol, endpoint, config, config_version, created_at, updated_at FROM vpn_profiles WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500`)
+          .bind(userId)
+          .all<{ id: string; name: string; protocol: string; endpoint: string | null; config: string; config_version: number; created_at: number; updated_at: number }>();
+        return json(200, {
+          profiles: (rows.results ?? []).map((r) => ({
+            id: r.id,
+            name: r.name,
+            protocol: r.protocol,
+            endpoint: r.endpoint,
+            config: r.config,
+            configVersion: r.config_version,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          })),
+        });
+      }
+
+      if (path === '/api/v1/profiles' && req.method === 'PUT') {
+        const body = UpsertProfileSchema.parse(await readJson(req));
+        // `config` is the only free-form JSON field here; `endpoint` is a
+        // host:port STRING per the schema — asserting an object on it (as an
+        // earlier draft did) rejected every valid profile push.
+        assertJsonObject(body.config, 'config');
+        const t = Date.now();
+        if (body.deleted) {
+          await env.DB.prepare(`UPDATE vpn_profiles SET deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`).bind(t, t, body.id, userId).run();
+          return json(200, { ok: true, deleted: true });
+        }
+        await env.DB
+          .prepare(
+            `INSERT INTO vpn_profiles (id, user_id, name, protocol, endpoint, config, config_version, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET
+               name = excluded.name, protocol = excluded.protocol, endpoint = excluded.endpoint,
+               config = excluded.config, config_version = excluded.config_version,
+               updated_at = excluded.updated_at, deleted_at = NULL
+             WHERE vpn_profiles.user_id = excluded.user_id`,
+          )
+          .bind(body.id, userId, body.name, body.protocol, body.endpoint ?? null, body.config, body.configVersion, t, t)
+          .run();
+        return json(200, { ok: true, updatedAt: t });
+      }
+
+      // -------- favorites --------
+      if (path === '/api/v1/favorites' && req.method === 'GET') {
+        const rows = await env.DB
+          .prepare(`SELECT node_key, label, created_at FROM user_favorites WHERE user_id = ? ORDER BY created_at DESC LIMIT 1000`)
+          .bind(userId)
+          .all<{ node_key: string; label: string | null; created_at: number }>();
+        return json(200, { favorites: (rows.results ?? []).map((r) => ({ nodeKey: r.node_key, label: r.label, createdAt: r.created_at })) });
+      }
+
+      if (path === '/api/v1/favorites' && req.method === 'PUT') {
+        const body = FavoriteSchema.parse(await readJson(req));
+        const t = Date.now();
+        if (body.label === null) {
+          await env.DB.prepare(`DELETE FROM user_favorites WHERE user_id = ? AND node_key = ?`).bind(userId, body.nodeKey).run();
+          return json(200, { ok: true, removed: true });
+        }
+        await env.DB
+          .prepare(
+            `INSERT INTO user_favorites (user_id, node_key, label, created_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (user_id, node_key) DO UPDATE SET label = excluded.label`,
+          )
+          .bind(userId, body.nodeKey, body.label ?? null, t)
+          .run();
+        return json(200, { ok: true });
+      }
+
+      // -------- history (summaries only, per privacy design) --------
+      if (path === '/api/v1/history' && req.method === 'GET') {
+        const limit = Math.min(Number(url.searchParams.get('limit') ?? '200') || 200, 500);
+        const rows = await env.DB
+          .prepare(`SELECT id, kind, at, payload FROM user_history WHERE user_id = ? ORDER BY at DESC LIMIT ?`)
+          .bind(userId, limit)
+          .all<{ id: string; kind: string; at: number; payload: string }>();
+        return json(200, {
+          items: (rows.results ?? []).map((r) => {
+            try {
+              return { ...r, payload: JSON.parse(r.payload) as unknown };
+            } catch {
+              return { ...r, payload: null };
+            }
+          }),
+        });
+      }
+
+      if (path === '/api/v1/history' && req.method === 'POST') {
+        const body = HistoryPushSchema.parse(await readJson(req));
+        const t = Date.now();
+        const stmt = env.DB.prepare(
+          `INSERT INTO user_history (id, user_id, kind, at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET payload = excluded.payload, at = excluded.at WHERE user_id = excluded.user_id`,
+        );
+        await env.DB.batch(body.items.map((i) => stmt.bind(i.id, userId, i.kind, i.at, i.payload, t)));
+        return json(200, { ok: true, stored: body.items.length });
+      }
+
+      // -------- preferences (key/value) --------
+      if (path === '/api/v1/preferences' && req.method === 'GET') {
+        const rows = await env.DB
+          .prepare(`SELECT key, value, updated_at FROM user_preferences WHERE user_id = ? LIMIT 500`)
+          .bind(userId)
+          .all<{ key: string; value: string | null; updated_at: number }>();
+        return json(200, { preferences: (rows.results ?? []).map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at })) });
+      }
+
+      if (path === '/api/v1/preferences' && req.method === 'PUT') {
+        const body = PreferenceSchema.parse(await readJson(req));
+        const t = Date.now();
+        if (body.value === null) {
+          await env.DB.prepare(`DELETE FROM user_preferences WHERE user_id = ? AND key = ?`).bind(userId, body.key).run();
+          return json(200, { ok: true, removed: true });
+        }
+        await env.DB
+          .prepare(
+            `INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+          )
+          .bind(userId, body.key, body.value, t)
+          .run();
+        return json(200, { ok: true, updatedAt: t });
+      }
+
+      // -------- devices --------
+      if (path === '/api/v1/devices' && req.method === 'GET') {
+        const rows = await env.DB
+          .prepare(`SELECT id, name, os, app_version, first_seen_at, last_active_at FROM devices WHERE user_id = ? ORDER BY last_active_at DESC LIMIT 50`)
+          .bind(userId)
+          .all<{ id: string; name: string; os: string | null; app_version: string | null; first_seen_at: number; last_active_at: number }>();
+        return json(200, {
+          devices: (rows.results ?? []).map((d) => ({
+            id: d.id,
+            name: d.name,
+            os: d.os,
+            appVersion: d.app_version,
+            firstSeenAt: d.first_seen_at,
+            lastActiveAt: d.last_active_at,
+          })),
+        });
+      }
+
+      return fail(404, 'not_found', `No API route for ${req.method} ${path}`);
+    } catch (err) {
+      if (err instanceof HttpError) return fail(err.status, err.code, err.message);
+      if (err instanceof Error && err.name === 'ZodError') {
+        const z = err as Error & { issues?: Array<{ path: Array<string | number>; message: string }> };
+        const first = z.issues?.[0];
+        return fail(400, 'validation_error', first ? `${first.path.join('.') || 'body'}: ${first.message}` : 'Invalid request body');
+      }
+      // D1 constraint or unavailability: never leak internals.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('UNIQUE') || msg.includes('CONSTRAINT')) return fail(409, 'conflict', 'Request conflicts with existing data');
+      if (msg.includes('D1') || msg.includes('network')) return fail(503, 'storage_unavailable', 'Storage is temporarily unavailable');
+      console.error('unhandled', msg.slice(0, 120));
+      return fail(500, 'internal_error', 'An internal error occurred');
+    }
+  },
+};

@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 
 import { AppShell } from './AppShell';
+import AccountPage from '@/features/account/AccountPage';
 import SystemHealthPage from '@/features/health/SystemHealthPage';
 import CloudflarePage from '@/features/cloudflare/CloudflarePage';
 import DashboardPage from '@/features/dashboard/DashboardPage';
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
       { path: 'optimizer', element: <OptimizerPage /> },
       { path: 'history', element: <HistoryPage /> },
       { path: 'events', element: <EventsPage /> },
+      { path: 'account', element: <AccountPage /> },
       { path: 'engines', element: <EngineManagerPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'health', element: <SystemHealthPage /> },

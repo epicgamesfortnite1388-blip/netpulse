@@ -5,7 +5,8 @@
   "description": "VPN & Network Intelligence Platform",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "cloud/*"
   ],
   "engines": {
     "node": ">=22"
