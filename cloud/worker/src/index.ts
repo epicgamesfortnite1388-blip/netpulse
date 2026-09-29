@@ -51,6 +51,7 @@ import {
   syncNetpulseEntitlements,
   handleNetpulseInbox,
 } from './netpulse-integration';
+import { opsPageHtml, handleNetpulseOpsApi } from './ops-page';
 
 // Desktop app and Worker are same-origin; CORS is only needed for browser-based
 // attacks that misuse a stolen bearer token. For the authenticated API (bearer
@@ -163,6 +164,25 @@ export default {
         }
         return json(dbOk ? 200 : 503, { ok: dbOk, service: 'netpulse-cloud', time: Date.now(), mail: mailConfigured(env) });
       }
+
+      // -------- operator status page (public shell; data is token-gated) --------
+      if (path === '/ops' && (req.method === 'GET' || req.method === 'HEAD')) {
+        return new Response(opsPageHtml(), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer',
+            'X-Content-Type-Options': 'nosniff',
+            // No external assets; the page's only fetch is same-origin.
+            'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+          },
+        });
+      }
+
+      // Token-gated ops snapshot (null outside its path -> falls through).
+      const opsApiResponse = await handleNetpulseOpsApi(req, env);
+      if (opsApiResponse) return opsApiResponse;
 
       // -------- lazy housekeeping (cheap; runs on state-changing calls) --------
       if (req.method !== 'GET' && Math.random() < 0.02) await sweepExpired(env.DB);

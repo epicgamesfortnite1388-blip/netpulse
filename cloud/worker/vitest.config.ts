@@ -34,6 +34,7 @@ export default defineWorkersConfig({
             RESET_PEPPER: 'test-reset-pepper',
             NETPULSE_SERVICE_SECRET: 'test-np-service-secret',
             TELEGRAM_BOT_BASE_URL: 'https://bot.test',
+            OPS_TOKEN: 'test-ops-token-0123456789abcdef',
           },
         },
       },

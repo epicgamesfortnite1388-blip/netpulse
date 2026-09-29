@@ -86,6 +86,21 @@ npx wrangler d1 migrations apply netpulse-cloud --remote   # applies 0003
   `config_updated_at`, so out-of-order deliveries never regress state.
 - Full contract: `docs/netpulse-integration.md` in the Abystral repo.
 
+## Operator status page (`/ops`)
+
+```bash
+npx wrangler secret put OPS_TOKEN   # >= 16 chars; not committed
+```
+
+`GET /ops` serves a public, no-data HTML shell (locked-down CSP, same trust
+split as `/reset`). The operator pastes the token; the page calls
+`GET /api/v1/ops/netpulse` (`Authorization: Bearer <token>`), which is
+fail-closed when `OPS_TOKEN` is unset, and shows:
+
+- link counts (active / pending / unlinked) + last entitlement pull-sync age
+- inbox health: `np_events` processed-status breakdown + the 10 newest events
+- outbound-call health: 24h ok-rate, per-action totals/failures, recent errors
+
 ## Tests
 
 ```bash

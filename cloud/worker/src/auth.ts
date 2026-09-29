@@ -25,6 +25,8 @@ export interface Env {
   NETPULSE_SERVICE_SECRET?: string;
   /** Bot worker's public origin for outbound signed calls. Absent = integration outbound disabled. */
   TELEGRAM_BOT_BASE_URL?: string;
+  /** Operator status page token (GET /ops + /api/v1/ops/netpulse). Never committed. */
+  OPS_TOKEN?: string;
   /** The deployment origin used to validate reset link hostnames, preventing
    * attacker-controlled reset URLs. Set in wrangler.toml as a string binding. */
   EXPECTED_ORIGIN?: string;
