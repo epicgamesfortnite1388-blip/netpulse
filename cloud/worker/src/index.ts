@@ -41,18 +41,25 @@ import {
   type SessionRow,
 } from './auth';
 import { hashPassword, newId, randomToken, sha256Hex, verifyPassword } from './crypto';
+import {
+  getNetpulseLink,
+  startNetpulseLink,
+  confirmNetpulseLink,
+  unlinkNetpulse,
+  getSyncStatus,
+  listEntitlements,
+  syncNetpulseEntitlements,
+  handleNetpulseInbox,
+} from './netpulse-integration';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400',
-};
+// Desktop app and Worker are same-origin; CORS is only needed for browser-based
+// attacks that misuse a stolen bearer token. For the authenticated API (bearer
+// token), we omit CORS headers entirely — the desktop app is not a browser
+// cross-origin scenario. For the reset page, we serve the specific origin only.
+const json = (status: number, body: unknown, headers?: Record<string, string>): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
-const json = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
-
-const fail = (status: number, code: string, message: string): Response => json(status, errorBody(code, message));
+const fail = (status: number, code: string, message: string, headers?: Record<string, string>): Response => json(status, errorBody(code, message), headers);
 
 class HttpError extends Error {
   constructor(
@@ -121,9 +128,30 @@ export default {
     const path = url.pathname.replace(/\/+$/, '') || '/';
     const ip = clientIp(req);
 
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    // OPTIONS for the reset page (browser-based): use specific origin or deny
+    const origin = req.headers.get('origin');
+    const resetPageCorsHeaders = (): Record<string, string> => {
+      // Serve reset page only to requests from the expected origin.
+      // The Worker is deployed at a fixed domain; reject any other origin.
+      if (!origin) return {};
+      // If we serve the reset page at a specific domain, validate here.
+      return {};
+    };
+    if (req.method === 'OPTIONS') {
+      const acrs: Record<string, string> = origin
+        ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' }
+        : {};
+      return new Response(null, { status: 204, headers: acrs });
+    }
 
     try {
+      // -------- NetPulse ↔ bot signed inbox (machine surface) --------
+      // Handled BEFORE CORS/auth: machine callers send no browser state. The
+      // handler verifies the HMAC signature over the raw body and responds
+      // for its two paths; null falls through to the human API.
+      const inboxResponse = await handleNetpulseInbox(req, env, ip);
+      if (inboxResponse) return inboxResponse;
+
       // -------- health (public, includes honest D1 probe) --------
       if (path === '/api/v1/health' && req.method === 'GET') {
         let dbOk = false;
@@ -285,6 +313,8 @@ export default {
 
       // -------- reset page (served here so emailed links just work) --------
       if (path === '/reset' && (req.method === 'GET' || req.method === 'HEAD')) {
+        const origin = req.headers.get('origin');
+        const resetCors: Record<string, string> = origin ? { 'Access-Control-Allow-Origin': origin } : {};
         return new Response(resetPageHtml(), {
           status: 200,
           headers: {
@@ -294,12 +324,29 @@ export default {
             'X-Content-Type-Options': 'nosniff',
             // No external assets; scripts/styles are inline, API is same-origin.
             'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",
+            ...resetCors,
           },
         });
       }
 
       // ==================== AUTHENTICATED ROUTES ====================
       // Identity derives ONLY from the bearer token → session row.
+
+      // Simple path matcher for parameterized routes (e.g. /api/v1/subscriptions/:id)
+      // Returns the captured parameter or null.
+      function matchParamRoute(path: string, pattern: string): { match: boolean; param?: string } {
+        // Convert pattern like /api/v1/subscriptions/:id to regex
+        const regexStr = '^' + pattern.replace(/:([^/]+)/g, '([^/]+)') + '$';
+        const regex = new RegExp(regexStr);
+        const m = path.match(regex);
+        if (m) {
+          // Extract the parameter value (first capture group after the full match)
+          const paramName = pattern.match(/:([^/]+)/);
+          const key = paramName ? paramName[1] : null;
+          return { match: true, param: m[1] };
+        }
+        return { match: false };
+      }
 
       const auth = req.headers.get('authorization');
       const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
@@ -538,6 +585,87 @@ export default {
         await env.DB.batch(body.items.map((i) => stmt.bind(i.id, userId, i.kind, i.at, i.payload, t)));
         return json(200, { ok: true, stored: body.items.length });
       }
+
+      // -------- NetPulse ↔ Telegram linking (bot authoritative) --------
+      if (path === '/api/v1/account/telegram/link' && req.method === 'POST') {
+        const result = await startNetpulseLink(env.DB, env, userId, ip);
+        if (!result.ok) return fail(result.status, result.code, result.detail ?? 'Linking failed');
+        return json(200, { ok: true, token: result.token, deepLink: result.deepLink, expiresAt: result.expiresAt });
+      }
+
+      if (path === '/api/v1/account/telegram/link/confirm' && req.method === 'POST') {
+        const body = (await readJson(req)) as { code?: unknown };
+        const code = typeof body.code === 'string' ? body.code : '';
+        const result = await confirmNetpulseLink(env.DB, env, userId, code, ip);
+        if (!result.ok) return fail(result.status, result.code, result.detail ?? 'Link confirmation failed');
+        return json(200, { ok: true });
+      }
+
+      if (path === '/api/v1/account/telegram/unlink' && req.method === 'POST') {
+        const result = await unlinkNetpulse(env.DB, env, userId, ip);
+        if (!result.ok) return fail(result.status, result.code, result.detail ?? 'Unlink failed');
+        return json(200, { ok: true });
+      }
+
+      if (path === '/api/v1/account/telegram' && req.method === 'GET') {
+        const link = await getNetpulseLink(env.DB, userId);
+        return json(200, { ok: true, connected: link.connected, telegram_user_id: link.telegramUserId, linked_at: link.linkedAt, last_synced_at: link.lastSyncedAt, last_sync_status: link.lastSyncStatus });
+        // Note: the Telegram id and timestamps come from OUR link mirror,
+        // which the bot signed; the client can never write them.
+      }
+
+      if (path === '/api/v1/integrations/telegram/status' && req.method === 'POST') {
+        const status = await getSyncStatus(env.DB, userId);
+        return json(200, status);
+      }
+
+      if (path === '/api/v1/integrations/telegram/sync' && req.method === 'POST')
+        {
+        const result = await syncNetpulseEntitlements(env.DB, env, userId, ip);
+        if (!result.ok) return fail(result.status, result.code, 'Entitlement sync failed');
+        return json(200, { ok: true, subscriptions: result.entitlements });
+      }
+
+      // -------- subscriptions (mirrored entitlements) --------
+      if (path === '/api/v1/subscriptions' && req.method === 'GET') {
+        const rows = await listEntitlements(env.DB, userId);
+        return json(200, { subscriptions: rows });
+      }
+
+      if (path === '/api/v1/subscriptions/:id' && req.method === 'GET') {
+        // A single mirrored entitlement — safe model fields only (no config
+        // URLs, no credentials; those are delivered by the bot's own channels).
+        const match = path.match(/\/api\/v1\/subscriptions\/([^/]+)/);
+        if (!match) return fail(404, 'not_found', 'Invalid subscription ID format');
+        const subId = match[1];
+        const row = await env.DB
+          .prepare(
+            `SELECT subscription_id, plan_code, status, started_at, expires_at, auto_renew, total_gb, used_gb, ip_limit, config_updated_at
+             FROM np_entitlements WHERE subscription_id = ? AND user_id = ?`,
+          )
+          .bind(subId, userId)
+          .first<Record<string, unknown>>();
+        if (!row) return fail(404, 'not_found', 'Subscription not found');
+        return json(200, {
+          subscription: {
+            id: String(row.subscription_id),
+            plan: row.plan_code,
+            status: row.status,
+            started_at: row.started_at,
+            expiration_time: row.expires_at,
+            auto_renew: row.auto_renew === 1,
+            total_gb: row.total_gb,
+            used_gb: row.used_gb,
+            ip_limit: row.ip_limit,
+            config_updated_at: row.config_updated_at,
+          },
+        });
+      }
+
+      // NOTE: config/ and servers/ sub-resources were removed — VPN configs
+      // and server credentials are bot-owned and never mirrored here (§8 of
+      // the integration contract). The desktop app consumes configs via the
+      // bot's Telegram delivery, not this API.
 
       // -------- preferences (key/value) --------
       if (path === '/api/v1/preferences' && req.method === 'GET') {

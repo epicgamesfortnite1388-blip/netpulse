@@ -55,7 +55,9 @@ import { registerVpnRoutes } from './routes/vpn';
 import { registerTunnelRoutes } from './routes/tunnel';
 import { registerWebrtcRoutes } from './routes/webrtc';
 import { registerNodesRoutes } from './routes/nodes';
+import { UpdateFeedHistoryService } from './services/updateFeedHistory';
 import { registerUpdateFeedRoutes } from './routes/updateFeed';
+import { registerUpdateHistoryRoutes } from './routes/updateHistory';
 
 import { DiagnosticsService } from './services/diagnosticsService';
 import { DnsService } from './services/dnsService';
@@ -510,6 +512,10 @@ export async function buildApp(opts: BuildOptions = {}) {
   // warn-only by design: history must never break a connect.
   const vpnHistory = new VpnHistoryService({ events: repos.nodeEvents, gatewayMemory, log });
 
+  // Update history — what the updater did, when, and why. Best-effort writes;
+  // recording must never break the update flow it records.
+  const updateHistory = new UpdateFeedHistoryService({ events: repos.nodeEvents, log });
+
   // Source refresh scheduler — periodically re-fetches enabled public sources.
   const sourceScheduler = new SourceRefreshScheduler([], async (source) => {
     log.info({ sourceId: source.id }, 'scheduled source refresh');
@@ -543,6 +549,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     gatewayMemory,
     discovery: nodeDiscovery,
     vpnHistory,
+    updateHistory,
     elevationBroker,
     map,
     iran,
@@ -712,6 +719,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerNodesRoutes(app, ctx);
   // Local update feed (public — the updater is not the webview; see route docs).
   registerUpdateFeedRoutes(app, ctx);
+  registerUpdateHistoryRoutes(app, ctx);
 
 
   if (hasSpa) {

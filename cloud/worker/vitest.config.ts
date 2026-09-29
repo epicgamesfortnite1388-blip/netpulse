@@ -13,6 +13,7 @@ const migrationsDir = path.join(__dirname, 'migrations');
 const migrationSql = [
   '0001_init.sql',
   '0002_profile_vaults.sql',
+  '0003_telegram_integration.sql',
 ]
   .map((f) => readFileSync(path.join(migrationsDir, f), 'utf8'))
   .join('\n');
@@ -31,6 +32,8 @@ export default defineWorkersConfig({
             // Non-secret fixed test values — never real credentials.
             AUTH_SECRET: 'test-auth-secret',
             RESET_PEPPER: 'test-reset-pepper',
+            NETPULSE_SERVICE_SECRET: 'test-np-service-secret',
+            TELEGRAM_BOT_BASE_URL: 'https://bot.test',
           },
         },
       },

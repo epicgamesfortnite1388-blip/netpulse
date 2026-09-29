@@ -31,6 +31,17 @@ export function setMailPost(p: Post | null): void {
   post = p ?? ((url, init) => fetch(url, init));
 }
 
+/** Minimal HTML entity encoder — only covers the characters that matter for
+ * attribute and text content injection. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 const resendMailer: ResetMailer = {
   configured: (env) => typeof env.RESEND_API_KEY === 'string' && env.RESEND_API_KEY.length > 0,
   send: async (env, to, token, origin) => {
@@ -38,11 +49,20 @@ const resendMailer: ResetMailer = {
     if (!key) return { delivered: false, reason: 'mail_unconfigured' };
     const from = env.MAIL_FROM;
     if (!from) return { delivered: false, reason: 'mail_from_missing' };
-    const link = `${origin}/reset?token=${token}`;
+    // Guard: reject attacker-controlled origins. Only send to the expected domain.
+    const expected = env.EXPECTED_ORIGIN;
+    if (expected && origin !== expected) {
+      return { delivered: false, reason: `origin_mismatch: expected ${expected}, got ${origin}` };
+    }
+    // URL-encode the token so it cannot break out of the href attribute.
+    const encodedToken = encodeURIComponent(token);
+    const link = `${origin}/reset?token=${encodedToken}`;
+    // HTML-encode the token for display inside <code> and in the link text.
+    const htmlToken = escapeHtml(token);
     const html =
       `<p>A password reset was requested for your NetPulse account.</p>` +
       `<p><a href="${link}">Reset your password</a> (valid for 30 minutes), ` +
-      `or enter this code on the reset page: <code>${token}</code></p>` +
+      `or enter this code on the reset page: <code>${htmlToken}</code></p>` +
       `<p>If you did not request this, ignore this email — your password is unchanged.</p>`;
     try {
       const res = await post('https://api.resend.com/emails', {

@@ -14,6 +14,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { UpdateChecker } from '@/features/settings/UpdateBanner';
+import { UpdateHistoryCard } from '@/features/settings/UpdateHistoryCard';
 import { api } from '@/lib/api';
 import { tauriInvoke } from '@/lib/transport';
 import { useScheduleStatus } from '@/lib/useScheduleStatus';
@@ -568,6 +569,10 @@ export default function SettingsPage() {
           </Card>
 
           <UpdateChecker />
+
+          <div className="mt-4">
+            <UpdateHistoryCard />
+          </div>
 
           <div className="mt-6">
             <RecoveryCard />

@@ -210,4 +210,47 @@ export const cloudApi = {
     request<{ ok: boolean }>('/api/v1/profile-vaults', { method: 'PUT', json: { profileId, ciphertext, updatedAt } }),
   deleteVault: (profileId: string) =>
     request<{ ok: boolean; removed: boolean }>('/api/v1/profile-vaults/delete', { method: 'POST', json: { profileId } }),
+  // NetPulse <-> Telegram linking (bot-verified entitlements; see
+  // docs/netpulse-integration.md in the bot repo). The worker derives all
+  // identity from the session; the client never supplies a Telegram id.
+  netpulse: {
+    link: () =>
+      request<{ ok: boolean; token: string; deepLink: string; expiresAt: number }>('/api/v1/account/telegram/link', {
+        method: 'POST',
+        json: {},
+      }),
+    confirm: (code: string) =>
+      request<{ ok: boolean }>('/api/v1/account/telegram/link/confirm', { method: 'POST', json: { code } }),
+    status: () =>
+      request<{
+        ok: boolean;
+        connected: boolean;
+        telegram_user_id: number | null;
+        linked_at: number | null;
+        last_synced_at: number | null;
+        last_sync_status: string | null;
+      }>('/api/v1/account/telegram', { method: 'GET' }),
+    unlink: () => request<{ ok: boolean }>('/api/v1/account/telegram/unlink', { method: 'POST' }),
+    syncStatus: () =>
+      request<{ ok: boolean; lastSyncAt: number | null; error: string | null }>('/api/v1/integrations/telegram/status', {
+        method: 'POST',
+      }),
+    sync: () =>
+      request<{ ok: boolean; subscriptions: NetpulseSubscription[] }>('/api/v1/integrations/telegram/sync', { method: 'POST' }),
+    subscriptions: () => request<{ subscriptions: NetpulseSubscription[] }>('/api/v1/subscriptions', { method: 'GET' }),
+  },
 };
+
+/** The safe entitlement model — the ONLY subscription projection NetPulse shows. */
+export interface NetpulseSubscription {
+  id: string;
+  plan: string;
+  status: string;
+  started_at: string | null;
+  expiration_time: string | null;
+  auto_renew: boolean;
+  total_gb: number;
+  used_gb: number;
+  ip_limit: number | null;
+  config_updated_at: string | null;
+}

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../util/appError';
+import { isPrivateIp } from '../util/targetGuard';
 import { MAX_LIST_LIMIT } from '../db/repositories';
 
 import type { AppContext } from './context';
@@ -63,6 +64,17 @@ const FavoriteSchema = z.object({
 const TagsSchema = z.object({
   tags: z.array(z.string().min(1).max(64)).min(0).max(20),
 });
+
+// --- Path-parameter schemas (MEDIUM-01 fix) ---
+// Validate all route path parameters with strict allowlists before use.
+// Prevents injection into log paths, SQL identifiers, and cache keys.
+
+const IdSchema = z.string().min(1).max(128).regex(/^[a-z0-9:._-]+$/i, 'id must be alphanumeric, colon, dot, underscore, or hyphen');
+const IpSchema = z.union([z.ipv4(), z.ipv6()]);
+const AsnSchema = z.number().int().positive().max(4_294_967_295);
+const HostSchema = z.string().min(1).max(253).regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/, 'invalid hostname');
+const SourceIdSchema = z.string().min(1).max(128).regex(/^[a-z0-9:._-]+$/i, 'source id must be alphanumeric, colon, dot, underscore, or hyphen');
+const JobIdSchema = z.string().min(1).max(128).regex(/^[a-z0-9:._-]+$/i, 'job id must be alphanumeric, colon, dot, underscore, or hyphen');
 
 // Real scan registry: jobId -> cancel fn. Lets /scanner/stop abort a running
 // scan between probes instead of only flipping the DB row.
@@ -140,7 +152,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/:id', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     const node = nodesService.getNode(id);
     // 404 status, not a 200 body: api.get on the frontend throws on non-2xx,
     // so detail pages show their not-found/error state instead of rendering
@@ -162,7 +177,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/:id/link', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     const result = nodesService.shareLink(id);
     if (!result) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
 
@@ -187,7 +205,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/by-ip/:ip', async (req) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { ip } = req.params as { ip: string };
+    const raw = (req.params as { ip: string }).ip;
+    const parsed = IpSchema.safeParse(raw);
+    if (!parsed.success) throw new AppError(400, 'invalid_ip', parsed.error.message);
+    const ip = parsed.data;
     const nodes = nodesService.getNodesByIp(ip);
 
     return { nodes };
@@ -197,9 +218,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/by-asn/:asn', async (req) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { asn } = req.params as { asn: string };
-    const asnNum = Number(asn);
-    if (!Number.isFinite(asnNum)) throw new AppError(400, 'invalid_asn', 'ASN must be a positive integer');
+    const raw = (req.params as { asn: string }).asn;
+    const asnNum = Number(raw);
+    const parsed = AsnSchema.safeParse(asnNum);
+    if (!parsed.success) throw new AppError(400, 'invalid_asn', parsed.error.message);
 
     const nodes = nodesService.getNodesByAsn(asnNum);
 
@@ -210,7 +232,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/nodes/by-host/:host', async (req) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { host } = req.params as { host: string };
+    const raw = (req.params as { host: string }).host;
+    const parsed = HostSchema.safeParse(raw);
+    if (!parsed.success) throw new AppError(400, 'invalid_host', parsed.error.message);
+    const host = parsed.data;
     const nodes = nodesService.getNodesByHostname(host);
 
     return { nodes };
@@ -220,12 +245,23 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/nodes/:id/test', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { id } = req.params as { id: string };
-    const parsed = NodeTestBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
+    const body = NodeTestBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
     }
-    const type = parsed.data.type ?? 'tcp';
+    const type = body.data.type ?? 'tcp';
+
+    // Route-level SSRF guard: a caller-supplied IP override pointing at
+    // loopback/private/link-local space is rejected BEFORE the node lookup —
+    // no node-existence oracle, no socket. (resolveTarget re-validates inside
+    // the service as defense in depth.)
+    if (body.data.ip && isPrivateIp(body.data.ip)) {
+      throw new AppError(400, 'private_target_not_allowed', 'Private or link-local targets are not allowed');
+    }
 
     // Check rate limit
     const node = nodesService.getNode(id);
@@ -238,7 +274,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     }
 
     try {
-      const result = await nodesService.testNode(id, type, parsed.data.ip || undefined);
+      const result = await nodesService.testNode(id, type, body.data.ip || undefined);
       return result;
     } catch (err) {
       // AppError (e.g. private_target_not_allowed from the SSRF guard) is
@@ -297,7 +333,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   // show exactly why the location looks the way it does now.
   app.post('/api/v1/nodes/:id/geo-recheck', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     const row = ctx.repos.publicNodes.get(id);
     if (!row) return reply.status(404).send({ error: 'node not found' });
     const result = await recheckNodeGeo(ctx.repos.publicNodes, row, ctx.log);
@@ -308,14 +347,17 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/nodes/:id/favorite', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { id } = req.params as { id: string };
-    const parsed = FavoriteSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
+    const body = FavoriteSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
     }
 
     try {
-      nodesService.setFavorite(id, parsed.data.favorite, parsed.data.tags);
+      nodesService.setFavorite(id, body.data.favorite, body.data.tags);
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -327,14 +369,17 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/nodes/:id/tags', async (req, reply) => {
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
 
-    const { id } = req.params as { id: string };
-    const parsed = TagsSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
+    const body = TagsSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
     }
 
     try {
-      nodesService.setTags(id, parsed.data.tags);
+      nodesService.setTags(id, body.data.tags);
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -461,7 +506,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Get single source
   app.get('/api/v1/sources/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = SourceIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     const row = ctx.repos.publicSources.get(id);
     const source = row ?? getKnownSources().find((s) => s.id === id);
     if (!source) return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
@@ -471,21 +519,27 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Toggle a source enabled/disabled (sources UI).
   app.patch('/api/v1/sources/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+    const raw = (req.params as { id: string }).id;
+    const parsed = SourceIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
+    const body = z.object({ enabled: z.boolean() }).safeParse(req.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
     }
     if (!ctx.repos.publicSources.get(id)) {
       return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
     }
-    ctx.repos.publicSources.update(id, { enabled: parsed.data.enabled });
-    return { ok: true, id, enabled: parsed.data.enabled };
+    ctx.repos.publicSources.update(id, { enabled: body.data.enabled });
+    return { ok: true, id, enabled: body.data.enabled };
   });
 
   // Delete a custom source (sources UI).
   app.delete('/api/v1/sources/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = SourceIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     if (!ctx.repos.publicSources.get(id)) {
       return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
     }
@@ -546,7 +600,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   // Fetch source manually
   // Trigger a real fetch+parse+import of a source through the nodes service.
   app.post('/api/v1/sources/:id/fetch', async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = SourceIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
 
     if (!nodesService) return reply.status(503).send({ error: 'nodes service unavailable' });
 
@@ -726,7 +783,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Stop scan job — signals the workers to stop between probes.
   app.post('/api/v1/scanner/stop/:jobId', async (req, reply) => {
-    const { jobId } = req.params as { jobId: string };
+    const raw = (req.params as { jobId: string }).jobId;
+    const parsed = JobIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const jobId = parsed.data;
     const job = ctx.repos.scanJobs.get(jobId);
 
     if (!job) return reply.status(404).send({ error: 'not_found', message: `Scan job "${jobId}" not found` });
@@ -750,7 +810,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Get scan job status
   app.get('/api/v1/scanner/status/:jobId', async (req, reply) => {
-    const { jobId } = req.params as { jobId: string };
+    const raw = (req.params as { jobId: string }).jobId;
+    const parsed = JobIdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const jobId = parsed.data;
     const job = ctx.repos.scanJobs.get(jobId);
 
     if (!job) return reply.status(404).send({ error: 'not_found', message: `Scan job "${jobId}" not found` });
@@ -803,7 +866,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Delete test endpoint
   app.delete('/api/v1/test-endpoints/:id', async (req, reply) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    const id = parsed.data;
     const removed = ctx.repos.testEndpoints.remove(id);
 
     if (!removed) return reply.status(404).send({ error: 'not_found', message: `Test endpoint "${id}" not found` });
@@ -816,7 +882,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Get node test history
   app.get('/api/v1/nodes/:id/history', async (req) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) throw new AppError(400, 'invalid_id', parsed.error.message);
+    const id = parsed.data;
     const q = req.query as { limit?: string; since?: string };
 
     const limit = Math.min(Number(q.limit) || 100, 1000);
@@ -850,7 +919,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
   // Get node health stats
   app.get('/api/v1/nodes/:id/health', async (req) => {
-    const { id } = req.params as { id: string };
+    const raw = (req.params as { id: string }).id;
+    const parsed = IdSchema.safeParse(raw);
+    if (!parsed.success) throw new AppError(400, 'invalid_id', parsed.error.message);
+    const id = parsed.data;
     const health = ctx.repos.nodeHealth.get(id);
 
     if (!health) {

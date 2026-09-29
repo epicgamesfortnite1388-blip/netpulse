@@ -58,6 +58,7 @@ import type { ProxyTunnelService } from '../services/proxyTunnel';
 import type { KillSwitchService } from '../services/killSwitch';
 import type { GatewayMemoryService } from '../services/gatewayMemory';
 import type { VpnHistoryService } from '../services/vpnHistory';
+import type { UpdateFeedHistoryService } from '../services/updateFeedHistory';
 import type { NodeDiscoveryService } from '../services/nodeDiscovery';
 import type { NodeSecretVault } from '../services/nodeSecretVault';
 import type { NodesService } from '../services/nodesService';
@@ -124,6 +125,7 @@ export interface AppContext {
     gatewayMemory: GatewayMemoryService;
     discovery: NodeDiscoveryService;
     vpnHistory: VpnHistoryService;
+    updateHistory: UpdateFeedHistoryService;
     map: MapService;
     iran: IranService;
     nodes: NodesService;

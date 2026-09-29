@@ -21,6 +21,13 @@ export interface Env {
   /** Optional mail transport (Resend). Absent = reset emails are disabled. */
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
+  /** Abystral bot service auth (NetPulse ↔ bot integration). Never committed. */
+  NETPULSE_SERVICE_SECRET?: string;
+  /** Bot worker's public origin for outbound signed calls. Absent = integration outbound disabled. */
+  TELEGRAM_BOT_BASE_URL?: string;
+  /** The deployment origin used to validate reset link hostnames, preventing
+   * attacker-controlled reset URLs. Set in wrangler.toml as a string binding. */
+  EXPECTED_ORIGIN?: string;
 }
 
 export interface SessionRow {

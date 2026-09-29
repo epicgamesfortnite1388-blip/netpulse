@@ -4,7 +4,8 @@ import { CheckCircle2, ChevronDown, Download, Loader2, PackageCheck, RefreshCw, 
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { checkForUpdate, installUpdate, statusLine, updateNotice, updaterAvailable } from '@/lib/updater';
+import { checkForUpdate, installUpdate, reconcileInstallCompletion, statusLine, updateNotice, updaterAvailable } from '@/lib/updater';
+import { desktopInfo } from '@/lib/transport';
 
 import type { CheckResult, DownloadProgress, UpdateInfo } from '@/lib/updater';
 
@@ -46,6 +47,13 @@ export function UpdateBanner() {
 
   useEffect(() => {
     mounted.current = true;
+    // Boot reconciliation: the last successful install ends with this app
+    // exiting, so its 'started' row never got a 'completed'. Close the loop
+    // now that the new version is running — before the launch poll records a
+    // fresh check, so the history stays in order.
+    void desktopInfo().then((info) => {
+      if (info) void reconcileInstallCompletion(info.appVersion);
+    });
     // Launch poll: delayed past the startup health burst (see LAUNCH_POLL_DELAY_MS).
     const t0 = setTimeout(poll, LAUNCH_POLL_DELAY_MS);
     const t = setInterval(poll, CHECK_INTERVAL_MS);

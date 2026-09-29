@@ -59,6 +59,33 @@ npx wrangler d1 execute netpulse-cloud --remote --command \
 
 then hand `TOKEN` to the user (or use it at `/reset` yourself).
 
+## NetPulse <-> Telegram (Abystral) integration
+
+The worker mirrors bot-owned subscription entitlements for linked app
+accounts. The bot (Abystral) remains authoritative for purchases, payments,
+and entitlements; this worker never accepts a Telegram identity from a
+client - linking is verified by the bot itself.
+
+```bash
+npx wrangler secret put NETPULSE_SERVICE_SECRET   # SAME value as the bot's
+npx wrangler secret put TELEGRAM_BOT_BASE_URL     # e.g. https://abystral-bot.<account>.workers.dev
+npx wrangler d1 migrations apply netpulse-cloud --remote   # applies 0003
+```
+
+- Inbound (bot -> here): `POST /api/internal/netpulse/v1/events` and
+  `/events/ack`, HMAC-signed (`v1\nts\nnonce\nMETHOD\npath?query\nsha256(body)`,
+  headers `x-np-*`, +/-5 min skew, single-use D1 nonces). Fail-closed when
+  `NETPULSE_SERVICE_SECRET` is unset.
+- Outbound (here -> bot): `/link/request`, `/link/claim`, `/link/status/:id`,
+  `/link/:id`, `/entitlement/:id` - same signature scheme, every call audited
+  in `np_outbound_log` (action + path + status; never signature material).
+- App-facing routes: `GET /api/v1/account/telegram`, `POST .../link`,
+  `POST .../link/confirm`, `POST .../unlink`,
+  `POST /api/v1/integrations/telegram/status|sync`, `GET /api/v1/subscriptions`.
+- Events dedup on `event_id`; entitlement upserts are guarded by
+  `config_updated_at`, so out-of-order deliveries never regress state.
+- Full contract: `docs/netpulse-integration.md` in the Abystral repo.
+
 ## Tests
 
 ```bash

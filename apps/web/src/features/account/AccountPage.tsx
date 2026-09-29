@@ -22,6 +22,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { useToast } from '@/components/Toaster';
 import { CloudError, cloudApi } from '@/lib/cloud/client';
+import { TelegramIntegrationCard } from './TelegramIntegrationCard';
 import { pendingCount, lastSyncError, restoreProfileFromVault, syncNow } from '@/lib/cloud/syncEngine';
 import { useCloudSession } from '@/lib/cloud/useCloudSession';
 import type { CloudDevice, CloudSession } from '@/lib/cloud/types';
@@ -463,6 +464,8 @@ function AccountDashboard() {
       </Card>
 
       <EncryptedBackupCard />
+
+      <TelegramIntegrationCard />
 
       <Card fold={{ id: 'account-danger', defaultOpen: false, summary: 'irreversible account actions' }}>
         <CardHeader title="Danger zone" />

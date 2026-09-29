@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 
 import { spawnCoreProcess, startupReason } from '../services/coreProcess';
 import { runCommand } from '../util/exec';
@@ -113,6 +114,31 @@ export function vpnError(statusCode: number, code: string, message: string, hint
  * Minimal secret vault: AES-256-GCM encrypted file under the data dir.
  * Private keys never touch the database, the API or logs.
  */
+/* ----------------------- vault key ACL hardening --------------------------- */
+
+/**
+ * Windows ACL enforcement for the vault .key file.
+ *
+ * On POSIX the file mode 0o600 is respected. On Windows it is NOT — Node's
+ * fs.chmod has no effect on the NTFS ACL. `icacls` directly manipulates the
+ * ACL: it replaces the existing entries with one entry granting access to the
+ * current user only (Everyone and SYSTEM are removed). This prevents other
+ * local accounts or processes from reading the vault key material.
+ *
+ * Failure is deliberately silent — a vault that cannot be hardened is still
+ * better than no vault, and a noisy failure would make the app unusable on
+ * locked-down WinPE/AD environments where the current user lacks icacls rights.
+ */
+function enforceWindowsAcl(filePath: string): void {
+  if (process.platform !== 'win32') return;
+  try {
+    // %USERNAME% expands to the current user. /T recursively resets child objects.
+    execSync(`icacls "${filePath}" /inheritance:r /grant:r "%USERNAME%:(R)" /c`, { stdio: 'ignore' });
+  } catch {
+    // best-effort: non-zero exit on restricted environments
+  }
+}
+
 export class FileSecretVault {
   constructor(private readonly file: string) {
     // The vault writes its key + entry files eagerly; a missing parent dir
@@ -132,6 +158,7 @@ export class FileSecretVault {
     const keyFile = `${this.file}.key`;
     if (!fs.existsSync(keyFile)) {
       fs.writeFileSync(keyFile, crypto.randomBytes(32), { mode: 0o600 });
+      void enforceWindowsAcl(keyFile);
     }
     return Buffer.from(fs.readFileSync(keyFile));
   }
@@ -1032,6 +1059,25 @@ export function materializeSingboxConfig(storedText: string, secret: string): st
   return JSON.stringify(doc, null, 2);
 }
 
+/** Fields that could execute code or rebind the tun device if left in user-supplied inbound config. */
+const BLOCKED_OUTBOUND_FIELDS = new Set([
+  'exec',         // sing-box: arbitrary command execution
+  'exec_internal',// sing-box: internal command execution
+  'script',      // sing-box: JavaScript execution
+  'inbounds',    // must never be user-controlled: rebinds listen address / tun
+  'inbound',     // singular variant
+  'outbounds',   // must never be user-controlled: could route all traffic
+]);
+
+/** Reject any outbound object that carries fields capable of side effects. */
+function assertOutboundClean(fields: Record<string, unknown>, label: string): void {
+  for (const key of Object.keys(fields)) {
+    if (BLOCKED_OUTBOUND_FIELDS.has(key)) {
+      throw vpnError(400, 'invalid_config', `"${label}" contains a forbidden field "${key}" — this profile cannot be imported`);
+    }
+  }
+}
+
 export class SingboxProvider implements VpnProvider {
   /** How long sing-box gets to answer on its mixed port before start fails. */
   private static readonly READY_TIMEOUT_MS = 4_000;
@@ -1103,11 +1149,16 @@ export class SingboxProvider implements VpnProvider {
       // sing-box outbound JSON: user pasted an outbound object
       try {
         const doc = JSON.parse(text) as Record<string, unknown>;
-        const outbound = (doc['outbounds'] as Record<string, unknown>[] | undefined)?.[0] ?? doc;
+        // Reject full configs (with inbounds/outbounds) — only an outbound is safe
+        if (Array.isArray(doc['inbounds']) || Array.isArray(doc['outbounds']) || doc['inbounds'] || doc['outbounds']) {
+          throw new Error('full sing-box configs are not supported — paste a single outbound object');
+        }
+        const outbound = doc; // user pasted a single outbound; doc IS the outbound
         const type = String(outbound['type'] ?? '');
         if (!SINGBOX_PROTOCOLS.includes(type as (typeof SINGBOX_PROTOCOLS)[number])) {
           throw new Error(`unsupported outbound type "${type}"`);
         }
+        assertOutboundClean(outbound, 'outbound object');
         parsed = {
           protocol: type as (typeof SINGBOX_PROTOCOLS)[number],
           host: String(outbound['server'] ?? '') || null,

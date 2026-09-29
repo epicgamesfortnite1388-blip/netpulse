@@ -21,6 +21,7 @@ export * from './models/vpnBypass';
 export * from './models/vpnTunnel';
 export * from './models/admin';
 export * from './models/vpnGateway';
+export * from './models/updateHistory';
 export * from './models/scanProfile';
 export * from './schemas/settings';
 export * from './schemas/vpnTunnel';

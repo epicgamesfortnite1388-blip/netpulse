@@ -73,6 +73,50 @@ export function updaterAvailable(): boolean {
   return plugin() !== null;
 }
 
+import { api } from '@/lib/api';
+
+import type { RecordUpdateEventInput, UpdateHistoryEntry } from '@netpulse/shared';
+
+/**
+ * Update-history recorder. Fire-and-forget: history must never break the
+ * update flow it records (web mode / offline / sidecar down all swallow).
+ * Every check and install from every surface passes through this module, so
+ * this is the one place recording can live.
+ */
+function recordUpdateEvent(input: RecordUpdateEventInput): void {
+  void api.post('/update-history', input).catch(() => {
+    /* best-effort by design */
+  });
+}
+
+/** Newest-first update history (empty on any failure — never a fake row). */
+export async function fetchUpdateHistory(limit = 100): Promise<UpdateHistoryEntry[]> {
+  try {
+    const out = await api.get<{ events: UpdateHistoryEntry[] }>(`/update-history?limit=${limit}`);
+    return Array.isArray(out?.events) ? out.events : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Boot reconciliation: if the previous session died mid-install (the normal
+ * successful path — the shell exits while the NSIS installer runs), close the
+ * loop by recording 'completed' once the new version is actually running.
+ * Only fires when the newest event is that unmatched 'started' for exactly
+ * this version, so repeated boots and already-closed installs never double.
+ */
+export async function reconcileInstallCompletion(currentVersion: string): Promise<void> {
+  try {
+    const events = await fetchUpdateHistory(1);
+    const last = events[0];
+    if (last?.kind === 'install' && last.outcome === 'started' && last.toVersion === currentVersion) {
+      recordUpdateEvent({ kind: 'install', outcome: 'completed', fromVersion: last.fromVersion, toVersion: currentVersion });
+    }
+  } catch {
+    /* best-effort by design */
+  }
+}
 /**
  * Poll the feed once. Returns:
  *   - { kind: 'up-to-date' } — feed answered, no newer version
@@ -88,7 +132,7 @@ export type CheckResult =
 
 export async function checkForUpdate(): Promise<CheckResult> {
   const p = plugin();
-  if (!p) return { kind: 'unavailable', reason: 'no-updater' };
+  if (!p) return { kind: 'unavailable', reason: 'no-updater' }; // web mode: nothing happened, nothing recorded
   try {
     // The shell's feed_check bypasses the system proxy for loopback feeds
     // (the plugin's own check cannot). Falls back to the plugin command when
@@ -98,8 +142,15 @@ export async function checkForUpdate(): Promise<CheckResult> {
       const feed = (await invoke('feed_check')) as {
         available: boolean; version: string; currentVersion: string; body?: string | null;
       } | null;
-      if (!feed) return { kind: 'unavailable', reason: 'feed_check returned nothing' };
-      if (!feed.available) return { kind: 'up-to-date' };
+      if (!feed) {
+        recordUpdateEvent({ kind: 'check', outcome: 'failed', reason: 'feed_check returned nothing' });
+        return { kind: 'unavailable', reason: 'feed_check returned nothing' };
+      }
+      if (!feed.available) {
+        recordUpdateEvent({ kind: 'check', outcome: 'up-to-date', fromVersion: feed.currentVersion });
+        return { kind: 'up-to-date' };
+      }
+      recordUpdateEvent({ kind: 'check', outcome: 'available', fromVersion: feed.currentVersion, toVersion: feed.version });
       return {
         kind: 'available',
         update: {
@@ -112,7 +163,12 @@ export async function checkForUpdate(): Promise<CheckResult> {
     }
     // Bounded timeout: a feed that never answers must not hold the launch poll.
     const found = await p.check({ timeout: 15_000 });
-    if (!found) return { kind: 'up-to-date' };
+    if (!found) {
+      // Plugin path cannot report the current version here; null is the truth.
+      recordUpdateEvent({ kind: 'check', outcome: 'up-to-date' });
+      return { kind: 'up-to-date' };
+    }
+    recordUpdateEvent({ kind: 'check', outcome: 'available', fromVersion: found.currentVersion, toVersion: found.version });
     return {
       kind: 'available',
       update: {
@@ -123,7 +179,9 @@ export async function checkForUpdate(): Promise<CheckResult> {
       },
     };
   } catch (err) {
-    return { kind: 'unavailable', reason: err instanceof Error ? err.message : String(err) };
+    const reason = err instanceof Error ? err.message : String(err);
+    recordUpdateEvent({ kind: 'check', outcome: 'failed', reason });
+    return { kind: 'unavailable', reason };
   }
 }
 
@@ -144,7 +202,21 @@ export async function installUpdate(
   const invoke = feedInvoke();
   if (invoke) {
     onProgress?.({ contentLength: null, received: 0, done: false });
-    await invoke('feed_install');
+    // 'started' is the last row this dying instance can write on success —
+    // reconcileInstallCompletion() closes the loop after the new version boots.
+    recordUpdateEvent({ kind: 'install', outcome: 'started', fromVersion: update.currentVersion, toVersion: update.version });
+    try {
+      await invoke('feed_install');
+    } catch (err) {
+      recordUpdateEvent({
+        kind: 'install',
+        outcome: 'failed',
+        fromVersion: update.currentVersion,
+        toVersion: update.version,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
     onProgress?.({ contentLength: null, received: 0, done: true });
     return;
   }
