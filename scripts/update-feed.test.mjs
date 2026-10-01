@@ -238,6 +238,68 @@ function sign(content, { keyId, privateKey }, { prehashed }) {
   check('decodePublicKey exposes an 8-byte key id', decodePublicKey(keys.pubText).keyId.length === 16);
 }
 
+/* ----------------- adversarial feed: corrupted signature ------------------- */
+// The live attack from the 1.1.1 audit pass, made permanent: a hostile feed
+// publishes a manifest advertising a NEWER version over the REAL, unmodified
+// artifact, with one character flipped inside the base64 signature payload.
+// The updater accepts the manifest (version is newer — that gate is supposed
+// to pass), downloads the artifact, and must then REFUSE it at signature
+// verification. Two properties make this regression-worthy:
+//   1. the corrupted signature is still PARSEABLE minisign text, so the
+//      refusal comes from the cryptographic compare — the reason the app
+//      recorded live was exactly "The signature verification failed";
+//   2. the artifact bytes are untouched, so this is distinct from the
+//      tampered-artifact case above: the manifest is the lie.
+
+console.log('\nadversarial feed: corrupted manifest signature');
+{
+  const keys = buildKeys();
+  const artifact = Buffer.from('the real, unmodified updater artifact bytes');
+  const validSigText = sign(artifact, keys, { prehashed: true });
+
+  // Publish honestly first: manifest field = the .sig text, base64-encoded
+  // the way the plugin consumes it.
+  const manifest = buildLatestJson({
+    version: '9.9.9',
+    notes: 'hostile manifest — looks like a real release',
+    artifactUrl: 'https://example.invalid/NetPulse_9.9.9_x64-setup.exe.zip',
+    signature: manifestSignatureField(validSigText),
+    platformKey: 'windows-x86_64',
+  });
+
+  // The attack: decode the field, flip one char in the signature PAYLOAD line
+  // (index 1, the line between the two comments — not the comments themselves
+  // and not the base64 padding), re-encode. Byte-level mirror of the live
+  // probe that the real updater refused with "The signature verification
+  // failed".
+  const sigTextFromField = Buffer.from(manifest.platforms['windows-x86_64'].signature, 'base64').toString('utf8');
+  const lines = sigTextFromField.split('\n');
+  const payloadLine = lines[1];
+  const flipAt = Math.floor(payloadLine.length / 2);
+  const flipped = payloadLine[flipAt] === 'A' ? 'B' : 'A';
+  lines[1] = payloadLine.slice(0, flipAt) + flipped + payloadLine.slice(flipAt + 1);
+  const corruptedSigText = lines.join('\n');
+
+  check('the corruption lands inside the signature payload line (not a comment)',
+    flipAt < payloadLine.length && corruptedSigText !== sigTextFromField);
+  // The manifest still parses as minisign — the corruption must be caught by
+  // the compare, not by a base64/parse error, or the live failure reason lies.
+  check('the corrupted field still parses as minisign text',
+    /^untrusted comment: /.test(corruptedSigText) && corruptedSigText.split('\n').length >= 4);
+
+  // The updater's verification, on the decoded field, against the shipped
+  // pubkey: must REJECT, and the rejection must be a signature mismatch.
+  const verdict = verifyMinisign(artifact, corruptedSigText, keys.pubText);
+  check('a corrupted manifest signature is REFUSED over the unmodified artifact', !verdict.ok, verdict.reason ?? 'accepted');
+  check('the refusal is a cryptographic mismatch (not a parse failure)',
+    !verdict.ok && !/base64|untrusted comment/.test(verdict.reason ?? ''), verdict.reason);
+
+  // And the honest manifest still verifies — the corruption is the only lie.
+  const honest = verifyMinisign(artifact, manifestSignatureField(manifest.platforms['windows-x86_64'].signature), keys.pubText);
+  check('the same manifest WITHOUT the corruption verifies', honest.ok, honest.reason);
+}
+
+
 /* --------------------------- real Tauri signer ---------------------------- */
 // The strongest evidence: signatures produced by the actual tool, verified by
 // this module, and rejected by it when the artifact is edited afterwards.

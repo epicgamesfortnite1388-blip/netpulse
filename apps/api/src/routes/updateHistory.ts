@@ -33,4 +33,14 @@ export function registerUpdateHistoryRoutes(app: FastifyInstance, ctx: AppContex
     ctx.services.updateHistory.record(parsed.data);
     return reply.code(204).send();
   });
+
+  /**
+   * Clear the diary. Same auth as read/write — wiping history is at least as
+   * sensitive as writing it. Returns the removed count so the UI can confirm
+   * what was actually deleted instead of assuming.
+   */
+  app.delete('/api/v1/update-history', async () => {
+    const removed = ctx.services.updateHistory.clear();
+    return { ok: true, removed };
+  });
 }

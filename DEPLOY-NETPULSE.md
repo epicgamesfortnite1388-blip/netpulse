@@ -8,12 +8,27 @@ change.
 The bot side is a separate deployment (repo: Abystral, worker
 `abystral-telegram`); its contract lives in
 `docs/netpulse-integration.md` on the Abystral repo, and its live smoke
-test in `workers/scripts/netpulse-smoke.mjs` there.
+test in `workers/scripts/netpulse-smoke.mjs` there (one script — it
+auto-detects which end of the integration `--base` points at).
 
 > **Account note:** this repo's `cloud/worker/wrangler.toml` targets
 > account `7380a67…`. Make sure `npx wrangler whoami` shows THAT account
 > before running anything — a mismatch fails with D1 errors `7403` /
 > `10000` (wrong account), not a helpful "wrong login" message.
+>
+> **Two accounts on one login (CLOUDFLARE_ACCOUNT_ID quirk):** if
+> `wrangler whoami` lists another account too (e.g. the Abystral bot's),
+> Wrangler ≥ 4.136 can fail with `More than one account available but
+> unable to select one in non-interactive mode` — even though
+> `wrangler.toml` pins `account_id`. Don't reconfigure anything; prefix
+> the failing command with the account id and move on:
+>
+> ```bash
+> CLOUDFLARE_ACCOUNT_ID=7380a67667052f3a7a3b11301ce7a77b npx wrangler deploy
+> ```
+>
+> Interactively this doesn't bite; it shows up in scripts, CI, and
+> non-interactive shells (observed live with `d1 migrations list`).
 
 ## Phase 0 — Switch and prove the account
 
@@ -119,8 +134,10 @@ NP_URL=https://netpulse-cloud.<your-subdomain>.workers.dev   # from Phase 3 outp
 
    Expect 401 `missing_signature_headers`.
 
-3. **Signed interop probe** — the Abystral repo's smoke script works
-   against this worker too (same canonical string, same secret):
+3. **Signed interop probe (smoke script)** — the Abystral repo's smoke
+   script auto-detects which worker `--base` points at (Abystral bot vs
+   netpulse-cloud) and runs that side's check set; against this URL it
+   selects the netpulse branch (same canonical string, same secret):
 
    ```bash
    cd /path/to/Abystral
@@ -129,15 +146,22 @@ NP_URL=https://netpulse-cloud.<your-subdomain>.workers.dev   # from Phase 3 outp
      --secret-file workers/src/telegram/.netpulse-secret.local
    ```
 
-   Expect `ALL CHECKS PASSED` (the replay check manifests as
-   `401 nonce_replayed`; the bot-side label for tampering is
-   `signature_mismatch`, this worker's is `invalid_signature`).
+   Expect the target line to say `(NetPulse cloud worker)` and
+   `ALL CHECKS PASSED` — 6 checks: `/api/v1/health`, unsigned POST and
+   ack walls (`missing_signature_headers`), tampered signature →
+   `invalid_signature`, then a correctly signed event accepted `200`
+   (proving shared-secret interop) whose byte-identical resend is
+   rejected `401 nonce_replayed`. `--target netpulse` forces the branch
+   if the host isn't finger-printable yet. Verify the other end by
+   pointing the same script at the bot worker's URL.
 
-   Cleanup of the probe rows:
+   Cleanup of the probe row (one `np_events` row, id `probe-np-*`,
+   processed as `no_link`; the script prints this command itself when
+   the accept check passed):
 
    ```bash
    npx wrangler d1 execute netpulse-cloud --remote --command \
-     "DELETE FROM np_events WHERE event_id LIKE 'e-%' OR event_id LIKE 'probe-%'"
+     "DELETE FROM np_events WHERE event_id LIKE 'probe-np-%'"
    ```
 
 4. **Status page** — open `$NP_URL/ops` in a browser, paste `OPS_TOKEN`,

@@ -74,6 +74,21 @@ class HttpError extends Error {
 
 const MAX_BODY_BYTES = 64 * 1024;
 
+/**
+ * Origins the CORS preflight may name back (audit F5). The API is bearer-
+ * authenticated desktop traffic, so no browser cross-origin call is part of
+ * the product; this list exists only so the OWN surfaces never break:
+ * the Worker serving its own pages, and the desktop webview's virtual origin.
+ * An arbitrary Origin header used to be reflected verbatim in preflight
+ * responses — harmless today (no CORS grant on real responses), but a
+ * standing trap the moment any authenticated response grows a CORS header.
+ */
+const PREFLIGHT_ALLOWED_ORIGINS = new Set([
+  'https://netpulse-cloud.shuridehradin.workers.dev',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+]);
+
 async function readJson(req: Request): Promise<unknown> {
   const len = Number(req.headers.get('content-length') ?? '0');
   if (len > MAX_BODY_BYTES) throw new HttpError(413, 'payload_too_large', 'Request body too large');
@@ -131,17 +146,15 @@ export default {
 
     // OPTIONS for the reset page (browser-based): use specific origin or deny
     const origin = req.headers.get('origin');
-    const resetPageCorsHeaders = (): Record<string, string> => {
-      // Serve reset page only to requests from the expected origin.
-      // The Worker is deployed at a fixed domain; reject any other origin.
-      if (!origin) return {};
-      // If we serve the reset page at a specific domain, validate here.
-      return {};
-    };
     if (req.method === 'OPTIONS') {
-      const acrs: Record<string, string> = origin
-        ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' }
-        : {};
+      // Preflight grants are allow-listed, never reflected (audit F5): an
+      // arbitrary Origin header used to be echoed back verbatim. Unknown
+      // origins get a bare 204 — a real browser then blocks the request
+      // itself, which is exactly the desired outcome for strangers.
+      const acrs: Record<string, string> =
+        origin && PREFLIGHT_ALLOWED_ORIGINS.has(origin)
+          ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' }
+          : {};
       return new Response(null, { status: 204, headers: acrs });
     }
 
@@ -352,22 +365,6 @@ export default {
       // ==================== AUTHENTICATED ROUTES ====================
       // Identity derives ONLY from the bearer token → session row.
 
-      // Simple path matcher for parameterized routes (e.g. /api/v1/subscriptions/:id)
-      // Returns the captured parameter or null.
-      function matchParamRoute(path: string, pattern: string): { match: boolean; param?: string } {
-        // Convert pattern like /api/v1/subscriptions/:id to regex
-        const regexStr = '^' + pattern.replace(/:([^/]+)/g, '([^/]+)') + '$';
-        const regex = new RegExp(regexStr);
-        const m = path.match(regex);
-        if (m) {
-          // Extract the parameter value (first capture group after the full match)
-          const paramName = pattern.match(/:([^/]+)/);
-          const key = paramName ? paramName[1] : null;
-          return { match: true, param: m[1] };
-        }
-        return { match: false };
-      }
-
       const auth = req.headers.get('authorization');
       const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
       let session: SessionRow | null = null;
@@ -383,6 +380,9 @@ export default {
       if (!session) return fail(401, 'unauthorized', 'Authentication required');
       const userId = session.user_id;
       const currentSessionId = session.id;
+
+      // Simple path matcher for parameterized routes existed here and was
+      // dead: every parameterized route below matches with inline regexes.
 
       // -------- account --------
       if (path === '/api/v1/account' && req.method === 'GET') {
@@ -505,6 +505,19 @@ export default {
           await env.DB.prepare(`UPDATE vpn_profiles SET deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`).bind(t, t, body.id, userId).run();
           return json(200, { ok: true, deleted: true });
         }
+        // The (user_id, name) partial unique index is NOT covered by the
+        // ON CONFLICT (id) clause below: a profile re-imported under a new
+        // id (deleted locally, same config imported again) shares the name
+        // with the old live envelope and the INSERT used to die with a
+        // UNIQUE violation the client saw as a permanent 409 on every sync.
+        // The newer envelope wins — tombstone same-name live rows first.
+        await env.DB
+          .prepare(
+            `UPDATE vpn_profiles SET deleted_at = ?, updated_at = ?
+             WHERE user_id = ? AND name = ? AND deleted_at IS NULL AND id != ?`,
+          )
+          .bind(t, t, userId, body.name, body.id)
+          .run();
         await env.DB
           .prepare(
             `INSERT INTO vpn_profiles (id, user_id, name, protocol, endpoint, config, config_version, created_at, updated_at)

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, Save } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -71,6 +72,16 @@ export default function SettingsPage() {
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [caps, setCaps] = useState<PlatformCapabilities | null>(null);
+  // Deep link: /settings?tab=platform&card=update-history (the dashboard
+  // update-check warning targets the update-history card). Unknown tab values
+  // fall through to the default. The `card` param selects the target card on
+  // that tab and is consumed once handled so it never re-triggers.
+  const [searchParams] = useSearchParams();
+  const VALID_TABS = ['general', 'network', 'diagnostics', 'optimization', 'vpn', 'automation', 'platform'] as const;
+  const tabParam = searchParams.get('tab');
+  const tab = VALID_TABS.includes((tabParam ?? '') as (typeof VALID_TABS)[number])
+    ? (tabParam as (typeof VALID_TABS)[number])
+    : 'general';
   const scheduleQuery = useScheduleStatus();
   const scheduleStatus = scheduleQuery.data?.status;
   const gamesQuery = useQuery({
@@ -135,7 +146,7 @@ export default function SettingsPage() {
       <PageHeader title="Settings" description="Defaults for tests, scoring and future VPN behavior. Additional sections are added as modules ship." />
 
       <Tabs
-        defaultValue="general"
+        value={tab}
         items={[
           { value: 'general', label: 'General' },
           { value: 'network', label: 'Network' },

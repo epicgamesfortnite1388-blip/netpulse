@@ -90,3 +90,20 @@ export function updateHistorySummary(entries: UpdateHistoryEntry[]): string {
   if (failed > 0) parts.push(`${failed} failed`);
   return parts.join(' · ');
 }
+
+/**
+ * Proactive surfacing: the NEWEST check event decides the dashboard warning.
+ * A failed check surfaces; a newer check that succeeded (including the
+ * 'available' outcome that always precedes an install) means the failure is
+ * already stale, so the app stays silent. Returns the failed ENTRY (not
+ * pre-worded text) so every surface renders it through `updateEventLine` and
+ * the warning can never drift from the history card's account of the same
+ * event. Null renders nothing, which is the common case. Install events and
+ * failed INSTALLS stay out of scope here: they are visible on the history
+ * card and never block the running app the way a dead check silently does.
+ */
+export function lastFailedCheck(entries: UpdateHistoryEntry[]): UpdateHistoryEntry | null {
+  const last = entries.find((e) => e.kind === 'check');
+  if (!last || last.outcome !== 'failed') return null;
+  return last;
+}

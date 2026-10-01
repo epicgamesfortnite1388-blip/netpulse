@@ -1,3 +1,6 @@
+import https from 'node:https';
+import net from 'node:net';
+
 import type { IpFamily } from '@netpulse/shared';
 import {
   jitterScore,
@@ -99,24 +102,60 @@ const CAPACITY_TIMEOUT_MS = 4_000;
  * Cloudflare speed endpoints. This is an *estimate* (one transfer, small
  * payload), not the full speed test; it keeps candidate ranking cheap.
  * Returns null when the transfer cannot be completed or timed out.
+ *
+ * Security (audit F3): the connection targets the ALREADY-VALIDATED IP
+ * literal (resolveTarget → pickIp) with the candidate's hostname presented
+ * as SNI + Host. Fetching the hostname here instead would re-resolve DNS at
+ * request time and reopen the rebinding window the guard just closed — the
+ * address that answers MUST be the address that was checked.
  */
-async function probeCapacity(url: string, bytes: number, signalTimeoutMs: number): Promise<number | null> {
+/**
+ * Test seam for the dial below: unit tests swap this so the rebinding
+ * regression (the request MUST target the validated IP literal) is provable
+ * without any real network. Production always uses node:https.request.
+ */
+export const capacityProbeInternals = { httpsRequest: https.request };
+
+async function probeCapacity(ip: string, host: string, bytes: number, timeoutMs: number): Promise<number | null> {
   try {
     const started = performance.now();
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(signalTimeoutMs),
-      headers: { 'user-agent': 'netpulse/0.1' },
+    // SNI only for name-shaped hosts: a literal-IP host has no SNI, and
+    // Node would reject a bracketed v6 literal as a servername.
+    const servername = net.isIP(host) === 0 ? host : undefined;
+    const body = await new Promise<Buffer>((resolve, reject) => {
+      const req = capacityProbeInternals.httpsRequest(
+        {
+          host: ip,
+          servername,
+          path: `/__down?bytes=${bytes}`,
+          method: 'GET',
+          headers: { host, 'user-agent': 'netpulse/0.1' },
+          timeout: timeoutMs,
+        },
+        (res) => {
+          if ((res.statusCode ?? 0) >= 400) {
+            res.resume();
+            reject(new Error(`capacity probe got status ${res.statusCode}`));
+            return;
+          }
+          const chunks: Buffer[] = [];
+          let total = 0;
+          // Hard read cap: a hostile endpoint cannot grow memory past the
+          // requested payload plus slack.
+          res.on('data', (c: Buffer) => {
+            total += c.length;
+            chunks.push(c);
+            if (total > bytes + 1024 * 1024) req.destroy(new Error('capacity probe exceeded the read cap'));
+          });
+          res.on('end', () => resolve(Buffer.concat(chunks)));
+          res.on('error', reject);
+        },
+      );
+      req.on('timeout', () => req.destroy(new Error(`capacity probe timed out after ${timeoutMs}ms`)));
+      req.on('error', reject);
+      req.end();
     });
-    if (!res.ok || !res.body) return null;
-    const reader = res.body.getReader();
-    let received = 0;
-    // hard cap: stop reading once we have the requested payload (plus slack)
-    while (received < bytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-    }
-    await reader.cancel().catch(() => undefined);
+    const received = body.length;
     const elapsedSec = (performance.now() - started) / 1000;
     if (elapsedSec <= 0 || received < 1024) return null;
     return (received * 8) / elapsedSec / 1_000_000;
@@ -233,14 +272,13 @@ export class SelectionService {
 
       // bounded capacity estimates through the candidate's HTTPS endpoint
       if (ip && family === 4) {
-        const hostForUrl = candidate.host.includes(':') ? `[${candidate.host}]` : candidate.host;
         const schemePort = candidate.port ?? 443;
-        const baseUrl = schemePort === 443 ? `https://${candidate.host}` : null;
-        if (baseUrl) {
-          metrics.downloadMbps = await probeCapacity(`${baseUrl}/__down?bytes=${transferBytes}`, transferBytes, CAPACITY_TIMEOUT_MS);
+        // Port 443 only, as before: the probe speaks TLS directly from Node,
+        // so a candidate on another port keeps its null download estimate
+        // rather than getting an invented fallback.
+        if (schemePort === 443) {
+          metrics.downloadMbps = await probeCapacity(ip, candidate.host, transferBytes, CAPACITY_TIMEOUT_MS);
           metrics.uploadMbps = null; // upload estimation needs POST bodies; kept null unless a probe endpoint is configured
-        } else {
-          void hostForUrl;
         }
       }
 

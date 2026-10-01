@@ -1787,6 +1787,12 @@ export class NodeEventsRepository {
       .limit(Math.min(limit, 1000))
       .all();
   }
+
+  /** Delete every event of one kind; returns how many rows went. */
+  clearKind(kind: string): number {
+    const res = this.handle.db.delete(nodeEvents).where(eq(nodeEvents.kind, kind)).run();
+    return res.changes;
+  }
 }
 
 /** Union of every repository type used by the app context. */

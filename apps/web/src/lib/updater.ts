@@ -75,6 +75,8 @@ export function updaterAvailable(): boolean {
 
 import { api } from '@/lib/api';
 
+import { lastFailedCheck } from '@netpulse/shared';
+
 import type { RecordUpdateEventInput, UpdateHistoryEntry } from '@netpulse/shared';
 
 /**
@@ -97,6 +99,40 @@ export async function fetchUpdateHistory(limit = 100): Promise<UpdateHistoryEntr
   } catch {
     return [];
   }
+}
+
+/**
+ * The last check's event, or null when it was not a failure (or history is
+ * unavailable — an unreachable sidecar must not invent a warning). Returns
+ * the raw ENTRY so the caller words it through shared `updateEventLine`; the
+ * dashboard and the history card then cannot disagree about the same event.
+ */
+export async function fetchLastCheckFailure(): Promise<UpdateHistoryEntry | null> {
+  try {
+    const events = await fetchUpdateHistory(5);
+    return lastFailedCheck(events);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Should a visibility-triggered history refetch run? The card reloads when
+ * its rows re-enter the viewport (fold opened, tab returned to), so rows the
+ * launch poll or a background check recorded in the meantime appear without a
+ * manual Refresh — but scrolling past must not hammer the sidecar, so a
+ * refetch is due only when the last one is at least `minIntervalMs` old.
+ * Pure policy: testable without a DOM. A never-loaded card (0) is always due;
+ * a clock skew into the future is never.
+ */
+export const UPDATE_HISTORY_VISIBLE_REFETCH_MS = 30_000;
+
+export function updateHistoryRefetchDue(
+  lastLoadAt: number,
+  now: number,
+  minIntervalMs = UPDATE_HISTORY_VISIBLE_REFETCH_MS,
+): boolean {
+  return now - lastLoadAt >= minIntervalMs;
 }
 
 /**

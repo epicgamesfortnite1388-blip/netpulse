@@ -615,9 +615,14 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[ignore = "pops a real OS dialog on interactive Windows: ShellExecuteExW with the runas verb surfaces a 'cannot find/consent' box for the missing path before returning the error (observed live during the security audit). Run explicitly with: cargo test -- --ignored"]
     fn shell_execute_rejects_missing_binary_without_panicking() {
-        // A nonexistent binary must return a clean Err (not a crash) — this
-        // exercises the FFI error path without ever showing a prompt.
+        // A nonexistent binary must return a clean Err (not a crash). NOTE:
+        // this CAN show an OS dialog on a desktop session — the old comment
+        // claiming "without ever showing a prompt" was wrong (ShellExecuteEx
+        // renders the error UI itself when not asked not to). The pure
+        // validate_op tests below cover the allow-list without any UI; this
+        // FFI error-path check stays as an opt-in audit tool.
         let r = shell_execute_elevated("C:\\definitely\\not\\real\\wireguard-nope.exe", "");
         assert!(r.is_err());
     }

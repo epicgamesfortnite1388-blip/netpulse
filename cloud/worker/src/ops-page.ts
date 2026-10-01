@@ -19,6 +19,8 @@
  * identities beyond the numeric id already stored in the mirror.
  */
 
+import { rateLimit } from './auth';
+
 import type { Env } from './auth';
 
 /** Failure-sampling window for the outbound-call health view. */
@@ -170,6 +172,20 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 /**
+ * Brute-force wall for the ops token. The token is long random hex, but an
+ * unthrottled online guesser is still a standing vulnerability (audit F2:
+ * live probes showed unlimited 401s). Keyed per IP: 30 guesses per 5 minutes
+ * is far above any human operator's retry rate and far below a viable
+ * brute-force rate. Checked AFTER the fail-closed config gate so an
+ * unconfigured worker still answers 503 without touching the limiter.
+ */
+const OPS_RATE_LIMIT = { max: 30, windowMs: 5 * 60_000 } as const;
+
+function opsClientIp(request: Request): string {
+  return request.headers.get('cf-connecting-ip')?.slice(0, 60) ?? 'unknown';
+}
+
+/**
  * Handle GET /api/v1/ops/netpulse. Returns null for other paths/methods so
  * the main router falls through; otherwise ALWAYS responds. Fail-closed:
  * an unconfigured OPS_TOKEN rejects every request with 503.
@@ -184,6 +200,11 @@ export async function handleNetpulseOpsApi(request: Request, env: Env): Promise<
   const expected = env.OPS_TOKEN?.trim();
   if (!expected || expected.length < 16) {
     return json(503, { ok: false, error: 'ops_token_not_configured' });
+  }
+
+  const limiter = await rateLimit(env.DB, `ops:${opsClientIp(request)}`, OPS_RATE_LIMIT.max, OPS_RATE_LIMIT.windowMs);
+  if (!limiter.ok) {
+    return json(429, { ok: false, error: 'rate_limited' }, { 'Retry-After': String(limiter.retryAfterSec) });
   }
   const presented = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   if (!presented || !timingSafeEqualStr(presented, expected)) {

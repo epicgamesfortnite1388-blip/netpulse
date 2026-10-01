@@ -134,4 +134,34 @@ describe('update-history routes', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('DELETE requires auth like every other diary write', async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/update-history' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('DELETE clears ONLY update-feed:history rows and reports the true count', async () => {
+    const svc = new UpdateFeedHistoryService({ events: ctx.repos.nodeEvents, log: { warn: () => {} } });
+    svc.record({ kind: 'check', outcome: 'up-to-date' });
+    svc.record({ kind: 'check', outcome: 'failed', reason: 'boom' });
+    // A foreign kind in the same event log must survive the clear.
+    ctx.repos.nodeEvents.insert({ kind: 'vpn-history:report-run', at: Date.now(), payload: { note: 'keep me' } });
+
+    const del = await app.inject({ method: 'DELETE', url: '/api/v1/update-history', headers: H() });
+    expect(del.statusCode).toBe(200);
+    const body = del.json() as { ok: boolean; removed: number };
+    expect(body.ok).toBe(true);
+    expect(body.removed).toBeGreaterThanOrEqual(2);
+
+    const get = await app.inject({ method: 'GET', url: '/api/v1/update-history', headers: H() });
+    expect((get.json() as { events: UpdateHistoryEntry[] }).events).toHaveLength(0);
+    // The foreign kind's rows are untouched.
+    expect(ctx.repos.nodeEvents.recent('vpn-history:report-run', 10).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('DELETE on an empty diary reports removed: 0', async () => {
+    const del = await app.inject({ method: 'DELETE', url: '/api/v1/update-history', headers: H() });
+    expect(del.statusCode).toBe(200);
+    expect((del.json() as { removed: number }).removed).toBe(0);
+  });
 });

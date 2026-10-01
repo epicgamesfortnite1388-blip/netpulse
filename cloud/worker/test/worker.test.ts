@@ -1,7 +1,28 @@
-import { env, SELF, createExecutionContext } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, beforeAll } from 'vitest';
 
 import { setMailer, setMailPost } from '../src/mail';
+
+describe('CORS preflight allow-list (audit F5 regression)', () => {
+  it('does NOT reflect an arbitrary origin in preflight responses', async () => {
+    const res = await SELF.fetch('https://worker.test/api/v1/auth/login', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('grants the product own origins only', async () => {
+    for (const origin of ['https://netpulse-cloud.shuridehradin.workers.dev', 'http://tauri.localhost']) {
+      const res = await SELF.fetch('https://worker.test/api/v1/auth/login', {
+        method: 'OPTIONS',
+        headers: { origin, 'access-control-request-method': 'POST' },
+      });
+      expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+    }
+  });
+});
 
 /**
  * Security + behavior contract of the NetPulse cloud Worker, driven through
@@ -217,6 +238,30 @@ describe('sync endpoints', () => {
     const { token } = await register('badjson@example.com');
     const res = await authFetch(token, '/api/v1/settings', { method: 'PUT', body: JSON.stringify({ payload: '"just a string"', updatedAt: 1 }) });
     expect(res.status).toBe(400);
+  });
+
+  // Regression: idx_profiles_user_name (UNIQUE(user_id, name) WHERE deleted_at
+  // IS NULL) is not covered by ON CONFLICT (id), so a profile re-imported
+  // under a new id with the same name used to 409 EVERY sync forever.
+  it('profiles PUT: same-name re-import under a new id tombstones the old envelope instead of 409ing', async () => {
+    const { token } = await register('profilename@example.com');
+    const put = (body: Record<string, unknown>) => authFetch(token, '/api/v1/profiles', { method: 'PUT', body: JSON.stringify(body) });
+    expect((await put({ id: 'np-local-aaa', name: 'Tokyo', protocol: 'vless', endpoint: 'tok:443', config: '{}' })).status).toBe(200);
+    // The recreated profile (new id, same name) must win and take over.
+    expect((await put({ id: 'np-local-bbb', name: 'Tokyo', protocol: 'vless', endpoint: 'tok2:443', config: '{}' })).status).toBe(200);
+    let list = (await (await authFetch(token, '/api/v1/profiles')).json()) as { profiles: Array<{ id: string; endpoint: string | null }> };
+    const live = list.profiles.filter((p) => p.id.startsWith('np-local-'));
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ id: 'np-local-bbb', endpoint: 'tok2:443' });
+    // Re-pushing the same id keeps it live (no self-tombstone via id != ?).
+    expect((await put({ id: 'np-local-bbb', name: 'Tokyo', protocol: 'vless', endpoint: 'tok3:443', config: '{}' })).status).toBe(200);
+    list = (await (await authFetch(token, '/api/v1/profiles')).json()) as { profiles: Array<{ id: string; endpoint: string | null }> };
+    expect(list.profiles.filter((p) => p.id === 'np-local-bbb')).toHaveLength(1);
+    expect(list.profiles.find((p) => p.id === 'np-local-bbb')?.endpoint).toBe('tok3:443');
+    // Distinct names keep coexisting.
+    expect((await put({ id: 'np-local-ccc', name: 'Osaka', protocol: 'ss', config: '{}' })).status).toBe(200);
+    list = (await (await authFetch(token, '/api/v1/profiles')).json()) as { profiles: Array<{ id: string; endpoint: string | null }> };
+    expect(list.profiles.filter((p) => p.id.startsWith('np-local-')).map((p) => p.id).sort()).toEqual(['np-local-bbb', 'np-local-ccc']);
   });
 });
 

@@ -50,3 +50,9 @@ apps/api/dist-desktop/
 # TypeScript incremental build info
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+# Operator credentials staged locally (never committed):
+# `*token*.local` covers every shape used here (`.ops-token.local`,
+# `.bot-token.local`, …) — a bare `*.token.local` would NOT match a
+# dot-prefixed name like `.ops-token.local` (verified live: the file sat
+# untracked-but-unignored holding a real secret).
+*token*.local

@@ -22,6 +22,8 @@ function message(err: unknown): string {
 export interface UpdateHistoryEventStore {
   insert(row: { kind: string; at: number; payload: Record<string, unknown> }): void;
   recent(kind: string, limit: number): Array<{ id: number; kind: string; at: number; payload: Record<string, unknown> }>;
+  /** Deletes every row of one kind; returns how many were removed. */
+  clearKind(kind: string): number;
 }
 
 const OUTCOMES: ReadonlySet<string> = new Set(['up-to-date', 'available', 'failed', 'started', 'completed']);
@@ -83,6 +85,21 @@ export class UpdateFeedHistoryService {
     } catch (err) {
       this.deps.log.warn(`update history: cannot read: ${message(err)}`);
       return [];
+    }
+  }
+
+  /**
+   * Wipe the diary. Deletes ONLY this feature's rows (`update-feed:history`) —
+   * the shared event log carries other kinds' history (discovery runs, report
+   * runs), which a clear must never touch. Returns the number removed so the
+   * route can report exactly what happened.
+   */
+  clear(): number {
+    try {
+      return this.deps.events.clearKind(UPDATE_HISTORY_KIND);
+    } catch (err) {
+      this.deps.log.warn(`update history: cannot clear: ${message(err)}`);
+      return 0;
     }
   }
 }

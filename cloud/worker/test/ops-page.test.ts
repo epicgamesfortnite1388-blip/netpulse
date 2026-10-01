@@ -1,5 +1,5 @@
 import { env, SELF } from 'cloudflare:test';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 /**
  * Operator status page (/ops) + gated snapshot (/api/v1/ops/netpulse).
@@ -21,6 +21,51 @@ beforeAll(async () => {
   await env.DB.prepare(`DELETE FROM np_outbound_log`).run();
   await env.DB.prepare(`DELETE FROM np_entitlements`).run();
   await env.DB.prepare(`DELETE FROM rate_limits`).run();
+});
+
+// Every test starts with an empty limiter table: SELF.fetch presents one
+// shared IP, so without this the 30-attempt wall would leak between tests.
+beforeEach(async () => {
+  await env.DB.prepare(`DELETE FROM rate_limits`).run();
+});
+
+describe('ops snapshot rate limit (audit F2 regression)', () => {
+  const clearLimits = () => env.DB.prepare(`DELETE FROM rate_limits`).run();
+
+  it('throttles guessing after 30 attempts from one IP with 429', async () => {
+    await clearLimits();
+    let last = 0;
+    for (let i = 0; i < 30; i++) {
+      last = (await authed('/api/v1/ops/netpulse', `guess-${i}`)).status;
+      expect(last).toBe(401);
+    }
+    // 31st attempt: the limiter, not the token check, answers.
+    const limited = await authed('/api/v1/ops/netpulse', 'guess-31');
+    expect(limited.status).toBe(429);
+    expect(((await limited.json()) as { error: string }).error).toBe('rate_limited');
+    // And even the CORRECT token is refused while limited — the wall is
+    // per-IP, exactly what makes an online brute force non-viable.
+    const correctWhileLimited = await authed('/api/v1/ops/netpulse', TOKEN);
+    expect(correctWhileLimited.status).toBe(429);
+  });
+
+  it('the limiter does not count requests while OPS_TOKEN is unconfigured (fail-closed first)', async () => {
+    await clearLimits();
+    const { handleNetpulseOpsApi } = await import('../src/ops-page');
+    const res = await handleNetpulseOpsApi(
+      new Request('https://worker.test/api/v1/ops/netpulse', { headers: { Authorization: `Bearer ${TOKEN}` } }),
+      { DB: env.DB } as never,
+    );
+    expect(res?.status).toBe(503);
+    const rows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM rate_limits`).first<{ n: number }>();
+    expect(rows?.n).toBe(0);
+  });
+
+  it('a fresh window lets the correct token through again', async () => {
+    await clearLimits();
+    const res = await authed('/api/v1/ops/netpulse', TOKEN);
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('ops page shell', () => {

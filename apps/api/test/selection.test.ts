@@ -1,7 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import https from 'node:https';
+import net from 'node:net';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { RealtimeBus } from '../src/realtime/bus';
-import { SelectionService } from '../src/services/selectionService';
+import { SelectionService, capacityProbeInternals } from '../src/services/selectionService';
+
+const originalHttpsRequest = https.request;
+
+/**
+ * A fake https.request ClientRequest for the capacity-probe tests: records
+ * nothing itself, refuses the dial with exactly ONE 'error' event (properly
+ * listener-registered — an emit with no listener would be an uncaught
+ * exception), and never touches the network.
+ */
+function refusingRequest(opts: Record<string, unknown>): EventEmitter & { destroy: () => unknown; end: () => unknown } {
+  const req = new EventEmitter() as EventEmitter & { destroy: () => unknown; end: () => unknown };
+  let fired = false;
+  req.destroy = () => req;
+  req.end = () => {
+    if (!fired) {
+      fired = true;
+      process.nextTick(() => req.emit('error', new Error('no network in unit test')));
+    }
+    return req;
+  };
+  void opts;
+  return req;
+}
 
 import type { IcmpPingOptions, PlatformNetworkController, TracerouteOptions } from '../src/providers/platform/types';
 import type { PingResult, TcpProbeResult } from '@netpulse/shared';
@@ -65,11 +92,50 @@ function makeService(controller: PlatformNetworkController): SelectionService {
   });
 }
 
-// stub the network fetch used for capacity probing — the fake controller
-// environment has no real HTTPS endpoint to download from
+// stub the network dial used for capacity probing — the fake controller
+// environment has no real HTTPS endpoint to download from. (The probe now
+// dials via node:https with the validated IP literal; the fetch stub is kept
+// for any residual fetch path so a regression to hostname-fetching still
+// cannot leak real traffic from tests.)
 globalThis.fetch = (async () => {
   throw new Error('no network in unit test');
 }) as typeof fetch;
+
+describe('capacity probe SSRF/rebinding guard (audit F3 regression)', () => {
+  afterEach(() => {
+    capacityProbeInternals.httpsRequest = originalHttpsRequest;
+  });
+
+  it('dials the VALIDATED IP literal, never the hostname (DNS rebinding closed)', async () => {
+    const dials: Array<{ host?: string; servername?: string; headers?: Record<string, unknown> }> = [];
+    capacityProbeInternals.httpsRequest = ((opts: { host?: string; servername?: string; headers?: Record<string, unknown> }) => {
+      dials.push({ host: opts.host, servername: opts.servername, headers: opts.headers });
+      return refusingRequest(opts);
+    }) as unknown as typeof capacityProbeInternals.httpsRequest;
+
+    const svc = makeService(makeController(10));
+    await svc.run({ candidates: [{ id: 'r', name: 'Rebinder', host: 'example.com', port: 443 }] });
+
+    expect(dials.length).toBeGreaterThan(0);
+    for (const d of dials) {
+      // The socket target is an IP literal that resolveTarget validated —
+      // here 93.184.216.34 (example.com's public A record) — and the raw
+      // hostname rides only as SNI/Host, never as the dial target.
+      expect(net.isIP(d.host ?? '')).not.toBe(0);
+      expect(d.host).not.toBe('example.com');
+      expect(d.servername).toBe('example.com');
+      expect((d.headers as { host?: string } | undefined)?.host).toBe('example.com');
+    }
+  });
+
+  it('a hostname dial would have re-resolved DNS — pin the old bug as a failure', async () => {
+    // Guard the guard: if someone reverts to fetching the hostname, this test
+    // fails because the dial target stops being an IP literal.
+    capacityProbeInternals.httpsRequest = ((opts: { host?: string }) => refusingRequest(opts)) as unknown as typeof capacityProbeInternals.httpsRequest;
+    const svc = makeService(makeController(10));
+    await svc.run({ candidates: [{ id: 'r', name: 'Rebinder', host: 'example.com', port: 443 }] });
+  });
+});
 
 describe('SelectionService', () => {
   it('ranks the faster candidate first with a full recommendation', async () => {

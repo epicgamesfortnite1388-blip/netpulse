@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
-import { Gauge as GaugeIcon, Globe as Globe2Icon, Play, Sparkles, Zap } from 'lucide-react';
+import { Gauge as GaugeIcon, Globe as Globe2Icon, Play, Sparkles, TriangleAlert, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 import { Gauge } from '@/components/charts/Gauge';
@@ -16,10 +16,13 @@ import { Progress } from '@/components/ui/Progress';
 import { ErrorState, LoadingState } from '@/components/ui/States';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/lib/format';
+import { fetchLastCheckFailure } from '@/lib/updater';
 import { ConnectionCard, HealthBreakdown } from './ConnectionCard';
 import { deriveInsights, InsightsCard } from './InsightsCard';
 import { IranConnectivityWidget } from '@/features/iran/IranConnectivityWidget';
 import { LiveMapWidget } from '@/features/map/LiveMapWidget';
+
+import { updateEventLine } from '@netpulse/shared';
 
 import type { EventRecord } from '@shared/models/common';
 import type { NetworkStatus, PingResult } from '@shared/models/network';
@@ -60,6 +63,17 @@ export default function DashboardPage() {
     queryFn: () => api.get<{ events: EventRecord[] }>('/events?limit=6'),
     refetchInterval: 8_000,
   });
+
+  // Proactive updater surfacing: if the last check failed, say so here and
+  // link to the history card — a silent updater that never checks is exactly
+  // how an app ends up months out of date. Null renders nothing (healthy case;
+  // also web mode, where no updater exists to fail).
+  const lastCheckFailQuery = useQuery({
+    queryKey: ['update-history', 'last-failure'],
+    queryFn: () => fetchLastCheckFailure(),
+    staleTime: 60_000,
+  });
+  const lastCheckFail = lastCheckFailQuery.data ?? null;
 
   const navigate = useNavigate();
 
@@ -144,6 +158,25 @@ export default function DashboardPage() {
       />
 
       <DisclosureToolbar className="-mt-3 mb-2" />
+
+      {lastCheckFail !== null && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5">
+          <span className="flex min-w-0 items-center gap-2 text-xs leading-snug text-warn">
+            <TriangleAlert size={13} className="shrink-0" />
+            {/* Wording comes from the shared policy — the same line the history
+                card renders, so both surfaces cannot disagree. */}
+            <span className="truncate">{updateEventLine(lastCheckFail)}</span>
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => navigate('/settings?tab=platform&card=update-history')}
+          >
+            View history
+          </Button>
+        </div>
+      )}
 
       {statusQuery.isError && <ErrorState error={statusQuery.error} retry={() => void statusQuery.refetch()} />}
       {statusQuery.isLoading && <LoadingState label="Measuring your connection" />}
