@@ -60,7 +60,7 @@ export function EngineHero({
   footer?: ReactNode;
 }) {
   return (
-    <div className="relative mb-5 overflow-hidden rounded-xl border border-line-strong bg-surface">
+    <div className="relative mb-5 overflow-hidden rounded-xl border border-line-strong bg-surface shadow-floating">
       {/* soft directional glow; purely decorative */}
       <div
         aria-hidden
@@ -295,7 +295,7 @@ export function StatTile({
             ? 'text-faint'
             : 'text-text';
   return (
-    <div className="rounded-lg border border-line bg-surface-2 px-3 py-2.5">
+    <div className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 shadow-raised">
       <p className="text-micro font-medium uppercase tracking-[0.12em] text-faint">{label}</p>
       <p className={`metric-num mt-1 text-lg font-semibold ${toneClass}`}>{value}</p>
       {hint && <p className="mt-0.5 text-micro leading-snug text-faint">{hint}</p>}
@@ -359,7 +359,7 @@ export function CapabilityMatrix({ rows }: { rows: CapabilityRow[] }) {
 /** A compact labelled value used inside list rows. */
 export function MiniMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-lg border border-line bg-surface px-2 py-1.5">
+    <div className="rounded-lg border border-line bg-surface px-2 py-1.5 shadow-raised">
       <p className="text-micro font-medium uppercase tracking-[0.1em] text-faint">{label}</p>
       <p className="metric-num text-xs text-text">{value}</p>
     </div>
@@ -419,7 +419,7 @@ export function MetricStrip({ items, className = '' }: { items: MetricItem[]; cl
   const ruled = items.length <= 4;
   return (
     <div
-      className={`grid gap-y-3 rounded-xl border border-line bg-surface px-4 py-3 sm:grid-cols-2 ${
+      className={`grid gap-y-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-raised sm:grid-cols-2 ${
         items.length >= 4 ? 'lg:grid-cols-4' : items.length === 3 ? 'lg:grid-cols-3' : ''
       } ${className}`}
     >

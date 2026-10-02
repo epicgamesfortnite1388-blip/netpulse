@@ -84,7 +84,7 @@ export function Card({
 
   return (
     <div
-      className={`rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.4)] transition-colors ${className}`}
+      className={`rounded-xl border border-line bg-surface shadow-raised transition-colors ${className}`}
       {...rest}
     >
       <CardChildLevelContext.Provider value={level + (rendersHeading ? 1 : 0)}>

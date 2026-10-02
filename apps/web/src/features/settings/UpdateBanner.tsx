@@ -165,7 +165,7 @@ export function UpdateBanner() {
       )}
 
       {available !== null && available.body !== null && available.body.trim() !== '' && notesOpen && (
-        <div className="absolute inset-x-0 top-full z-30 max-h-64 overflow-y-auto border-b border-line bg-surface px-6 py-3 text-xs text-text shadow-lg">
+        <div className="absolute inset-x-0 top-full z-30 max-h-64 overflow-y-auto border-b border-line bg-surface px-6 py-3 text-xs text-text shadow-floating">
           <div className="mb-1 flex items-center gap-2 text-micro uppercase tracking-[0.16em] text-faint">
             <CheckCircle2 size={11} /> Release notes — {available.version}
           </div>

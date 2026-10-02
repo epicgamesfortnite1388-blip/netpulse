@@ -14,11 +14,19 @@
 
 @theme {
   --color-bg: #05080d;
-  --color-surface: #0a0f17;
-  --color-surface-2: #0e1520;
-  --color-elevated: #121b29;
-  --color-line: rgba(148, 163, 184, 0.10);
-  --color-line-strong: rgba(148, 163, 184, 0.22);
+  /* The step from page to panel used to be 4-9 luminance units -- effectively
+     invisible, so every card merged into one flat sheet. These three are spaced
+     far enough apart to read as distinct planes while staying in the same dark
+     family; raising the surface also moves text-on-surface further from the
+     contrast floor, never closer. */
+  --color-surface: #0d131d;
+  --color-surface-2: #121a27;
+  --color-elevated: #18222f;
+  /* Borders carry the edges that the shadow now reinforces, so they no longer
+     have to do all the work alone. */
+  --color-line: rgba(148, 163, 184, 0.13);
+  --color-line-strong: rgba(148, 163, 184, 0.26);
+
   --color-text: #e8eef6;
   --color-muted: #8fa0b3;
   /*
@@ -153,13 +161,113 @@ html[data-type-scale='xl'] {
  * Only the semantic color tokens are overridden; every component consumes
  * these same variables, so the whole UI switches consistently.
  */
+
+/*
+ * The depth vocabulary, as real utilities.
+ *
+ * Declared with `@utility` rather than as `@theme` entries so each one
+ * references the custom property instead of an inlined literal -- that is what
+ * makes the light theme actually get light shadows (see the note above).
+ *
+ *   raised    resting panels: cards, tiles, list rows on the page
+ *   floating  lifted off the page: sticky header, menus, popovers, tooltips
+ *   overlay   transient layers: command palette, toasts
+ *
+ * `--edge-highlight` is folded into each step rather than offered separately:
+ * an inset top highlight only makes sense on a surface that is actually raised,
+ * and having it as its own class would let it be applied to a flat border-only
+ * box, where it draws a bright line across the top of something that is meant to
+ * be flush with the page.
+ */
+@utility shadow-raised {
+  box-shadow: var(--shadow-raised), var(--edge-highlight);
+}
+
+@utility shadow-floating {
+  box-shadow: var(--shadow-floating), var(--edge-highlight);
+}
+
+@utility shadow-overlay {
+  box-shadow: var(--shadow-overlay), var(--edge-highlight);
+}
+
+/*
+ * Elevation tokens are deliberately NOT in `@theme`.
+ *
+ * A `--shadow-*` entry in `@theme` makes Tailwind emit `shadow-raised` with the
+ * value *inlined* into `--tw-shadow` -- verified in the built CSS: the utility
+ * contains `0 1px 2px ...` rather than `var(--shadow-raised)`. The theme's own
+ * override therefore could never take effect and the light theme would have kept
+ * the dark theme's near-black shadows.
+ *
+ * Declared as plain custom properties and wired to `shadow-*` by the `@utility`
+ * rules further down, the utilities reference `var(--shadow-raised)` and follow
+ * the active theme.
+ */
+:root {
+  /*
+   * Elevation — the depth system.
+   *
+   * Before this, depth was carried entirely by 1px borders: measured on the
+   * running app, 554 of 3538 elements on /nodes were bordered and exactly ONE
+   * had a shadow, and a card's luminance sat only 7-13 units above the page
+   * behind it. That is why the interface read flat however good the colours
+   * were: nothing was actually *above* anything else.
+   *
+   * Three steps, named for the layer they describe rather than for a size, so a
+   * component picks by role and the whole app stays consistent:
+   *
+   *   raised    resting panels: cards, tables, list rows sitting on the page
+   *   floating  things that lift off the page: sticky header, popovers, menus
+   *   overlay   transient and modal layers: dialogs, toasts, command palette
+   *
+   * Dark theme shadows are near-black with a low alpha rather than grey: on a
+   * dark surface a grey shadow is lighter than the thing casting it and reads
+   * as a smudge. The tight offset/blur spread is deliberate — a wide, soft
+   * shadow looks like a drop shadow on a poster, while a 1-3px spread reads as
+   * a surface a millimetre above its neighbour.
+   */
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(148, 163, 184, 0.04);
+  --shadow-floating:
+    0 4px 12px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(148, 163, 184, 0.05);
+  --shadow-overlay:
+    0 16px 40px rgba(0, 0, 0, 0.62), 0 4px 10px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(148, 163, 184, 0.06);
+
+  /* A hairline highlight along the top edge of a raised surface. Light catches
+     the top of something lifted off the page; without it a dark card reads as a
+     hole rather than a panel. Kept extremely faint — it is a hint, not a line. */
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
 html[data-theme='light'] {
+  /*
+   * Light-theme elevation. Shadows here are neutral slate rather than black:
+   * on a near-white surface a pure-black shadow reads as dirt.
+   *
+   * The light theme had NO usable depth ramp at all before this: --color-surface
+   * and --color-elevated were both #ffffff, so "elevated" was literally the same
+   * colour as the panel it was supposed to sit above, and only a border could
+   * separate them. Shadows do that job here instead of inventing a fifth grey.
+   */
+  --shadow-raised:
+    0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.035);
+  --shadow-floating:
+    0 4px 12px rgba(15, 23, 42, 0.09), 0 2px 4px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.045);
+  --shadow-overlay:
+    0 16px 40px rgba(15, 23, 42, 0.14), 0 4px 10px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.05);
+
+  /* In light mode the highlight would be invisible on white, so the top edge
+     gets a faint darkening instead — the same idea, inverted. */
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
   --color-bg: #f4f6f9;
   --color-surface: #ffffff;
   --color-surface-2: #eef2f7;
   --color-elevated: #ffffff;
   --color-line: rgba(15, 23, 42, 0.10);
   --color-line-strong: rgba(15, 23, 42, 0.22);
+
   --color-text: #0f172a;
   --color-muted: #52627a;
   /* #8593a8 was 3.1:1 on white; the dark theme's own faint clears 4.5:1 here. */

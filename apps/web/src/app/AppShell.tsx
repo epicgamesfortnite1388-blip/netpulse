@@ -368,7 +368,7 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         {/* topbar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-bg/80 px-4 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-bg/80 px-4 shadow-raised backdrop-blur lg:px-8">
           <div className="flex items-center gap-3">
             <button
               className="rounded-lg border border-line bg-surface-2 p-2 text-muted lg:hidden"

@@ -24,6 +24,25 @@ export default defineWorkersConfig({
     setupFiles: ['./test/applyMigrations.ts'],
     poolOptions: {
       workers: {
+        // Run every test file in ONE workerd instance rather than one per file.
+        //
+        // On this Windows host the workers runtime intermittently fails to start
+        // with `workerd/server/fallback-service.c++:158: Fallback service failed
+        // to fetch module; ... ConnectEx(): #1225 The remote computer refused the
+        // network connection` -- the runtime's fallback service tries to connect
+        // back to the parent and nothing is listening yet. It is not caused by
+        // any test: the same suite passed 56/56 minutes earlier and fails 3/3
+        // just as reproducibly, and switching pool (`--pool=forks`) changes
+        // nothing, so it is the runtime's own startup rather than vitest's
+        // scheduling.
+        //
+        // Collapsing to a single worker removes most of the concurrent starts and
+        // with them the race: measured over repeated runs, failures went from
+        // every attempt to roughly one in three. That is a mitigation, not a
+        // cure -- the underlying runtime bug is upstream. Storage isolation is
+        // unchanged (vitest-pool-workers still resets between tests), and all 56
+        // tests pass either way, so nothing depends on per-file workers.
+        singleWorker: true,
         wrangler: { configPath: path.join(__dirname, 'wrangler.toml') },
         miniflare: {
           // Local (per-test-run) D1 for the DB binding.

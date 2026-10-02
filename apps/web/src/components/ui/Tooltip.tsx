@@ -10,7 +10,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
       <RTooltip.Portal>
         <RTooltip.Content
           sideOffset={6}
-          className="z-50 max-w-xs rounded-lg border border-line-strong bg-elevated px-3 py-2 text-xs leading-relaxed text-text shadow-xl"
+          className="z-50 max-w-xs rounded-lg border border-line-strong bg-elevated px-3 py-2 text-xs leading-relaxed text-text shadow-floating"
         >
           {content}
           <RTooltip.Arrow className="fill-[#121b29]" />

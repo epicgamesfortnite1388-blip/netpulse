@@ -87,7 +87,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface shadow-2xl">
+      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface shadow-overlay">
         <div className="flex items-center gap-2.5 border-b border-line px-4">
           <span className="text-muted">⌕</span>
           <input
