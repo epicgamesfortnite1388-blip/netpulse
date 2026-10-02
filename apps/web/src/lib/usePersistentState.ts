@@ -76,6 +76,25 @@ export function readPersistedState<T>(key: string, fallback: T): T {
 }
 
 /**
+ * Write a persisted UI value from outside the component that owns the hook.
+ *
+ * Why it exists: a hook instance holds its own in-memory copy, so one component
+ * cannot hand a value to another through the hook. The Dashboard's "needs
+ * attention" strip has to land the user on a specific VPN engine tab, and that
+ * tab is this module's `vpn.surface` — writing the raw sessionStorage key from
+ * a feature file would fork the `np.ui.` format, so the format stays owned here.
+ *
+ * The owning hook reads at mount, so write immediately BEFORE navigating.
+ */
+export function writePersistedState<T>(key: string, value: T): void {
+  try {
+    sessionStorage.setItem(`np.ui.${key}`, serialize(value));
+  } catch {
+    // storage blocked: the target page opens on its default tab instead
+  }
+}
+
+/**
  * Narrower helper for the common "selected/running entity id" pattern.
  * Returns null when the stored id's entity no longer exists (caller checks).
  */

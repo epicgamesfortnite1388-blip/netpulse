@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
 import { armElevationBridge } from '@/lib/elevationBroker';
+import { usePersistentState } from '@/lib/usePersistentState';
 
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { MANAGED_PROVIDER_META } from './engineMeta';
@@ -68,7 +69,13 @@ export function ProviderSurface({ providerId }: { providerId: ManagedProviderId 
   const connectionsQuery = useVpnConnections(12);
   const providerConnections = (connectionsQuery.data?.connections ?? []).filter((c) => c.providerId === providerId);
 
-  const [showImport, setShowImport] = useState(false);
+  // Whether the import box is open is UI state, so it persists per engine: a
+  // user part-way through fixing one provider should not lose the form by
+  // switching tabs, and another surface (the Dashboard's "needs attention"
+  // strip) deep-links here by pre-setting this key. The pasted config itself
+  // stays in plain useState on purpose — stale credential text must never be
+  // one click away from being re-imported.
+  const [showImport, setShowImport] = usePersistentState<boolean>(`vpn.import.${providerId}`, false);
   const [importName, setImportName] = useState('');
   const [configText, setConfigText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);

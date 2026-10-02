@@ -19,6 +19,7 @@ import { timeAgo } from '@/lib/format';
 import { fetchLastCheckFailure } from '@/lib/updater';
 import { ConnectionCard, HealthBreakdown } from './ConnectionCard';
 import { deriveInsights, InsightsCard } from './InsightsCard';
+import { NeedsAttentionCard } from './NeedsAttentionCard';
 import { IranConnectivityWidget } from '@/features/iran/IranConnectivityWidget';
 import { LiveMapWidget } from '@/features/map/LiveMapWidget';
 
@@ -159,6 +160,10 @@ export default function DashboardPage() {
 
       <DisclosureToolbar className="-mt-3 mb-2" />
 
+      {/* First thing on the page: what the machine already knows is broken.
+          Renders nothing at all when nothing needs attention. */}
+      <NeedsAttentionCard />
+
       {lastCheckFail !== null && (
         <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5">
           <span className="flex min-w-0 items-center gap-2 text-xs leading-snug text-warn">
@@ -269,7 +274,7 @@ export default function DashboardPage() {
                   <p className="py-4 text-center text-sm text-faint">No events recorded yet.</p>
                 )}
                 {(eventsQuery.data?.events ?? []).map((e) => (
-                  <div key={e.id} className="flex items-center justify-between gap-3 text-[13px]">
+                  <div key={e.id} className="flex items-center justify-between gap-3 text-mini">
                     <span className="flex min-w-0 items-center gap-2">
                       <Badge tone={e.level === 'error' ? 'danger' : e.level === 'warn' ? 'warn' : 'neutral'}>
                         {e.category}

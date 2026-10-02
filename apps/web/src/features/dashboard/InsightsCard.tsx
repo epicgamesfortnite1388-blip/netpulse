@@ -116,7 +116,7 @@ export function InsightsCard({ insights }: { insights: Insight[] }) {
       <CardBody>
         <ul className="space-y-2.5">
           {insights.map((insight, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+            <li key={i} className="flex items-start gap-2.5 text-mini leading-relaxed text-muted">
               {ICONS[insight.level]}
               <span>{insight.message}</span>
             </li>

@@ -12,8 +12,8 @@ import type { VpnStatus } from '@shared/models/vpn';
 function Row({ label, value, mono = true }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-[13px] text-muted">{label}</span>
-      <span className={`text-[13px] text-text ${mono ? 'metric-num' : ''} truncate`}>{value}</span>
+      <span className="text-mini text-muted">{label}</span>
+      <span className={`text-mini text-text ${mono ? 'metric-num' : ''} truncate`}>{value}</span>
     </div>
   );
 }
@@ -60,7 +60,7 @@ export function ConnectionCard({ status }: { status: NetworkStatus | undefined }
             ipv6?.available ? (
               <span className="inline-flex items-center gap-1.5">
                 <Badge tone="ok">active</Badge>
-                {ipv6.ip ? <span className="metric-num text-[12px]">{ipv6.ip}</span> : null}
+                {ipv6.ip ? <span className="metric-num text-micro">{ipv6.ip}</span> : null}
               </span>
             ) : (
               <span className="text-faint">not available on this network</span>
@@ -144,14 +144,17 @@ export function HealthBreakdown({ status }: { status: NetworkStatus | undefined 
     >
       <CardHeader title="Health components" subtitle="Only measured values contribute to the score" icon={<Shield size={15} />} />
       <CardBody>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        {/* Two across only from xl. In a three-column dashboard a 1024px window
+            leaves ~83px per cell here, which cannot hold a label and its
+            value at a legible size; stacked, the same rows fit in 181px. */}
+          <div className="grid gap-x-4 gap-y-1.5 xl:grid-cols-2">
           {components.map((c) => (
             <div key={c.component} className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2 text-[13px] text-muted">
+              <span className="flex items-center gap-2 text-mini text-muted">
                 <StatusDot tone={c.measured ? 'ok' : 'idle'} size={6} />
                 {c.label}
               </span>
-              <span className={`metric-num text-[13px] ${c.measured ? 'text-text' : 'text-faint'}`}>
+              <span className={`metric-num text-mini ${c.measured ? 'text-text' : 'text-faint'}`}>
                 {c.measured
                   ? c.component === 'connectivity'
                     ? c.value === 1
