@@ -134,7 +134,7 @@ export default function DiagnosticsPage() {
     } catch {
       setDiagId(null);
     }
-  }, []);
+  }, [setDiagId]);
 
   const runBufferbloat = useCallback(async () => {
     setBbId(null);
@@ -144,7 +144,7 @@ export default function DiagnosticsPage() {
     } catch {
       setBbId(null);
     }
-  }, []);
+  }, [setBbId]);
 
   const runMtu = useCallback(async () => {
     setMtuId(null);
@@ -154,7 +154,7 @@ export default function DiagnosticsPage() {
     } catch {
       setMtuId(null);
     }
-  }, []);
+  }, [setMtuId]);
 
   const runCgnat = useCallback(async () => {
     setToolError(null);

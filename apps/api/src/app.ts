@@ -299,7 +299,13 @@ export async function buildApp(opts: BuildOptions = {}) {
   const elevationBroker = new ElevationBroker({ appDataDir: config.dataDir, bus, log });
   const controller = opts.controller ?? (safeMode ? createNullController() : createPlatformController());
   const reputationProviders = new ProviderRegistry<ReputationProvider>();
-  const vpn = createVpnRegistry(path.join(config.dataDir, 'secrets'), path.join(config.dataDir, 'vpn-profiles'), vpnHooks);
+  const vpn = createVpnRegistry(path.join(config.dataDir, 'secrets'), path.join(config.dataDir, 'vpn-profiles'), {
+    hooks: vpnHooks,
+    // Aether lazy-loads from the composition root: app.ts sits above every
+    // service, so this dynamic import cannot close a provider import cycle
+    // (the audit:ci madge gate) the way vpnService.ts importing it directly did.
+    loadAether: () => import('./vpn/aetherProvider'),
+  });
 
   // Drop watchdog: bounded reconnect with backoff when a managed tunnel
   // disappears unexpectedly (engine crash, sleep/resume, adapter change).

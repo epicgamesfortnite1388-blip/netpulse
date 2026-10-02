@@ -35,8 +35,3 @@ export interface SpeedTestResult {
   uploadSamples: ThroughputSample[];
   error?: string;
 }
-
-export interface SpeedTestSummary {
-  testId: string;
-  result: SpeedTestResult;
-}

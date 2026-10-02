@@ -16,7 +16,6 @@ export const DnsType = {
   OPT: 41,
   SPF: 99,
 } as const;
-export type DnsTypeValue = (typeof DnsType)[keyof typeof DnsType];
 
 export const DnsClass = { IN: 1, CH: 3, ANY: 255 } as const;
 

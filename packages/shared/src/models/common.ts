@@ -23,12 +23,6 @@ export type EventLevel = 'info' | 'warn' | 'error';
 
 export type EventCategory = 'network' | 'vpn' | 'dns' | 'routing' | 'system' | 'gaming' | 'connectivity' | 'performance';
 
-export interface ApiErrorBody {
-  code: string;
-  message: string;
-  hint?: string;
-}
-
 export interface TestRecord<TSummary = unknown> {
   id: string;
   type: TestType;

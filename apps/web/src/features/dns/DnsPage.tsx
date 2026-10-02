@@ -205,7 +205,7 @@ export default function DnsPage() {
       })
       .catch(setCatalogError);
     api.get<DnsServerSpec[]>('/dns/providers/custom').then(setCustomList).catch(() => undefined);
-  }, []);
+  }, [setSelected]);
 
   const benchmarkable = useMemo(() => (groups ?? []).flatMap((g) => g.resolvers), [groups]);
   const allIds = useMemo(() => benchmarkable.filter((r) => !r.skipBenchmarkReason && (r.ipv4 || r.dohUrl || r.dotHost)).map((r) => r.id), [benchmarkable]);
@@ -229,7 +229,7 @@ export default function DnsPage() {
       else next.add(id);
       return next;
     });
-  }, []);
+  }, [setSelected]);
 
   const runTest = useCallback(async () => {
     setSubmitError(null);
@@ -239,7 +239,7 @@ export default function DnsPage() {
     } catch (err) {
       setSubmitError(err);
     }
-  }, [selected, transport]);
+  }, [selected, transport, setBenchmarkId]);
 
   // when a benchmark completes, refresh recommendations + history automatically
   useEffect(() => {

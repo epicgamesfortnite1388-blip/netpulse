@@ -9,13 +9,11 @@ import { runCommand } from '../util/exec';
 import type { CoreProcess } from '../services/coreProcess';
 import type { ChildProcess } from 'node:child_process';
 import type {
+  BypassRuleSet,
   VpnProviderInfo,
-  VpnServerInfo,
   VpnStatus,
   VpnVerification,
 } from '@netpulse/shared';
-// Type-only (erased at compile time): no runtime cycle with the provider.
-import type { AetherProviderOptions } from './aetherProvider';
 
 /* ------------------------------ shared types ------------------------------ */
 
@@ -42,11 +40,27 @@ export interface ImportedProfile {
   createdAt: number;
 }
 
-/** Enriched status returned after a connect/disconnect attempt. */
-export interface VpnConnectResult extends VpnStatus {
-  /** IP observed before connect, when the verification pass captured one */
-  previousPublicIp?: string | null;
-  verificationNote?: string | null;
+/**
+ * The slice of the kill switch the Aether provider uses (structurally typed so
+ * the two remain independently testable). Declared here — beside the hooks
+ * field that carries it — and not in aetherProvider.ts: that module imports
+ * vpnService (vpnError, the shared provider types), so importing these back
+ * from it would close an import cycle (see AetherProviderLoader below).
+ */
+export interface AetherKillSwitchHandle {
+  arm(input: { previousProxy: string | null; label: string; mode?: 'proxy' | 'route' }): unknown;
+  onTunnelDropped(reason: string): Promise<unknown>;
+  onTunnelStopped(): Promise<unknown>;
+  status(): { armed: boolean; blocking: boolean; enabled: boolean; note: string | null };
+}
+
+export interface AetherProviderOptions {
+  bindPort?: number;
+  killSwitch?: AetherKillSwitchHandle;
+  /** split-tunnel rules, handed to the engine as a [direct] routes file */
+  bypass?: () => BypassRuleSet | null;
+  /** kill-switch preference; when on, connect also routes the OS through the tunnel */
+  killSwitchEnabled?: () => boolean;
 }
 
 /** Optional persistence + verification hooks the registry wires at boot. */
@@ -282,16 +296,6 @@ export function hasWgScriptDirectives(text: string): boolean {
  */
 export function wgTunnelNameForProfile(profileId: string): string {
   return `netpulse-wg-${profileId}`;
-}
-
-/**
- * Path where connect() materializes the REAL config (with the private key)
- * for a profile: <configDir>/tmp/<tunnel>.conf. The elevation broker uses
- * this to stage the descriptor for the Rust bridge — the file exists only
- * while a connect is in flight and is deleted on every exit path.
- */
-export function wgTempConfigPathFor(configDir: string, profileId: string): string {
-  return path.join(configDir, 'tmp', `${wgTunnelNameForProfile(profileId)}.conf`);
 }
 
 /**
@@ -1468,7 +1472,28 @@ function tunModeFromPlatform(): boolean {
   return process.platform !== 'win32';
 }
 
-export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: VpnProviderHooks): VpnRegistry {
+/**
+ * The lazily-loaded Aether provider module, injected by the composition root
+ * (app.ts). The dynamic import MUST live in the caller: aetherProvider.ts
+ * imports vpnService.ts, so an import from here back to it — static or
+ * dynamic — closes an import cycle, which the circular-dependency gate
+ * (audit:ci → madge) rejects.
+ */
+export type AetherProviderLoader = () => Promise<{
+  AetherProvider: new (
+    vault: FileSecretVault,
+    configDir: string,
+    hooks?: VpnProviderHooks,
+    opts?: AetherProviderOptions,
+  ) => VpnProvider;
+}>;
+
+export function createVpnRegistry(
+  vaultFile: string,
+  configDir: string,
+  opts: { hooks?: VpnProviderHooks; loadAether: AetherProviderLoader },
+): VpnRegistry {
+  const { hooks, loadAether } = opts;
   fs.mkdirSync(configDir, { recursive: true });
   const vault = new FileSecretVault(vaultFile);
   const registry = new VpnRegistry();
@@ -1478,8 +1503,9 @@ export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: 
   registry.register(new SingboxProvider(vault, configDir, hooks, 2080, tunModeFromPlatform()));
 
   // Aether: a separate tunnel engine (MASQUE/WARP-family) managed like the
-  // other providers. Lazy import keeps this module loadable without it.
-  void import('./aetherProvider').then(({ AetherProvider }) => {
+  // other providers. The loader keeps this module loadable without it (and
+  // keeps the import edge in the composition root — see AetherProviderLoader).
+  void loadAether().then(({ AetherProvider }) => {
     registry.register(
       new AetherProvider(vault, path.join(configDir, '..', 'aether-profiles'), hooks, hooks?.aether ?? {}),
     );
@@ -1487,20 +1513,6 @@ export function createVpnRegistry(vaultFile: string, configDir: string, hooks?: 
   });
   registry.register(new CustomProvider());
   return registry;
-}
-
-export function serverInfoFromProfile(profile: ImportedProfile & { providerId: string }): VpnServerInfo {
-  const [, portStr] = (profile.endpoint ?? ':').split(':');
-  return {
-    id: profile.id,
-    name: profile.name,
-    providerId: profile.providerId,
-    country: null,
-    city: null,
-    endpoint: profile.endpoint ?? 'unknown',
-    port: portStr ? Number(portStr) : null,
-    protocol: profile.protocol,
-  };
 }
 
 export type { VpnVerification };

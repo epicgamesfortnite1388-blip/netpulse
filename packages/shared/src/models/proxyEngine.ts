@@ -85,11 +85,6 @@ export interface ProxyEngineStatus {
   effective: ProxyEngineId | null;
 }
 
-/** Engine attribution on a proxy test result. */
-export interface ProxyEngineUse {
-  engine: ProxyEngineId;
-}
-
 /**
  * Latest published release of one core, as read from its official GitHub
  * releases (engine manager's "update available" check). `error` is set —

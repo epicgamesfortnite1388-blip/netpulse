@@ -34,17 +34,6 @@ export interface DnsServerSpec {
 
 export type DnsQualityLabel = 'excellent' | 'good' | 'fair' | 'poor' | 'unreachable';
 
-export interface DnsProviderMetrics {
-  providerId: string;
-  name: string;
-  latencyMs: number | null;
-  ok: boolean;
-  /** null = not testable, false = DNSSEC validation failed or not advertised, true = validating */
-  dnssec: boolean | null;
-  transport: DnsTransport;
-  status: DnsQualityLabel;
-}
-
 export interface DnsLeakResolver {
   ip: string;
   country: string | null;
@@ -87,14 +76,6 @@ export interface DnsBenchmarkRow {
   /** True when the benchmark ran while a VPN tunnel was connected (traffic routed through it). */
   vpnActive?: boolean;
   error?: string;
-}
-
-export interface DnsBenchmarkResult {
-  testId: string;
-  startedAt: number;
-  durationMs: number;
-  queriesPerProvider: number;
-  rows: DnsBenchmarkRow[];
 }
 
 /* ----------------------------- DNSSEC deep ------------------------------- */

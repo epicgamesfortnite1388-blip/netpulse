@@ -36,7 +36,17 @@ import { TunGatewayHandle } from '../services/tunGatewayHandle';
 import { vpnError } from './vpnService';
 
 import type { CoreProcessFailure } from '../services/coreProcess';
-import type { FileSecretVault, ImportedProfile, VpnProfileInput, VpnProvider, VpnProviderHooks } from './vpnService';
+// The Aether option types live in vpnService (beside the hooks field that
+// carries them): importing them from THIS module would close an import cycle.
+import type {
+  AetherKillSwitchHandle,
+  AetherProviderOptions,
+  FileSecretVault,
+  ImportedProfile,
+  VpnProfileInput,
+  VpnProvider,
+  VpnProviderHooks,
+} from './vpnService';
 
 /** Where the Aether binary and its identity state live. */
 export function aetherDir(): string {
@@ -311,26 +321,6 @@ export async function fetchExitIpThroughSocks(port: number, timeoutMs = 15_000):
     });
     conn.socket.write(`GET /?format=json HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n`);
   });
-}
-
-/**
- * The slice of the kill switch this provider uses (structurally typed so the
- * two remain independently testable).
- */
-export interface AetherKillSwitchHandle {
-  arm(input: { previousProxy: string | null; label: string; mode?: 'proxy' | 'route' }): unknown;
-  onTunnelDropped(reason: string): Promise<unknown>;
-  onTunnelStopped(): Promise<unknown>;
-  status(): { armed: boolean; blocking: boolean; enabled: boolean; note: string | null };
-}
-
-export interface AetherProviderOptions {
-  bindPort?: number;
-  killSwitch?: AetherKillSwitchHandle;
-  /** split-tunnel rules, handed to the engine as a [direct] routes file */
-  bypass?: () => BypassRuleSet | null;
-  /** kill-switch preference; when on, connect also routes the OS through the tunnel */
-  killSwitchEnabled?: () => boolean;
 }
 
 export class AetherProvider implements VpnProvider {

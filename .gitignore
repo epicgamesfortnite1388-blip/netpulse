@@ -23,6 +23,11 @@ packages/shared/dist/
 *.db-shm
 *.db-wal
 
+# Wrangler-generated env types (regenerate with `npm run types -w
+# @netpulse/cloud-worker`); the worker typechecks against
+# @cloudflare/workers-types via its tsconfig, so this file is never imported.
+cloud/worker/worker-configuration.d.ts
+
 # Certificates (signing keys — never commit)
 certs/
 

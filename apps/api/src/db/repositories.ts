@@ -1756,13 +1756,6 @@ export class TestEndpointsRepository {
   }
 }
 
-export interface NodeEventRow {
-  id: number;
-  kind: string;
-  at: number;
-  payload: Record<string, unknown>;
-}
-
 export class NodeEventsRepository {
   constructor(private readonly handle: DbHandle) {}
 
@@ -1794,9 +1787,6 @@ export class NodeEventsRepository {
     return res.changes;
   }
 }
-
-/** Union of every repository type used by the app context. */
-export type AppRepositories = ReturnType<typeof createRepositories>;
 
 /**
  * Single factory for the full repository set. Used both at boot (app.ts) and

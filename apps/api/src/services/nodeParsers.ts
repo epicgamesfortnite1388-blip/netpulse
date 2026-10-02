@@ -887,27 +887,6 @@ export function buildFingerprint(config: ParsedNodeConfig): NodeFingerprint {
   return fingerprintFromParsed(config);
 }
 
-/** Derive display fields from a parsed config (no secrets). */
-export function buildNodeDisplay(config: ParsedNodeConfig): Pick<ParsedNodeConfig, 'protocol' | 'host' | 'port' | 'transport' | 'security' | 'sni' | 'path' | 'hostHeader' | 'serviceName' | 'flow' | 'allowInsecure' | 'encryption' | 'ssrProtocol' | 'remark' | 'extra'> {
-  return {
-    protocol: config.protocol,
-    host: config.host,
-    port: config.port,
-    transport: config.transport,
-    security: config.security,
-    sni: config.sni,
-    path: config.path,
-    hostHeader: config.hostHeader,
-    serviceName: config.serviceName,
-    flow: config.flow,
-    allowInsecure: config.allowInsecure,
-    encryption: config.encryption,
-    ssrProtocol: config.ssrProtocol,
-    remark: config.remark,
-    extra: config.extra,
-  };
-}
-
 /** Protocol display/label helpers. */
 export const PROTOCOL_LABELS: Record<NodeProtocol, string> = {
   vless: 'VLESS',

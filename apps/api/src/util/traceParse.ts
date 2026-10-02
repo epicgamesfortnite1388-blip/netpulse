@@ -84,34 +84,6 @@ export function parseTracerouteOutput(stdout: string): ParsedTrace {
 }
 
 /**
- * Merge two runs over the same target (e.g. for loss estimation): for each
- * hop number keep the union of responsive probes.
- */
-export function mergeTraceRuns(runs: RouteHop[][]): RouteHop[] {
-  const byHop = new Map<number, RouteHop>();
-  for (const run of runs) {
-    for (const hop of run) {
-      const existing = byHop.get(hop.hop);
-      if (!existing) {
-        byHop.set(hop.hop, { ...hop });
-        continue;
-      }
-      if (existing.ip === null && hop.ip !== null) {
-        existing.ip = hop.ip;
-        existing.status = 'ok';
-      }
-      if (existing.latencyMs === null && hop.latencyMs !== null) {
-        existing.latencyMs = hop.latencyMs;
-      }
-      const lossA = existing.packetLoss ?? 0;
-      const lossB = hop.packetLoss ?? 0;
-      existing.packetLoss = round((lossA + lossB) / 2, 1);
-    }
-  }
-  return [...byHop.values()].sort((a, b) => a.hop - b.hop);
-}
-
-/**
  * Parse a Team Cymru `origin.asn.cymru.com` TXT payload (query domain is
  * `<reversed-ip>.origin.asn.cymru.com`). Live format varies between
  * "13335 | 104.18.41.0/24 | US | arin | 2014-03-28" and

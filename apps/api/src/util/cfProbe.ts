@@ -5,7 +5,6 @@ import tls from 'node:tls';
 import { coloInfo, coloLabel } from '@netpulse/shared';
 
 export { coloInfo, coloLabel };
-export type { ColoInfo } from '@netpulse/shared';
 
 /**
  * Cloudflare edge probing helpers, modeled on the methodology of the

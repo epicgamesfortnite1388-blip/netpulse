@@ -160,7 +160,7 @@ export default function CloudflarePage() {
     } catch (err) {
       setStartError(err instanceof Error ? err.message : 'Scan failed to start');
     }
-  }, [cidrText, portText, maxCandidates, scansQuery]);
+  }, [cidrText, portText, maxCandidates, scansQuery, setSelectedId]);
 
   const cancelScan = useCallback(async () => {
     if (!selectedId) return;
@@ -187,13 +187,13 @@ export default function CloudflarePage() {
     } catch (err) {
       setValidationError(err instanceof Error ? err.message : 'Validation failed to start');
     }
-  }, [selectedId, detailQuery.data]);
+  }, [selectedId, detailQuery.data, setValidatingId]);
 
   const cancelValidation = useCallback(async () => {
     if (!selectedId || validatingId == null) return;
     await api.post(`/cloudflare/scans/${selectedId}/validate/cancel`);
     setValidatingId(null);
-  }, [selectedId, validatingId]);
+  }, [selectedId, validatingId, setValidatingId]);
 
   // completion detector: every attempted endpoint ends validated=true
   useEffect(() => {
@@ -204,7 +204,7 @@ export default function CloudflarePage() {
       setValidatingId(null);
       void detailQuery.refetch();
     }
-  }, [validatingId, selectedId, validationTarget, detailQuery.data, detailQuery]);
+  }, [validatingId, selectedId, validationTarget, detailQuery.data, detailQuery, setValidatingId]);
 
   const toggleFavorite = useCallback(
     async (row: ScanCandidateRow) => {

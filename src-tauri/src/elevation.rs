@@ -210,8 +210,6 @@ fn hex_encode(bytes: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::upper_case_acronyms)]
-type HRESULT = i32;
-#[allow(clippy::upper_case_acronyms)]
 type BOOL = i32;
 
 const SEE_MASK_DEFAULT: u32 = 0x0000_0000;
@@ -219,6 +217,9 @@ const SEE_MASK_NOCLOSEPROCESS: u32 = 0x0000_0040;
 const SW_SHOWNORMAL: i32 = 1;
 
 #[repr(C)]
+// Field names mirror the Win32 `SHELLEXECUTEINFOW` layout from the Windows SDK
+// so the struct can be diffed against MSDN line by line — snake case by design.
+#[allow(non_snake_case)]
 struct ShellExecuteInfoW {
     cbSize: u32,
     fMask: u32,

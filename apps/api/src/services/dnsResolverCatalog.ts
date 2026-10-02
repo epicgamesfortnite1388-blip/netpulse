@@ -150,11 +150,6 @@ export function allResolvers(): DnsServerSpec[] {
   return DNS_PROVIDER_GROUPS.flatMap((g) => g.resolvers);
 }
 
-/** Resolvers that can actually be benchmarked (have at least one transport target). */
-export function benchmarkableResolvers(): DnsServerSpec[] {
-  return allResolvers().filter(benchmarkable);
-}
-
 /** Curated default benchmark set: the first benchmarkable resolver of each
  *  non-regional provider group. Regional groups (e.g. Iranian DNS) stay opt-in
  *  so a default benchmark from elsewhere is not polluted by them. */
@@ -185,8 +180,4 @@ export function providerById(id: string): DnsServerSpec | null {
     }
   }
   return null;
-}
-
-export function providerGroup(id: string): DnsProviderGroup | null {
-  return DNS_PROVIDER_GROUPS.find((g) => g.id === id) ?? null;
 }

@@ -99,19 +99,6 @@ export const SCAN_PROFILES: Record<ScanProfileId, ScanProfile> = {
 
 export const SCAN_PROFILE_IDS: ScanProfileId[] = ['turbo', 'balanced', 'thorough', 'stealth', 'ironclad'];
 
-export function isScanProfileId(v: unknown): v is ScanProfileId {
-  return typeof v === 'string' && (SCAN_PROFILE_IDS as string[]).includes(v);
-}
-
 export function scanProfile(id: ScanProfileId): ScanProfile {
   return SCAN_PROFILES[id];
-}
-
-/**
- * Ordering value for discovery depth — a deeper validation is strictly
- * stronger evidence than a shallower one, so a run never downgrades a
- * candidate's verdict by re-testing it more cheaply.
- */
-export function depthRank(depth: ScanDepth): number {
-  return depth === 'proxy' ? 2 : depth === 'tls' ? 1 : 0;
 }

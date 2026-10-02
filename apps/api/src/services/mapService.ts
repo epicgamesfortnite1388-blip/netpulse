@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
-import os from 'node:os';
 
 import type {
   IpFamily,
@@ -1059,11 +1058,6 @@ async function enrichConnections(rows: MapConnectionRow[]): Promise<MapConnectio
     const meta = ip ? asnByIp.get(ip) : null;
     return { ...r, remoteAsn: meta?.asn ?? null, remoteOrg: meta?.org ?? null, remoteCountry: meta?.country ?? null };
   });
-}
-
-/** Warm helper used by tests: our own host platform name. */
-export function mapHostPlatform(): string {
-  return os.platform();
 }
 
 /** Reachable first, then by latency; unreachable/unknown at the bottom. */

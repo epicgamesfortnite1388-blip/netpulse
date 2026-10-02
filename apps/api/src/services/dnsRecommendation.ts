@@ -60,13 +60,6 @@ const PROFILE_WEIGHTS: Record<DnsRecommendationProfile, { label: string; w: Reco
   balanced: { label: 'Balanced', w: { latency: 30, jitter: 20, reliability: 30, dnssec: 15, ipv6: 5, filterFit: 0 }, intent: [] },
 };
 
-export function recommendationProfiles(): { id: DnsRecommendationProfile; label: string }[] {
-  return (Object.keys(PROFILE_WEIGHTS) as DnsRecommendationProfile[]).map((id) => ({
-    id,
-    label: PROFILE_WEIGHTS[id].label,
-  }));
-}
-
 function clamp100(v: number): number {
   return Math.max(0, Math.min(100, Math.round(v * 10) / 10));
 }

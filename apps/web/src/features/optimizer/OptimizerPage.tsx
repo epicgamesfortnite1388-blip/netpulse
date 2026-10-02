@@ -90,7 +90,7 @@ export default function OptimizerPage() {
     } catch (err) {
       setSubmitError(err);
     }
-  }, []);
+  }, [setTestId]);
 
   const runConfigured = useCallback(() => {
     const servers = (serversQuery.data?.servers ?? [])

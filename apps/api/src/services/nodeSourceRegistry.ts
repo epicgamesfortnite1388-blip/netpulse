@@ -240,10 +240,6 @@ export function hashContent(text: string): string {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-export function hashContentShort(text: string): string {
-  return hashContent(text).slice(0, 12);
-}
-
 /* --------------------------------- fetch helpers -------------------------------- */
 
 /**
@@ -625,10 +621,6 @@ export function getKnownSources(): PublicSource[] {
   // Arrays are copied too: a shallow spread would hand callers the catalog's
   // own `urls` array, so one `push` anywhere would edit the built-ins.
   return KNOWN_SOURCES.map((s) => ({ ...s, urls: [...s.urls], formats: [...s.formats] }));
-}
-
-export function getSourceById(id: string): PublicSource | undefined {
-  return KNOWN_SOURCES.find((s) => s.id === id);
 }
 
 /**

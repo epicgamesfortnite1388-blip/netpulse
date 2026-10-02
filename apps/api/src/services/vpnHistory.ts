@@ -17,7 +17,6 @@
  * reports `runs: 0` and nulls, not zeros dressed up as measurements.
  */
 import {
-  scanProfile,
   type DiscoveryProfileRollup,
   type DiscoveryReport,
   type DiscoveryRunRecord,
@@ -267,15 +266,6 @@ export function reliabilityRow(g: GatewayMemoryEntry, _now: number): GatewayReli
     lastAttemptAt: g.lastAttemptAt,
     lastVerifiedAt: g.lastSuccessAt,
   };
-}
-
-/** Validate a profile id coming back from stored events. */
-export function storedProfile(p: unknown): ScanProfileId {
-  try {
-    return scanProfile(typeof p === 'string' ? (p as ScanProfileId) : 'balanced').id;
-  } catch {
-    return 'balanced';
-  }
 }
 
 function message(err: unknown): string {

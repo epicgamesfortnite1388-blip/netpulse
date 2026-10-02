@@ -140,10 +140,6 @@ export function setGeoOverrideFile(filePath: string | null): void {
   state.lastError = null;
 }
 
-export function geoOverrideFilePath(): string | null {
-  return overrideFilePath;
-}
-
 /** Parse + validate an overrides file; throws on structural problems. */
 export function parseGeoOverrides(raw: string): Map<string, GeoOverride> {
   const parsed = JSON.parse(raw) as GeoOverridesFile;

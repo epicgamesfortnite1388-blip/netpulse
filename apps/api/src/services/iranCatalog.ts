@@ -145,19 +145,8 @@ export const IRAN_CATALOG: ConnectivityTarget[] = [
   t('infra-verisign', 'Verisign', 'Infrastructure', ['verisign.com', 'www.verisign.com'], { source: 'https://www.verisign.com/', verifiedAt: VERIFIED_AT }),
 ];
 
-export const IRAN_CATEGORIES: ConnectivityCategory[] = [
-  'Search', 'Social', 'Messaging', 'Developer', 'Cloud', 'AI', 'Video', 'Streaming',
-  'Gaming', 'Education', 'News', 'Productivity', 'Finance', 'Open Source',
-  'Software Distribution', 'Maps', 'Email', 'CDN', 'Infrastructure',
-];
-
 export function catalogById(id: string): ConnectivityTarget | null {
   return IRAN_CATALOG.find((c) => c.id === id) ?? null;
-}
-
-export function catalogByHost(host: string): ConnectivityTarget | null {
-  const h = host.toLowerCase();
-  return IRAN_CATALOG.find((c) => c.hostnames.some((x) => x.toLowerCase() === h)) ?? null;
 }
 
 /** Curated default selection — a representative slice of every category. */

@@ -81,7 +81,7 @@ export default function GamingPage() {
         if (first) setGameId(first.id);
       })
       .catch(setCatalogError);
-  }, []);
+  }, [setGameId]);
 
   const game = useMemo(() => games.find((g) => g.id === gameId) ?? null, [games, gameId]);
 
@@ -94,7 +94,7 @@ export default function GamingPage() {
     } catch (err) {
       setCatalogError(err);
     }
-  }, [gameId]);
+  }, [gameId, setTab, setTestId]);
 
   const startSession = useCallback(async () => {
     if (!gameId) return;
