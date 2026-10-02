@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   Download,
@@ -20,10 +19,10 @@ import { StatusDot } from '@/components/ui/StatusDot';
 import { useToast } from '@/components/Toaster';
 import { useStartupHealth } from '@/lib/useStartupHealth';
 import { api } from '@/lib/api';
-import { subscribeTest } from '@/lib/ws';
+import { useVpnSelfTest } from '@/lib/useVpnSelfTest';
 import { desktopInfo, tauriInvoke } from '@/lib/transport';
 
-import type { ScheduledRunStatus, VpnSelfTestResult } from '@shared/models/settings';
+import type { VpnSelfTestResult } from '@shared/models/settings';
 
 /*
  * Desktop-bridge calls on this page always branch on the RESULT of
@@ -32,39 +31,6 @@ import type { ScheduledRunStatus, VpnSelfTestResult } from '@shared/models/setti
  * Guarding on the function crashed this page with a null `.then` and let the
  * export action claim a save that never happened.
  */
-
-interface SelfTestPayload {
-  last: VpnSelfTestResult | null;
-  running: boolean;
-  schedule: ScheduledRunStatus | null;
-  safeMode: boolean;
-}
-
-/** Live VPN dry-run self-test state: initial fetch + WS push on every run. */
-function useVpnSelfTest() {
-  const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: ['vpn', 'selftest'],
-    queryFn: () => api.get<SelfTestPayload>('/vpn/selftest'),
-    refetchInterval: 60_000,
-    staleTime: 10_000,
-  });
-  useEffect(() => {
-    const unsub = subscribeTest('vpn-selftest', (msg) => {
-      if (msg.type === 'vpn-selftest:done' && msg.result) {
-        queryClient.setQueryData(['vpn', 'selftest'], (prev: SelfTestPayload | undefined) =>
-          prev ? { ...prev, last: msg.result as VpnSelfTestResult, running: false } : prev,
-        );
-      } else if (msg.type === 'vpn-selftest:running') {
-        queryClient.setQueryData(['vpn', 'selftest'], (prev: SelfTestPayload | undefined) =>
-          prev ? { ...prev, running: true } : prev,
-        );
-      }
-    });
-    return unsub;
-  }, [queryClient]);
-  return query;
-}
 
 function StateBadge({ state }: { state: 'ok' | 'degraded' | 'failed' }) {
   const map = {
@@ -75,7 +41,7 @@ function StateBadge({ state }: { state: 'ok' | 'degraded' | 'failed' }) {
   const m = map[state];
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
         m.tone === 'ok'
           ? 'border-ok/30 bg-ok/10 text-ok'
           : m.tone === 'warn'
@@ -98,7 +64,7 @@ function SelfTestBadge({ state }: { state: VpnSelfTestResult['state'] }) {
   const m = map[state];
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
         m.tone === 'ok'
           ? 'border-ok/30 bg-ok/10 text-ok'
           : m.tone === 'warn'
@@ -152,7 +118,16 @@ function VpnSelfTestCard() {
       />
       <CardBody>
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm leading-relaxed text-muted">
+          {/* min-w-0 and break-words do different jobs, and both are needed.
+              A flex item's automatic minimum size is its min-content width, so
+              a single unbreakable token -- a Windows path like
+              C:\Users\<user>\AppData\Roaming\<app> -- stops this <p> from
+              shrinking and pushes the shrink-0 badge past the viewport,
+              scrolling the whole document sideways. min-w-0 lets the item
+              shrink; break-words (overflow-wrap) then wraps the path instead of
+              letting it spill outside the box. Check details are
+              server-generated and routinely contain such paths. */}
+          <p className="min-w-0 break-words text-sm leading-relaxed text-muted">
             {isRunning
               ? 'Dry-run in progress…'
               : last
@@ -163,7 +138,7 @@ function VpnSelfTestCard() {
           </p>
           {last && !isRunning && <SelfTestBadge state={last.state} />}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-faint">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-faint">
           {last && <span>Checked {new Date(last.checkedAt).toLocaleTimeString()} · {last.tookMs} ms</span>}
           {last && <span>Engines: {Object.entries(last.engines).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none detected'}</span>}
           {last && <span>Profiles verified: {last.profilesChecked}</span>}
@@ -365,7 +340,7 @@ export default function SystemHealthPage() {
               <CardHeader title={c.label} />
               <CardBody>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm leading-relaxed text-muted">{c.detail}</p>
+                  <p className="min-w-0 break-words text-sm leading-relaxed text-muted">{c.detail}</p>
                   <StateBadge state={c.state} />
                 </div>
                 {c.action && c.state !== 'ok' && (
@@ -436,7 +411,7 @@ export default function SystemHealthPage() {
             ['Log file', runtime ? `${fmtBytes(runtime.log_file_bytes)} / cap ${fmtBytes(runtime.log_rotation_cap_bytes)}` : '…'],
           ].map(([k, v]) => (
             <div key={k} className="rounded-lg border border-line bg-surface-2 px-4 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{k}</div>
+              <div className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{k}</div>
               <div className="mt-0.5 truncate font-mono text-xs text-muted" title={String(v)}>
                 {String(v)}
               </div>
@@ -459,7 +434,7 @@ export default function SystemHealthPage() {
           subtitle="Secret-shaped lines are redacted before they reach this page"
         />
         <CardBody>
-          <pre className="max-h-72 overflow-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-[11px] leading-relaxed text-faint">
+          <pre className="max-h-72 overflow-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-micro leading-relaxed text-faint">
             {logTail === null
               ? isDesktop
                 ? 'Log unavailable.'

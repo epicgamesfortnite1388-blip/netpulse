@@ -328,7 +328,11 @@ export default function CloudflarePage() {
                 onChange={(e) => setCidrText(e.target.value)}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            {/* Two columns at 1024px left each field ~83px wide, of which only
+                57px was content box after the px-3 padding and border -- the
+                port value "443,2053" needs 89px, so it was cut off and
+                unreadable. Stack until there is genuinely room for two. */}
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               <Field label="Ports">
                 <input
                   className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm"
@@ -364,7 +368,7 @@ export default function CloudflarePage() {
               scan && (
                 <div className="flex items-center gap-2">
                   {edgeLabel && (
-                    <span className="hidden items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] text-muted md:flex" title="The Cloudflare datacenter this machine's traffic exits from">
+                    <span className="hidden items-center gap-1 rounded-full border border-line px-2 py-0.5 text-micro text-muted md:flex" title="The Cloudflare datacenter this machine's traffic exits from">
                       <MapPin size={11} className="text-accent" />
                       {edgeLabel}
                     </span>
@@ -446,7 +450,7 @@ export default function CloudflarePage() {
                     </Button>
                   )}
                   {validatedCount > 0 && (
-                    <span className="ml-auto flex items-center gap-2 text-[11px] text-muted">
+                    <span className="ml-auto flex items-center gap-2 text-micro text-muted">
                       <span className="text-ok">✓ {cleanCount} clean</span>
                       <span className="text-danger">✗ {validatedCount - cleanCount} filtered</span>
                     </span>
@@ -456,14 +460,14 @@ export default function CloudflarePage() {
                 {validatedCount > 0 && regionCounts.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-1.5">
                     {regionCounts.slice(0, 8).map(([code, n]) => (
-                      <span key={code} title={coloLabel(code) ?? code} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-[10px] text-muted">
+                      <span key={code} title={coloLabel(code) ?? code} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-muted">
                         {code} × {n}
                       </span>
                     ))}
                   </div>
                 )}
 
-                <div className="mb-2 flex gap-1 text-[11px]">
+                <div className="mb-2 flex gap-1 text-micro">
                   {(['best', 'speed', 'region'] as const).map((key) => (
                     <button
                       key={key}
@@ -481,9 +485,9 @@ export default function CloudflarePage() {
                   </p>
                 ) : (
                   <div className="max-h-[420px] overflow-auto">
-                    <table className="w-full text-[13px]">
+                    <table className="w-full text-mini">
                       <thead className="sticky top-0 bg-surface-1">
-                        <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-faint">
+                        <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-faint">
                           <th className="py-2 pr-3 font-medium">Endpoint</th>
                           <th className="py-2 pr-3 font-medium">Region</th>
                           <th className="py-2 pr-3 text-right font-medium">RTT</th>
@@ -506,7 +510,7 @@ export default function CloudflarePage() {
                               </td>
                               <td className="py-2 pr-3 text-right font-mono text-muted">
                                 {rtt != null ? `${rtt.toFixed(0)} ms` : '—'}
-                                {c.jitterMs != null && <span className="ml-1 text-[10px] text-faint">±{c.jitterMs.toFixed(0)}</span>}
+                                {c.jitterMs != null && <span className="ml-1 text-micro text-faint">±{c.jitterMs.toFixed(0)}</span>}
                               </td>
                               <td className="py-2 pr-3 text-right font-mono text-muted">
                                 {c.lossPct != null ? `${c.lossPct.toFixed(0)}%` : '—'}
@@ -532,7 +536,7 @@ export default function CloudflarePage() {
                                 ) : (
                                   <Badge tone={c.status === 'alive' ? 'accent' : 'neutral'}>{c.status}</Badge>
                                 )}
-                                <div className="mt-0.5 max-w-[150px] truncate text-[10px] text-faint" title={c.label}>
+                                <div className="mt-0.5 max-w-[150px] truncate text-micro text-faint" title={c.label}>
                                   {c.label}
                                 </div>
                               </td>
@@ -554,7 +558,7 @@ export default function CloudflarePage() {
                   </div>
                 )}
                 {scan.error && <p className="mt-3 text-xs text-danger">{scan.error}</p>}
-                <p className="mt-3 text-[11px] text-faint">
+                <p className="mt-3 text-micro text-faint">
                   Discovery marks TCP/TLS-reachable edges; the verdict needs validation. “Clean” means ≥2 of 3 probes succeeded, a
                   Cloudflare colo answered, the TLS connection survived an idle hold, and a real download carried data — an edge that
                   handshakes but cannot transfer is marked filtered.
@@ -584,7 +588,7 @@ export default function CloudflarePage() {
               {scansQuery.data.scans.map((s) => (
                 <li key={s.id}>
                   <button
-                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-[13px] hover:bg-surface-2 ${selectedId === s.id ? 'bg-surface-2' : ''}`}
+                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-mini hover:bg-surface-2 ${selectedId === s.id ? 'bg-surface-2' : ''}`}
                     onClick={() => {
                       setSelectedId(s.id);
                       setValidatingId(null);
