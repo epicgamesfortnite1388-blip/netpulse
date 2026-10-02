@@ -47,6 +47,10 @@
  * useTypeScaleApplier owns data-type-scale and would silently reinstate the
  * stored preference mid-run.
  *
+ * Widths cover the range the window can now be at: it is sized to the monitor's
+ * work area at startup, so the largest layout the app can show is much wider
+ * than the 1280px the config used to hardcode.
+ *
  * Usage:
  *   node scripts/audit-layout.mjs                   # build + launch if needed
  *   PROBE_PORT=9334 node scripts/audit-layout.mjs   # reuse a running app
@@ -69,7 +73,14 @@ const EXE = path.join(root, 'src-tauri', 'target', 'release', 'netpulse-desktop.
 const BACKEND = path.join(root, 'src-tauri', 'backend', 'netpulse-backend.js');
 const ROUTER = path.join(root, 'apps', 'web', 'src', 'app', 'router.tsx');
 const THEMES = ['dark', 'light'];
-const WIDTHS = [1024, 1440];
+/**
+ * 1024 is the small-laptop floor (below the `lg` breakpoint the sidebar becomes
+ * a drawer). 1440 is a common laptop width. 1920 is what the app actually
+ * opens at on a large display now that the window is sized to the monitor: the
+ * startup width is 86% of the work area, which is ~2200px on a 2560px screen,
+ * so the widest real layout was previously never measured by any gate.
+ */
+const WIDTHS = [1024, 1440, 1920];
 const HEIGHT = 900;
 
 /** The 12px floor, restated here so the gate does not silently inherit a token change. */

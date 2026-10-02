@@ -41,16 +41,19 @@ run "depcheck" node scripts/audit-ci-depcheck.mjs
 run "contrast + custom properties: WCAG AA in dark + light" node scripts/audit-contrast.mjs
 
 # 3c. Layout: no route may overflow horizontally, and no text may render under
-#     12px, at 1024px and 1440px in BOTH themes. Nothing else here looks at
+#     12px, at 1024/1440/1920 in BOTH themes. Nothing else here looks at
 #     geometry — /health scrolled the whole document 97px sideways at 1024px
 #     because a check row held one unbreakable Windows path and the flex item
 #     refused to shrink below its min-content width, and a sideways scroll is
-#     easy to miss by eye. Deliberate truncation is reported, not failed: more
-#     truncation means small text got worse. The rotated-element exclusion
-#     keeps the Gauge's -rotate-[225deg] svg from failing every page that shows
-#     a score. Type scale is pinned to 1x, since it is a user preference.
+#     easy to miss by eye. 1920 is here because the window is now sized to the
+#     monitor's work area, so the widest layout the app can actually show
+#     (~2200px on a 2560px display) was previously measured by no gate at all.
+#     Deliberate truncation is reported, not failed: more truncation means small
+#     text got worse. The rotated-element exclusion keeps the Gauge's
+#     -rotate-[225deg] svg from failing every page that shows a score. Type
+#     scale is pinned to 1x, since it is a user preference.
 #     Launches its own app; needs no other instance running.
-run "layout: no overflow, nothing under 12px (1024+1440, dark+light)" node scripts/audit-layout.mjs
+run "layout: no overflow, nothing under 12px (1024/1440/1920, dark+light)" node scripts/audit-layout.mjs
 
 # 4. Security regression suite (the audit's fixed-finding tests). A release
 #    must fail if any of these regress: parser fail-safety under hostile
