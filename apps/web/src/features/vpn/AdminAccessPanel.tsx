@@ -131,7 +131,7 @@ export function AdminAccessPanel({ compact = false }: { compact?: boolean }) {
               }
               actions={
                 !p.available && p.remedy ? (
-                  <span className="max-w-[22rem] text-right text-[11px] leading-snug text-muted">{p.remedy}</span>
+                  <span className="max-w-[22rem] text-right text-micro leading-snug text-muted">{p.remedy}</span>
                 ) : undefined
               }
             />
@@ -189,7 +189,7 @@ export function PrivilegeGate({ id, className = '' }: { id: PrivilegeCapability[
           </Button>
         )}
       </div>
-      {privilege.remedy && <div className="mt-1 text-[11px] text-faint">{privilege.remedy}</div>}
+      {privilege.remedy && <div className="mt-1 text-micro text-faint">{privilege.remedy}</div>}
     </Notice>
   );
 }

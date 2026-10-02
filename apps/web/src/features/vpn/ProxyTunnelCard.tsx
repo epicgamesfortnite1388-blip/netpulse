@@ -274,7 +274,7 @@ export function ProxyTunnelCard() {
             {tunnel.error && <span className="w-full text-xs text-danger">{tunnel.error}</span>}
             {tunnel.chain && (
               <div className="w-full rounded-lg bg-surface-2/70 px-3 py-2">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+                <div className="mb-1.5 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                   <GitBranch size={12} />
                   Nested chain — {tunnel.chain.hops.length} local cores
                 </div>
@@ -326,7 +326,7 @@ export function ProxyTunnelCard() {
 
             {quickResult && (
               <div className="rounded-lg bg-surface-2/70 p-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+                <div className="mb-1.5 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                   <ListChecks size={12} />
                   Quick connect attempts ({quickResult.attempts.length}) — {quickResult.profile} scan
                 </div>
@@ -390,7 +390,7 @@ export function ProxyTunnelCard() {
             {nested ? (
               <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label className="block">
-                  <span className="mb-1 block text-[11px] uppercase tracking-wide text-faint">Entry hop (traffic leaves here first)</span>
+                  <span className="mb-1 block text-micro uppercase tracking-wide text-faint">Entry hop (traffic leaves here first)</span>
                   <select
                     className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm"
                     value={entryNodeId}
@@ -406,7 +406,7 @@ export function ProxyTunnelCard() {
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] uppercase tracking-wide text-faint">Exit hop (the address sites will see)</span>
+                  <span className="mb-1 block text-micro uppercase tracking-wide text-faint">Exit hop (the address sites will see)</span>
                   <select
                     className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm"
                     value={exitNodeId}
@@ -440,7 +440,7 @@ export function ProxyTunnelCard() {
             ) : (
             <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
               <label className="block">
-                <span className="mb-1 block text-[11px] uppercase tracking-wide text-faint">Node (tested-healthy first)</span>
+                <span className="mb-1 block text-micro uppercase tracking-wide text-faint">Node (tested-healthy first)</span>
                 <select
                   className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm"
                   value={selectedNodeId}
@@ -480,7 +480,7 @@ export function ProxyTunnelCard() {
 
             {gateways.length > 0 && (
               <div className="rounded-lg bg-surface-2/70 p-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+                <div className="mb-1.5 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                   <History size={12} />
                   Remembered gateways (verified, most useful first)
                 </div>

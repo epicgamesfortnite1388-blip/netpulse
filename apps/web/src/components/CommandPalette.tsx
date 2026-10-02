@@ -113,7 +113,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             }}
             aria-label="Command palette"
           />
-          <kbd className="rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-faint">
+          <kbd className="rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-micro text-faint">
             ESC
           </kbd>
         </div>
@@ -132,7 +132,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                 onMouseEnter={() => setActive(i)}
               >
                 <span>{cmd.label}</span>
-                {cmd.hint && <span className="text-[11px] text-faint">{cmd.hint}</span>}
+                {cmd.hint && <span className="text-micro text-faint">{cmd.hint}</span>}
               </button>
             </li>
           ))}

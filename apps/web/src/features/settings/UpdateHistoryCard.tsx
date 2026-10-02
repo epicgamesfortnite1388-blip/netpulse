@@ -188,7 +188,7 @@ export function UpdateHistoryCard() {
                       <Icon size={13} className={`mt-0.5 shrink-0 ${TONE_CLASS[updateEventTone(e)]}`} />
                       <div className="min-w-0">
                         <div className="text-xs leading-snug text-text">{updateEventLine(e)}</div>
-                        <div className="text-[10px] text-faint">{timeAgo(e.at)}</div>
+                        <div className="text-micro text-faint">{timeAgo(e.at)}</div>
                       </div>
                     </li>
                   );

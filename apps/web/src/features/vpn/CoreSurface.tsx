@@ -203,11 +203,11 @@ export function CoreSurface({ engine, children }: { engine: ProxyEngineId; child
 
         <div className="mt-5 grid gap-y-4 sm:grid-cols-2 sm:gap-x-6">
           <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Execution facts</p>
+            <p className="mb-2 text-micro font-semibold uppercase tracking-[0.14em] text-faint">Execution facts</p>
             <CapabilityMatrix rows={factRows} />
           </div>
           <div className="sm:border-l sm:border-line sm:pl-6">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Known limits</p>
+            <p className="mb-2 text-micro font-semibold uppercase tracking-[0.14em] text-faint">Known limits</p>
             {meta.limits.length === 0 ? (
               <p className="text-xs text-muted">No documented limits for this core.</p>
             ) : (

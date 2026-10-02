@@ -72,9 +72,9 @@ export function LiveMapWidget() {
                   className="rounded-lg border border-line/50 bg-surface-2/40 px-3 py-2 text-left hover:border-accent/40"
                   onClick={() => navigate(`/map?target=${encodeURIComponent(o.target.id)}`)}
                 >
-                  <div className="truncate text-[12px] text-muted">{o.target.name}</div>
+                  <div className="truncate text-micro text-muted">{o.target.name}</div>
                   <div className={`mt-0.5 font-mono text-sm ${ms != null ? 'text-text' : 'text-faint'}`}>{ms != null ? `${Math.round(ms)} ms` : o.statusLabel}</div>
-                  <div className="text-[10px] text-faint">{timeAgo(o.createdAt)}</div>
+                  <div className="text-micro text-faint">{timeAgo(o.createdAt)}</div>
                 </button>
               );
             })}
@@ -82,7 +82,7 @@ export function LiveMapWidget() {
         ) : (
           <p className="mt-3 text-xs text-faint">No measurements yet — open the live map and measure a target.</p>
         )}
-        <p className="mt-3 text-[10px] text-faint">Latency values are the latest measured medians per target (method and port are shown in the map inspector).</p>
+        <p className="mt-3 text-micro text-faint">Latency values are the latest measured medians per target (method and port are shown in the map inspector).</p>
       </CardBody>
     </Card>
   );

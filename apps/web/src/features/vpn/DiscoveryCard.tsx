@@ -186,7 +186,7 @@ export function DiscoveryCard() {
             ariaLabel="Discovery protocol filter"
           />
           {protocol === 'hysteria2' && (
-            <span className="text-[11px] leading-snug text-faint">
+            <span className="text-micro leading-snug text-faint">
               A hysteria2 result needs sing-box or the Hysteria2 client installed to test or tunnel.
             </span>
           )}
@@ -210,7 +210,7 @@ export function DiscoveryCard() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="text-sm text-text">{p.label}</span>
-                  <span className="text-[11px] text-faint">
+                  <span className="text-micro text-faint">
                     {p.depth === 'proxy' ? 'real proxied request' : p.depth === 'tls' ? 'TLS handshake' : 'TCP handshake'} · up to{' '}
                     {p.candidateLimit} candidates · {p.timeoutMs} ms each
                   </span>
@@ -319,7 +319,7 @@ export function DiscoveryCard() {
 
             {breakdown.length > 0 && (
               <div className="rounded-lg bg-surface-2/70 p-3">
-                <p className="mb-1.5 text-[11px] uppercase tracking-wide text-faint">
+                <p className="mb-1.5 text-micro uppercase tracking-wide text-faint">
                   Failure reasons (as reported, verbatim)
                 </p>
                 <ul className="space-y-1">
@@ -335,7 +335,7 @@ export function DiscoveryCard() {
 
             {rows.length > 0 && (
               <div className="rounded-lg bg-surface-2/70">
-                <div className="border-b border-line px-3 py-2 text-[11px] uppercase tracking-wide text-faint">
+                <div className="border-b border-line px-3 py-2 text-micro uppercase tracking-wide text-faint">
                   Candidates probed
                 </div>
                 <ul className="divide-y divide-line">
@@ -361,7 +361,7 @@ export function DiscoveryCard() {
                   ))}
                 </ul>
                 {report.outcomes.length > rows.length && (
-                  <p className="border-t border-line px-3 py-2 text-[11px] text-faint">
+                  <p className="border-t border-line px-3 py-2 text-micro text-faint">
                     Showing {rows.length} of {report.outcomes.length} probed candidates.
                   </p>
                 )}

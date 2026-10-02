@@ -29,7 +29,7 @@ export function NodesNav({ current }: { current?: string }) {
       aria-label="Node pages"
       className="mb-5 flex flex-wrap items-center gap-1 rounded-full border border-line bg-surface p-1"
     >
-      <span className="hidden pl-2.5 pr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-faint sm:block">
+      <span className="hidden pl-2.5 pr-1 text-micro font-semibold uppercase tracking-[0.16em] text-faint sm:block">
         Nodes
       </span>
       {NODES_NAV.map((item) => (

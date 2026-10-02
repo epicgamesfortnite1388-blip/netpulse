@@ -182,7 +182,7 @@ export function EngineIntakeCard() {
               Clear
             </Button>
           )}
-          <span className="text-[11px] text-faint">
+          <span className="text-micro text-faint">
             {links.length === 0 ? 'No share link detected in the text yet' : `${links.length} share link${links.length === 1 ? '' : 's'} detected`}
           </span>
         </div>
@@ -204,7 +204,7 @@ export function EngineIntakeCard() {
           </DataList>
 
           {result.target === 'nodes' && result.nodes.length > 0 && (
-            <p className="mt-2 text-[11px] leading-relaxed text-faint">
+            <p className="mt-2 text-micro leading-relaxed text-faint">
               {result.nodes.length} node id{result.nodes.length === 1 ? '' : 's'} returned. Open the Node Explorer to test them, or use{' '}
               <span className="text-muted">Tunnel now</span> on a node&apos;s detail page — a node is only usable once a core has measured it.
             </p>

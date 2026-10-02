@@ -51,14 +51,14 @@ export default function EventsPage() {
 
       <div className="mb-4 flex flex-wrap gap-3">
         <div className="w-44">
-          <Select value={level} onChange={(e) => setLevel(e.target.value)}>
+          <Select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Filter events by level">
             {LEVELS.map((l) => (
               <option key={l.value} value={l.value}>{l.label}</option>
             ))}
           </Select>
         </div>
         <div className="w-52">
-          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter events by category">
             {CATEGORIES.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
@@ -92,7 +92,7 @@ export default function EventsPage() {
                       {e.level}
                     </Badge>
                     <Badge tone="accent">{e.category}</Badge>
-                    <span className="text-[13px] text-text">{e.message}</span>
+                    <span className="text-mini text-text">{e.message}</span>
                   </div>
                 </div>
                 <span className="shrink-0 text-xs text-faint">{timeAgo(e.ts)}</span>

@@ -161,7 +161,9 @@ function PhaseTrack({ phases }: { phases: Phase[] }) {
         <li key={p.label} className="flex min-w-[132px] items-start gap-2.5">
           <span
             aria-hidden
-            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold ${
+            // h-5/w-5 (not h-4/w-4): the tick is now the 12px floor token, and
+            // a 12px glyph does not fit legibly inside a 16px circle.
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-micro font-bold ${
               p.done
                 ? 'border-cyan-300/60 bg-cyan-400/20 text-cyan-100'
                 : p.running
@@ -173,7 +175,7 @@ function PhaseTrack({ phases }: { phases: Phase[] }) {
           </span>
           <span className="min-w-0">
             <span className={`block text-xs font-medium ${p.done ? 'text-white/90' : p.running ? 'text-amber-100' : 'text-white/45'}`}>{p.label}</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-white/40">{p.detail}</span>
+            <span className="mt-0.5 block text-micro leading-snug text-white/40">{p.detail}</span>
           </span>
         </li>
       ))}
@@ -217,14 +219,14 @@ function CorePortal({ state, exitIp, latencyMs }: { state: CoreState; exitIp: st
 
       {/* HUD — the numbers that prove what the picture is showing */}
       <div className="pointer-events-none absolute inset-x-4 bottom-3 flex items-end justify-between gap-2">
-        <span className={`aether-chip rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${CORE_ACCENT[state].split(' ')[1]}`}>
+        <span className={`aether-chip rounded-full px-2.5 py-1 text-micro font-semibold uppercase tracking-[0.2em] ${CORE_ACCENT[state].split(' ')[1]}`}>
           {CORE_LABEL[state]}
         </span>
         <span className="flex flex-wrap justify-end gap-1.5">
           {latencyMs != null && (
-            <span className="aether-chip aether-hud-value rounded-full px-2.5 py-1 text-[11px]">{latencyMs.toFixed(0)} ms</span>
+            <span className="aether-chip aether-hud-value rounded-full px-2.5 py-1 text-micro">{latencyMs.toFixed(0)} ms</span>
           )}
-          {exitIp && <span className="aether-chip aether-hud-value rounded-full px-2.5 py-1 text-[11px]">exit {exitIp}</span>}
+          {exitIp && <span className="aether-chip aether-hud-value rounded-full px-2.5 py-1 text-micro">exit {exitIp}</span>}
         </span>
       </div>
 
@@ -397,7 +399,7 @@ export function AetherSurface() {
               <EngineGlyph glyph="from-violet-500/30 to-cyan-400/10 text-violet-200" size="lg">
                 <Globe size={24} />
               </EngineGlyph>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-200/70">
+              <span className="text-micro font-semibold uppercase tracking-[0.22em] text-violet-200/70">
                 circumvention engine · masque / warp family
               </span>
             </div>
@@ -502,7 +504,7 @@ export function AetherSurface() {
 
             </div>
 
-            <p className="mt-4 max-w-xl text-[11px] leading-relaxed text-white/40">
+            <p className="mt-4 max-w-xl text-micro leading-relaxed text-white/40">
               {active && status?.since != null
                 ? `Tunnel up since ${new Date(status.since).toLocaleTimeString()}${status.endpoint ? ` · endpoint ${status.endpoint}` : ''}.`
                 : installed
@@ -705,7 +707,7 @@ export function AetherSurface() {
           {(engine?.tun ?? false) && <PrivilegeGate id="tun-gateway" className="mt-3" />}
           {(engine?.tun ?? false) && <AdminAccessPanel compact />}
 
-          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          <p className="mt-2 text-micro leading-relaxed text-faint">
             Why a gateway instead of Aether claiming the route itself: Aether speaks SOCKS5 and nothing else. One sing-box
             gateway in front of it gives Aether the same system-wide mode the local cores use — one mechanism for every engine,
             and one place where the route is claimed and released.
@@ -744,7 +746,7 @@ export function AetherSurface() {
               </Button>
             )}
           </Panel>
-          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          <p className="mt-2 text-micro leading-relaxed text-faint">
             The preference lives in Settings → VPN. When it is on, a dropped tunnel fails closed instead of silently falling back to the direct path —
             that is the difference between this row and the switch.
           </p>

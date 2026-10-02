@@ -18,7 +18,7 @@ export function ScheduleChip({ kind }: { kind: 'dns' | 'gaming' | 'vpn' }) {
   return (
     <span
       title={st.running ? 'A scheduled run is in progress' : `Next run in ${next ?? '…'}`}
-      className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-accent"
+      className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-micro font-medium uppercase tracking-wide text-accent"
     >
       {st.running ? <Loader2 size={11} className="animate-spin" /> : <CalendarClock size={11} />}
       auto {st.intervalMin}m{st.running ? ' · running' : next ? ` · next ${next}` : ''}

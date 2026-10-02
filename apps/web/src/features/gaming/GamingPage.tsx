@@ -215,7 +215,8 @@ export default function GamingPage() {
             <select
               value={gameId}
               onChange={(e) => setGameId(e.target.value)}
-              className="min-w-52 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              aria-label="Game to test"
+              className="min-w-52 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent/80"
             >
               {games.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -236,10 +237,10 @@ export default function GamingPage() {
           </div>
 
           {game?.note && showNote && (
-            <p className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[12px] leading-relaxed text-muted">{game.note}</p>
+            <p className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-micro leading-relaxed text-muted">{game.note}</p>
           )}
           {game?.statusUrl && (
-            <p className="mt-2 text-[11px] text-faint">
+            <p className="mt-2 text-micro text-faint">
               Publisher status: <a className="underline decoration-line underline-offset-2 hover:text-muted" href={game.statusUrl} target="_blank" rel="noreferrer">{game.statusUrl}</a>
             </p>
           )}
@@ -298,7 +299,7 @@ export default function GamingPage() {
                     <div className="flex items-center gap-2 text-sm font-medium text-warn">
                       <ShieldCheck size={14} /> Nothing reachable — likely geo-filtering, not an outage
                     </div>
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                    <p className="mt-1.5 text-micro leading-relaxed text-muted">
                       Every region front door failed from your network. From a geo-filtered or sanctioned region (most game
                       publishers block Iranian IPs, for example), this usually means the publisher is blocking your country — the
                       same endpoint often works fine elsewhere. Try benchmarking DNS in the <b>DNS Lab</b> (it lists Iranian
@@ -326,7 +327,7 @@ export default function GamingPage() {
                           <div key={c.key} className="flex items-start justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2">
                             <div className="min-w-0">
                               <div className="text-xs font-medium capitalize">{c.label}</div>
-                              <div className="mt-0.5 text-[11px] text-faint">{c.detail}</div>
+                              <div className="mt-0.5 text-micro text-faint">{c.detail}</div>
                             </div>
                             <Badge tone={c.band === 'excellent' ? 'ok' : c.band === 'good' ? 'ok' : c.band === 'fair' ? 'warn' : c.band === 'poor' ? 'danger' : 'neutral'}>
                               {c.band}
@@ -365,15 +366,15 @@ export default function GamingPage() {
                       actions={
                         <div className="text-right">
                           <div className="font-mono text-base">{r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : '—'}</div>
-                          {r.score != null && <div className="text-[11px] text-faint">score {Math.round(r.score)}</div>}
+                          {r.score != null && <div className="text-micro text-faint">score {Math.round(r.score)}</div>}
                         </div>
                       }
                     />
                     <CardBody>
-                      <p className="text-[12px] leading-relaxed text-muted">{r.reason}</p>
+                      <p className="text-micro leading-relaxed text-muted">{r.reason}</p>
                       <ul className="mt-3 space-y-1 border-t border-line/60 pt-2">
                         {r.endpoints.map((e, i) => (
-                          <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-micro">
                             <span className="flex min-w-0 items-center gap-1.5">
                               <span
                                 title={e.endpoint.source ? `Source: ${e.endpoint.source}${e.endpoint.note ? ` — ${e.endpoint.note}` : ''}` : undefined}
@@ -391,7 +392,7 @@ export default function GamingPage() {
                           </li>
                         ))}
                       </ul>
-                      <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+                      <p className="mt-1.5 text-micro leading-relaxed text-faint">
                         ✓ = verified against official documentation · ? = documented at time of writing, not re-verified today — hover for the source.
                       </p>
                     </CardBody>
@@ -462,7 +463,7 @@ export default function GamingPage() {
                     <ul className="space-y-2">
                       {[...sessionEvents].reverse().map((ev, i) => (
                         <li key={`${ev.ts}-${i}`} className="flex items-start gap-3 text-sm">
-                          <span className="mt-0.5 font-mono text-[11px] text-faint">
+                          <span className="mt-0.5 font-mono text-micro text-faint">
                             {new Date(ev.ts).toLocaleTimeString()}
                           </span>
                           <span className="text-muted">{ev.message}</span>
@@ -484,7 +485,7 @@ export default function GamingPage() {
             <Button variant="ghost" onClick={() => captureCompare('vpn')} loading={compareBusy === 'vpn'} disabled={!gameId}>
               <ShieldCheck size={14} /> Capture via VPN
             </Button>
-            <p className="w-full text-[12px] text-faint">
+            <p className="w-full text-micro text-faint">
               Capture once without the VPN and once with the VPN connected, then compare. The tool only claims a VPN improves routing when measurements show it.
             </p>
           </div>
@@ -499,14 +500,14 @@ export default function GamingPage() {
                 <CardBody>
                   <div className="mb-4 grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-line bg-surface p-4">
-                      <div className="text-[11px] uppercase tracking-wider text-faint">Direct</div>
+                      <div className="text-micro uppercase tracking-wider text-faint">Direct</div>
                       <div className="mt-1 font-mono text-2xl">{compare.direct?.latencyMs != null ? `${Math.round(compare.direct.latencyMs)} ms` : 'not captured'}</div>
-                      {compare.direct && <div className="mt-1 text-[11px] text-faint">{new Date(compare.direct.createdAt).toLocaleString()}</div>}
+                      {compare.direct && <div className="mt-1 text-micro text-faint">{new Date(compare.direct.createdAt).toLocaleString()}</div>}
                     </div>
                     <div className="rounded-lg border border-line bg-surface p-4">
-                      <div className="text-[11px] uppercase tracking-wider text-faint">VPN {compare.vpn?.serverName ? `· ${compare.vpn.serverName}` : ''}</div>
+                      <div className="text-micro uppercase tracking-wider text-faint">VPN {compare.vpn?.serverName ? `· ${compare.vpn.serverName}` : ''}</div>
                       <div className="mt-1 font-mono text-2xl">{compare.vpn?.latencyMs != null ? `${Math.round(compare.vpn.latencyMs)} ms` : 'not captured'}</div>
-                      {compare.vpn && <div className="mt-1 text-[11px] text-faint">{new Date(compare.vpn.createdAt).toLocaleString()}</div>}
+                      {compare.vpn && <div className="mt-1 text-micro text-faint">{new Date(compare.vpn.createdAt).toLocaleString()}</div>}
                     </div>
                   </div>
                   {compare.winner && (
@@ -516,7 +517,7 @@ export default function GamingPage() {
                       <Badge tone={compare.confidence === 'high' ? 'ok' : 'warn'}>{compare.confidence} confidence</Badge>
                     </div>
                   )}
-                  <p className="mt-3 text-[13px] leading-relaxed text-muted">{compare.reason}</p>
+                  <p className="mt-3 text-mini leading-relaxed text-muted">{compare.reason}</p>
                 </CardBody>
               </Card>
             </div>

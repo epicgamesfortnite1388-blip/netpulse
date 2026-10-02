@@ -195,7 +195,7 @@ export default function SpeedTestPage() {
               {historyQuery.data.tests.slice(0, 12).map((test) => {
                 const summary = (test.summary ?? {}) as Partial<SpeedTestResult>;
                 return (
-                  <div key={test.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-surface-2">
+                  <div key={test.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-mini hover:bg-surface-2">
                     <span className="font-mono text-muted">
                       ↓ {fmt(summary.downloadMbps)} · ↑ {fmt(summary.uploadMbps)} · {fmt(summary.pingAvg)} ms
                     </span>

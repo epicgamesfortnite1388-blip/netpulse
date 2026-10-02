@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
+import { IconButton } from '@/components/ui/IconButton';
 import { Metric } from '@/components/ui/Metric';
 import { EmptyState } from '@/components/ui/States';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -612,19 +613,19 @@ export default function LiveMapPage() {
             <Maximize2 size={13} />
             NOC
           </Button>
-          <Button variant="ghost" size="sm" onClick={clearHistory} title="Delete all map history">
+          <IconButton label="Delete all map history" variant="ghost" size="sm" onClick={clearHistory}>
             <Trash2 size={13} />
-          </Button>
+          </IconButton>
         </div>
       </div>
 
       {privacy && (
-        <p className="text-[11px] text-faint">
+        <p className="text-micro text-faint">
           Privacy mode: IP addresses and hostnames are redacted. Geography, latency and ASN labels stay visible.
         </p>
       )}
       {presentation && (
-        <p className="text-[11px] text-faint">
+        <p className="text-micro text-faint">
           Presentation mode: IP addresses are redacted for safe sharing; cities, latency, routes and ASN labels are preserved.
         </p>
       )}
@@ -648,33 +649,36 @@ export default function LiveMapPage() {
             ))}
           </div>
           <div className="mx-1 h-5 w-px bg-line" />
-          <Select value={minConfidence} onChange={(e) => setMinConfidence(e.target.value as ConfidenceThreshold)} className="h-8 w-36 text-xs" title="Hide pins whose location is not known well enough">
+          <Select value={minConfidence} onChange={(e) => setMinConfidence(e.target.value as ConfidenceThreshold)} className="h-8 w-36 text-xs" aria-label="Minimum pin confidence" title="Hide pins whose location is not known well enough">
             <option value="show all">Confidence: show all</option>
             <option value="high">Confidence: measured only</option>
             <option value="medium">Confidence: medium+</option>
             <option value="low">Confidence: low+</option>
           </Select>
           {hiddenByConfidence > 0 && (
-            <span className="text-[11px] text-faint">
+            <span className="text-micro text-faint">
               {hiddenByConfidence} low-confidence pin{hiddenByConfidence === 1 ? '' : 's'} hidden
             </span>
           )}
           <div className="mx-1 h-5 w-px bg-line" />
-          <Select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)} className="h-8 w-28 text-xs">
+          <Select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)} className="h-8 w-28 text-xs" aria-label="Metric shown on the map">
             <option value="latency">Latency</option>
             <option value="jitter">Jitter</option>
             <option value="loss">Loss</option>
           </Select>
-          <Select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value as TimeWindow)} className="h-8 w-24 text-xs">
+          <Select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value as TimeWindow)} className="h-8 w-24 text-xs" aria-label="Time window">
             <option value="live">Live</option>
             <option value="1h">1 hour ago</option>
             <option value="1d">Yesterday</option>
           </Select>
           <div className="mx-1 h-5 w-px bg-line" />
-          <Field label="Custom target">
+          {/* Three controls share this field, so the label is bound to the host input by
+              id rather than wrapping them: wrapping made the host inherit the
+              whole group's text as its name and left the other two nameless. */}
+            <Field label="Custom target" htmlFor="map-custom-host">
             <div className="flex items-center gap-1.5">
-              <Input value={customHost} onChange={(e) => setCustomHost(e.target.value)} placeholder="host or IP" className="h-8 w-44 text-xs" />
-              <Select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value)} className="h-8 w-20 text-xs">
+              <Input id="map-custom-host" value={customHost} onChange={(e) => setCustomHost(e.target.value)} placeholder="host or IP" className="h-8 w-44 text-xs" />
+              <Select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value)} className="h-8 w-20 text-xs" aria-label="Custom target protocol">
                 <option value="tcp">tcp</option>
                 <option value="tls">tls</option>
                 <option value="https">https</option>
@@ -687,6 +691,7 @@ export default function LiveMapPage() {
                 disabled={customProtocol === 'dns'}
                 className="h-8 w-16 text-xs"
                 placeholder="port"
+                aria-label="Custom target port"
               />
               <Button variant="primary" size="sm" onClick={() => void measureCustom()} loading={measuring}>
                 <Play size={12} />
@@ -732,11 +737,11 @@ export default function LiveMapPage() {
                 </div>
               )}
               {playback && (
-                <div className="absolute right-3 top-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-[11px] text-faint backdrop-blur">
+                <div className="absolute right-3 top-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro text-faint backdrop-blur">
                   Showing snapshot from <span className="text-muted">{timeAgo(playback.createdAt)}</span> — historical, not live
                 </div>
               )}
-              <div className="absolute bottom-3 left-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-[10px] leading-relaxed text-faint backdrop-blur">
+              <div className="absolute bottom-3 left-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro leading-relaxed text-faint backdrop-blur">
                 <span className="text-accent">●</span> measured · <span className="text-warn">●</span> through VPN · <span className="text-faint">●</span> historical
                 <br />
                 <Tooltip content={<ConfidenceLegendBody />}>
@@ -774,25 +779,38 @@ export default function LiveMapPage() {
                   .map((t) => {
                     const obs = observations.get(t.id);
                     return (
-                      <li key={t.id}>
+                      <li key={t.id} className="flex items-center gap-0.5">
                         <button
-                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-surface-2 ${
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-mini hover:bg-surface-2 ${
                             selectedTargetId === t.id ? 'bg-accent-soft text-accent-strong' : 'text-muted'
                           }`}
                           onClick={() => setSelectedTargetId(t.id)}
                         >
-                          <span className="shrink-0 text-faint">{TYPE_ICON[t.type]}</span>
+                          {/* Decorative: the target name beside it is the name. */}
+                          <span aria-hidden="true" className="shrink-0 text-faint">{TYPE_ICON[t.type]}</span>
                           <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                          {obs ? (
-                            <span className={`shrink-0 font-mono text-[11px] ${obs.status === 'excellent' || obs.status === 'good' ? 'text-ok' : obs.status === 'fair' ? 'text-warn' : 'text-danger'}`}>
+                          {obs && (
+                            <span className={`shrink-0 font-mono text-micro ${obs.status === 'excellent' || obs.status === 'good' ? 'text-ok' : obs.status === 'fair' ? 'text-warn' : 'text-danger'}`}>
                               {primaryLatency(obs) != null ? `${Math.round(primaryLatency(obs)!)} ms` : obs.statusLabel}
                             </span>
-                          ) : (
-                            <Button variant="ghost" size="sm" className="shrink-0" onClick={(e) => { e.stopPropagation(); void measure(t.id); }} loading={measuring && selectedTargetId === t.id}>
-                              <Play size={11} />
-                            </Button>
                           )}
                         </button>
+                        {/* SIBLING, not a child: a button inside a button is
+                            invalid HTML, and it left the measure action
+                            unreachable — nested controls are dropped from the
+                            tab order and their names never computed. */}
+                        {!obs && (
+                          <IconButton
+                            label={`Measure ${t.name}`}
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => void measure(t.id)}
+                            loading={measuring && selectedTargetId === t.id}
+                          >
+                            <Play size={11} />
+                          </IconButton>
+                        )}
                       </li>
                     );
                   })}
@@ -816,7 +834,7 @@ export default function LiveMapPage() {
                   title="Destination"
                   actions={<Badge tone={STATUS_TONE[selectedObs.status]}>{selectedObs.statusLabel}</Badge>}
                 />
-                <CardBody className="space-y-2 text-[13px]">
+                <CardBody className="space-y-2 text-mini">
                   <Row label="Target" value={selectedObs.target.name} />
                   <Row label="Hostname" value={hidden ? 'redacted' : selectedObs.target.host} mono />
                   <Row label="Resolved IP" value={hidden ? maskIp(selectedObs.resolvedIp) : selectedObs.resolvedIp} mono />
@@ -839,7 +857,7 @@ export default function LiveMapPage() {
                       // so the panel and the canvas read as one system.
                       return (
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-[11px] uppercase tracking-wider text-faint">Location</span>
+                          <span className="text-micro uppercase tracking-wider text-faint">Location</span>
                           <Tooltip content={<ConfidenceLegendBody />}>
                             <span className="flex cursor-help items-center gap-1.5 text-right text-muted">
                               <ConfidenceRingGlyph level={geo.confidence.confidence} />
@@ -856,7 +874,7 @@ export default function LiveMapPage() {
                       const copy = GEO_STATUS_COPY[reason];
                       return (
                         <div className="flex items-start justify-between gap-3">
-                          <span className="text-[11px] uppercase tracking-wider text-faint">Location</span>
+                          <span className="text-micro uppercase tracking-wider text-faint">Location</span>
                           <Tooltip content={<GeoTooltipBody reason={reason} />}>
                             <span className="flex cursor-help items-center gap-1 text-right text-warn">
                               <MapPinOff size={11} className="shrink-0" />
@@ -873,7 +891,7 @@ export default function LiveMapPage() {
                   {selectedObs.vpnActive && <Row label="Path" value={`Through VPN${selectedObs.vpnLabel ? ` (${hidden ? 'tunnel' : selectedObs.vpnLabel})` : ''}`} />}
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {selectedObs.measurements.map((m) => (
-                      <span key={m.method} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-muted">
+                      <span key={m.method} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-muted">
                         {m.method.toUpperCase()} {m.port != null ? `:${m.port}` : ''} · {m.latencyMs != null ? `${m.latencyMs.toFixed(1)} ms` : '—'}
                       </span>
                     ))}
@@ -897,7 +915,7 @@ export default function LiveMapPage() {
                     <div key={m.method} className="flex items-center justify-between rounded-lg border border-line/40 bg-surface-2/50 px-3 py-2 text-xs">
                       <div>
                         <div className="font-medium text-muted">{m.method.toUpperCase()}</div>
-                        <div className="font-mono text-[10px] text-faint">
+                        <div className="font-mono text-micro text-faint">
                           {m.protocol.toUpperCase()}
                           {m.port != null ? `/${m.port}` : ''} · {m.samples} samples{m.jitterMs != null ? ` · ±${m.jitterMs.toFixed(1)} ms jitter` : ''}
                           {m.lossPct != null ? ` · ${fmtPct(m.lossPct)} loss` : ''}
@@ -926,15 +944,15 @@ export default function LiveMapPage() {
                     {selectedObs.hops.map((h) => (
                       <li key={h.hop} className="rounded-lg border border-line/40 bg-surface-2/40 px-2.5 py-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="flex min-w-0 items-center gap-2 font-mono text-[12px]">
+                          <span className="flex min-w-0 items-center gap-2 font-mono text-micro">
                             <span className="text-faint">{h.hop}.</span>
                             <span className={h.ip ? 'text-text' : 'text-faint'}>
                               {h.ip == null ? 'no response' : hidden ? maskIp(h.ip) : h.ip}
                             </span>
                           </span>
-                          <span className="shrink-0 font-mono text-[11px] text-muted">{h.latencyMs != null ? `${h.latencyMs.toFixed(0)} ms` : '—'}</span>
+                          <span className="shrink-0 font-mono text-micro text-muted">{h.latencyMs != null ? `${h.latencyMs.toFixed(0)} ms` : '—'}</span>
                         </div>
-                        <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-faint">
+                        <div className="mt-0.5 flex flex-wrap gap-x-2 text-micro text-faint">
                           {h.hostname && !hidden && <span className="truncate">{h.hostname}</span>}
                           {h.asn != null && <span className="font-mono">AS{h.asn}</span>}
                           {h.org && <span className="truncate">{h.org}</span>}
@@ -951,7 +969,7 @@ export default function LiveMapPage() {
                     ))}
                   </ol>
                   {selectedObs.hops.length > 0 && (
-                    <p className="mt-2 text-[10px] leading-relaxed text-faint">
+                    <p className="mt-2 text-micro leading-relaxed text-faint">
                       Hop geography is a confidence-aware estimate: known endpoints are high-confidence; other hops use
                       country-level GeoIP. A timeout does not mean an outage, and hops are not necessarily physical routers.
                     </p>
@@ -975,7 +993,7 @@ export default function LiveMapPage() {
             title="Live latency graph"
             subtitle={`${selectedObs.target.name} — ${portLabel(selectedObs)}${selectedObs.vpnActive ? ' · through VPN' : ''}`}
             actions={
-              <div className="flex gap-1 text-[11px]">
+              <div className="flex gap-1 text-micro">
                 {(['live', '1h', '1d'] as const).map((w) => (
                   <button
                     key={w}
@@ -1005,7 +1023,7 @@ export default function LiveMapPage() {
               </div>
             </div>
             {stats && stats.median != null && (
-              <p className="mt-2 text-[11px] text-faint">
+              <p className="mt-2 text-micro text-faint">
                 Median {fmtMs(stats.median)} across {historySamples.length} sample(s). Method and port are visible per measurement —
                 TCP RTT is never labeled as ICMP ping.
               </p>
@@ -1029,7 +1047,7 @@ export default function LiveMapPage() {
           }}
         >
           <CardHeader title="Route comparison" subtitle="Latest two observations of this target" icon={<History size={15} />} />
-          <CardBody className="space-y-2 text-[13px]">
+          <CardBody className="space-y-2 text-mini">
             {compareQuery.data.directVpn && (
               <div className="rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-muted">
                 {compareQuery.data.directVpn.verdict}{' '}
@@ -1090,15 +1108,15 @@ export default function LiveMapPage() {
           )}
           {sweep && (
             <>
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-faint">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-micro text-faint">
                 <span className={`h-1.5 w-1.5 rounded-full ${sweep.completed ? 'bg-ok' : 'animate-pulse bg-accent'}`} />
                 {sweep.completed ? `Completed in ${((sweep.durationMs ?? 0) / 1000).toFixed(1)}s ·` : 'Running…'}
                 {sweep.rows.length} result(s)
                 {sweep.sourceNote && <span className="text-faint">· {sweep.sourceNote}</span>}
               </div>
               <div className="max-h-96 overflow-auto">
-                <table className="w-full text-[12px]">
-                  <thead className="sticky top-0 bg-surface-1 text-left text-[10px] uppercase tracking-wider text-faint">
+                <table className="w-full text-micro">
+                  <thead className="sticky top-0 bg-surface-1 text-left text-micro uppercase tracking-wider text-faint">
                     <tr>
                       <th className="py-1.5 pr-3 font-medium">#</th>
                       <th className="py-1.5 pr-3 font-medium">Target</th>
@@ -1117,14 +1135,14 @@ export default function LiveMapPage() {
                         <td className="max-w-56 truncate py-1.5 pr-3">
                           <span className="mr-1.5 inline-block align-middle text-faint">{TYPE_ICON[r.target.type]}</span>
                           {r.target.name}
-                          {r.error && <span className="ml-1.5 text-[10px] text-warn">{r.error}</span>}
+                          {r.error && <span className="ml-1.5 text-micro text-warn">{r.error}</span>}
                         </td>
                         <td className={`py-1.5 pr-3 font-mono ${r.status === 'excellent' || r.status === 'good' ? 'text-ok' : r.status === 'fair' ? 'text-warn' : 'text-danger'}`}>
                           {r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : '—'}
                         </td>
                         <td className="py-1.5 pr-3 font-mono text-muted">{r.jitterMs != null ? `±${r.jitterMs.toFixed(1)}` : '—'}</td>
                         <td className="py-1.5 pr-3 font-mono text-muted">{r.lossPct != null ? fmtPct(r.lossPct) : '—'}</td>
-                        <td className="py-1.5 pr-3 text-[10px] uppercase tracking-wide text-faint">{r.method ?? 'n/a'}</td>
+                        <td className="py-1.5 pr-3 text-micro uppercase tracking-wide text-faint">{r.method ?? 'n/a'}</td>
                         <td className="py-1.5 pr-3">{r.country ?? '—'}</td>
                         <td className="py-1.5 text-right">
                           <Button variant="ghost" size="sm" onClick={() => void measure(r.target.id)}>
@@ -1173,8 +1191,8 @@ export default function LiveMapPage() {
             )}
             {connectionsQuery.data?.available && (
               <div className="max-h-80 overflow-auto">
-                <table className="w-full text-[12px]">
-                  <thead className="sticky top-0 bg-surface-1 text-left text-[10px] uppercase tracking-wider text-faint">
+                <table className="w-full text-micro">
+                  <thead className="sticky top-0 bg-surface-1 text-left text-micro uppercase tracking-wider text-faint">
                     <tr>
                       <th className="py-1.5 pr-3 font-medium">Process</th>
                       <th className="py-1.5 pr-3 font-medium">Proto</th>
@@ -1191,7 +1209,7 @@ export default function LiveMapPage() {
                     {connectionsQuery.data.rows.map((r, i) => (
                       <tr key={i} className="border-b border-line/40 last:border-0">
                         <td className="py-1.5 pr-3 font-mono text-muted">{hidden ? 'redacted' : r.process ?? `pid ${r.pid ?? '?'}`}</td>
-                        <td className="py-1.5 pr-3 text-[10px] uppercase text-faint">{r.protocol}</td>
+                        <td className="py-1.5 pr-3 text-micro uppercase text-faint">{r.protocol}</td>
                         <td className="py-1.5 pr-3 font-mono">{r.remote ? (hidden ? maskIp(r.remote.split(':')[0]) : r.remote) : '—'}</td>
                         <td className={`py-1.5 pr-3 font-mono ${r.latencyMs != null ? (r.latencyMs <= 80 ? 'text-ok' : r.latencyMs <= 150 ? 'text-warn' : 'text-danger') : 'text-faint'}`}>
                           {r.latencyMs != null ? `${Math.round(r.latencyMs)} ms` : '—'}
@@ -1233,7 +1251,7 @@ export default function LiveMapPage() {
       )}
 
       {selectedObs?.note && (
-        <p className="text-[11px] text-faint">
+        <p className="text-micro text-faint">
           <span className="text-muted">Route note:</span> {selectedObs.note}
         </p>
       )}
@@ -1290,7 +1308,7 @@ export default function LiveMapPage() {
 function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-[11px] uppercase tracking-wider text-faint">{label}</span>
+      <span className="text-micro uppercase tracking-wider text-faint">{label}</span>
       <span className={`truncate text-right text-muted ${mono ? 'font-mono' : ''}`}>{value ?? 'Unknown'}</span>
     </div>
   );

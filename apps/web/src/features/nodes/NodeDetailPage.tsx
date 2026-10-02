@@ -91,15 +91,17 @@ const TRANSPORT_LABELS: Record<string, string> = {
 function DetailItem({ label, value, mono = false }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="min-w-0 border-b border-line py-1.5 last:border-b-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{label}</dt>
+      <dt className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{label}</dt>
       <dd className={`mt-0.5 break-words text-sm text-text ${mono ? 'metric-num text-xs' : ''}`}>{value}</dd>
     </div>
   );
 }
 
 function DetailGrid({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 }) {
+  // Three across only from xl: at 1024px the third column left ~92px and the
+  // uppercase labels ("ORGANIZATION") overflowed it.
   return (
-    <dl className={`grid grid-cols-1 gap-x-6 ${cols === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2'}`}>
+    <dl className={`grid grid-cols-1 gap-x-6 ${cols === 3 ? 'sm:grid-cols-2 xl:grid-cols-3' : 'sm:grid-cols-2'}`}>
       {children}
     </dl>
   );
@@ -150,7 +152,7 @@ function HeroVitals({ node, engine, lastTestedAt }: { node: NodeWebDTO; engine: 
       </div>
       <dl className="w-full space-y-1.5 border-t border-line pt-2.5">
         <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Runtime</dt>
+          <dt className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">Runtime</dt>
           <dd className="text-xs text-text">
             {engine ? (
               <EngineBadge engine={engine} title={`Last probe was executed by ${ENGINE_LABELS[engine as keyof typeof ENGINE_LABELS] ?? engine}`} />
@@ -160,7 +162,7 @@ function HeroVitals({ node, engine, lastTestedAt }: { node: NodeWebDTO; engine: 
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Last tested</dt>
+          <dt className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">Last tested</dt>
           <dd className="metric-num text-xs text-muted">{fmtDateTime(lastTestedAt)}</dd>
         </div>
       </dl>
@@ -369,7 +371,7 @@ export default function NodeDetailPage() {
               </p>
             )}
             {dx?.action && <p className="mt-0.5 text-xs text-muted">{dx.action}</p>}
-            <p className="mt-0.5 break-all font-mono text-[11px] text-faint">{testResult.error}</p>
+            <p className="mt-0.5 break-all font-mono text-micro text-faint">{testResult.error}</p>
           </div>
         );
       })()}
@@ -746,8 +748,8 @@ export default function NodeDetailPage() {
               </div>
             </Panel>
 
-            <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Shape preview</p>
-            <Panel tone="quiet" className="mt-1.5 max-h-64 overflow-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted">
+            <p className="mt-4 text-micro font-semibold uppercase tracking-[0.14em] text-faint">Shape preview</p>
+            <Panel tone="quiet" className="mt-1.5 max-h-64 overflow-auto font-mono text-micro leading-relaxed whitespace-pre-wrap text-muted">
               {node.protocol === 'vless' &&
                 `vless://<password>@${node.host}:${node.port}?security=${node.security}&type=${node.transport}${node.sni ? `&sni=${node.sni}` : ''}${node.path ? `&path=${node.path}` : ''}${node.hostHeader ? `&host=${node.hostHeader}` : ''}${node.flow ? `&flow=${node.flow}` : ''}#${node.remark || node.host}`}
               {node.protocol === 'trojan' &&

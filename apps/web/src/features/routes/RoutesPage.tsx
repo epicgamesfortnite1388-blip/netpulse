@@ -46,7 +46,7 @@ function HopRow({ hop, isLast }: { hop: TraceResult['hops'][number]; isLast: boo
       {/* timeline rail */}
       <div className="flex flex-col items-center">
         <span
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold font-mono ${
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-micro font-semibold font-mono ${
             unresponsive
               ? 'border-line-strong bg-surface-2 text-faint'
               : 'border-accent/40 bg-accent-soft text-accent-strong'
@@ -58,15 +58,15 @@ function HopRow({ hop, isLast }: { hop: TraceResult['hops'][number]; isLast: boo
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className={`font-mono text-[13px] ${hop.ip ? 'text-text' : 'text-faint'}`}>
+          <span className={`font-mono text-mini ${hop.ip ? 'text-text' : 'text-faint'}`}>
             {hop.ip ?? 'no response'}
           </span>
           {hop.hostname && <span className="truncate text-xs text-muted">{hop.hostname}</span>}
-          <span className={`ml-auto font-mono text-[13px] ${unresponsive ? 'text-faint' : 'text-text'}`}>
+          <span className={`ml-auto font-mono text-mini ${unresponsive ? 'text-faint' : 'text-text'}`}>
             {fmtMs(hop.latencyMs)}
           </span>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-faint">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-micro text-faint">
           {hop.org && <span className="truncate">{hop.org}</span>}
           {hop.asn != null && <span className="font-mono">AS{hop.asn}</span>}
           {hop.country && <span>{hop.country}</span>}
@@ -297,7 +297,7 @@ export default function RoutesPage() {
                   <CardBody className="space-y-3">
                     {result.analysis.findings.length === 0 && <p className="text-sm text-muted">No anomalies detected on this route.</p>}
                     {result.analysis.findings.map((f, i) => (
-                      <div key={i} className="flex gap-2.5 text-[13px] leading-relaxed text-muted">
+                      <div key={i} className="flex gap-2.5 text-mini leading-relaxed text-muted">
                         <SeverityIcon severity={f.severity} />
                         <span>{f.message}</span>
                       </div>
@@ -357,7 +357,7 @@ export default function RoutesPage() {
           {compareResult && (
             <div>
               <Card className="mb-5">
-                <CardBody className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+                <CardBody className="flex items-start gap-2.5 text-mini leading-relaxed text-muted">
                   <Info size={15} className="mt-0.5 shrink-0 text-accent" />
                   <span>{compareResult.explanation}</span>
                 </CardBody>
@@ -458,7 +458,7 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
     <div>
       {result.note && (
         <Card className="mb-5">
-          <CardBody className="flex items-start gap-2.5 text-[13px] leading-relaxed text-muted">
+          <CardBody className="flex items-start gap-2.5 text-mini leading-relaxed text-muted">
             <Info size={15} className="mt-0.5 shrink-0 text-accent" />
             <span>{result.note}</span>
           </CardBody>
@@ -494,7 +494,7 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
               />
               <Metric label="Score" value={result.deltas.scoreDelta} hint="Route-score difference (positive = VPN better)" />
             </div>
-            {result.deltas.reason && <p className="mt-3 text-[13px] text-muted">{result.deltas.reason}</p>}
+            {result.deltas.reason && <p className="mt-3 text-mini text-muted">{result.deltas.reason}</p>}
           </CardBody>
         </Card>
       )}

@@ -164,7 +164,7 @@ export default function OptimizerPage() {
             <CardBody className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-faint">
+                  <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-faint">
                     <th className="px-5 py-2.5 font-medium">#</th>
                     <th className="px-3 py-2.5 font-medium">Candidate</th>
                     <th className="px-3 py-2.5 font-medium">Host</th>
@@ -212,7 +212,7 @@ export default function OptimizerPage() {
         <CardBody className="space-y-3">
           <Field label="Candidate list">
             <textarea
-              className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-text placeholder:text-faint focus:border-accent focus:outline-none"
+              className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
               rows={4}
               placeholder={'1.1.1.1:443\nGoogle DNS,8.8.8.8:443\nspeed.cloudflare.com'}
               value={candidateText}

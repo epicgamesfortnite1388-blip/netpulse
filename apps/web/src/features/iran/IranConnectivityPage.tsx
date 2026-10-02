@@ -361,27 +361,27 @@ export default function IranConnectivityPage() {
         <Card>
           <CardBody className="grid grid-cols-2 gap-4 md:grid-cols-6">
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Connectivity health</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Connectivity health</p>
               <p className="text-2xl font-bold text-text">{summary.healthScore}<span className="text-sm text-muted"> / 100</span></p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Reachable</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Reachable</p>
               <p className="text-2xl font-bold text-ok">{summary.reachable}<span className="text-sm text-muted"> / {summary.total}</span></p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Possible filtering</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Possible filtering</p>
               <p className="text-2xl font-bold text-warn">{summary.possibleFiltering}</p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Network failures</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Network failures</p>
               <p className="text-2xl font-bold text-danger">{summary.networkFailures}</p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Unavailable services</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Unavailable services</p>
               <p className="text-2xl font-bold text-neutral">{summary.unavailableServices}</p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted">Best profile</p>
+              <p className="text-micro uppercase tracking-wide text-muted">Best profile</p>
               <p className="text-sm font-semibold text-accent-strong">{summary.bestConnectionName ?? '—'}</p>
             </div>
           </CardBody>
@@ -405,7 +405,7 @@ export default function IranConnectivityPage() {
               <CardBody className="max-h-[560px] space-y-3 overflow-y-auto">
                 {(catalog?.categories ?? []).map((cat) => (
                   <div key={cat.id}>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{cat.name}</p>
+                    <p className="mb-1.5 text-micro font-semibold uppercase tracking-wide text-muted">{cat.name}</p>
                     <div className="flex flex-wrap gap-1.5">
                       {cat.targets.map((t) => (
                         <button
@@ -425,7 +425,7 @@ export default function IranConnectivityPage() {
                 ))}
                 {(catalog?.custom ?? []).length > 0 && (
                   <div>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Custom</p>
+                    <p className="mb-1.5 text-micro font-semibold uppercase tracking-wide text-muted">Custom</p>
                     <div className="flex flex-wrap gap-1.5">
                       {(catalog?.custom ?? []).map((t) => (
                         <button key={t.id} onClick={() => toggleTarget(t.id)} className={`rounded-full border px-2.5 py-1 text-xs ${selectedTargets.has(t.id) ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-muted'}`}>
@@ -491,7 +491,7 @@ export default function IranConnectivityPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-line text-[11px] uppercase tracking-wide text-muted">
+                      <tr className="border-b border-line text-micro uppercase tracking-wide text-muted">
                         <th className="px-2 py-2">Target</th>
                         <th className="px-2 py-2">Connection</th>
                         <th className="px-2 py-2">DNS</th>
@@ -535,7 +535,7 @@ export default function IranConnectivityPage() {
               {byCategory.length === 0 && <EmptyState title="No measurements yet" message="Run the Iran connectivity test to populate service results." />}
               {byCategory.map(([cat, ms]) => (
                 <div key={cat}>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">{cat}</p>
+                  <p className="mb-2 text-micro font-semibold uppercase tracking-wide text-muted">{cat}</p>
                   <div className="space-y-1.5">
                     {ms.map((m) => (
                       <div key={`${m.targetId}:${m.connectionId}`} className="rounded-lg border border-line bg-surface p-3">
@@ -581,7 +581,7 @@ export default function IranConnectivityPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-line text-[11px] uppercase tracking-wide text-muted">
+                      <tr className="border-b border-line text-micro uppercase tracking-wide text-muted">
                         <th className="px-2 py-2">Target</th>
                         <th className="px-2 py-2">Connection</th>
                         <th className="px-2 py-2">Resolver</th>
@@ -643,13 +643,13 @@ export default function IranConnectivityPage() {
                     </div>
                     <div className="mt-2 grid gap-2 lg:grid-cols-2">
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Evidence</p>
+                        <p className="text-micro font-semibold uppercase tracking-wide text-muted">Evidence</p>
                         <ul className="mt-1 space-y-0.5 text-xs text-muted">
                           {m.classification.evidence.map((e, i) => <li key={i}>• {e}</li>)}
                         </ul>
                       </div>
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Stages</p>
+                        <p className="text-micro font-semibold uppercase tracking-wide text-muted">Stages</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           <Badge tone={m.dns?.ok ? 'ok' : 'danger'}>DNS</Badge>
                           <Badge tone={m.tcp?.ok ? 'ok' : 'danger'}>TCP:{m.tcp?.port ?? 443}</Badge>
@@ -657,7 +657,7 @@ export default function IranConnectivityPage() {
                           <Badge tone={m.http?.ok ? 'ok' : 'danger'}>HTTPS</Badge>
                           {m.route && <Badge tone={m.route.ok ? 'ok' : 'warn'}>Route</Badge>}
                         </div>
-                        <p className="mt-2 text-[11px] text-muted">
+                        <p className="mt-2 text-micro text-muted">
                           Samples: {m.samples} · {m.classification.evidence.length > 0 ? `${m.classification.evidence.length} evidence line${m.classification.evidence.length === 1 ? '' : 's'}` : ''}
                         </p>
                       </div>
@@ -705,7 +705,7 @@ export default function IranConnectivityPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-line text-[11px] uppercase tracking-wide text-muted">
+                      <tr className="border-b border-line text-micro uppercase tracking-wide text-muted">
                         <th className="px-2 py-2">Service</th>
                         {connections.map((c) => <th key={c.id} className="px-2 py-2">{c.name}</th>)}
                       </tr>

@@ -207,7 +207,7 @@ export default function DiagnosticsPage() {
             {liveLog.length > 0 && (
               <ul className="mt-3 space-y-1 border-t border-line pt-3">
                 {liveLog.map((line, i) => (
-                  <li key={i} className="font-mono text-[11px] text-faint">
+                  <li key={i} className="font-mono text-micro text-faint">
                     {line}
                   </li>
                 ))}
@@ -227,7 +227,7 @@ export default function DiagnosticsPage() {
           <CardBody className="space-y-3">
             <div className="grid gap-2 sm:grid-cols-2">
               {report.steps.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+                <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2 text-mini">
                   <span className="text-muted">{s.label}</span>
                   <span className="flex items-center gap-2 text-xs text-faint">
                     {s.detail}
@@ -239,7 +239,7 @@ export default function DiagnosticsPage() {
             {report.findings.length > 0 && (
               <div className="space-y-1.5">
                 {report.findings.map((f, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[13px]">
+                  <div key={i} className="flex items-start gap-2 text-mini">
                     <Badge tone={f.severity === 'error' ? 'danger' : f.severity === 'warn' ? 'warn' : f.severity === 'good' ? 'ok' : 'neutral'}>
                       {f.severity}
                     </Badge>

@@ -360,16 +360,18 @@ export default function NodeSourcesPage() {
                           <Badge tone={s.enabled ? SOURCE_TONE[s.status ?? 'idle'] ?? 'neutral' : 'neutral'}>
                             {s.enabled ? (s.status ?? 'idle') : 'disabled'}
                           </Badge>
-                          {s.type && <span className="text-[11px] uppercase tracking-wide text-faint">{s.type}</span>}
+                          {s.type && <span className="text-micro uppercase tracking-wide text-faint">{s.type}</span>}
                         </div>
-                        <p className="mt-0.5 truncate font-mono text-[11px] text-faint">{s.urls[0]}</p>
-                        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                        <p className="mt-0.5 truncate font-mono text-micro text-faint">{s.urls[0]}</p>
+                        {/* Four across needs xl: at 1024px a four-up grid left ~86px per cell,
+                            which the labels overflowed. */}
+                          <div className="mt-2 grid grid-cols-2 gap-1.5 xl:grid-cols-4">
                           <MiniMetric label="Discovered" value={String(s.discoveredConfigCount ?? '—')} />
                           <MiniMetric label="Imported" value={String(s.importedConfigCount ?? '—')} />
                           <MiniMetric label="Duplicates" value={String(s.duplicateCount ?? '—')} />
                           <MiniMetric label="Invalid" value={String(s.invalidCount ?? '—')} />
                         </div>
-                        <p className="mt-1.5 text-[11px] text-faint">Last fetch: {fmtTime(s.lastFetch)}</p>
+                        <p className="mt-1.5 text-micro text-faint">Last fetch: {fmtTime(s.lastFetch)}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Button
@@ -424,7 +426,7 @@ export default function NodeSourcesPage() {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="Community subscriptions"
-                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
                 />
               </Field>
               <Field label="Subscription URLs (one per line)">
@@ -433,7 +435,7 @@ export default function NodeSourcesPage() {
                   onChange={(e) => setFormUrls(e.target.value)}
                   rows={2}
                   placeholder="https://raw.githubusercontent.com/…/Sub1.txt"
-                  className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                  className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
                 />
               </Field>
             </div>
@@ -495,7 +497,7 @@ export default function NodeSourcesPage() {
                           </Badge>
                           <div className="min-w-0">
                             <div className="font-mono text-sm text-text">{j.kind}</div>
-                            <div className="truncate text-[11px] text-faint">
+                            <div className="truncate text-micro text-faint">
                               {j.id}
                               {typeof j.done === 'number' && typeof j.total === 'number' ? ` · ${j.done}/${j.total}` : ''}
                               {j.error ? ` · ${j.error}` : ''}
@@ -513,7 +515,7 @@ export default function NodeSourcesPage() {
                       </div>
                       {pct != null && (
                         <div className="mt-2.5">
-                          <div className="mb-1 flex items-center justify-between text-[11px] text-faint">
+                          <div className="mb-1 flex items-center justify-between text-micro text-faint">
                             <span>{j.status === 'running' ? 'Testing nodes' : 'Finished'}</span>
                             <span>{pct}%</span>
                           </div>
@@ -552,7 +554,7 @@ export default function NodeSourcesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm text-text">{e.name}</div>
-                        <div className="truncate font-mono text-[11px] text-faint">{e.url}</div>
+                        <div className="truncate font-mono text-micro text-faint">{e.url}</div>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Badge tone={e.enabled ? 'ok' : 'neutral'}>{e.enabled ? 'enabled' : 'disabled'}</Badge>
@@ -587,7 +589,7 @@ export default function NodeSourcesPage() {
                   value={teName}
                   onChange={(e) => setTeName(e.target.value)}
                   placeholder="Google 204"
-                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
                 />
               </Field>
               <Field label="URL" hint="A 204 or small body is ideal — the probe only needs to prove connectivity.">
@@ -595,7 +597,7 @@ export default function NodeSourcesPage() {
                   value={teUrl}
                   onChange={(e) => setTeUrl(e.target.value)}
                   placeholder="https://www.gstatic.com/generate_204"
-                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 font-mono text-xs text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                  className="h-9 w-full rounded-lg border border-line bg-surface-2 px-3 font-mono text-xs text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
                 />
               </Field>
             </div>

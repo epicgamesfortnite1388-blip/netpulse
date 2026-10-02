@@ -312,7 +312,7 @@ export default function VpnPage() {
           >
             {groups.map((group) => (
               <div key={group.heading} className="flex shrink-0 gap-1.5 lg:mb-4 lg:block lg:shrink lg:gap-0">
-                <p className="hidden px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-faint lg:block">
+                <p className="hidden px-2.5 pb-1.5 text-micro font-semibold uppercase tracking-[0.18em] text-faint lg:block">
                   {group.heading}
                 </p>
                 <div className="flex gap-1.5 lg:block lg:space-y-0.5">
@@ -331,7 +331,7 @@ export default function VpnPage() {
                           <Icon size={13} />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
-                        <span className="hidden text-[10px] text-faint lg:inline group-data-[state=active]:text-muted">
+                        <span className="hidden text-micro text-faint lg:inline group-data-[state=active]:text-muted">
                           <StatusDot tone={item.dot.tone} pulse={item.dot.pulse} size={6} />
                         </span>
                       </RTabs.Trigger>
@@ -343,7 +343,7 @@ export default function VpnPage() {
             {/* Rail items the user has never seen before this build are appended
                 rather than dropped, so a new surface is reachable immediately. */}
             {missing.length > 0 && (
-              <p className="hidden text-[10px] text-faint lg:block">
+              <p className="hidden text-micro text-faint lg:block">
                 Not in the rail: {missing.map((m) => m.label).join(', ')}
               </p>
             )}
@@ -371,7 +371,7 @@ export default function VpnPage() {
               <CoreSurface engine="sing-box">
                 <div className="mb-4 mt-1 flex items-center gap-3">
                   <div className="h-px flex-1 bg-line" />
-                  <span className="text-[11px] uppercase tracking-[0.16em] text-faint">Managed tunnel · share links</span>
+                  <span className="text-micro uppercase tracking-[0.16em] text-faint">Managed tunnel · share links</span>
                   <div className="h-px flex-1 bg-line" />
                 </div>
                 <div className="space-y-7">

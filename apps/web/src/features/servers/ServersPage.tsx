@@ -6,6 +6,7 @@ import { Activity, HeartPulse, Play, Plus, RefreshCw, Server, Sparkles, Trash2 }
 import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
@@ -161,7 +162,7 @@ function RecommendationCard({ servers }: { servers: ServerRecord[] }) {
                     <span className="metric-num text-sm text-text">{r.score != null ? `${r.score}/100` : 'unreachable'}</span>
                   </div>
                   {r.reasons.length > 0 && (
-                    <ul className="mt-1 list-inside list-disc text-[11px] text-faint">
+                    <ul className="mt-1 list-inside list-disc text-micro text-faint">
                       {r.reasons.map((reason) => (
                         <li key={reason}>{reason}</li>
                       ))}
@@ -361,7 +362,7 @@ export default function ServersPage() {
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                      <span className="text-[11px] text-faint">
+                      <span className="text-micro text-faint">
                         {latest ? `Last check ${fmtDateTime(latest.checkedAt)}` : 'No health samples yet'}
                       </span>
                       <div className="flex items-center gap-2">
@@ -373,9 +374,9 @@ export default function ServersPage() {
                           <RefreshCw size={13} />
                           Check now
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => void removeServer(s.id)}>
+                        <IconButton label={`Delete server ${s.name}`} variant="ghost" size="sm" onClick={() => void removeServer(s.id)}>
                           <Trash2 size={13} />
-                        </Button>
+                        </IconButton>
                       </div>
                     </div>
                   </div>

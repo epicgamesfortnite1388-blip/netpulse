@@ -111,7 +111,7 @@ export function VpnHistoryCard() {
           <div className="space-y-5">
             {/* -------- discovery profile outcomes -------- */}
             <section>
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+              <div className="mb-2 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                 <Radar size={12} />
                 Discovery profiles — validated vs probed per run
               </div>
@@ -133,7 +133,7 @@ export function VpnHistoryCard() {
                       </div>
                       <div className="flex items-end justify-between gap-4">
                         <ProfileSparkline rollup={r} runs={runs} />
-                        <span className="shrink-0 text-[11px] text-faint">
+                        <span className="shrink-0 text-micro text-faint">
                           {r.lastValidatedDepth ? `last proof: ${r.lastValidatedDepth}` : 'no candidate validated yet'}
                         </span>
                       </div>
@@ -145,7 +145,7 @@ export function VpnHistoryCard() {
 
             {/* -------- quick connect outcomes -------- */}
             <section>
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+              <div className="mb-2 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                 <Zap size={12} />
                 Quick connect — {quick?.totalRuns ?? 0} run{(quick?.totalRuns ?? 0) === 1 ? '' : 's'}, {quick?.totalAttempts ?? 0} attempt{(quick?.totalAttempts ?? 0) === 1 ? '' : 's'}, success {pct(quick?.successRatePct)}
               </div>
@@ -171,7 +171,7 @@ export function VpnHistoryCard() {
 
             {/* -------- gateway reliability -------- */}
             <section>
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-faint">
+              <div className="mb-2 flex items-center gap-1.5 text-micro uppercase tracking-wide text-faint">
                 <Activity size={12} />
                 Gateway memory — proven reliability per remembered node
               </div>
@@ -184,7 +184,7 @@ export function VpnHistoryCard() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="text-[11px] uppercase tracking-wide text-faint">
+                    <thead className="text-micro uppercase tracking-wide text-faint">
                       <tr>
                         <th className="py-1.5 pr-3 font-medium">Gateway</th>
                         <th className="py-1.5 pr-3 font-medium">Engine</th>

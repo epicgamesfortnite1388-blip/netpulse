@@ -256,7 +256,7 @@ export default function EngineManagerPage() {
 
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
                     {engine.protocols.map((p) => (
-                      <span key={p} className="rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                      <span key={p} className="rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-micro text-muted">
                         {p}
                       </span>
                     ))}

@@ -86,7 +86,7 @@ function TestDetailView({ test }: { test: TestDetail }) {
           Params <span className="text-muted">{JSON.stringify(test.params)}</span>
         </div>
       )}
-      <pre className="max-h-80 overflow-auto rounded-lg border border-line bg-surface-2 p-3 text-[11px] leading-relaxed text-muted">
+      <pre className="max-h-80 overflow-auto rounded-lg border border-line bg-surface-2 p-3 text-micro leading-relaxed text-muted">
         {JSON.stringify(payload ?? {}, null, 2)}
       </pre>
     </div>
@@ -182,12 +182,12 @@ export default function HistoryPage() {
                       {open ? <ChevronDown size={14} className="shrink-0 text-faint" /> : <ChevronRight size={14} className="shrink-0 text-faint" />}
                       <StatusDot tone={t.status === 'done' ? 'ok' : t.status === 'error' ? 'danger' : 'warn'} />
                       <Badge tone="accent">{t.type}</Badge>
-                      <span className="text-[13px] text-muted">{fmtDateTime(t.startedAt)}</span>
+                      <span className="text-mini text-muted">{fmtDateTime(t.startedAt)}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-4">
                       {metrics.map((m) => (
                         <span key={m.label} className="text-xs text-faint">
-                          {m.label} <span className="metric-num ml-1 text-[13px] text-text">{m.value}</span>
+                          {m.label} <span className="metric-num ml-1 text-mini text-text">{m.value}</span>
                         </span>
                       ))}
                       {t.error && <span className="text-xs text-danger">{t.error}</span>}

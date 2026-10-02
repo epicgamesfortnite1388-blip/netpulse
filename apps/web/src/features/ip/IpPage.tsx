@@ -26,8 +26,8 @@ function useIp(family: IpFamily) {
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-[13px] text-muted">{label}</span>
-      <span className="metric-num text-[13px] text-text">{value ?? <span className="text-faint">—</span>}</span>
+      <span className="text-mini text-muted">{label}</span>
+      <span className="metric-num text-mini text-text">{value ?? <span className="text-faint">—</span>}</span>
     </div>
   );
 }
@@ -220,7 +220,7 @@ function WebrtcLeakCard() {
             {result.leaked.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {result.leaked.map((ip) => (
-                  <code key={ip} className="rounded border border-line bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text">
+                  <code key={ip} className="rounded border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-text">
                     {ip}
                   </code>
                 ))}

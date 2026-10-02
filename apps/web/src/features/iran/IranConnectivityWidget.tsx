@@ -63,19 +63,19 @@ export function IranConnectivityWidget() {
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted">Health</p>
+                <p className="text-micro uppercase tracking-wide text-muted">Health</p>
                 <p className="text-lg font-semibold text-text">{summary.healthScore}/100</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted">Possible filtering</p>
+                <p className="text-micro uppercase tracking-wide text-muted">Possible filtering</p>
                 <p className="text-lg font-semibold text-warn">{summary.possibleFiltering}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted">Network failures</p>
+                <p className="text-micro uppercase tracking-wide text-muted">Network failures</p>
                 <p className="text-lg font-semibold text-danger">{summary.networkFailures}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted">Best profile</p>
+                <p className="text-micro uppercase tracking-wide text-muted">Best profile</p>
                 <p className="truncate text-sm font-semibold text-accent-strong" title={summary.bestConnectionName ?? undefined}>
                   {summary.bestConnectionName ?? '—'}
                 </p>
