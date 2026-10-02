@@ -166,7 +166,7 @@ export function TelegramIntegrationCard() {
               <span className="font-medium">
                 Telegram linked{status.telegramUserId != null ? ` - ID ${status.telegramUserId}` : ''}
                 {status.linkedAt && (
-                  <span className="text-xs text-[var(--text-muted)]"> - since {new Date(status.linkedAt).toLocaleDateString()}</span>
+                  <span className="text-xs text-muted"> - since {new Date(status.linkedAt).toLocaleDateString()}</span>
                 )}
               </span>
               <Button variant="ghost" onClick={unlink} disabled={busy} className="flex-1">
@@ -176,26 +176,26 @@ export function TelegramIntegrationCard() {
             {subs && subs.length > 0 && (
               <div className="space-y-2">
                 {subs.map((s) => (
-                  <div key={s.id} className="rounded border border-[var(--border)] p-3">
+                  <div key={s.id} className="rounded border border-line p-3">
                     <p className="font-medium">{s.plan}</p>
-                    <p className="text-[var(--text-muted)] text-sm">Status: {s.status}</p>
-                    <p className="text-[var(--text-muted)] text-sm">
+                    <p className="text-muted text-sm">Status: {s.status}</p>
+                    <p className="text-muted text-sm">
                       Expires: {s.expiration_time ? new Date(s.expiration_time).toLocaleDateString() : 'never'}
                     </p>
-                    <p className="text-[var(--text-muted)] text-sm">
+                    <p className="text-muted text-sm">
                       Traffic: {s.used_gb.toFixed(2)} / {s.total_gb.toFixed(0)} GB
                     </p>
                   </div>
                 ))}
               </div>
             )}
-            {subs && subs.length === 0 && <p className="text-[var(--text-muted)]">No subscriptions mirror yet.</p>}
+            {subs && subs.length === 0 && <p className="text-muted">No subscriptions mirror yet.</p>}
             <div>
               <Button onClick={sync} disabled={syncing}>
                 <RefreshCw size={14} /> {syncing ? 'Syncing...' : 'Refresh Subscriptions'}
               </Button>
               {(lastSyncAt || syncError) && (
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                <p className="mt-1 text-xs text-muted">
                   {syncError ? `Last sync failed (${syncError})` : lastSyncAt ? `Last synced ${new Date(lastSyncAt).toLocaleString()}` : ''}
                 </p>
               )}
@@ -204,7 +204,7 @@ export function TelegramIntegrationCard() {
         ) : (
           <div className="flex flex-col gap-2 text-sm">
             {!session ? (
-              <p className="text-[var(--text-muted)]">Log in to your account to link Telegram.</p>
+              <p className="text-muted">Log in to your account to link Telegram.</p>
             ) : (
               <>
                 <div>
@@ -218,7 +218,7 @@ export function TelegramIntegrationCard() {
                       value={confirmCode}
                       onChange={(e) => setConfirmCode(e.target.value)}
                       placeholder="Paste the code from the bot"
-                      className="flex-1 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-sm"
+                      className="flex-1 rounded border border-line bg-transparent px-2 py-1 text-sm"
                     />
                     <Button onClick={confirmLink} disabled={!confirmCode.trim() || busy}>
                       Confirm
@@ -229,7 +229,7 @@ export function TelegramIntegrationCard() {
             )}
           </div>
         )}
-        <p className="mt-3 text-xs text-[var(--text-muted)]">
+        <p className="mt-3 text-xs text-muted">
           Purchases and renewals are managed on Telegram. Subscription sync requires cloud connectivity.
         </p>
       </CardBody>

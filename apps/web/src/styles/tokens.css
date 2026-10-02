@@ -1,5 +1,17 @@
 @import 'tailwindcss';
 
+/*
+ * Test files are not shipped, so their contents must never reach the
+ * production stylesheet. They used to: tokenRefs.test.ts quotes the exact
+ * broken classes it guards against (`text-[var(--text-muted)]`,
+ * `bg-[var(--bg-inset)]`, `border-[var(--accent)]`), Tailwind's scanner picked
+ * those strings up, and the build emitted three live rules that reference
+ * custom properties this app has never declared -- dead CSS that renders
+ * nothing, and a trap for the next person. Excluded explicitly because the
+ * test directory is tracked, so it is not skipped as a build artefact.
+ */
+@source not '../../test';
+
 @theme {
   --color-bg: #05080d;
   --color-surface: #0a0f17;
@@ -9,13 +21,35 @@
   --color-line-strong: rgba(148, 163, 184, 0.22);
   --color-text: #e8eef6;
   --color-muted: #8fa0b3;
-  --color-faint: #5c6b7d;
+  /*
+   * `faint` is the dimmest text tier, but it is still body text and has to
+   * clear WCAG AA. #5c6b7d measured 3.5:1 on --surface; #6e8098 measures
+   * 4.75:1 on the same surface and keeps the same cool grey-blue identity.
+   */
+  --color-faint: #75879d;
+  /* Ink for text drawn ON a solid --color-accent fill (a selected checkmark).
+   * White on the cyan accent measured 1.75:1; this measures 10.7:1. */
+  --color-on-accent: #04161d;
   --color-accent: #22d3ee;
   --color-accent-strong: #67e8f9;
   --color-accent-soft: rgba(34, 211, 238, 0.10);
   --color-ok: #34d399;
   --color-warn: #fbbf24;
   --color-danger: #f87171;
+  /*
+   * Protocol inks for the node chips. The dark values are Tailwind v4's own
+   * `-300` inks, verbatim, so the chips render exactly as they did before
+   * this token existed — and so a future Tailwind upgrade cannot silently
+   * repaint them. The light overrides below use the -700 equivalents, which
+   * clear 4.5:1 on the same light tint; a raw -300 ink there measures 1.5:1.
+   */
+  --color-proto-sky: oklch(82.8% 0.111 230.318);
+  --color-proto-violet: oklch(81.1% 0.111 293.571);
+  --color-proto-orange: oklch(83.7% 0.128 66.29);
+  --color-proto-emerald: oklch(84.5% 0.143 164.978);
+  --color-proto-cyan: oklch(86.5% 0.127 207.078);
+  --color-proto-indigo: oklch(78.5% 0.115 274.713);
+  --color-proto-amber: oklch(87.9% 0.169 91.605);
 
   /*
    * Aether surface palette — a violet/cyan/pink spectrum used only by the
@@ -30,6 +64,88 @@
 
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
+
+  /*
+   * ------------------------------ type scale ------------------------------
+   * One ramp, named once here, instead of a bracket value retyped at each call
+   * site. Tailwind v4 turns every `--text-*` entry in this block into a
+   * `text-*` utility, so these ARE the utilities the components use.
+   *
+   *   micro  12px   the floor. Dense-page meta: table cells, chips, stat and
+   *                  metric labels, axis ticks, timestamps, footnotes.
+   *   mini   13px   the one in-between step the app had been writing ad hoc.
+   *   xs     12px   Tailwind's secondary tier (the bulk of the app's body-adjacent text).
+   *   sm     14px   body.
+   *   base   16px   prose / lead paragraphs.
+   *
+   * Why 12px is the floor: 9px, 10px and 11px were being written per call site
+   * (49 sites at 10px alone). On /nodes that put 514 of 1202 text nodes under
+   * 12px, and it was already breaking layout — 150 boxes overflowed their
+   * column at a 1024px window. `micro` is deliberately the same 12px as `xs`:
+   * it is the smallest text that stays legible on a 1x desktop panel, and the
+   * name says which tier is allowed to use it. Below it there is no step.
+   *
+   * -------------------------- user type scale ---------------------------
+   * Every step is `calc(base * var(--type-scale))`, so one preference (below)
+   * rescales the whole ramp and the hierarchy between steps is preserved. The
+   * app window has no browser zoom of its own, so this is the only in-app way
+   * to enlarge text for a high-DPI panel or for comfortable reading.
+   *
+   * Two properties make this cheap and safe:
+   *   - Tailwind emits each `--text-*--line-height` as a UNITLESS ratio
+   *     (`calc(1.25 / .875)`), and a unitless line-height multiplies whatever
+   *     font-size resolves to. So scaling font-size scales leading with it --
+   *     no line-height token needs overriding here.
+   *   - the scale only ever multiplies, so the 12px floor can never be
+   *     undercut by turning it up.
+   *
+   * 150% is deliberately NOT offered: at a 1024px window it overflowed the
+   * sidebar's tracked uppercase section labels by 7px on every page (em-based
+   * letter-spacing scales with the text; the fixed-width nav column does not).
+   *
+   * The steps Tailwind ships defaults for (xs..9xl) are restated here on
+   * purpose. Without them `text-2xl` would keep its stock 24px while
+   * `text-sm` grew, so a large heading would look *smaller* than body text.
+   */
+  --text-micro: calc(0.75rem * var(--type-scale));
+  --text-mini: calc(0.8125rem * var(--type-scale));
+  --text-xs: calc(0.75rem * var(--type-scale));
+  --text-sm: calc(0.875rem * var(--type-scale));
+  --text-base: calc(1rem * var(--type-scale));
+  --text-lg: calc(1.125rem * var(--type-scale));
+  --text-xl: calc(1.25rem * var(--type-scale));
+  --text-2xl: calc(1.5rem * var(--type-scale));
+  --text-3xl: calc(1.875rem * var(--type-scale));
+  --text-4xl: calc(2.25rem * var(--type-scale));
+  --text-5xl: calc(3rem * var(--type-scale));
+  --text-6xl: calc(3.75rem * var(--type-scale));
+  --text-7xl: calc(4.5rem * var(--type-scale));
+  --text-8xl: calc(6rem * var(--type-scale));
+  --text-9xl: calc(8rem * var(--type-scale));
+}
+
+/*
+ * Type scale preference. Reflected onto <html data-type-scale> by
+ * useTypeScaleApplier.ts, exactly like the theme is onto data-theme, so it
+ * applies on every page and survives a reload.
+ *
+ * Plain custom properties rather than `@theme` entries: this one is chosen at
+ * runtime, and it must not become a utility class.
+ *
+ * Custom properties resolve lazily, so the ramp above can reference
+ * var(--type-scale) before it is declared here — but the `:root` default must
+ * exist, or every --text-* would resolve to nothing at 1x.
+ */
+:root {
+  --type-scale: 1;
+}
+
+html[data-type-scale='large'] {
+  --type-scale: 1.125;
+}
+
+html[data-type-scale='xl'] {
+  --type-scale: 1.25;
 }
 
 /*
@@ -46,18 +162,29 @@ html[data-theme='light'] {
   --color-line-strong: rgba(15, 23, 42, 0.22);
   --color-text: #0f172a;
   --color-muted: #52627a;
-  --color-faint: #8593a8;
-  --color-accent: #0891b2;
-  --color-accent-strong: #0e7490;
+  /* #8593a8 was 3.1:1 on white; the dark theme's own faint clears 4.5:1 here. */
+  --color-faint: #5c6b7d;
+  --color-accent: #0e7490;
+  --color-accent-strong: #0b5f73;
   --color-accent-soft: rgba(8, 145, 178, 0.10);
-  --color-ok: #059669;
-  --color-warn: #b45309;
-  --color-danger: #dc2626;
+  --color-ok: #036249;
+  --color-warn: #92400e;
+  --color-danger: #b91c1c;
   --color-aether: #7c3aed;
   --color-aether-2: #0891b2;
   --color-aether-3: #db2777;
   --color-aether-soft: rgba(124, 58, 237, 0.10);
   --color-aether-line: rgba(124, 58, 237, 0.28);
+  /* The accent fill is mid-cyan here, so the legible ink flips: white on the
+   * light accent is 5.4:1, while no dark ink clears 4.5:1 on that fill. */
+  --color-on-accent: #ffffff;
+  --color-proto-sky: #0369a1;
+  --color-proto-violet: #6d28d9;
+  --color-proto-orange: #c2410c;
+  --color-proto-emerald: #047857;
+  --color-proto-cyan: #0e7490;
+  --color-proto-indigo: #4338ca;
+  --color-proto-amber: #b45309;
 }
 
 /* backdrop glows tuned per theme */
@@ -87,18 +214,26 @@ html[data-theme='light'] ::selection {
     --color-line-strong: rgba(15, 23, 42, 0.22);
     --color-text: #0f172a;
     --color-muted: #52627a;
-    --color-faint: #8593a8;
-    --color-accent: #0891b2;
-    --color-accent-strong: #0e7490;
+    --color-faint: #5c6b7d;
+    --color-accent: #0e7490;
+    --color-accent-strong: #0b5f73;
     --color-accent-soft: rgba(8, 145, 178, 0.10);
-    --color-ok: #059669;
-    --color-warn: #b45309;
-    --color-danger: #dc2626;
+    --color-ok: #036249;
+    --color-warn: #92400e;
+    --color-danger: #b91c1c;
     --color-aether: #7c3aed;
     --color-aether-2: #0891b2;
     --color-aether-3: #db2777;
     --color-aether-soft: rgba(124, 58, 237, 0.10);
     --color-aether-line: rgba(124, 58, 237, 0.28);
+    --color-on-accent: #ffffff;
+    --color-proto-sky: #0369a1;
+    --color-proto-violet: #6d28d9;
+    --color-proto-orange: #c2410c;
+    --color-proto-emerald: #047857;
+    --color-proto-cyan: #0e7490;
+    --color-proto-indigo: #4338ca;
+    --color-proto-amber: #b45309;
   }
 }
 

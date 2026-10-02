@@ -66,7 +66,7 @@ function WelcomeGate() {
         <h1 className="text-2xl font-semibold tracking-tight">
           {mode === 'signin' ? 'Welcome back' : 'Create your account'}
         </h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
+        <p className="mt-1 text-sm text-muted">
           {mode === 'signin'
             ? 'Sign in to sync settings and favorites across devices.'
             : 'One account syncs your settings, favorites and profiles.'}
@@ -84,7 +84,7 @@ function WelcomeGate() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
               />
             </Field>
             <Field label="Password" hint={mode === 'register' ? 'At least 10 characters with upper case, lower case and a digit' : undefined}>
@@ -95,7 +95,7 @@ function WelcomeGate() {
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
               />
             </Field>
             {mode === 'register' && (
@@ -106,7 +106,7 @@ function WelcomeGate() {
                   autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
-                  className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                  className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
                 />
               </Field>
             )}
@@ -124,7 +124,7 @@ function WelcomeGate() {
       <Button variant="ghost" onClick={() => navigate('/')}>
         <CloudOff size={15} /> Continue offline
       </Button>
-      <p className="text-center text-xs text-[var(--text-muted)]">
+      <p className="text-center text-xs text-muted">
         An account is optional. Diagnostics, nodes and the VPN work fully without one.
       </p>
     </div>
@@ -135,7 +135,7 @@ function WelcomeGate() {
 
 function SessionRow({ session, onRevoke }: { session: CloudSession; onRevoke: (id: string) => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] py-2 last:border-b-0">
+    <div className="flex items-center justify-between gap-3 border-b border-line py-2 last:border-b-0">
       <div className="min-w-0">
         <p className="truncate text-sm">
           {session.deviceName ?? 'Unknown device'}
@@ -145,7 +145,7 @@ function SessionRow({ session, onRevoke }: { session: CloudSession; onRevoke: (i
             </span>
           )}
         </p>
-        <p className="text-xs text-[var(--text-muted)]">
+        <p className="text-xs text-muted">
           {[session.os, session.appVersion].filter(Boolean).join(' · ') || 'details unavailable'} — last active {fmtTime(session.lastSeenAt)}
         </p>
       </div>
@@ -233,14 +233,14 @@ function EncryptedBackupCard() {
                 Full configs — including credentials — are encrypted in this app with a key derived from your account password before upload. The
                 cloud stores ciphertext only; it can back them up but never read them.
               </p>
-              {rows === null && <p className="text-xs text-[var(--text-muted)]">Backups load on the next sync.</p>}
-              {rows?.length === 0 && <p className="text-xs text-[var(--text-muted)]">No backups yet — run “Sync now”.</p>}
+              {rows === null && <p className="text-xs text-muted">Backups load on the next sync.</p>}
+              {rows?.length === 0 && <p className="text-xs text-muted">No backups yet — run “Sync now”.</p>}
               {rows !== null && rows.length > 0 && (
                 <ul className="flex flex-col gap-1">
                   {rows.map((r) => (
-                    <li key={r.profileId} className="flex items-center justify-between gap-2 rounded border border-[var(--border)] px-2 py-1.5">
+                    <li key={r.profileId} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5">
                       <span className="truncate">
-                        {names[r.profileId] ?? r.profileId} <span className="text-xs text-[var(--text-muted)]">· {fmtTime(r.updatedAt)}</span>
+                        {names[r.profileId] ?? r.profileId} <span className="text-xs text-muted">· {fmtTime(r.updatedAt)}</span>
                       </span>
                       <Button variant="ghost" onClick={() => void restore(r.profileId)} disabled={restoring === r.profileId}>
                         <Download size={14} /> {restoring === r.profileId ? 'Restoring…' : 'Restore'}
@@ -264,7 +264,7 @@ function EncryptedBackupCard() {
                     autoComplete="current-password"
                     value={unlockPw}
                     onChange={(e) => setUnlockPw(e.target.value)}
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm"
                   />
                 </Field>
                 <Button type="submit" disabled={unlocking || !unlockPw}>
@@ -273,7 +273,7 @@ function EncryptedBackupCard() {
               </form>
             </>
           ) : (
-            <p className="text-xs text-[var(--text-muted)]">Encrypted backup activates when you sign in.</p>
+            <p className="text-xs text-muted">Encrypted backup activates when you sign in.</p>
           )}
         </div>
       </CardBody>
@@ -365,11 +365,11 @@ function AccountDashboard() {
         />
         <CardBody>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
-            <dt className="text-[var(--text-muted)]">Email</dt>
+            <dt className="text-muted">Email</dt>
             <dd className="break-all">{user.email}</dd>
-            <dt className="text-[var(--text-muted)]">Account created</dt>
+            <dt className="text-muted">Account created</dt>
             <dd>{fmtTime(user.createdAt)}</dd>
-            <dt className="text-[var(--text-muted)]">Last login</dt>
+            <dt className="text-muted">Last login</dt>
             <dd>{fmtTime(user.lastLoginAt)}</dd>
           </dl>
         </CardBody>
@@ -381,10 +381,10 @@ function AccountDashboard() {
           {pwOpen ? (
             <form className="flex max-w-sm flex-col gap-3" onSubmit={changePassword}>
               <Field label="Current password">
-                <input type="password" required autoComplete="current-password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm" />
+                <input type="password" required autoComplete="current-password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm" />
               </Field>
               <Field label="New password" hint="At least 10 characters with upper case, lower case and a digit">
-                <input type="password" required minLength={10} autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm" />
+                <input type="password" required minLength={10} autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm" />
               </Field>
               <div className="flex gap-2">
                 <Button type="submit">Change password</Button>
@@ -406,9 +406,9 @@ function AccountDashboard() {
         <CardHeader title="Sessions" />
         <CardBody>
           {sessions === null ? (
-            <p className="text-sm text-[var(--text-muted)]">Session list unavailable (offline or cloud unreachable).</p>
+            <p className="text-sm text-muted">Session list unavailable (offline or cloud unreachable).</p>
           ) : sessions.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No active sessions.</p>
+            <p className="text-sm text-muted">No active sessions.</p>
           ) : (
             <div>{sessions.map((s) => <SessionRow key={s.id} session={s} onRevoke={revoke} />)}</div>
           )}
@@ -419,18 +419,18 @@ function AccountDashboard() {
         <CardHeader title="Devices" />
         <CardBody>
           {devices === null ? (
-            <p className="text-sm text-[var(--text-muted)]">Device roster unavailable.</p>
+            <p className="text-sm text-muted">Device roster unavailable.</p>
           ) : devices.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No devices registered yet.</p>
+            <p className="text-sm text-muted">No devices registered yet.</p>
           ) : (
             <div className="flex flex-col gap-1 text-sm">
               {devices.map((d) => (
-                <div key={d.id} className="flex items-center justify-between border-b border-[var(--border)] py-1.5 last:border-b-0">
+                <div key={d.id} className="flex items-center justify-between border-b border-line py-1.5 last:border-b-0">
                   <div>
                     <p>{d.name}</p>
-                    <p className="text-xs text-[var(--text-muted)]">{[d.os, d.appVersion].filter(Boolean).join(' · ') || '—'} — first seen {fmtTime(d.firstSeenAt)}</p>
+                    <p className="text-xs text-muted">{[d.os, d.appVersion].filter(Boolean).join(' · ') || '—'} — first seen {fmtTime(d.firstSeenAt)}</p>
                   </div>
-                  <span className="text-xs text-[var(--text-muted)]">active {fmtTime(d.lastActiveAt)}</span>
+                  <span className="text-xs text-muted">active {fmtTime(d.lastActiveAt)}</span>
                 </div>
               ))}
             </div>
@@ -446,8 +446,12 @@ function AccountDashboard() {
               Last sync: <strong>{fmtTime(session.lastSyncAt)}</strong>
               {pendingCount() > 0 && <span> — {pendingCount()} offline change(s) waiting</span>}
             </p>
-            {lastSyncError() && !syncState.running && <p className="text-xs text-amber-400">Last attempt: {lastSyncError()}</p>}
-            <p className="text-xs text-[var(--text-muted)]">
+            {/* `text-warn`, not a raw palette colour: amber-400 is fixed across themes and
+                measured 1.72:1 on white, so this line was invisible to anyone
+                reading the light theme — and it only renders once a sync has
+                actually failed, which is why the gate only reached it now. */}
+            {lastSyncError() && !syncState.running && <p className="text-xs text-warn">Last attempt: {lastSyncError()}</p>}
+            <p className="text-xs text-muted">
               Synced to the cloud: settings, favorites, profile <em>names</em>, preferences. Full configs leave only as end-to-end encrypted blobs (
               see below) — they are unreadable to the cloud.
             </p>
@@ -470,7 +474,7 @@ function AccountDashboard() {
       <Card fold={{ id: 'account-danger', defaultOpen: false, summary: 'irreversible account actions' }}>
         <CardHeader title="Danger zone" />
         <CardBody>
-          <p className="mb-2 text-sm text-[var(--text-muted)]">
+          <p className="mb-2 text-sm text-muted">
             Deleting the account removes all cloud data immediately. Local data on this machine is untouched.
           </p>
           <Button

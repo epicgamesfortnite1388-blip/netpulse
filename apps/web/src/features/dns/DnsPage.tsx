@@ -379,7 +379,7 @@ export default function DnsPage() {
                     <CardHeader
                       title={g.name}
                       subtitle={g.description}
-                      actions={                        <ExternalLink source={g.homepage} className="text-[11px] text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalLink>
+                      actions={                        <ExternalLink source={g.homepage} className="text-micro text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalLink>
                       }
                     />
                     <CardBody className="space-y-1.5">
@@ -397,22 +397,22 @@ export default function DnsPage() {
                           >
                             <div className="min-w-0">
                               <div className="truncate font-medium">{r.name}</div>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-micro text-faint">
                                 {r.ipv4 && <span className="font-mono">{r.ipv4}</span>}
                                 {r.dotHost && <Badge>DoT</Badge>}
                                 {r.dohUrl && <Badge>DoH</Badge>}
                                 {r.dnssec && <Badge tone="ok">DNSSEC</Badge>}
                                 {!r.verified && <span className="italic">unverified</span>}
                               </div>
-                              {r.note && <div className="mt-0.5 text-[11px] text-faint">{r.note}</div>}
-                              {r.skipBenchmarkReason && <div className="mt-0.5 text-[11px] text-muted">{r.skipBenchmarkReason}</div>}
+                              {r.note && <div className="mt-0.5 text-micro text-faint">{r.note}</div>}
+                              {r.skipBenchmarkReason && <div className="mt-0.5 text-micro text-muted">{r.skipBenchmarkReason}</div>}
                             </div>
                             <div
                               className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                                 checked ? 'border-accent bg-accent' : 'border-line bg-surface-2'
                               }`}
                             >
-                              {checked && <span className="text-[10px] font-bold text-white">✓</span>}
+                              {checked && <span className="text-micro font-bold text-on-accent">✓</span>}
                             </div>
                           </button>
                         );
@@ -441,7 +441,7 @@ export default function DnsPage() {
               <CardBody className="overflow-x-auto p-0">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-faint">
+                    <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-faint">
                       <th className="px-5 py-2.5 font-medium">#</th>
                       <th className="px-3 py-2.5 font-medium">Resolver</th>
                       <th className="px-3 py-2.5 font-medium">Transport</th>
@@ -527,7 +527,7 @@ export default function DnsPage() {
           {recommend && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[13px] text-muted">
+                <p className="text-mini text-muted">
                   {recommend.note}
                 </p>
                 {recommend.vpnActive && (
@@ -547,7 +547,7 @@ export default function DnsPage() {
                             <span className="text-sm font-semibold">{e.name}</span>
                             {e.badge && <Badge tone={e.badge === 'recommended' ? 'ok' : e.badge === 'keep-current' ? 'neutral' : 'ok'}>{e.badge}</Badge>}
                           </div>
-                          <div className="mt-1 text-[11px] uppercase tracking-wide text-faint">{e.transport}</div>
+                          <div className="mt-1 text-micro uppercase tracking-wide text-faint">{e.transport}</div>
                         </div>
                         <div className="text-right">
                           <div className="font-mono text-lg">{e.score != null ? Math.round(e.score) : '—'}</div>
@@ -621,17 +621,17 @@ export default function DnsPage() {
                       />
                       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                         <div>
-                          <div className="text-[10px] uppercase tracking-wider text-faint">Reliability</div>
+                          <div className="text-micro uppercase tracking-wider text-faint">Reliability</div>
                           <div className="font-mono text-sm">
                             {last?.reliabilityPct != null ? `${Math.round(last.reliabilityPct)}%` : '—'}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] uppercase tracking-wider text-faint">Timeouts</div>
+                          <div className="text-micro uppercase tracking-wider text-faint">Timeouts</div>
                           <div className="font-mono text-sm">{last?.timeouts ?? '—'}</div>
                         </div>
                         <div>
-                          <div className="text-[10px] uppercase tracking-wider text-faint">Score</div>
+                          <div className="text-micro uppercase tracking-wider text-faint">Score</div>
                           <div className="font-mono text-sm">{last?.score != null ? Math.round(last.score) : '—'}</div>
                         </div>
                       </div>
@@ -649,7 +649,7 @@ export default function DnsPage() {
             <select
               value={deepSpecId}
               onChange={(e) => setDeepSpecId(e.target.value)}
-              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent/80"
             >
               <option value="">Pick a resolver…</option>
               {benchmarkable
@@ -687,7 +687,7 @@ export default function DnsPage() {
                     <span className="font-mono">{deep.adBit == null ? 'n/a' : deep.adBit ? 'set' : 'not set'}</span>
                   </span>
                 </div>
-                <p className="text-[13px] leading-relaxed text-muted">{deep.detail}</p>
+                <p className="text-mini leading-relaxed text-muted">{deep.detail}</p>
               </CardBody>
             </Card>
           )}
@@ -791,7 +791,7 @@ export default function DnsPage() {
                     <h3 className={`text-sm font-semibold ${leak.leaked ? 'text-danger' : 'text-ok'}`}>
                       {leak.leaked ? 'DNS mismatch detected' : 'No obvious leak detected'}
                     </h3>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{leak.explanation}</p>
+                    <p className="mt-1.5 text-mini leading-relaxed text-muted">{leak.explanation}</p>
                   </div>
                 </CardBody>
               </Card>

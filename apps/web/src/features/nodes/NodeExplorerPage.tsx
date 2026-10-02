@@ -184,21 +184,21 @@ function StatusGlyph({ status }: { status: NodeStatus }) {
 }
 
 const PROTOCOL_STYLES: Record<string, string> = {
-  vless: 'text-sky-300 bg-sky-500/10 border-sky-500/25',
-  vmess: 'text-violet-300 bg-violet-500/10 border-violet-500/25',
-  trojan: 'text-orange-300 bg-orange-500/10 border-orange-500/25',
-  shadowsocks: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
-  shadowsocksr: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25',
-  hysteria2: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25',
-  tuic: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25',
-  wireguard: 'text-amber-300 bg-amber-500/10 border-amber-500/25',
+  vless: 'text-proto-sky bg-sky-500/10 border-sky-500/25',
+  vmess: 'text-proto-violet bg-violet-500/10 border-violet-500/25',
+  trojan: 'text-proto-orange bg-orange-500/10 border-orange-500/25',
+  shadowsocks: 'text-proto-emerald bg-emerald-500/10 border-emerald-500/25',
+  shadowsocksr: 'text-proto-emerald bg-emerald-500/10 border-emerald-500/25',
+  hysteria2: 'text-proto-cyan bg-cyan-500/10 border-cyan-500/25',
+  tuic: 'text-proto-indigo bg-indigo-500/10 border-indigo-500/25',
+  wireguard: 'text-proto-amber bg-amber-500/10 border-amber-500/25',
   unknown: 'text-muted bg-surface-2 border-line',
 };
 
 function ProtocolBadge({ protocol }: { protocol: NodeProtocol }) {
   const style = PROTOCOL_STYLES[protocol] ?? PROTOCOL_STYLES['unknown'];
   return (
-    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${style}`}>
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-micro font-medium ${style}`}>
       {protocol.toUpperCase()}
     </span>
   );
@@ -498,7 +498,7 @@ export default function NodeExplorerPage() {
                     setPage(0);
                   }}
                   placeholder="IP, hostname, fingerprint, ASN…"
-                  className="h-9 w-full rounded-lg border border-line bg-surface-2 pl-8 pr-3 text-sm text-text placeholder:text-faint focus:border-accent/50 focus:outline-none"
+                  className="h-9 w-full rounded-lg border border-line bg-surface-2 pl-8 pr-3 text-sm text-text placeholder:text-faint focus:border-accent/80 focus:outline-none"
                 />
               </div>
             </Field>
@@ -509,7 +509,7 @@ export default function NodeExplorerPage() {
                   setProtocol(e.target.value);
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {PROTOCOL_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -523,7 +523,7 @@ export default function NodeExplorerPage() {
                   setStatus(e.target.value);
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -537,7 +537,7 @@ export default function NodeExplorerPage() {
                   setTransport(e.target.value);
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {TRANSPORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -551,7 +551,7 @@ export default function NodeExplorerPage() {
                   setSecurity(e.target.value);
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {SECURITY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -565,7 +565,7 @@ export default function NodeExplorerPage() {
                   setFreshness(e.target.value);
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {FRESHNESS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -582,7 +582,7 @@ export default function NodeExplorerPage() {
                   setSortDir(opt?.defaultDir ?? 'desc');
                   setPage(0);
                 }}
-                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-lg border border-line bg-surface-2 px-2 text-sm text-text focus:border-accent/80 focus:outline-none"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -655,7 +655,11 @@ export default function NodeExplorerPage() {
                     {node.remark && <span className="max-w-[280px] truncate">{node.remark}</span>}
                   </div>
 
-                  <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+                  {/* Six across only fits once the labels are legible: at 1024px a
+                      six-up grid leaves ~90px per cell and the uppercase
+                      labels overflowed it (150 boxes clipped). Three across
+                      from sm, six from xl. */}
+                    <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-6">
                     <MiniMetric label="Score" value={node.score.toFixed(0)} />
                     <MiniMetric label="Proxy" value={node.medianProxyMs != null ? fmtMs(node.medianProxyMs) : '—'} />
                     <MiniMetric label="TCP" value={node.medianTcpMs != null ? fmtMs(node.medianTcpMs) : '—'} />
@@ -672,7 +676,7 @@ export default function NodeExplorerPage() {
                       title={`Last proxy test ran through the ${ENGINE_LABELS[node.lastEngine]} runtime`}
                     />
                   ) : (
-                    <span className="text-[10px] text-faint" title="Never proxy-tested — no engine has run against this node">
+                    <span className="text-micro text-faint" title="Never proxy-tested — no engine has run against this node">
                       never tested
                     </span>
                   )}
