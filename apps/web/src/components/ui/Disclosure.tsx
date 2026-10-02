@@ -2,6 +2,7 @@ import { ChevronDown, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { usePersistentState } from '@/lib/usePersistentState';
+import { HeadingLevelProvider, headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
 import { disclosureKey, foldedSummary, ignoresScopeBroadcast, resolveOpen } from '@/lib/disclosure';
 
 import type { DisclosureSpec } from '@/lib/disclosure';
@@ -92,7 +93,7 @@ export function DisclosureToolbar({ className = '' }: { className?: string }) {
       <button
         type="button"
         onClick={() => scope.broadcast(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-faint transition-colors hover:bg-surface-2 hover:text-text"
+        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-micro text-faint transition-colors hover:bg-surface-2 hover:text-text"
       >
         <ChevronsUpDown size={12} />
         Expand all
@@ -100,7 +101,7 @@ export function DisclosureToolbar({ className = '' }: { className?: string }) {
       <button
         type="button"
         onClick={() => scope.broadcast(false)}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-faint transition-colors hover:bg-surface-2 hover:text-text"
+        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-micro text-faint transition-colors hover:bg-surface-2 hover:text-text"
       >
         <ChevronsDownUp size={12} />
         Collapse all
@@ -278,22 +279,41 @@ export function CollapsibleCard({
   const folded = collapsible && !open;
   const foldedNote = folded ? foldedSummary(typeof summary === 'string' ? summary : undefined) : null;
 
+  // Same rule as Card: the rank comes from nesting depth, and the toggle lives
+  // inside the heading (stretched over it) rather than around it, because a
+  // heading is not phrasing content and `button` may only contain phrasing.
+  const level = useHeadingLevel();
+  const Tag = headingTag(level);
+  const titleNode = collapsible ? (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      aria-expanded={open}
+      aria-controls={bodyId}
+      className="text-left transition-colors after:absolute after:inset-0 after:content-['']"
+    >
+      {title}
+    </button>
+  ) : (
+    title
+  );
+
   const header = (
     <>
       {collapsible && <FoldChevron open={open} />}
       {icon && <span className="mt-0.5 shrink-0 text-accent">{icon}</span>}
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold tracking-tight">{title}</span>
+        <Tag className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold tracking-tight">
+          {titleNode}
           {badge}
-        </span>
+        </Tag>
         {/* While folded, the summary stands in for the subtitle: one line, and
             the line that says what is inside. Both at once reads as clutter. */}
         {subtitle && !(folded && foldedNote) && <span className="mt-0.5 block text-xs text-muted">{subtitle}</span>}
         {folded && foldedNote && <span className="mt-0.5 block text-xs text-faint">{foldedNote}</span>}
       </span>
       {actions && (
-        <span className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <span className="relative z-10 flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {actions}
         </span>
       )}
@@ -303,22 +323,18 @@ export function CollapsibleCard({
   return (
     <section className={`mb-5 rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.4)] ${className}`}>
       {collapsible ? (
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          className="flex w-full items-start gap-2.5 rounded-t-xl px-5 py-3.5 text-left transition-colors hover:bg-surface-2/50"
-        >
+        <div className="relative flex w-full items-start gap-2.5 rounded-t-xl px-5 py-3.5 text-left transition-colors hover:bg-surface-2/50">
           {header}
-        </button>
+        </div>
       ) : (
         <div className="flex items-start gap-2.5 border-b border-line px-5 py-3.5">{header}</div>
       )}
       {!folded && (
-        <div id={bodyId} className={`border-t border-line px-5 py-4 ${collapsible ? 'animate-fade-up' : ''}`}>
-          {children}
-        </div>
+        <HeadingLevelProvider level={level + 1}>
+          <div id={bodyId} className={`border-t border-line px-5 py-4 ${collapsible ? 'animate-fade-up' : ''}`}>
+            {children}
+          </div>
+        </HeadingLevelProvider>
       )}
       {keepVisible}
     </section>

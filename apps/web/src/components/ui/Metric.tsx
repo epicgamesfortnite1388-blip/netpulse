@@ -45,7 +45,7 @@ export function Metric({
 
   const body = (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">{label}</div>
+      <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">{label}</div>
       <div className={`metric-num mt-1 text-2xl font-semibold ${valueColor}`}>{format(value, unit)}</div>
       {children}
     </div>

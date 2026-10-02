@@ -1,6 +1,7 @@
 import { AlertCircle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
+import { headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
 import { ApiError } from '@/lib/api';
 
 import type { ReactNode } from 'react';
@@ -16,6 +17,10 @@ export function EmptyState({
   message: string;
   action?: ReactNode;
 }) {
+  // An empty state stands in for the content of the section it sits in, so its
+  // title belongs at that section's heading rank. Hardcoding h3 here made pages
+  // whose first heading was an h2 read h1 -> h3 with nothing between.
+  const Tag = headingTag(useHeadingLevel());
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/50 px-6 py-14 text-center">
       {icon && (
@@ -23,7 +28,7 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <Tag className="text-sm font-semibold">{title}</Tag>
       <p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted">{message}</p>
       {action && <div className="mt-5">{action}</div>}
     </div>
@@ -41,7 +46,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
             {isApi ? error.message : 'Something went wrong'}
           </p>
           {isApi && error.hint && <p className="mt-1 text-xs text-muted">{error.hint}</p>}
-          {isApi && <p className="mt-1 font-mono text-[11px] text-faint">{error.code}</p>}
+          {isApi && <p className="mt-1 font-mono text-micro text-faint">{error.code}</p>}
         </div>
       </div>
       {retry && (

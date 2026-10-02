@@ -2,6 +2,13 @@ import { Check, ChevronDown, HelpCircle, Minus, X } from 'lucide-react';
 
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { CollapsibleCard, useDisclosure, useDisclosureScopeName } from '@/components/ui/Disclosure';
+import { HeadingLevelProvider, headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
+
+/** The engine hero's name, at whatever rank the surrounding surface sits at. */
+function EngineHeroHeading({ className, children }: { className?: string; children: ReactNode }) {
+  const Tag = headingTag(useHeadingLevel());
+  return <Tag className={className}>{children}</Tag>;
+}
 
 import type { DisclosureSpec } from '@/lib/disclosure';
 import type { ReactNode } from 'react';
@@ -69,7 +76,7 @@ export function EngineHero({
             {glyph}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold tracking-tight">{name}</h2>
+                <EngineHeroHeading className="text-lg font-semibold tracking-tight">{name}</EngineHeroHeading>
                 {badges}
               </div>
               <p className="mt-0.5 text-xs uppercase tracking-[0.14em] text-faint">{tagline}</p>
@@ -214,6 +221,24 @@ function FlatSection({
   const [open, setOpen] = useDisclosure(spec, scope);
   const folded = collapsible && !open;
   const bodyId = `flat-${scope}-${spec.id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  // Same heading rule as Card and CollapsibleCard: rank from nesting depth, and
+  // the toggle inside the heading rather than around it, because a heading is not
+  // phrasing content and cannot legally sit inside a `button`.
+  const level = useHeadingLevel();
+  const Tag = headingTag(level);
+  const titleNode = collapsible ? (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      aria-expanded={open}
+      aria-controls={bodyId}
+      className="text-left transition-colors hover:text-text after:absolute after:inset-0 after:content-['']"
+    >
+      {title}
+    </button>
+  ) : (
+    title
+  );
   const heading = (
     <>
       {collapsible && (
@@ -221,37 +246,27 @@ function FlatSection({
       )}
       {icon && <span className="mt-0.5 text-accent">{icon}</span>}
       <span className="min-w-0">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold tracking-tight">{title}</span>
+        <Tag className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold tracking-tight">
+          {titleNode}
           {badge}
-        </span>
+        </Tag>
         {subtitle && !folded && <span className="mt-0.5 block max-w-3xl text-xs leading-relaxed text-muted">{subtitle}</span>}
         {folded && summary && <span className="mt-0.5 block text-xs text-faint">{summary}</span>}
       </span>
     </>
   );
   return (
-    <section className={`mb-7 border-t border-line pt-4 ${className}`}>
+    <section className={`relative mb-7 border-t border-line pt-4 ${className}`}>
       <div className="flex items-start justify-between gap-3">
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            aria-controls={bodyId}
-            className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left transition-colors hover:text-text"
-          >
-            {heading}
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-start gap-2.5">{heading}</div>
-        )}
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">{heading}</div>
+        {actions && <div className="relative z-10 flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
       {!folded && (
-        <div id={bodyId} className="mt-3.5">
-          {children}
-        </div>
+        <HeadingLevelProvider level={level + 1}>
+          <div id={bodyId} className="mt-3.5">
+            {children}
+          </div>
+        </HeadingLevelProvider>
       )}
     </section>
   );
@@ -281,9 +296,9 @@ export function StatTile({
             : 'text-text';
   return (
     <div className="rounded-lg border border-line bg-surface-2 px-3 py-2.5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">{label}</p>
+      <p className="text-micro font-medium uppercase tracking-[0.12em] text-faint">{label}</p>
       <p className={`metric-num mt-1 text-lg font-semibold ${toneClass}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-faint">{hint}</p>}
+      {hint && <p className="mt-0.5 text-micro leading-snug text-faint">{hint}</p>}
     </div>
   );
 }
@@ -345,7 +360,7 @@ export function CapabilityMatrix({ rows }: { rows: CapabilityRow[] }) {
 export function MiniMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-lg border border-line bg-surface px-2 py-1.5">
-      <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-faint">{label}</p>
+      <p className="text-micro font-medium uppercase tracking-[0.1em] text-faint">{label}</p>
       <p className="metric-num text-xs text-text">{value}</p>
     </div>
   );
@@ -410,11 +425,11 @@ export function MetricStrip({ items, className = '' }: { items: MetricItem[]; cl
     >
       {items.map((item, i) => (
         <div key={item.label} className={`min-w-0 ${ruled && i > 0 ? 'sm:border-l sm:border-line sm:pl-4' : ''}`}>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">{item.label}</p>
-          <p className={`mt-1 truncate text-[15px] font-semibold ${item.mono ? 'metric-num' : ''} ${toneText(item.tone ?? 'default')}`}>
+          <p className="text-micro font-semibold uppercase tracking-[0.16em] text-faint">{item.label}</p>
+          <p className={`mt-1 truncate text-sm font-semibold ${item.mono ? 'metric-num' : ''} ${toneText(item.tone ?? 'default')}`}>
             {item.value}
           </p>
-          {item.hint && <p className="mt-0.5 truncate text-[11px] leading-snug text-faint">{item.hint}</p>}
+          {item.hint && <p className="mt-0.5 truncate text-micro leading-snug text-faint">{item.hint}</p>}
         </div>
       ))}
     </div>
@@ -492,7 +507,7 @@ export function Chip({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] leading-none ${tones[state]} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-micro leading-none ${tones[state]} ${className}`}
     >
       {children}
     </span>
@@ -533,7 +548,7 @@ export function DataRow({
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">{title}</span>
         {subtitle && <span className="mt-0.5 block truncate text-xs text-muted">{subtitle}</span>}
-        {meta && <span className="mt-0.5 block text-[11px] text-faint">{meta}</span>}
+        {meta && <span className="mt-0.5 block text-micro text-faint">{meta}</span>}
       </span>
       {actions && <span className="flex shrink-0 items-center gap-1.5">{actions}</span>}
     </>

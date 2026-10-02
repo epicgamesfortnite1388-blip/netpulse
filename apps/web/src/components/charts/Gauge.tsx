@@ -60,7 +60,7 @@ export function Gauge({
         <span className="metric-num text-4xl font-semibold" style={{ color: value == null ? 'var(--color-faint)' : 'var(--color-text)' }}>
           {value == null ? '—' : Math.round(value)}
         </span>
-        <span className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-faint">
+        <span className="mt-0.5 text-micro font-medium uppercase tracking-[0.14em] text-faint">
           {label ?? 'of 100'}
         </span>
       </div>

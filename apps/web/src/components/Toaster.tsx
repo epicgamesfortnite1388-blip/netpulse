@@ -67,14 +67,32 @@ export function Toaster() {
     useToastStore.setState({ notificationsEnabled: enabled });
   }, [enabled]);
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex w-80 flex-col gap-2">
+    // A live region, so a toast is actually announced. The container is ALWAYS
+    // rendered, even with zero toasts: assistive tech only watches a region that
+    // was already in the document when the content appeared, so mounting it
+    // only when something arrives would leave the notification silent — which is
+    // what this gap was. `polite`, not `assertive`: a finished test is worth
+    // saying but never worth interrupting for. The icons are decorative because
+    // the tone is already carried by the title text.
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-label="Notifications"
+      className="pointer-events-none fixed bottom-5 right-5 z-[100] flex w-80 flex-col gap-2"
+    >
       {toasts.map((t) => (
         <button
           key={t.id}
           onClick={() => dismiss(t.id)}
+          // The visible text IS the notification, so it must not double as the
+          // button's name — "Import profile, button" reads as a duplicate.
+          aria-label={`Dismiss notification: ${t.title}`}
           className="animate-fade-up pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-line-strong bg-elevated px-4 py-3 text-left shadow-2xl transition-opacity hover:opacity-90"
         >
-          <span className="mt-0.5">{ICONS[t.tone]}</span>
+          <span className="mt-0.5" aria-hidden="true">
+            {ICONS[t.tone]}
+          </span>
           <span>
             <span className="block text-sm font-medium">{t.title}</span>
             {t.body && <span className="mt-0.5 block text-xs text-muted">{t.body}</span>}

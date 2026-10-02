@@ -15,6 +15,24 @@ export type IpPreference = 'auto' | '4' | '6';
 
 export type ThemeSetting = 'dark' | 'light' | 'system';
 
+/**
+ * User-adjustable type scale. The whole `--text-*` ramp is multiplied by this,
+ * so every size on every page moves together and the hierarchy is preserved.
+ *
+ * `default` is 1x (the designed ramp, floor 12px). The larger steps exist for
+ * high-DPI panels and for anyone who needs bigger type to read comfortably --
+ * the app window has no browser zoom of its own, so without this the only way
+ * to enlarge text is scaling the OS, which blurs a WebView2 surface.
+ *
+ * Capped at 125%: measured at a 1024px window, 150% overflowed the sidebar's
+ * tracked uppercase section labels by 7px on every page, because em-based
+ * letter-spacing grows with the text while the fixed-width nav column does
+ * not. 125% keeps document overflow, offscreen boxes and clipped text at zero
+ * on every route. Going higher needs the nav column to reflow, not a bigger
+ * multiplier.
+ */
+export type TypeScaleSetting = 'default' | 'large' | 'xl';
+
 /** Recurring benchmark scheduling for the DNS Lab and Gaming sections. */
 export interface ScheduleSettings {
   /** Run the DNS benchmark automatically every dnsIntervalMin minutes. */
@@ -74,6 +92,8 @@ export interface ScheduleStatus {
 export interface AppSettings {
   general: {
     theme: ThemeSetting;
+    /** Multiplier applied to the whole type ramp; see TypeScaleSetting. */
+    typeScale: TypeScaleSetting;
     language: string;
     units: 'metric' | 'imperial';
     notifications: boolean;

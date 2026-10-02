@@ -174,6 +174,19 @@ export default function SettingsPage() {
                   <option value="light">Light</option>
                 </Select>
               </Field>
+              <Field
+                label="Text size"
+                hint="Scales every text size in the app at once. Useful on high-DPI panels, or if the default type is too small to read comfortably."
+              >
+                <Select
+                  value={draft.general.typeScale}
+                  onChange={(e) => patch('general', { typeScale: e.target.value as AppSettings['general']['typeScale'] })}
+                >
+                  <option value="default">Default (100%)</option>
+                  <option value="large">Large (112%)</option>
+                  <option value="xl">Extra large (125%)</option>
+                </Select>
+              </Field>
               <Field label="Language">
                 <Select value={draft.general.language} onChange={(e) => patch('general', { language: e.target.value })}>
                   <option value="en">English</option>
@@ -191,6 +204,7 @@ export default function SettingsPage() {
                   <div className="text-xs text-faint">Toast notifications for finished tests and failures</div>
                 </div>
                 <Switch
+                  label="Notifications"
                   checked={draft.general.notifications}
                   onCheckedChange={(v) => patch('general', { notifications: v })}
                 />
@@ -391,6 +405,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <Switch
+                      label={label}
                       checked={draft.vpn[key]}
                       disabled={!wired}
                       onCheckedChange={(v) => patch('vpn', { [key]: v })}
@@ -437,6 +452,7 @@ export default function SettingsPage() {
                   <div className="text-xs text-faint">Keep the list but stop applying it when off</div>
                 </div>
                 <Switch
+                  label="Enable bypass rules"
                   checked={draft.vpn.bypass.enabled}
                   onCheckedChange={(v) => patch('vpn', { bypass: { ...draft.vpn.bypass, enabled: v } })}
                 />
@@ -447,6 +463,7 @@ export default function SettingsPage() {
                   <div className="text-xs text-faint">Loopback and private ranges dial direct</div>
                 </div>
                 <Switch
+                  label="Always bypass LAN"
                   checked={draft.vpn.bypass.lan}
                   onCheckedChange={(v) => patch('vpn', { bypass: { ...draft.vpn.bypass, lan: v } })}
                 />
@@ -554,20 +571,20 @@ export default function SettingsPage() {
                       <div key={key} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-surface-2 px-4 py-2.5">
                         <div className="min-w-0">
                           <div className="text-sm">{label}</div>
-                          <div className="text-[11px] text-faint">{c.note}</div>
+                          <div className="text-micro text-faint">{c.note}</div>
                         </div>
                         <CapBadge state={c.state} />
                       </div>
                     );
                   })}
                   <div className="pt-2">
-                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">VPN engines</div>
+                    <div className="mb-2 text-micro font-semibold uppercase tracking-[0.16em] text-faint">VPN engines</div>
                     <div className="space-y-2">
                       {Object.entries(caps.vpn).map(([key, v]) => (
                         <div key={key} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-surface-2 px-4 py-2.5">
                           <div className="min-w-0">
                             <div className="text-sm">{VPN_ENGINE_LABELS[key] ?? key}</div>
-                            <div className="text-[11px] text-faint">{v.note}</div>
+                            <div className="text-micro text-faint">{v.note}</div>
                           </div>
                           <CapBadge state={v.installed ? 'supported' : 'unavailable'} />
                         </div>
@@ -714,6 +731,7 @@ function AutoTestPanel({
             <div className="text-xs text-faint">Test a small batch of nodes automatically at the interval below</div>
           </div>
           <Switch
+            label="Automatic node testing"
             checked={cfg.enabled}
             onCheckedChange={(v) =>
               onSettings({ autoTestNodes: { ...cfg, enabled: v } })
@@ -780,10 +798,11 @@ function SchedulePanel({
             <div className="text-sm">Enabled</div>
             <div className="text-xs text-faint">Run automatically at the interval below</div>
           </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={(v) => onSettings(kind === 'dns' ? { dnsEnabled: v } : kind === 'vpn' ? { vpnSelfTestEnabled: v } : { gamingEnabled: v })}
-          />
+        <Switch
+          label={`${kind === 'dns' ? 'DNS benchmark' : kind === 'vpn' ? 'VPN self-test' : 'Gaming test'} schedule`}
+          checked={enabled}
+          onCheckedChange={(v) => onSettings(kind === 'dns' ? { dnsEnabled: v } : kind === 'vpn' ? { vpnSelfTestEnabled: v } : { gamingEnabled: v })}
+        />
         </div>
         <Field label="Interval (minutes)" hint="Between 15 minutes and 7 days; runs never overlap">
           <Input
@@ -815,7 +834,7 @@ function SchedulePanel({
             </Select>
           </Field>
         )}
-        <div className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[11px] leading-relaxed text-faint">
+        <div className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-micro leading-relaxed text-faint">
           {status?.running && <span className="text-warn">Run in progress… </span>}
           {status?.lastRunAt != null
             ? <>Last run {new Date(status.lastRunAt).toLocaleTimeString()} · {status.lastResult === 'ok' ? 'succeeded' : status.lastResult === 'error' ? 'failed' : 'unknown'}</>
@@ -840,7 +859,7 @@ function CapBadge({ state }: { state: string }) {
   const tone = state === 'supported' ? 'ok' : state === 'partial' ? 'warn' : state === 'requires-permission' ? 'warn' : 'neutral';
   return (
     <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-micro font-medium uppercase tracking-wide ${
         tone === 'ok'
           ? 'border-ok/30 bg-ok/10 text-ok'
           : tone === 'warn'

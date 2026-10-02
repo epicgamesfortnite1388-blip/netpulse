@@ -96,6 +96,7 @@ export const VpnBypassSchema = z.object({
 export const SettingsSchema = z.object({
   general: z.object({
     theme: z.enum(['dark', 'light', 'system']),
+    typeScale: z.enum(['default', 'large', 'xl']),
     language: z.string().min(2).max(10),
     units: z.enum(['metric', 'imperial']),
     notifications: z.boolean(),
@@ -144,7 +145,13 @@ export const SettingsSchema = z.object({
 });
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  general: { theme: 'dark', language: 'en', units: 'metric', notifications: true },
+  general: {
+    theme: 'dark',
+    typeScale: 'default',
+    language: 'en',
+    units: 'metric',
+    notifications: true,
+  },
   network: { ipPreference: 'auto', dnsPreference: null, testTimeoutMs: 5_000, probes: 4, customResolvers: [] },
   diagnostics: {
     defaultTestTarget: '1.1.1.1',
@@ -194,6 +201,7 @@ export const SettingsPatchSchema = z
     general: z
       .object({
         theme: z.enum(['dark', 'light', 'system']),
+        typeScale: z.enum(['default', 'large', 'xl']),
         language: z.string().min(2).max(10),
         units: z.enum(['metric', 'imperial']),
         notifications: z.boolean(),

@@ -39,6 +39,7 @@ import { UpdateBanner } from '@/features/settings/UpdateBanner';
 import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { useThemeApplier } from '@/app/useTheme';
+import { useTypeScaleApplier } from '@/app/useTypeScale';
 
 import type { ReactNode } from 'react';
 
@@ -214,7 +215,7 @@ function NavSectionEntry({
               to={child.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors ${
+                `flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-mini transition-colors ${
                   isActive ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
                 }`
               }
@@ -266,13 +267,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
         <div>
           <div className="text-sm font-semibold tracking-tight">NetPulse</div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-faint">Network intelligence</div>
+          <div className="text-micro uppercase tracking-[0.18em] text-faint">Network intelligence</div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         {NAV.map((group) => (
           <div key={group.heading} className="mb-4">
-            <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">
+            <div className="px-2 pb-1.5 text-micro font-semibold uppercase tracking-[0.16em] text-faint">
               {group.heading}
             </div>
             <div className="space-y-0.5">
@@ -311,6 +312,7 @@ export function AppShell() {
   const meta = useMeta();
   const { phase, report, error: healthError, refresh, retryAttempt, secondsUntilRetry, runtime } = useStartupHealth();
   useThemeApplier();
+  useTypeScaleApplier();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const location = useLocation();
@@ -387,7 +389,7 @@ export function AppShell() {
             >
               <Search size={13} />
               <span className="hidden sm:inline">Commands</span>
-              <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px] text-faint">Ctrl K</kbd>
+              <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-micro text-faint">Ctrl K</kbd>
             </button>
             {meta?.demoMode && <DemoBadge />}
             <NavLink
@@ -442,7 +444,7 @@ export function AppShell() {
               {retryAttempt > 1 ? ` (attempt ${retryAttempt})` : ''}. The app keeps running; diagnostics and recovery
               actions are available.
               {runtime?.last_restart_reason ? (
-                <span className="block max-w-3xl whitespace-pre-wrap text-[11px] opacity-80">
+                <span className="block max-w-3xl whitespace-pre-wrap text-micro opacity-80">
                   Last sidecar failure: {runtime.last_restart_reason.split('\n')[0]?.slice(0, 200)}
                 </span>
               ) : null}
