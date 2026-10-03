@@ -76,9 +76,12 @@ const FRESHNESS_INPUTS = [
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 
+// Per-check lines are prefixed and lower-cased so they cannot be mistaken for
+// the `PASS  <step>` lines audit-ci.sh prints for each step — the same reason
+// audit-layout.mjs prints `ok` rather than `PASS`.
 function check(name, ok, detail) {
   results.push({ name, ok });
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `\n        ${detail}` : ''}`);
+  console.log(`[ipc] ${ok ? 'ok  ' : 'FAIL'}  ${name}${detail ? `\n        ${detail}` : ''}`);
 }
 function die(msg) {
   console.error(`\n[ipc] ${msg}`);
