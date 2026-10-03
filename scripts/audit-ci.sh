@@ -29,6 +29,25 @@ run "ts-prune web" npx ts-prune --project apps/web/tsconfig.json --no-inspect
 # 3. Unused npm dependencies (JS/TS)
 run "depcheck" node scripts/audit-ci-depcheck.mjs
 
+# 3a. IPC surface: the packaged app's own #[tauri::command] handlers, driven
+#     through the webview over CDP exactly as the shipped UI drives them. No
+#     other gate touches this seam — cargo test exercises the Rust core as
+#     functions, and contrast/layout only see pixels — so a refactor can break
+#     the commands while every unit test still passes. This covers the log
+#     redaction that decides what a user can export, and the allow-lists behind
+#     "Open Logs" and every external link.
+#     Runs FIRST among the app gates on purpose: it is the only one that checks
+#     the EXE is newer than its Rust sources and rebuilds when it is not, so the
+#     contrast and layout gates below inherit a binary that actually contains
+#     the current code instead of whatever was left on disk.
+#     It only ever calls the REFUSING path of the two spawn-capable commands,
+#     so it never opens Explorer or a browser on a developer machine. It writes
+#     probe lines into the real log to test redaction end to end and strips them
+#     again, asserting its own cleanup. Not covered: the allowing half of
+#     reveal_path / open_external, and the reparse-point case (needs Developer
+#     Mode to create a symlink). Launches its own app; needs no other instance.
+run "ipc: redaction + reveal_path/open_external allow-lists, real app over CDP" node scripts/audit-ipc.mjs
+
 # 3b. Text contrast (WCAG AA) in BOTH themes, plus custom-property integrity,
 #     measured on the real packaged app over CDP. The light theme shipped
 #     unreadable — a too-light --color-faint, tone colours that were not AA on
