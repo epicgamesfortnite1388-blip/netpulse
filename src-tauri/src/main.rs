@@ -1,23 +1,44 @@
-//! NetPulse desktop core.
+//! NetPulse desktop core — process assembly and the IPC surface.
 //!
-//! Responsibilities (see docs/DESKTOP.md):
-//!   - bootstrap the React UI from bundled assets
-//!   - supervise the Node/TypeScript backend as a private loopback sidecar
-//!   - hand the ephemeral sidecar credentials to the webview via typed IPC only
-//!   - single-instance enforcement, tray, native paths
+//! This file owns WHAT runs and in WHAT ORDER. Each subsystem it wires up owns
+//! HOW it works, in its own module:
+//!
+//!   - `sidecar`      — spawns/supervises the Node backend, owns the log sink
+//!   - `elevation`    — the only path to administrator rights (UAC)
+//!   - `window`       — main-window presentation: size, placement, reveal
+//!   - `paths`        — the one resolver for the data dir and the log dir
+//!   - `safe_mode`    — the `--safe-mode` flag and its single owner
+//!   - `status`       — runtime-status snapshot for the System Health page
+//!   - `diagnostics`  — redacted log tail and exported diagnostic report
+//!   - `os_open`      — the two allow-listed OS handoffs
+//!   - `updater_feed` — update feed fetch/parse/verify
+//!
+//! What deliberately stays here:
+//!   - bootstrap: hand the webview its transport credentials, once
+//!   - repair/reset commands that cut ACROSS modules (stop + respawn + move files)
+//!   - the `setup` / window-event / run-loop wiring, in the order where that
+//!     order actually matters (logging before anything can fail, elevation
+//!     helper before the single-instance lock, sidecar before the watchdog)
 //!
 //! There is deliberately no generic `shell`/`fs` IPC surface here. The only
 //! commands exposed are the narrow ones in `invoke_handler` below.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod diagnostics;
 mod elevation;
+mod os_open;
+mod paths;
+mod safe_mode;
 mod sidecar;
+mod status;
 mod updater_feed;
+mod window;
 
 use serde::Serialize;
 use sidecar::{log_error, log_info, log_warn};
 use tauri::{AppHandle, Manager};
+use window::present_main_window;
 
 /// Everything the webview needs to talk to the backend. Delivered exactly once
 /// at startup through this typed command — the token never touches disk or any
@@ -33,65 +54,6 @@ struct Bootstrap {
     arch: String,
     #[cfg(target_os = "windows")]
     webview2: bool,
-}
-
-#[tauri::command]
-fn netpulse_safe_mode(state: tauri::State<'_, SafeModeState>) -> bool {
-    state.0.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Safe Mode is requested with `--safe-mode` on the command line (e.g. from a
-/// Start Menu shortcut copy). It is consumed BEFORE the first window exists.
-fn detect_safe_mode() -> bool {
-    std::env::args().any(|a| a == "--safe-mode" || a == "-s")
-}
-
-/// Managed flag so the IPC command can answer without re-parsing args.
-struct SafeModeState(std::sync::atomic::AtomicBool);
-
-/// Reset App State: stop the sidecar, move every data file into
-/// `backup-<timestamp>/` inside the app data dir (never deleted), then respawn
-/// a fresh backend that migrates a new database. Works even when the sidecar
-/// is wedged — this is the recovery path for it.
-#[tauri::command]
-fn reset_app_state(app: AppHandle) -> Result<String, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?;
-    let backup = data_dir.join(format!(
-        "backup-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    ));
-    std::fs::create_dir_all(&backup).map_err(|e| format!("backup dir: {e}"))?;
-
-    // Stop the sidecar FIRST: open SQLite handles on Windows block renames.
-    sidecar::stop_sidecar(&app);
-
-    let mut moved = 0usize;
-    let entries = std::fs::read_dir(&data_dir).map_err(|e| format!("read data dir: {e}"))?;
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with("backup-") || name == "logs" {
-            continue; // keep prior backups and the diagnostic log in place
-        }
-        if std::fs::rename(entry.path(), backup.join(&name)).is_ok() {
-            moved += 1;
-        }
-    }
-    log_info!(
-        "reset-state: {} items preserved in {}",
-        moved,
-        backup.display()
-    );
-
-    // Fresh backend, fresh DB, same window.
-    sidecar::allow_respawn(&app);
-    sidecar::spawn_sidecar(&app).map_err(|e| format!("respawn failed: {e}"))?;
-    Ok(backup.to_string_lossy().to_string())
 }
 
 /// Hand the webview its transport credentials — once the sidecar is actually
@@ -146,301 +108,46 @@ fn bootstrap(app: AppHandle) -> Bootstrap {
     }
 }
 
-/// Native application-data directory for the backend (database, logs, caches).
-/// Passed to the sidecar as NETPULSE_DATA_DIR at spawn time; exposed here for
-/// the UI (About screen, log viewer) and diagnostics.
-#[derive(Serialize)]
-struct DataPaths {
-    data_dir: String,
-    log_dir: String,
-}
-
+/// Reset App State: stop the sidecar, move every data file into
+/// `backup-<timestamp>/` inside the app data dir (never deleted), then respawn
+/// a fresh backend that migrates a new database. Works even when the sidecar
+/// is wedged — this is the recovery path for it.
 #[tauri::command]
-fn data_paths(app: AppHandle) -> DataPaths {
-    let data = app
-        .path()
-        .app_data_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".to_string());
-    let log = log_dir_of(&app);
-    DataPaths {
-        data_dir: data,
-        log_dir: log,
-    }
-}
-
-/// Ask the OS to reveal a path in the file manager (used by "Open Logs").
-///
-/// Security: the webview may only reveal the app's own data/log directories.
-/// The allow-list is enforced with canonicalized prefix matching, so `..`
-/// traversal, symlink games and UNC tricks cannot escape it.
-#[tauri::command]
-fn reveal_path(path: String, app: tauri::AppHandle) -> Result<(), String> {
-    use std::path::PathBuf;
-
-    let requested = PathBuf::from(&path);
-    if !requested.is_absolute() {
-        return Err("path must be absolute".into());
-    }
-
-    // Build the allow-list from the same dirs the app itself uses.
-    let mut allowed: Vec<PathBuf> = Vec::new();
-    if let Some(dir) = app.path().app_data_dir().ok() {
-        allowed.push(dir);
-    }
-    if let Some(dir) = app.path().app_log_dir().ok() {
-        allowed.push(dir);
-    }
-    if allowed.is_empty() {
-        return Err("no allowed reveal directories available".into());
-    }
-
-    // Best-effort canonicalization (resolves `..`, symlinks where the target
-    // exists); fall back to lexical cleaning for not-yet-created paths.
-    let canonical = requested.canonicalize().unwrap_or_else(|_| {
-        let p = requested.clone();
-        let mut comps: std::collections::VecDeque<_> = p.components().collect();
-        let mut out = PathBuf::new();
-        while let Some(c) = comps.pop_front() {
-            use std::path::Component;
-            match c {
-                Component::CurDir => {}
-                Component::ParentDir => {
-                    out.pop();
-                }
-                other => out.push(other.as_os_str()),
-            }
-        }
-        out
-    });
-
-    let ok = allowed.iter().any(|base| match base.canonicalize() {
-        Ok(b) => canonical.starts_with(&b),
-        // Base dir may not exist yet on first run — compare lexically.
-        Err(_) => canonical.starts_with(base),
-    });
-    if !ok {
-        return Err("path is outside the app's allowed directories".into());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        // Use explorer with a validated absolute path; no shell involved.
-        std::process::Command::new("explorer")
-            .arg(&canonical)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // `open -R` reveals in Finder without executing the target.
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(&canonical)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&canonical)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Runtime status of the Rust core + sidecar, polled by the System Health page
-/// to build the Starting → Checking → Ready/Degraded/Recovery state machine.
-#[derive(Serialize)]
-struct RuntimeStatus {
-    sidecar_running: bool,
-    sidecar_restarts: u32,
-    /// Loopback port the sidecar is listening on (None = not running).
-    sidecar_port: Option<u16>,
-    /// Why the sidecar last restarted (decoded exit code + stderr tail), or
-    /// None if it has never died since this app process started.
-    last_restart_reason: Option<String>,
-    /// Unix seconds of the last sidecar restart.
-    last_restart_at_unix: Option<u64>,
-    safe_mode: bool,
-    window_visible: bool,
-    data_dir: String,
-    log_dir: String,
-    log_file_bytes: u64,
-    log_rotation_cap_bytes: u64,
-}
-
-#[tauri::command]
-fn runtime_status(app: AppHandle) -> RuntimeStatus {
-    let state = app.state::<sidecar::SidecarState>();
-    let (running, restarts, port, last_reason, last_at) = match state.inner.lock() {
-        Ok(mut inner) => (
-            inner
-                .child
-                .as_mut()
-                .map(|c| c.try_wait().map(|s| s.is_none()).unwrap_or(false))
-                .unwrap_or(false),
-            inner.restarts,
-            if inner.child.is_some() { Some(inner.port) } else { None },
-            inner.last_restart_reason.clone(),
-            inner.last_restart_at_unix,
-        ),
-        Err(_) => (false, 0, None, None, None),
-    };
-    let data = app
-        .path()
-        .app_data_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let log_dir_v = log_dir_of(&app);
-    let log_bytes = std::fs::metadata(std::path::Path::new(&log_dir_v).join("netpulse.log"))
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let window_visible = app
-        .get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-    RuntimeStatus {
-        sidecar_running: running,
-        sidecar_restarts: restarts,
-        sidecar_port: port,
-        last_restart_reason: last_reason,
-        last_restart_at_unix: last_at,
-        safe_mode: detect_safe_mode(),
-        window_visible,
-        data_dir: data,
-        log_dir: log_dir_v,
-        log_file_bytes: log_bytes,
-        log_rotation_cap_bytes: sidecar::LOG_CAP_BYTES,
-    }
-}
-
-/// Redacted tail of the startup log for the System Health page.
-///
-/// Defense in depth for secret hygiene: the backend already redacts
-/// authorization/cookie/token material from its structured logs; this second
-/// layer drops any line that still LOOKS like it carries a bearer token,/// session cookie or PEM key before it ever reaches the webview.
-#[tauri::command]
-fn read_log_tail(app: AppHandle, lines: usize) -> Result<Vec<String>, String> {
-    let dir = log_dir_of(&app);
-    let path = std::path::Path::new(&dir).join("netpulse.log");
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("cannot read log: {e}"))?;
-    let total = content.lines().count();
-    let skip = total.saturating_sub(lines.min(500));
-    const SECRET_PATTERNS: [&str; 9] = [
-        "authorization", "bearer ", "cookie", "set-cookie", "token", "secret", "private key", "presharedkey", "password",
-    ];
-    let mut out = Vec::new();
-    for line in content.lines().skip(skip) {
-        let lower = line.to_lowercase();
-        if SECRET_PATTERNS.iter().any(|p| lower.contains(p)) {
-            out.push("[redacted by diagnostics filter]".to_string());
-        } else {
-            out.push(line.to_string());
-        }
-    }
-    Ok(out)
-}
-
-/// Export a diagnostic report (JSON) next to the logs. Contains versions,
-/// runtime status, boot-stage journal and the redacted log tail — never
-/// secrets: tokens live only in memory, credentials in the data dir are NOT
-/// copied, and the log tail passes the same secret filter as read_log_tail.
-#[tauri::command]
-fn save_diagnostic_report(app: AppHandle) -> Result<String, String> {
-    let log_dir = log_dir_of(&app);
-    let status = runtime_status(app.clone());
-    let tail = read_log_tail(app.clone(), 200).unwrap_or_default();
-
-    let report = serde_json::json!({
-        "generatedAt": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
-        "appVersion": app.package_info().version.to_string(),
-        "os": std::env::consts::OS,
-        "arch": std::env::consts::ARCH,
-        "buildType": if cfg!(debug_assertions) { "debug" } else { "release" },
-        "runtimeStatus": {
-            "sidecarRunning": status.sidecar_running,
-            "sidecarRestarts": status.sidecar_restarts,
-            "safeMode": status.safe_mode,
-            "windowVisible": status.window_visible,
-        },
-        "paths": {
-            "dataDir": status.data_dir,
-            "logDir": status.log_dir,
-        },
-        "bootLogTail": tail,
-        "note": "Secrets are never included: daemon tokens are memory-only, VPN credentials/private keys are not copied, and log lines matching secret patterns are redacted."
-    });
-
-    let file = std::path::Path::new(&log_dir).join(format!(
-        "diagnostic-report-{}.json",
+fn reset_app_state(app: AppHandle) -> Result<String, String> {
+    let data_dir = paths::require_data_dir(&app)?;
+    let backup = data_dir.join(format!(
+        "backup-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
     ));
-    std::fs::create_dir_all(&log_dir).map_err(|e| format!("log dir: {e}"))?;
-    std::fs::write(&file, serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("cannot write report: {e}"))?;
-    log_info!("diagnostic report written: {}", file.display());
-    Ok(file.to_string_lossy().to_string())
-}
+    std::fs::create_dir_all(&backup).map_err(|e| format!("backup dir: {e}"))?;
 
-/// Administrator rights for the app itself.
-///
-/// Reported from a REAL OS check (`net session`), never from a stored setting:
-/// the sidecar makes the same check for the same reason, so the two can never
-/// tell the user different things.
-#[derive(Serialize)]
-struct AdminRights {
-    elevated: bool,
-    platform: String,
-    /// True when a one-click elevated relaunch can actually be offered.
-    can_relaunch: bool,
-}
+    // Stop the sidecar FIRST: open SQLite handles on Windows block renames.
+    sidecar::stop_sidecar(&app);
 
-#[tauri::command]
-fn admin_status() -> AdminRights {
-    let elevated = elevation::is_process_elevated();
-    AdminRights {
-        elevated,
-        platform: std::env::consts::OS.to_string(),
-        can_relaunch: !elevated,
+    let mut moved = 0usize;
+    let entries = std::fs::read_dir(&data_dir).map_err(|e| format!("read data dir: {e}"))?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("backup-") || name == "logs" {
+            continue; // keep prior backups and the diagnostic log in place
+        }
+        if std::fs::rename(entry.path(), backup.join(&name)).is_ok() {
+            moved += 1;
+        }
     }
-}
+    log_info!(
+        "reset-state: {} items preserved in {}",
+        moved,
+        backup.display()
+    );
 
-/// Start the elevated relaunch — SINGLE-CALL SAFE.
-///
-/// Arms the detached helper (which raises the one UAC prompt only after this
-/// process exits) and THEN quits this process from a background thread, so one
-/// invoke does the whole action. Previously the quit was a separate
-/// `quit_for_elevation` command the UI had to remember to call; arming alone
-/// left a helper waiting on a process that never exited, and the elevated
-/// launch (when the helper gave up waiting) died on the single-instance lock —
-/// a dead-end UAC prompt. There is no second step left to forget.
-///
-/// The back end restores any tunnel and system-proxy state on the way out
-/// (normal exit path), so nothing is left pointing at a dead core. The quit
-/// runs detached with a short delay so this command's `Ok` still reaches the
-/// webview before the IPC channel goes away.
-#[tauri::command]
-fn relaunch_as_admin(app: AppHandle) -> Result<bool, String> {
-    if elevation::is_process_elevated() {
-        return Err("the app already has administrator rights".into());
-    }
-    log_info!("admin: starting the elevated relaunch helper");
-    let helper = elevation::spawn_elevation_helper()?;
-    log_info!("admin: helper {helper} armed; quitting for the elevated relaunch");
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        app.exit(0);
-    });
-    Ok(true)
+    // Fresh backend, fresh DB, same window.
+    sidecar::allow_respawn(&app);
+    sidecar::spawn_sidecar(&app).map_err(|e| format!("respawn failed: {e}"))?;
+    Ok(backup.to_string_lossy().to_string())
 }
 
 /// Restart the sidecar after a failure (Repair App). The watchdog will keep it
@@ -453,230 +160,18 @@ fn restart_backend(app: AppHandle) -> Result<(), String> {
     sidecar::spawn_sidecar(&app)
 }
 
-/// Open an https URL in the user's default browser.
-///
-/// Security: strict allowlist — https scheme only, no userinfo/credentials,
-/// host required. Opened via the OS protocol handler WITHOUT any shell
-/// (no cmd/bash interpreter in the chain), so URL metacharacters can never
-/// reach a command interpreter.
-#[tauri::command]
-fn open_external(url: String) -> Result<(), String> {
-    let parsed = tauri::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
-    if parsed.scheme() != "https" {
-        return Err("only https:// URLs can be opened".into());
-    }
-    if !parsed.username().is_empty() || parsed.password().is_some() {
-        return Err("URLs containing credentials are not allowed".into());
-    }
-    let host = parsed.host_str().unwrap_or("");
-    if host.is_empty() {
-        return Err("URL has no host".into());
-    }
-    log_info!("opening external link for host {host}");
-    #[cfg(target_os = "windows")]
-    {
-        // FileProtocolHandler dispatches to the default browser directly.
-        std::process::Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", parsed.as_str()])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(parsed.as_str())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(parsed.as_str())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 /// Logging + panic hook must exist before ANYTHING can fail.
 fn init_logging_early() -> Option<String> {
-    // Resolve app data dir without an AppHandle (Tauri dirs come from the
-    // identifier; replicate the default Windows location). If this fails we
-    // still log to stderr, which lands in the WebView2 devtools console path
-    // and in the debug build's console.
-    let dir = dirs_data_dir();
+    // Resolve the app data dir without an AppHandle (Tauri dirs come from the
+    // identifier; `paths` replicates the default Windows location). If this
+    // fails we still log to stderr, which lands in the WebView2 devtools
+    // console path and in the debug build's console.
+    let dir = paths::data_dir_without_handle().map(|d| d.to_string_lossy().to_string());
     if let Some(d) = &dir {
         sidecar::init_logging(d);
     }
     sidecar::install_panic_hook();
     dir
-}
-
-/// Mirrors Tauri's app_data_dir for our identifier without needing a handle:
-/// %APPDATA%\<identifier> (roaming, matching tauri::PathResolver on Windows).
-fn dirs_data_dir() -> Option<String> {
-    if let Some(home) = std::env::var_os("APPDATA") {
-        let p = std::path::PathBuf::from(home).join("app.netpulse.desktop");
-        return Some(p.to_string_lossy().to_string());
-    }
-    None
-}
-
-/// The rotating diagnostic log lives under the app DATA dir (`<data>/logs`,
-/// created by `init_logging` before the Tauri app exists) — NOT under Tauri's
-/// `app_log_dir()`, which resolves elsewhere on Windows (LocalAppData). Every
-/// reader of the log must go through this one resolver or the System Health
-/// page ends up reading a log file that was never written.
-fn log_dir_of(app: &AppHandle) -> String {
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("logs").to_string_lossy().to_string())
-        .unwrap_or_else(|_| dirs_data_dir().map(|d| format!("{d}\\logs")).unwrap_or_else(|| ".".to_string()))
-}
-
-/// Size the main window to the monitor it opens on, then centre it.
-///
-/// The window used to open at a hardcoded 1280x800, which is wrong in both
-/// directions: on a 2560x1440 display that leaves most of the screen empty and
-/// forces the user to maximise the window before the app is usable, while on a
-/// 1366x768 laptop a 1280-wide window is wider than the screen and pushes the
-/// right-hand column off it entirely. Both are the same bug — a fixed pixel
-/// size that has no relationship to the display.
-///
-/// What is sized here is the *work area* rather than the full screen, so the
-/// taskbar and any docked window strip are excluded; the result is also capped
-/// to the work area so the window can never end up partly off-screen.
-///
-/// The floor matters as much as the ceiling. The sidebar is a fixed 240px and
-/// the layout switches to the multi-column arrangement at Tailwind's `lg`
-/// breakpoint of 1024px, so below ~1120px of window the content column gets
-/// squeezed into a width the grid was never drawn for. Starting at 1120 keeps
-/// the first paint on the arrangement the layout is designed around.
-///
-/// Physical monitor metrics are converted to logical units by the scale factor,
-/// because `set_size` takes logical pixels: on a 150% display a 1920x1080
-/// work area is 1280x720 logical, and asking for 1920 would produce a window
-/// 1.5x too large and overflow the screen it was measured against.
-/// Show, size and focus the main window once the app is actually running.
-///
-/// This has to wait for `RunEvent::Ready` rather than run in `setup`. The
-/// window arrives *minimized*: measured on Windows, `IsIconic` was true from
-/// the first moment the process had a window, and forcing `SW_RESTORE` turned a
-/// 160x28 window parked at (-32000,-32000) into a real one. Calling
-/// `unminimize()` from `setup` did not stick, because Windows has not finished
-/// creating and showing the window at that point and minimises it again
-/// afterwards — so the restore has to happen once the event loop is up and the
-/// window is final.
-///
-/// Restoring here also means this is the single place that decides how big the
-/// window is, instead of a hardcoded size in tauri.conf.json that is wrong on
-/// every display except the one it was written on.
-fn present_main_window(app: &AppHandle) {
-    let Some(win) = app.get_webview_window("main") else {
-        log_error!("main window handle missing at RunEvent::Ready");
-        return;
-    };
-    let _ = win.show();
-    let _ = win.unminimize();
-    fit_window_to_monitor(&win);
-    let _ = win.set_focus();
-    log_info!("main window shown, sized and centered");
-
-    // Something in the Windows startup sequence minimizes this window about a
-    // second after it appears — measured, not assumed: the window is correct
-    // and `is_minimized() == false` when this function runs, and a few seconds
-    // later Windows has moved it to (-32000, -32000) and reported a 0x0 client
-    // area, with no window event from the app and no `minimize()` call anywhere
-    // in this codebase or the webview. Forcing `SW_RESTORE` from outside the
-    // process fixes it and it then stays put, so it is a one-shot startup
-    // event rather than something recurring.
-    //
-    // Re-asserting once the startup sequence has finished is the fix. It is
-    // deliberately bounded and conditional: it only acts while the window is
-    // still in its first few seconds and only when it is actually minimized,
-    // so it can never yank the window back from someone who minimized it
-    // deliberately later on.
-    let handle = app.clone();
-    std::thread::spawn(move || {
-        for (i, delay_secs) in [3u64, 8].into_iter().enumerate() {
-            std::thread::sleep(std::time::Duration::from_secs(if i == 0 { delay_secs } else { delay_secs - 3 }));
-            let Some(w) = handle.get_webview_window("main") else { return };
-            match w.is_minimized() {
-                Ok(true) => {
-                    log_warn!("window was minimized during startup (check {i}); restoring it");
-                    let _ = w.unminimize();
-                    fit_window_to_monitor(&w);
-                    let _ = w.set_focus();
-                    log_info!("window restored after startup minimization");
-                }
-                Ok(false) => {}
-                Err(e) => log_warn!("could not read the window's minimized state: {e}"),
-            }
-        }
-    });
-}
-
-fn fit_window_to_monitor(win: &tauri::WebviewWindow) {
-    /// Never smaller than this: 240px sidebar + an `lg`-width content column.
-    const MIN_W: u32 = 1120;
-    const MIN_H: u32 = 680;
-    /// Enough of the screen to read comfortably without maximising, while
-    /// still leaving the desktop visible around the window.
-    const FRACTION: f64 = 0.86;
-
-    // Measure the display in logical pixels. A monitor we cannot query must not
-    // leave the window unusable, so this falls back to merely centring whatever
-    // size the config asked for.
-    let (want_w, want_h, avail_w, avail_h) = match win.current_monitor() {
-        Ok(Some(monitor)) => {
-            let scale = monitor.scale_factor().max(0.1);
-            let area = monitor.work_area();
-            let avail_w = ((area.size.width as f64) / scale).round() as u32;
-            let avail_h = ((area.size.height as f64) / scale).round() as u32;
-            if avail_w == 0 || avail_h == 0 {
-                log_warn!("monitor reported a zero-sized work area; centring the default window size");
-                let _ = win.center();
-                return;
-            }
-            // Take a share of the screen, never exceeding what it actually
-            // offers and never dropping below the floor where the layout works.
-            let want_w = ((avail_w as f64 * FRACTION).round() as u32)
-                .min(avail_w)
-                .max(MIN_W.min(avail_w));
-            let want_h = ((avail_h as f64 * FRACTION).round() as u32)
-                .min(avail_h)
-                .max(MIN_H.min(avail_h));
-            (want_w, want_h, avail_w, avail_h)
-        }
-        _ => {
-            log_warn!("could not query the monitor; centring the default window size");
-            let _ = win.center();
-            return;
-        }
-    };
-
-    let _ = win.set_size(tauri::LogicalSize::new(want_w, want_h));
-
-    // set_size sizes the *outer* frame, so the content area comes out smaller
-    // by the title bar and borders. Measure that shortfall and add it back,
-    // rather than guessing a border thickness that differs per platform and
-    // per Windows theme.
-    if let (Ok(inner), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
-        if scale > 0.0 {
-            let got_w = ((inner.width as f64) / scale).round() as i64;
-            let got_h = ((inner.height as f64) / scale).round() as i64;
-            let adj_w = (want_w as i64 + (want_w as i64 - got_w)).clamp(1, i64::from(avail_w)) as u32;
-            let adj_h = (want_h as i64 + (want_h as i64 - got_h)).clamp(1, i64::from(avail_h)) as u32;
-            if adj_w != want_w || adj_h != want_h {
-                let _ = win.set_size(tauri::LogicalSize::new(adj_w, adj_h));
-                log_info!("main window content area {want_w}x{want_h} logical (frame {adj_w}x{adj_h})");
-            }
-            log_info!("main window sized to {want_w}x{want_h} logical (monitor offers {avail_w}x{avail_h})");
-        }
-    } else {
-        log_info!("main window sized to {want_w}x{want_h} logical");
-    }
-    let _ = win.center();
 }
 
 fn main() {
@@ -721,20 +216,20 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(sidecar::SidecarState::new())
-        .manage(SafeModeState(std::sync::atomic::AtomicBool::new(detect_safe_mode())))
+        .manage(safe_mode::SafeModeState::new())
         .invoke_handler(tauri::generate_handler![
             bootstrap,
-            data_paths,
-            reveal_path,
-            netpulse_safe_mode,
+            paths::data_paths,
+            os_open::reveal_path,
+            safe_mode::netpulse_safe_mode,
             reset_app_state,
-            runtime_status,
-            read_log_tail,
-            save_diagnostic_report,
+            status::runtime_status,
+            diagnostics::read_log_tail,
+            diagnostics::save_diagnostic_report,
             restart_backend,
-            open_external,
-            admin_status,
-            relaunch_as_admin,
+            os_open::open_external,
+            elevation::admin_status,
+            elevation::relaunch_as_admin,
             elevation::vpn_elevation_bridge,
             updater_feed::feed_check,
             updater_feed::feed_install
@@ -743,24 +238,15 @@ fn main() {
             let handle = app.handle().clone();
 
             // Data dir is decided here (OS-native), passed to the sidecar and
-            // used for the file log.
-            let data_dir = handle
-                .path()
-                .app_data_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .map(Some)
-                .unwrap_or_else(|_| dirs_data_dir())
-                .unwrap_or_else(|| ".".to_string());
+            // used for the file log. Same resolver every reader uses.
+            let data_dir = paths::data_dir(&handle);
             std::env::set_var("NETPULSE_DATA_DIR", &data_dir);
             log_info!("data dir: {data_dir}");
 
             // Safe Mode: `--safe-mode` on the command line launches with the
             // network stack disabled (null controller) so a wedged networking
             // config cannot stop the user from reaching Settings.
-            if detect_safe_mode() {
-                std::env::set_var("NETPULSE_SAFE_MODE", "1");
-                log_info!("SAFE MODE requested: network stack disabled for this launch");
-            }
+            safe_mode::announce_to_sidecar();
 
             // GUI-first policy: the window is already being created by the
             // config below; nothing in this setup hook is allowed to take it
@@ -789,7 +275,7 @@ fn main() {
             sidecar::start_watchdog(&handle);
 
             // Window presentation is deliberately NOT done here — see
-            // `present_main_window`, which runs on RunEvent::Ready.
+            // `window::present_main_window`, which runs on RunEvent::Ready.
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -1,4 +1,11 @@
-//! Per-action elevation broker.
+//! Elevation broker: the ONLY code path that asks Windows for administrator
+//! rights, for the app itself and for individual actions.
+//!
+//! Both halves report from a REAL OS check, never from a stored setting — the
+//! sidecar makes the same check for the same reason, so the two can never tell
+//! the user different things:
+//!   - whole app: `admin_status` and the single-call `relaunch_as_admin`
+//!   - per action: the WireGuard tunnel-service broker below
 //!
 //! The Node sidecar runs unprivileged and cannot install a WireGuard tunnel
 //! service. Instead of running the whole app elevated (or a root helper with a
@@ -14,15 +21,16 @@
 //!      and the sidecar answers `{ action, exe, args, nonce, configSha256 }`.
 //!      The sidecar REQUIRES the request to carry the nonce the UI received,
 //!      proving the bridge call chain started from the UI's opId, not a guess.
-//!   4. Rust re-verifies the exact constraints locally:
+//!   4. Rust re-verifies the exact constraints locally, then launches WireGuard
+//!      elevated via ShellExecuteExW(SEE_MASK_DEFAULT, lpVerb="runas") — the
+//!      ONE UAC prompt for exactly this operation. The constraints:
 //!        - action == "wireguard-install-tunnel"
 //!        - exe resolves to exactly `C:\Program Files\WireGuard\wireguard.exe`
 //!          or the x86 sibling (never PATH, never user-writable locations)
 //!        - args == ["/installtunnelservice", "<configPath>"]
 //!        - configPath is absolute, ends in `.conf`, lives inside the app's
 //!          own data dir, exists, and its SHA-256 matches configSha256
-//!      then launches it elevated via ShellExecuteExW(SEE_MASK_DEFAULT,
-//!      lpVerb="runas") — the ONE UAC prompt for exactly this operation.
+
 //!   5. Rust POSTs the launch outcome (or user-declined error) back to the
 //!      sidecar `/vpn/elevation/result`; the sidecar finishes the connect
 //!      flow (verifies the interface came up) and the UI long-poll resolves.
@@ -35,7 +43,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 use crate::sidecar::{log_error, log_info, log_warn};
 
@@ -531,6 +539,58 @@ pub async fn vpn_elevation_bridge(
     })
     .await
     .map_err(|e| format!("bridge task: {e}"))?
+}
+
+/// Administrator rights for the app itself.
+///
+/// Reported from a REAL OS check (`net session`), never from a stored setting:
+/// the sidecar makes the same check for the same reason, so the two can never
+/// tell the user different things.
+#[derive(Serialize)]
+pub struct AdminRights {
+    elevated: bool,
+    platform: String,
+    /// True when a one-click elevated relaunch can actually be offered.
+    can_relaunch: bool,
+}
+
+#[tauri::command]
+pub fn admin_status() -> AdminRights {
+    let elevated = is_process_elevated();
+    AdminRights {
+        elevated,
+        platform: std::env::consts::OS.to_string(),
+        can_relaunch: !elevated,
+    }
+}
+
+/// Start the elevated relaunch — SINGLE-CALL SAFE.
+///
+/// Arms the detached helper (which raises the one UAC prompt only after this
+/// process exits) and THEN quits this process from a background thread, so one
+/// invoke does the whole action. Previously the quit was a separate
+/// `quit_for_elevation` command the UI had to remember to call; arming alone
+/// left a helper waiting on a process that never exited, and the elevated
+/// launch (when the helper gave up waiting) died on the single-instance lock —
+/// a dead-end UAC prompt. There is no second step left to forget.
+///
+/// The back end restores any tunnel and system-proxy state on the way out
+/// (normal exit path), so nothing is left pointing at a dead core. The quit
+/// runs detached with a short delay so this command's `Ok` still reaches the
+/// webview before the IPC channel goes away.
+#[tauri::command]
+pub fn relaunch_as_admin(app: AppHandle) -> Result<bool, String> {
+    if is_process_elevated() {
+        return Err("the app already has administrator rights".into());
+    }
+    log_info!("admin: starting the elevated relaunch helper");
+    let helper = spawn_elevation_helper()?;
+    log_info!("admin: helper {helper} armed; quitting for the elevated relaunch");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        app.exit(0);
+    });
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -24,8 +24,7 @@ use tauri_plugin_updater::UpdaterExt;
 /// How long `feed_install` waits for files about to be replaced (sidecar
 /// node.exe, the app exe itself) to become writable before launching the
 /// NSIS installer.
-const FILE_FREE_TIMEOUT: Duration = Duration::from_secs(15);
-
+///
 /// Observed in the field: the plugin's Windows install flow spawns the NSIS
 /// updater process immediately and exits the app concurrently. The sidecar
 /// child (backend/node.exe) is still shutting down when the installer reaches
@@ -34,6 +33,7 @@ const FILE_FREE_TIMEOUT: Duration = Duration::from_secs(15);
 /// before the installer exists) removes the race deterministically: if a file
 /// is still locked after the timeout, we report the failure to the caller
 /// instead of spawning an installer that can only dead-end.
+const FILE_FREE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Same shape as the plugin's `Metadata` command response, so the existing
 /// webview bridge consumes the result without a new contract.

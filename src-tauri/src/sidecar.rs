@@ -483,12 +483,10 @@ fn describe_death(code: Option<i32>, stderr_tail: &[String]) -> String {
         // by an external force: typically AV/Defender killing a suspicious process,
         // or the parent/OS terminating it. This is NOT a normal exit or a crash.
         if stderr_tail.is_empty() {
-            return format!(
-                "sidecar was KILLED by an external process (exit code -1 / 0xFFFFFFFF) before it could produce any output. \
+            return String::from("sidecar was KILLED by an external process (exit code -1 / 0xFFFFFFFF) before it could produce any output. \
                  The bundled node.exe likely triggered antivirus or Windows Defender heuristic detection. \
                  Try: running the app as administrator once to add an exclusion, checking Windows Defender logs \
-                 (Microsoft-Windows-Windows Defender/Operational event log), or reporting this as a false positive to your AV vendor."
-            );
+                 (Microsoft-Windows-Windows Defender/Operational event log), or reporting this as a false positive to your AV vendor.");
         }
         return format!(
             "sidecar was KILLED by an external process (exit code -1 / 0xFFFFFFFF) after producing some output. \
@@ -887,7 +885,7 @@ mod tests {
     #[test]
     fn decodes_handshake_and_clean_exit() {
         assert!(decode_exit_code(78).contains("EX_CONFIG"));
-        assert!(decode_exit_code(0).contains("handshake") == false);
+        assert!(!decode_exit_code(0).contains("handshake"));
         assert_eq!(decode_exit_code(0), "");
         assert_eq!(decode_exit_code(1), "");
     }

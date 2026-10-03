@@ -52,6 +52,52 @@ see `DESKTOP.md` → "The UI ↔ sidecar link"):
    preflight (`DESKTOP_WEBVIEW_ORIGINS`, locked by `desktopCors.test.ts`).
 3. **URLs**: `bootstrap.api_base` includes `/api/v1`; `ws_base` does not (`ws.ts` hardcodes its path).
 
+### Rust module layout (`src-tauri/src`)
+
+`main.rs` owns startup and the IPC surface; everything with its own state or its own failure
+mode lives in a sibling module. A concern belongs in a module when reading it requires
+context `main.rs` does not have.
+
+| Module | Owns | Depends on |
+|---|---|---|
+| `sidecar.rs` | Bundled-runtime spawn, stdout/stdin handshake, bounded-respawn watchdog, log sink (`log_info!`/`log_warn!`/`log_error!` write here) | — |
+| `elevation.rs` | The only path to administrator rights: the app-level rights check + single-call elevated relaunch, and the per-action WireGuard tunnel-service broker | `sidecar` (logging) |
+| `updater_feed.rs` | Update-feed fetch/parse/verify | `tauri_plugin_updater` only — it logs nowhere |
+| `window.rs` | Main-window presentation only: restore, size to the monitor's **work area** in logical pixels (DPI-scaled), centre, focus, and the bounded post-startup re-assert | `sidecar` (logging), `tauri::Manager` |
+| `paths.rs` | The single resolver for the app data dir and the rotating log dir, plus the `data_paths` command | `tauri::PathResolver` |
+| `safe_mode.rs` | The `--safe-mode` flag end to end: parsed once from `argv`, held in managed state, announced to the sidecar | `sidecar` (logging) |
+| `status.rs` | The runtime-status snapshot the System Health page polls — an aggregator, owning nothing itself | `sidecar`, `paths`, `safe_mode` |
+| `diagnostics.rs` | Redacted log tail and the exported JSON diagnostic report (the second secret filter) | `paths`, `status`, `sidecar` (logging) |
+| `os_open.rs` | The only two places the webview can make the OS act: reveal a path inside the app's own directories, open an https URL — both allow-listed, both without a shell in the chain | `tauri::Url`, `sidecar` (logging) |
+| `main.rs` | Process assembly and the IPC surface: the bootstrap handshake, the cross-module repair/reset commands, and the `setup` / window-event / run-loop wiring | all of the above |
+
+Three rules hold this together:
+
+- **Window presentation is one decision made in one place.** Sizing, centring and restoring all
+  live in `window.rs` and are triggered from `RunEvent::Ready` — not in `setup` (Windows has not
+  finished showing the window, and minimises it again afterwards) and not in `tauri.conf.json`
+  (a fixed pixel size is wrong on every display but the one it was written on). If you are
+  changing how large or where the window appears, `window.rs` is the only file to edit.
+- **The log macros are the one shared channel.** `log_*!` all funnel through
+  `sidecar::write_log`, so a module can log without knowing where logs are stored or how. Use
+  them rather than `println!`/`eprintln!`. Not every module logs: `paths.rs`, `status.rs` and
+  `updater_feed.rs` are pure resolvers/aggregates with nothing of their own to report.
+- **One resolver per directory, one owner per fact.** The data dir and the log dir come from
+  `paths.rs` and nothing else — the `setup` hook, the `data_paths` command and `reset_app_state`
+  each used to derive them independently, while the rotating log deliberately lives under the app
+  **data** dir (`<data>/logs`, written before any `AppHandle` exists) and *not* under Tauri's
+  `app_log_dir()`, which resolves to LocalAppData on Windows. Safe Mode is the same shape of rule:
+  the flag is parsed from `argv` exactly once, before any window exists, and every reader asks
+  `safe_mode::is_active`; the runtime-status command used to re-parse `argv` for the same boolean.
+
+> **Testing note.** `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets` is clean
+> and should stay clean — it is the only gate that reaches the test-only code. `scripts/audit-layout.mjs`
+> is the real gate for anything in `window.rs`:
+> it launches the packaged `netpulse-desktop.exe` over CDP and measures the live window at
+> 1024/1440/1920 in both themes. It short-circuits when the EXE already exists — **delete
+> `src-tauri/target/release/netpulse-desktop.exe` (or run `npx tauri build --no-bundle`) before
+> trusting it after a Rust change**, or it will pass against a stale binary.
+
 ## Monorepo
 
 npm workspaces:
