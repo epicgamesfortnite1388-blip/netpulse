@@ -25,7 +25,9 @@ static LOG_FILE: OnceLock<Option<PathBuf>> = OnceLock::new();
 static LOG_SEQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_logging(data_dir: &str) {
-    let dir = PathBuf::from(data_dir).join("logs");
+    // The same resolver every reader uses, so the directory we CREATE is by
+    // construction the directory `paths::log_dir` reports.
+    let dir = crate::paths::log_dir_in(std::path::Path::new(data_dir));
     let _ = std::fs::create_dir_all(&dir);
     // Rotate: keep the previous file as .log.1, cap size at ~1 MB.
     let path = dir.join("netpulse.log");

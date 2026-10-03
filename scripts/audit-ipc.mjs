@@ -48,7 +48,7 @@
  *
  * Exit 0 = every check passed; 1 = a check failed; 2 = the run was untrustworthy.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -56,6 +56,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { appFreshness } from './lib/fresh-app.mjs';
+import { describeFailure, runCommand } from './lib/run-command.mjs';
 
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
@@ -84,9 +85,9 @@ function die(msg) {
 }
 function run(label, args) {
   process.stdout.write(`[ipc] ${label}…\n`);
-  const res = spawnSync(args[0], args.slice(1), { cwd: root, stdio: 'inherit' });
+  const res = runCommand(root, args[0], args.slice(1));
   if (res.status !== 0) {
-    process.stderr.write(`[ipc] ${label} failed (exit ${res.status})\n`);
+    process.stderr.write(`[ipc] ${label} failed (${describeFailure(res)})\n`);
     process.exit(res.status ?? 2);
   }
 }
