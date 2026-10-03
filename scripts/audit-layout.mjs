@@ -65,6 +65,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
+import { appFreshness } from './lib/fresh-app.mjs';
+
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
 
@@ -130,14 +132,25 @@ function ensureBackend() {
   run('staging the desktop backend', ['npm', 'run', 'build:desktop-backend']);
 }
 
-/** A real app: `cargo build` alone yields a dev-URL binary with no assets. */
+/** A real app: `cargo build` alone yields a dev-URL binary with no assets.
+ *  It must also be a CURRENT app — see scripts/lib/fresh-app.mjs. */
 function ensureApp() {
-  if (fs.existsSync(EXE)) return;
-  if (process.env.AUDIT_CONTRAST_NO_BUILD) {
-    process.stderr.write(`[layout] ${EXE} missing and AUDIT_CONTRAST_NO_BUILD=1\n`);
+  const noBuild = Boolean(process.env.AUDIT_CONTRAST_NO_BUILD);
+  const verdict = appFreshness({ root, exe: EXE, noBuild });
+  if (verdict.fresh) {
+    process.stdout.write(`[layout] binary is fresh (newer than ${path.relative(root, verdict.newest.file)})\n`);
+    return;
+  }
+  if (noBuild) {
+    process.stderr.write(`[layout] binary is ${verdict.reason} and AUDIT_CONTRAST_NO_BUILD=1; refusing to grade it\n`);
     process.exit(1);
   }
-  run('building the packaged app', ['npx', 'tauri', 'build', '--no-bundle']);
+  run(`binary is ${verdict.reason}, building the packaged app`, ['npx', 'tauri', 'build', '--no-bundle']);
+  const after = appFreshness({ root, exe: EXE, noBuild: true });
+  if (!after.fresh) {
+    process.stderr.write(`[layout] the build did not produce a binary newer than its sources (${after.reason})\n`);
+    process.exit(1);
+  }
 }
 
 function freePort(start) {

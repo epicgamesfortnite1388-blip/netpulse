@@ -55,23 +55,18 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
+import { appFreshness } from './lib/fresh-app.mjs';
+
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXE = path.join(root, 'src-tauri', 'target', 'release', 'netpulse-desktop.exe');
-const BACKEND = path.join(root, 'src-tauri', 'backend');
+const BACKEND = path.join(root, 'src-tauri', 'backend', 'netpulse-backend.js');
 const REDACTED = '[redacted by diagnostics filter]';
 
 /** Unique marker on every line this gate writes to the log, so cleanup is exact. */
 const PROBE = 'audit-ipc-probe:';
-
-/** Rust sources and build inputs whose mtime decides whether EXE is stale. */
-const FRESHNESS_INPUTS = [
-  path.join(root, 'src-tauri', 'Cargo.toml'),
-  path.join(root, 'src-tauri', 'tauri.conf.json'),
-  path.join(root, 'src-tauri', 'build.rs'),
-];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
@@ -98,49 +93,22 @@ function run(label, args) {
 
 /* --------------------------------------------------- build inputs / freshness */
 
-function newestInput() {
-  let newest = { mtimeMs: 0, file: '(none)' };
-  const consider = (p) => {
-    try {
-      const { mtimeMs } = fs.statSync(p);
-      if (mtimeMs > newest.mtimeMs) newest = { mtimeMs, file: p };
-    } catch { /* missing: ignore */ }
-  };
-  for (const p of FRESHNESS_INPUTS) consider(p);
-  const walk = (dir) => {
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full);
-      else consider(full);
-    }
-  };
-  walk(path.join(root, 'src-tauri', 'src'));
-  return newest;
-}
-
 /**
- * The binary must postdate every Rust source. This is the check that the other
- * two app gates do not do, and the reason this gate is not just another
- * `existsSync`.
+ * The binary must postdate every Rust source. Shared with the other two app
+ * gates so the rule cannot drift between them — see scripts/lib/fresh-app.mjs.
  */
 function ensureFreshApp() {
-  const newest = newestInput();
-  const exeMtime = fs.existsSync(EXE) ? fs.statSync(EXE).mtimeMs : 0;
-  if (exeMtime && exeMtime >= newest.mtimeMs) {
-    process.stdout.write(`[ipc] binary is fresh (newer than ${path.relative(root, newest.file)})\n`);
+  const verdict = appFreshness({ root, exe: EXE, noBuild: Boolean(process.env.AUDIT_CONTRAST_NO_BUILD) });
+  if (verdict.fresh) {
+    process.stdout.write(`[ipc] binary is fresh (newer than ${path.relative(root, verdict.newest.file)})\n`);
     return;
   }
-  const reason = exeMtime
-    ? `stale: ${path.basename(EXE)} predates ${path.relative(root, newest.file)}`
-    : 'missing';
-  if (process.env.AUDIT_CONTRAST_NO_BUILD) {
-    die(`binary is ${reason} and AUDIT_CONTRAST_NO_BUILD=1 — refusing to grade a stale build`);
+  if (verdict.noBuild) {
+    die(`binary is ${verdict.reason} and AUDIT_CONTRAST_NO_BUILD=1 — refusing to grade a stale build`);
   }
-  run(`binary is ${reason}, rebuilding the packaged app`, ['npx', 'tauri', 'build', '--no-bundle']);
-  const after = fs.existsSync(EXE) ? fs.statSync(EXE).mtimeMs : 0;
-  if (!after || after < newest.mtimeMs) die('the rebuild did not produce a binary newer than its sources');
+  run(`binary is ${verdict.reason}, rebuilding the packaged app`, ['npx', 'tauri', 'build', '--no-bundle']);
+  const after = appFreshness({ root, exe: EXE, noBuild: true });
+  if (!after.fresh) die(`the rebuild did not produce a binary newer than its sources (${after.reason})`);
 }
 
 function ensureBackend() {
