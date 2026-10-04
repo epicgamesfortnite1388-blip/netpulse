@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
+import { replyApiError } from '../util/apiError';
+
 import type { AppContext } from './context';
 
 /**
@@ -43,13 +45,13 @@ function resolveInReleaseDir(ctx: AppContext, file: string): string | null {
 function sendJsonFile(
   reply: FastifyReply,
   file: string,
-  notFoundBody: { error: { code: string; message: string } },
+  notFound: { code: string; message: string },
 ): FastifyReply {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {
-    return reply.code(404).send(notFoundBody);
+    return replyApiError(reply, 404, notFound.code, notFound.message);
   }
   const etag = `"${stat.size}-${stat.mtimeMs}"`;
   reply
@@ -77,9 +79,9 @@ export function registerUpdateFeedRoutes(app: FastifyInstance, ctx: AppContext):
    */  app.get('/api/v1/update-feed/latest.json', async (_req, reply) => {
     const file = resolveInReleaseDir(ctx, MANIFEST_FILE);
     if (!file) {
-      return reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
+      return replyApiError(reply, 404, 'no_feed', 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)');
     }
-    return sendJsonFile(reply, file, { error: { code: 'no_manifest', message: 'No release has been published to the local feed yet' } });
+    return sendJsonFile(reply, file, { code: 'no_manifest', message: 'No release has been published to the local feed yet' });
   });
 
   /**
@@ -94,23 +96,23 @@ export function registerUpdateFeedRoutes(app: FastifyInstance, ctx: AppContext):
   app.get('/api/v1/update-feed/artifact', async (req, reply) => {
     const dir = ctx.config.releaseDir;
     if (!dir) {
-      return reply.code(404).send({ error: { code: 'no_feed', message: 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)' } });
+      return replyApiError(reply, 404, 'no_feed', 'No local release directory is configured (NETPULSE_RELEASE_DIR unset)');
     }
     const raw = (req.query as { file?: string } | undefined)?.file ?? '';
     let decoded: string;
     try {
       decoded = decodeURIComponent(raw);
     } catch {
-      return reply.code(404).send({ error: { code: 'bad_manifest', message: 'Manifest artifact name is malformed' } });
+      return replyApiError(reply, 404, 'bad_manifest', 'Manifest artifact name is malformed');
     }
     const fileName = path.basename(decoded);
     if (!fileName || fileName.startsWith('.') || fileName !== decoded) {
-      return reply.code(404).send({ error: { code: 'bad_manifest', message: 'Manifest does not name a local artifact' } });
+      return replyApiError(reply, 404, 'bad_manifest', 'Manifest does not name a local artifact');
     }
     const file = resolveInReleaseDir(ctx, fileName);
     if (!file) {
-      return reply.code(404).send({ error: { code: 'no_artifact', message: 'Manifest artifact is missing from the local feed' } });
+      return replyApiError(reply, 404, 'no_artifact', 'Manifest artifact is missing from the local feed');
     }
-    return sendJsonFile(reply, file, { error: { code: 'no_artifact', message: 'Artifact file missing from the release directory' } });
+    return sendJsonFile(reply, file, { code: 'no_artifact', message: 'Artifact file missing from the release directory' });
   });
 }

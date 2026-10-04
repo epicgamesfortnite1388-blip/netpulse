@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { IRAN_CATALOG, catalogById } from '../services/iranCatalog';
 import { resolveTarget } from '../util/targetGuard';
+import { replyApiError } from '../util/apiError';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -58,7 +59,7 @@ export function registerIranRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.delete('/api/v1/iran/custom/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const idx = IRAN_CATALOG.findIndex((c) => c.id === id && c.custom === true);
-    if (idx === -1) return reply.status(404).send({ error: 'not_found' });
+    if (idx === -1) return replyApiError(reply, 404, 'not_found', 'No custom Iran target with that id');
     IRAN_CATALOG.splice(idx, 1);
     return { removed: true };
   });

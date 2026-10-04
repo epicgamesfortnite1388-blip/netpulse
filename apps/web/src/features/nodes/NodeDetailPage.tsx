@@ -303,10 +303,14 @@ export default function NodeDetailPage() {
       </div>
     );
   }
-  // A 404 is not a failure to retry: the node is gone or the id is wrong, and
-  // pressing "Try again" would fetch the same missing record forever. Route it
-  // to the not-found state below (with a way back) instead of the error box.
-  if (loadingError && !(loadingError instanceof ApiError && loadingError.status === 404)) {
+  // 400 and 404 are both permanent: the id in the URL is not a node id (400) or
+  // not a node (404), and re-requesting it would return exactly the same
+  // answer. They belong to the not-found state below, carrying the server's own
+  // reason, rather than to the error box and its retry button.
+  const permanentIdFailure =
+    loadingError instanceof ApiError && (loadingError.status === 400 || loadingError.status === 404);
+
+  if (loadingError && !permanentIdFailure) {
     return (
       <div className="animate-fade-up">
         <NodesNav />
@@ -315,12 +319,18 @@ export default function NodeDetailPage() {
     );
   }
   if (!node) {
+    // Prefer the server's own reason ("id must be alphanumeric, colon, dot,
+    // underscore, or hyphen") over a generic message: it names what to fix.
+    const reason =
+      loadingError instanceof ApiError && loadingError.message
+        ? loadingError.message
+        : 'This node is not in the local pool. It may have been removed from its source since you last saw it.';
     return (
       <div className="animate-fade-up">
         <NodesNav />
         <EmptyState
           title="Node not found"
-          message="This node is not in the local pool. It may have been removed from its source since you last saw it."
+          message={reason}
           action={
             <Link
               to="/nodes"

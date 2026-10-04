@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import type { FastifyInstance } from 'fastify';
 
+import { replyValidationError } from '../util/apiError';
+
 import type { AppContext } from './context';
 
 /**
@@ -28,7 +30,7 @@ export function registerUpdateHistoryRoutes(app: FastifyInstance, ctx: AppContex
   app.post('/api/v1/update-history', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = RecordSchema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: { code: 'invalid_event', message: 'Malformed update-history event' } });
+      return replyValidationError(reply, 'invalid_event', parsed.error);
     }
     ctx.services.updateHistory.record(parsed.data);
     return reply.code(204).send();

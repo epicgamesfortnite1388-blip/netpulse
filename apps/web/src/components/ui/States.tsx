@@ -2,7 +2,7 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
-import { ApiError } from '@/lib/api';
+import { ApiError, isRetryableError } from '@/lib/api';
 
 import type { ReactNode } from 'react';
 
@@ -37,6 +37,10 @@ export function EmptyState({
 
 export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
   const isApi = error instanceof ApiError;
+  // A retry only helps when the same request could succeed later. Offering it
+  // for a permanent failure (bad id, missing record) taught the user that
+  // "Try again" is a button you press regardless of what the error says.
+  const canRetry = retry != null && isRetryableError(error);
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border border-danger/30 bg-danger/5 px-5 py-4">
       <div className="flex items-start gap-2.5">
@@ -49,7 +53,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
           {isApi && <p className="mt-1 font-mono text-micro text-faint">{error.code}</p>}
         </div>
       </div>
-      {retry && (
+      {canRetry && (
         <Button size="sm" variant="secondary" onClick={retry}>
           Try again
         </Button>

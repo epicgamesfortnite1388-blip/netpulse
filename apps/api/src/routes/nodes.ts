@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../util/appError';
+import { replyApiError, replyValidationError } from '../util/apiError';
 import { isPrivateIp } from '../util/targetGuard';
 import { MAX_LIST_LIMIT } from '../db/repositories';
 
@@ -154,13 +155,13 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const node = nodesService.getNode(id);
     // 404 status, not a 200 body: api.get on the frontend throws on non-2xx,
     // so detail pages show their not-found/error state instead of rendering
     // the error object as a node (which crashed on node.ipv4[0]).
-    if (!node) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
+    if (!node) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
 
     return node;
   });
@@ -179,10 +180,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const result = nodesService.shareLink(id);
-    if (!result) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
+    if (!result) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
 
     return { nodeId: id, ...result };
   });
@@ -247,11 +248,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const body = NodeTestBodySchema.safeParse(req.body ?? {});
     if (!body.success) {
-      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
+      return replyValidationError(reply, 'validation_error', body.error);
     }
     const type = body.data.type ?? 'tcp';
 
@@ -265,12 +266,12 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     // Check rate limit
     const node = nodesService.getNode(id);
-    if (!node) return reply.status(404).send({ error: 'not_found', message: `Node "${id}" not found` });
+    if (!node) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
 
     const nodeTests = ctx.repos.nodeTests;
     const recentCount = nodeTests.recentForNode(id, Date.now() - 60_000);
     if (recentCount.length >= 60) {
-      return reply.status(429).send({ error: 'rate_limited', reason: 'too many tests in last minute' });
+      return replyApiError(reply, 429, 'rate_limited', 'Too many tests in the last minute');
     }
 
     try {
@@ -282,7 +283,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       // nested error shape and the AppError's own 4xx status.
       if (err instanceof AppError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      return reply.status(500).send({ error: 'test_failed', detail: message });
+      return replyApiError(reply, 500, 'test_failed', message);
     }
   });
 
@@ -292,7 +293,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const parsed = NodeTestBatchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+      return replyValidationError(reply, 'validation_error', parsed.error);
     }
     const nodeIds = parsed.data.nodeIds;
     const type = parsed.data.type ?? 'tcp';
@@ -335,10 +336,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const row = ctx.repos.publicNodes.get(id);
-    if (!row) return reply.status(404).send({ error: 'node not found' });
+    if (!row) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
     const result = await recheckNodeGeo(ctx.repos.publicNodes, row, ctx.log);
     const fresh = nodesService.getNode(id);
     return { result, node: fresh };
@@ -349,11 +350,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const body = FavoriteSchema.safeParse(req.body ?? {});
     if (!body.success) {
-      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
+      return replyValidationError(reply, 'validation_error', body.error);
     }
 
     try {
@@ -361,7 +362,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return reply.status(404).send({ error: message });
+      return replyApiError(reply, 404, 'not_found', message);
     }
   });
 
@@ -371,11 +372,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const body = TagsSchema.safeParse(req.body ?? {});
     if (!body.success) {
-      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
+      return replyValidationError(reply, 'validation_error', body.error);
     }
 
     try {
@@ -383,7 +384,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return reply.status(404).send({ error: message });
+      return replyApiError(reply, 404, 'not_found', message);
     }
   });
 
@@ -508,11 +509,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/sources/:id', async (req, reply) => {
     const raw = (req.params as { id: string }).id;
     const parsed = SourceIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const row = ctx.repos.publicSources.get(id);
     const source = row ?? getKnownSources().find((s) => s.id === id);
-    if (!source) return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
+    if (!source) return replyApiError(reply, 404, 'not_found', `Source "${id}" not found`);
 
     return source;
   });
@@ -521,14 +522,14 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.patch('/api/v1/sources/:id', async (req, reply) => {
     const raw = (req.params as { id: string }).id;
     const parsed = SourceIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const body = z.object({ enabled: z.boolean() }).safeParse(req.body ?? {});
     if (!body.success) {
-      return reply.status(400).send({ error: 'validation_error', details: body.error.flatten() });
+      return replyValidationError(reply, 'validation_error', body.error);
     }
     if (!ctx.repos.publicSources.get(id)) {
-      return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
+      return replyApiError(reply, 404, 'not_found', `Source "${id}" not found`);
     }
     ctx.repos.publicSources.update(id, { enabled: body.data.enabled });
     return { ok: true, id, enabled: body.data.enabled };
@@ -538,10 +539,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.delete('/api/v1/sources/:id', async (req, reply) => {
     const raw = (req.params as { id: string }).id;
     const parsed = SourceIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     if (!ctx.repos.publicSources.get(id)) {
-      return reply.status(404).send({ error: 'not_found', message: `Source "${id}" not found` });
+      return replyApiError(reply, 404, 'not_found', `Source "${id}" not found`);
     }
     const removed = ctx.repos.publicSources.remove(id);
     return { ok: removed };
@@ -551,7 +552,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/sources', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = SourceInputSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+      return replyValidationError(reply, 'validation_error', parsed.error);
     }
 
     const input = parsed.data;
@@ -560,7 +561,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     for (const url of input.urls) {
       const validation = isValidSourceUrl(url);
       if (!validation.ok) {
-        return reply.status(400).send({ error: 'invalid_url', detail: `${url}: ${validation.error}` });
+        return replyApiError(reply, 400, 'invalid_url', validation.error ?? 'Invalid source URL', { hint: url ?? undefined });
       }
     }
 
@@ -602,13 +603,13 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/sources/:id/fetch', async (req, reply) => {
     const raw = (req.params as { id: string }).id;
     const parsed = SourceIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
 
-    if (!nodesService) return reply.status(503).send({ error: 'nodes service unavailable' });
+    if (!nodesService) return replyApiError(reply, 503, 'service_unavailable', 'Node service not configured in this environment');
 
     const source = ctx.repos.publicSources.get(id) ?? getKnownSources().find((s) => s.id === id);
-    if (!source) return reply.status(404).send({ error: 'not_found' });
+    if (!source) return replyApiError(reply, 404, 'not_found', 'Source not found');
 
     try {
       const result = await nodesService.discoverFromSource(id);
@@ -623,7 +624,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
           sourceName: source.name,
           error,
         });
-        return reply.status(502).send({ error: { code: 'fetch_failed', message: error } });
+        return replyApiError(reply, 502, 'fetch_failed', error);
       }
       ctx.bus.publish('sources', {
         type: 'source:fetch:completed',
@@ -644,7 +645,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       });
       // Use the app-wide error body shape ({error:{code,message}}) so the UI's
       // ApiError parser surfaces the real upstream failure, not just the status text.
-      return reply.status(502).send({ error: { code: 'fetch_failed', message: error } });
+      return replyApiError(reply, 502, 'fetch_failed', error);
     }
   });
 
@@ -656,10 +657,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/scanner/start', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = ScannerStartSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+      return replyValidationError(reply, 'validation_error', parsed.error);
     }
 
-    if (!nodesService) return reply.status(503).send({ error: 'not configured' });
+    if (!nodesService) return replyApiError(reply, 503, 'service_unavailable', 'Node service not configured in this environment');
 
     const body = parsed.data;
     const jobId = `scan:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
@@ -675,7 +676,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       targets = nodes.map((n) => n.id);
     }
     if (targets.length === 0) {
-      return reply.status(400).send({ error: 'no_targets', detail: 'Provide nodeIds or a filter that matches at least one node.' });
+      return replyApiError(reply, 400, 'no_targets', 'Provide nodeIds or a filter that matches at least one node.');
     }
 
     // Create scan job
@@ -785,11 +786,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/scanner/stop/:jobId', async (req, reply) => {
     const raw = (req.params as { jobId: string }).jobId;
     const parsed = JobIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const jobId = parsed.data;
     const job = ctx.repos.scanJobs.get(jobId);
 
-    if (!job) return reply.status(404).send({ error: 'not_found', message: `Scan job "${jobId}" not found` });
+    if (!job) return replyApiError(reply, 404, 'not_found', `Scan job "${jobId}" not found`);
     if (job.status !== 'running') throw new AppError(409, 'not_running', 'Scan job is not running');
 
     const cancel = activeScanJobs.get(jobId);
@@ -812,11 +813,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/scanner/status/:jobId', async (req, reply) => {
     const raw = (req.params as { jobId: string }).jobId;
     const parsed = JobIdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const jobId = parsed.data;
     const job = ctx.repos.scanJobs.get(jobId);
 
-    if (!job) return reply.status(404).send({ error: 'not_found', message: `Scan job "${jobId}" not found` });
+    if (!job) return replyApiError(reply, 404, 'not_found', `Scan job "${jobId}" not found`);
 
     return job;
   });
@@ -844,7 +845,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/api/v1/test-endpoints', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = TestEndpointInputSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.flatten() });
+      return replyValidationError(reply, 'validation_error', parsed.error);
     }
 
     const input = parsed.data;
@@ -868,11 +869,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.delete('/api/v1/test-endpoints/:id', async (req, reply) => {
     const raw = (req.params as { id: string }).id;
     const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return reply.status(400).send({ error: 'invalid_id', detail: parsed.error.message });
+    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
     const id = parsed.data;
     const removed = ctx.repos.testEndpoints.remove(id);
 
-    if (!removed) return reply.status(404).send({ error: 'not_found', message: `Test endpoint "${id}" not found` });
+    if (!removed) return replyApiError(reply, 404, 'not_found', `Test endpoint "${id}" not found`);
     return { success: true };
   });
 

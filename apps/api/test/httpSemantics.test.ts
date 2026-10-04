@@ -32,3 +32,67 @@ describe('HTTP semantics: no 200-wrapped error bodies', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The error envelope has exactly one owner: `src/util/apiError.ts`.
+ *
+ * This existed as a *living* defect, not a hypothetical one. 39 route sites
+ * wrote `{ error: 'not_found', message }` (error a string) and 9 wrote
+ * `{ error: { code, message } }`; the desktop client read only the nested one,
+ * so every message from the other 39 was dropped and the UI showed "Not Found /
+ * http_404". Fixing the client to accept both would only have hidden it — the
+ * next site would copy whichever neighbour it sat next to. So the shape is
+ * defined once and this test refuses a second hand-written copy.
+ */
+describe('Error envelope: one owner', () => {
+  const handWritten: string[] = [];
+
+  it('no route or plugin hand-writes an error body', () => {
+    const dirs = [join(__dirname, '../src/routes'), join(__dirname, '../src/plugins')];
+    for (const dir of dirs) {
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.ts')) continue;
+        const src = readFileSync(join(dir, f), 'utf8');
+        src.split('\n').forEach((line, i) => {
+          // `.send({ error: ... })` is the hand-written shape in any form.
+          if (/\.send\(\s*\{\s*error\s*:/.test(line)) {
+            handWritten.push(`${f}:${i + 1}: ${line.trim().slice(0, 120)}`);
+          }
+        });
+      }
+    }
+    expect(
+      handWritten,
+      `Error bodies must go through replyApiError()/replyValidationError() from src/util/apiError.ts:\n${handWritten.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('every error envelope sent without replyApiError still sets a status', () => {
+    // `reply.send(apiErrorBody(...))` with no `.status()` answers 200 with an
+    // error body — the exact thing this file exists to prevent. Migrating a
+    // call site can drop the status silently, and did: the unknown-route
+    // handler answered 200 until this test existed.
+    const missingStatus: string[] = [];
+    const dirs = [join(__dirname, '../src/routes'), join(__dirname, '../src/plugins')];
+    for (const dir of dirs) {
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.ts')) continue;
+        const src = readFileSync(join(dir, f), 'utf8');
+        src.split('\n').forEach((line, i) => {
+          if (!/\breply\s*\.\s*send\s*\(\s*apiErrorBody\s*\(/.test(line)) return;
+          // Walk back over the continuation of a multi-line statement to see
+          // whether a .status(...) is chained anywhere in it.
+          const start = Math.max(0, i - 2);
+          const stmt = src.split('\n').slice(start, i + 3).join(' ');
+          if (!/\.status\s*\(/.test(stmt)) {
+            missingStatus.push(`${f}:${i + 1}: ${line.trim().slice(0, 120)}`);
+          }
+        });
+      }
+    }
+    expect(
+      missingStatus,
+      `Error envelopes must carry an explicit status:\n${missingStatus.join('\n')}`,
+    ).toEqual([]);
+  });
+});

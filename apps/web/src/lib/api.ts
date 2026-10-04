@@ -14,6 +14,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Whether sending the identical request again could ever succeed.
+ *
+ * A 4xx is the server describing a request that is itself wrong — `/nodes/bad$id`
+ * is not a node id no matter how often it is asked for. Offering "Try again" for
+ * one invited the user to click forever, so those no longer show a retry action.
+ * Retryable means the fault is on our side of the wire: the server failed (5xx),
+ * it is throttling us (429), the request timed out (408), or the request never
+ * reached it at all (a transport failure, which the sidecar may respawn out of).
+ *
+ * This is a status test, not a code registry: 503 means "try later" by
+ * definition, and a service that is permanently unconfigured should not be
+ * returning 503 in the first place.
+ */
+export function isRetryableError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return error.status >= 500 || error.status === 429 || error.status === 408;
+  }
+  return true;
+}
+
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   json?: unknown;
   _retried?: boolean;
@@ -31,38 +52,29 @@ function asText(value: unknown): string | undefined {
 }
 
 /**
- * Pull the machine code and human message out of an error body.
+ * Read the one error envelope the API returns: `{ error: { code, message, hint } }`.
  *
- * The API speaks two shapes and both are live: most routes send
- * `{ error: 'not_found', message: 'Node "x" not found' }` (error is a *string*
- * code with sibling fields), while the error-handler plugin and a few routes
- * send `{ error: { code, message, hint } }`. Reading only the nested shape
- * silently discarded every message from the flat shape, so the UI fell back to
- * `res.statusText` — a missing node showed as "Not Found / http_404" instead
- * of naming the node. Both shapes are accepted here so the message survives.
+ * This is deliberately NOT a tolerant reader. The API used to emit two
+ * incompatible envelopes (a flat one at 39 sites, the nested one at 9), this
+ * client understood only the nested one, and the messages from the other 39
+ * were silently dropped. Accepting both here hid that instead of fixing it, and
+ * would have let the server grow a third shape nobody reads. The server now
+ * owns the envelope in a single place (`apps/api/src/util/apiError.ts`) and this
+ * mirrors it.
  *
- * `details`/`detail` are validation dumps (zod), kept out of `message`: they
- * are multi-line and would drown the one-line reason in the error box.
+ * A body that does not match contributes nothing, so a non-API error (a proxy,
+ * a port-forward, a WebView-level failure) still falls back to the HTTP status
+ * text rather than inventing a code.
  */
 export function parseErrorBody(body: unknown): ParsedErrorBody {
   if (typeof body !== 'object' || body === null) return {};
-  const b = body as Record<string, unknown>;
-  const err = b.error;
-
-  if (typeof err === 'object' && err !== null) {
-    const e = err as Record<string, unknown>;
-    return {
-      code: asText(e.code),
-      message: asText(e.message),
-      hint: asText(e.hint),
-    };
-  }
-
-  // Flat shape: `error` is the code itself, the prose sits beside it.
+  const err = (body as Record<string, unknown>).error;
+  if (typeof err !== 'object' || err === null) return {};
+  const e = err as Record<string, unknown>;
   return {
-    code: asText(err),
-    message: asText(b.message) ?? asText(b.error_description),
-    hint: asText(b.hint),
+    code: asText(e.code),
+    message: asText(e.message),
+    hint: asText(e.hint),
   };
 }
 

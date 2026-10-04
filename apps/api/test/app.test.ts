@@ -460,7 +460,10 @@ describe('nodes route hardening', () => {
       payload: { kind: 'test' },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('no_targets');
+    expect(res.json().error.code).toBe('no_targets');
+    expect(res.json().error.message).toBe(
+      'Provide nodeIds or a filter that matches at least one node.',
+    );
     for (const job of ctx.repos.scanJobs.list(100)) {
       expect(job.status).not.toBe('running');
     }
