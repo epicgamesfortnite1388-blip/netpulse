@@ -34,6 +34,18 @@ import path from 'node:path';
 /** npm ships one CLI script per tool, all in the same bin directory. */
 const CLI_FILES = { npm: 'npm-cli.js', npx: 'npx-cli.js' };
 
+/**
+ * Batch's "directory of this script" token. Two spellings exist in the wild:
+ * `%~dp0` (current npm, inside `SET "VAR=%~dp0\…"`) and `%dp0%` (older shims).
+ */
+const DP0_TOKEN_RE = /%~?dp0%?/gi;
+
+/**
+ * A CLI path in a batch file, anchored at the dp0 token so the variable name
+ * that precedes it is never captured.
+ */
+const DP0_CLI_RE = /(%~?dp0%?\\[^\r\n"']*npm-cli\.js)/gi;
+
 /** First path that exists as a regular file, or null. */
 function firstExistingFile(candidates) {
   for (const p of candidates) {
@@ -118,16 +130,17 @@ function fromNodePath(tool) {
 /**
  * Strategy 4 — read the PATH shim.
  *
- * `npm.cmd` cannot be executed by Node, but it is a text file and it names the
- * JavaScript it wraps, as a literal path relative to `%~dp0` (batch's "directory
- * of this script"). Substituting the directory the shim was found in yields a
- * concrete path, which is then verified before use. This covers a toolchain
- * whose node is a shim and whose npm lives somewhere neither `process.execPath`
- * nor the environment names.
+ * `npm.cmd` cannot be executed by Node, but it is a batch file that names the
+ * JavaScript it wraps relative to batch's `%~dp0` — "the directory of this
+ * script". Replacing that token with the directory the shim was found in yields
+ * a concrete path, which is then verified to exist before use. This covers a
+ * toolchain whose node is a shim and whose npm lives somewhere neither
+ * `process.execPath` nor the environment names.
  *
- * A shim that does not name a literal path — Volta's executables are wrappers
- * rather than batch files — simply yields nothing here, and the next strategy
- * runs. Nothing is guessed: only a path that exists as a file is ever used.
+ * Honest limits: a shim that does not name a literal path — Volta's executables
+ * are wrappers rather than batch files — yields nothing here and resolution
+ * falls through. Only a match beginning at the dp0 token is accepted, so a
+ * line that merely mentions the file contributes nothing.
  */
 function fromPathShim(tool) {
   if (process.platform !== 'win32') return null;
@@ -143,9 +156,17 @@ function fromPathShim(tool) {
         } catch {
           continue;
         }
-        // npm writes: SET "NPM_CLI_JS=%~dp0\node_modules\npm\bin\npm-cli.js"
-        for (const m of text.matchAll(/([^\r\n"']*npm-cli\.js)/gi)) {
-          const resolved = path.resolve(dir, m[1].replace(/%~?dp0%?/gi, dir));
+        // Anchor the match ON the dp0 token, not merely up to the file name.
+        // Current npm writes:  SET "NPM_CLI_JS=%~dp0\node_modules\npm\bin\npm-cli.js"
+        // older npm writes:  "%dp0%\node_modules\npm\bin\npm-cli.js"
+        // Matching only `…npm-cli.js` captured the `NPM_CLI_JS=` variable name
+        // too, so the substitution yielded `NPM_CLI_JS=C:\…` — not a path —
+        // and the stock shim was the one format this could NOT parse. Requiring
+        // the match to begin at the token also drops the lines that merely
+        // mention the file (`%%F\…`, `$NPM_PREFIX\…`), which were the source
+        // of the garbage candidates.
+        for (const m of text.matchAll(DP0_CLI_RE)) {
+          const resolved = path.resolve(dir, m[1].replace(DP0_TOKEN_RE, dir));
           if (firstExistingFile([resolved])) binDirs.push(path.dirname(resolved));
         }
       }
