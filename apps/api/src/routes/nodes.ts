@@ -926,15 +926,22 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     const health = ctx.repos.nodeHealth.get(id);
 
     if (!health) {
+      // No health row means no probe has ever run against this node, so the
+      // rates are NOT zero — they were never measured. The latencies and
+      // timestamps below already say `null`; reliability and loss must say the
+      // same thing, because a client that reads `lossPct: 0` as "this node
+      // drops nothing" is being told a node is perfect on the strength of a
+      // probe that never happened. `testCount: 0` is a real measurement and
+      // stays 0: "no probes recorded" is true.
       return {
         nodeId: id,
         testCount: 0,
         successCount: 0,
         failureCount: 0,
-        reliabilityPct: 0,
+        reliabilityPct: null,
         medianLatencyMs: null,
         p95LatencyMs: null,
-        lossPct: 0,
+        lossPct: null,
         latencyVariance: null,
         lastSuccessAt: null,
         lastFailureAt: null,

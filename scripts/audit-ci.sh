@@ -79,6 +79,11 @@ run "layout: no overflow, nothing under 12px (1024/1440/1920, dark+light)" node 
 #    config (F9 fuzz), capacity-probe rebinding guard (F3), worker ops-gate
 #    rate limit (F2), worker CORS preflight allow-list (F5).
 run "security: parser fuzz harness" npx vitest run --root apps/api test/nodeParsers.fuzz.test.ts --reporter=basic
+#    A measurement nobody made must not be published as a healthy number. This
+#    is the fourth fix in that family (sidecar_restarts, log_file_bytes, the
+#    diagnostic report's bootLogTail, and the node health rates below); it is a
+#    gate because each of the first three was only caught by hand.
+run "honesty: unmeasured values are reported as unmeasured" npx vitest run --root apps/api test/unmeasuredMeasurements.test.ts --reporter=basic
 run "security: capacity probe rebinding guard" npx vitest run --root apps/api test/selection.test.ts --reporter=basic
 run "security: worker ops gate + CORS allow-list" npx vitest run --root cloud/worker test/ops-page.test.ts test/worker.test.ts --reporter=basic
 

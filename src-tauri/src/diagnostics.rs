@@ -151,7 +151,6 @@ pub fn read_log_tail(app: AppHandle, lines: usize) -> Result<Vec<String>, String
 pub fn save_diagnostic_report(app: AppHandle) -> Result<String, String> {
     let log_dir = paths::log_dir(&app);
     let status: RuntimeStatus = runtime_status(app.clone());
-    let tail = read_log_tail(app.clone(), 200).unwrap_or_default();
 
     let report = serde_json::json!({
         "generatedAt": unix_now(),
@@ -169,7 +168,11 @@ pub fn save_diagnostic_report(app: AppHandle) -> Result<String, String> {
             "dataDir": status.data_dir,
             "logDir": status.log_dir,
         },
-        "bootLogTail": tail,
+        // `read_log_tail` fails when the log cannot be READ (permissions, a lock)
+        // — not the same as a log with nothing in it. `unwrap_or_default()`
+        // wrote `"bootLogTail": []` into a support report, which reads as "the
+        // app logged nothing"; the truth is that we could not open the log.
+        "bootLogTail": tail_field(read_log_tail(app.clone(), 200)),
         "note": "Secrets are never included: daemon tokens are memory-only, VPN credentials/private keys are not copied, and log lines matching secret patterns are redacted."
     });
 
@@ -179,6 +182,17 @@ pub fn save_diagnostic_report(app: AppHandle) -> Result<String, String> {
         .map_err(|e| format!("cannot write report: {e}"))?;
     log_info!("diagnostic report written: {}", file.display());
     Ok(file.to_string_lossy().to_string())
+}
+
+/// The `bootLogTail` field. Absent (`null`) means "the log could not be read";
+/// an empty array means "the log was read and had nothing in it". Split out so
+/// that difference is pinned directly rather than through a real unreadable log
+/// file, which only this machine can arrange.
+fn tail_field(tail: Result<Vec<String>, String>) -> serde_json::Value {
+    match tail {
+        Ok(lines) => serde_json::json!(lines),
+        Err(_) => serde_json::Value::Null,
+    }
 }
 
 /// Unix seconds, or 0 if the clock is before the epoch.

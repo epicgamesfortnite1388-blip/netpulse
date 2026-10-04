@@ -51,9 +51,11 @@ interface NodeHealthSummary {
   testCount: number;
   successCount: number;
   failureCount: number;
-  reliabilityPct: number;
+  /** null until a probe has actually run — 0 would mean "every probe failed" */
+  reliabilityPct: number | null;
   medianLatencyMs: number | null;
-  lossPct: number;
+  /** null until a probe has actually run — 0 would read as "drops nothing" */
+  lossPct: number | null;
   consecutiveFailures: number;
   lastSuccessAt: number | null;
   lastFailureAt: number | null;
@@ -135,7 +137,7 @@ function statusTone(status: string): 'ok' | 'danger' | 'warn' {
 }
 
 /** Real numbers only: the gauge plots the stored node score, nothing synthetic. */
-function HeroVitals({ node, engine, lastTestedAt }: { node: NodeWebDTO; engine: string | null; lastTestedAt: number }) {
+function HeroVitals({ node, engine, lastTestedAt }: { node: NodeWebDTO; engine: string | null; lastTestedAt: number | null }) {
   const StatusIcon = node.status === 'healthy' ? ShieldCheck : node.status === 'failed' ? ShieldX : Shield;
   const tone = statusTone(node.status);
   return (
@@ -163,7 +165,7 @@ function HeroVitals({ node, engine, lastTestedAt }: { node: NodeWebDTO; engine: 
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">Last tested</dt>
-          <dd className="metric-num text-xs text-muted">{fmtDateTime(lastTestedAt)}</dd>
+          <dd className="metric-num text-xs text-muted">{lastTestedAt != null ? fmtDateTime(lastTestedAt) : <span className="text-faint">never</span>}</dd>
         </div>
       </dl>
     </Panel>
@@ -332,8 +334,16 @@ export default function NodeDetailPage() {
   const medianProxy = (health?.medianLatencyMs as number | undefined) ?? node.medianProxyMs;
   const medianTcp = node.medianTcpMs;
   const runtimeEngine = tests[0]?.engine ?? null;
-  const lastTestedAt = node.lastValidated ?? 0;
+  const lastTestedAt = node.lastValidated ?? null;
   const reliability = health?.reliabilityPct ?? node.reliabilityPct;
+  // A node that has never been probed has no reliability or loss to report.
+  // The stored row seeds those columns at 0, and 0% loss is the healthiest
+  // thing this page can say — so the count of probes gates whether the rates
+  // are measurements at all. A measured 0 (probes ran, nothing dropped) still
+  // shows as 0, because that one is real.
+  const probesRecorded = health?.testCount ?? node.testCount;
+  const reliabilityPct = probesRecorded > 0 ? reliability : null;
+  const lossPct = probesRecorded > 0 ? (health?.lossPct ?? null) : null;
   const location = node.country ? `${node.country}${node.city ? ` · ${node.city}` : ''}` : 'Location unknown';
 
   // Result box for the last probe, including the failure-intelligence read of
@@ -447,7 +457,7 @@ export default function NodeDetailPage() {
         items={[
           { label: 'Median proxy', value: medianProxy != null ? fmtMs(medianProxy) : '—', hint: 'measured through the local core', mono: true },
           { label: 'Median TCP', value: medianTcp != null ? fmtMs(medianTcp) : '—', hint: 'direct reachability', mono: true },
-          { label: 'Reliability', value: fmtPct(reliability), tone: reliability >= 95 ? 'ok' : reliability >= 80 ? 'warn' : 'danger', hint: `${health?.testCount ?? 0} probes recorded` },
+          { label: 'Reliability', value: fmtPct(reliabilityPct), tone: reliabilityPct == null ? 'faint' : reliabilityPct >= 95 ? 'ok' : reliabilityPct >= 80 ? 'warn' : 'danger', hint: probesRecorded > 0 ? `${probesRecorded} probes recorded` : 'no probes recorded yet — nothing measured' },
           { label: 'Recent loss', value: fmtPct(node.recentLossPct), tone: node.recentLossPct <= 1 ? 'ok' : node.recentLossPct <= 5 ? 'warn' : 'danger', hint: 'lost probes in the recent window' },
         ]}
       />
@@ -540,7 +550,7 @@ export default function NodeDetailPage() {
                   <DetailItem label="Reliability" value={fmtPct(node.reliabilityPct)} mono />
                   <DetailItem label="Freshness" value={<span className="capitalize">{node.freshness}</span>} />
                   <DetailItem label="Tags" value={node.tags.length > 0 ? node.tags.join(', ') : '—'} />
-                  <DetailItem label="Last tested" value={fmtDateTime(node.lastValidated ?? 0)} mono />
+                  <DetailItem label="Last tested" value={node.lastValidated != null ? fmtDateTime(node.lastValidated) : '—'} mono />
                   <DetailItem label="First seen" value={fmtDateTime(node.firstSeen)} mono />
                   <DetailItem label="Last seen" value={fmtDateTime(node.lastSeen)} mono />
                 </DetailGrid>
@@ -672,9 +682,9 @@ export default function NodeDetailPage() {
             className="mb-5"
             items={[
               { label: 'Probes', value: health?.testCount ?? 0, hint: 'successes + failures', mono: true },
-              { label: 'Reliability', value: fmtPct(health?.reliabilityPct ?? 0), tone: (health?.reliabilityPct ?? 0) >= 95 ? 'ok' : (health?.reliabilityPct ?? 0) >= 80 ? 'warn' : 'danger' },
+              { label: 'Reliability', value: fmtPct(reliabilityPct), tone: reliabilityPct == null ? 'faint' : reliabilityPct >= 95 ? 'ok' : reliabilityPct >= 80 ? 'warn' : 'danger' },
               { label: 'Median latency', value: health?.medianLatencyMs != null ? fmtMs(health.medianLatencyMs) : '—', hint: 'across successful probes', mono: true },
-              { label: 'Packet loss', value: fmtPct(health?.lossPct ?? 0), tone: (health?.lossPct ?? 0) <= 1 ? 'ok' : (health?.lossPct ?? 0) <= 5 ? 'warn' : 'danger' },
+              { label: 'Packet loss', value: fmtPct(lossPct), tone: lossPct == null ? 'faint' : lossPct <= 1 ? 'ok' : lossPct <= 5 ? 'warn' : 'danger' },
             ]}
           />
           <Section
@@ -701,7 +711,7 @@ export default function NodeDetailPage() {
               />
               <DataRow
                 title={<span className="text-sm">Last success</span>}
-                actions={<span className="metric-num text-sm text-muted">{fmtDateTime(health?.lastSuccessAt ?? 0)}</span>}
+                actions={<span className="metric-num text-sm text-muted">{health?.lastSuccessAt ? fmtDateTime(health.lastSuccessAt) : <span className="text-faint">never</span>}</span>}
               />
               <DataRow
                 title={<span className="text-sm">Last failure</span>}

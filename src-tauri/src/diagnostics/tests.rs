@@ -271,3 +271,30 @@ fn a_mixed_boot_log_scrubs_only_the_secret_lines() {
         ]
     );
 }
+
+// ---------------------------------------------------------------------------
+// The report must not claim an empty log it could not read.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_unreadable_log_is_reported_as_absent_not_as_an_empty_tail() {
+    // The report is the artifact a user sends for support. `[]` in it reads as
+    // "the app logged nothing", which is the opposite of what a permissions
+    // failure or a locked log file means.
+    assert!(
+        tail_field(Err("cannot read log: access denied".into())).is_null(),
+        "a log we could not read must not be written as an empty tail"
+    );
+}
+
+#[test]
+fn a_readable_log_still_reports_a_real_empty_tail_as_empty() {
+    // The other direction, which matters just as much: a log that exists and
+    // simply has nothing in it is empty. Collapsing that into null would hide
+    // a real symptom (the app logged nothing) behind "unavailable".
+    assert_eq!(tail_field(Ok(vec![])), serde_json::json!([]));
+    assert_eq!(
+        tail_field(Ok(vec!["one line".to_string()])),
+        serde_json::json!(["one line"])
+    );
+}

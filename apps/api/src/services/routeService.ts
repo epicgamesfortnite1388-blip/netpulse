@@ -516,10 +516,14 @@ function mergeTraces(primary: TraceResult, second: TraceResult): TraceResult {
     const b = hop.latencyMs;
     if (a != null && b != null) existing.latencyMs = Math.round(((a + b) / 2) * 10) / 10;
     else if (a == null && b != null) existing.latencyMs = b;
-    const la = existing.packetLoss ?? 0;
-    const lb = hop.packetLoss ?? 0;
-    if (existing.latencyMs != null || hop.latencyMs != null) {
-      existing.packetLoss = Math.round(((la + lb) / 2) * 10) / 10;
+    // Same rule as the latency above it: an unmeasured loss is not a measured
+    // zero. Averaging null in as 0 would invent "half this hop's real loss" and,
+    // for a hop that answered on one side only, quietly produce a 0% loss the
+    // UI renders as "no loss warning at all".
+    if (existing.packetLoss != null && hop.packetLoss != null) {
+      existing.packetLoss = Math.round(((existing.packetLoss + hop.packetLoss) / 2) * 10) / 10;
+    } else if (existing.packetLoss == null && hop.packetLoss != null) {
+      existing.packetLoss = hop.packetLoss;
     }
   }
   const hops = [...byHop.values()].sort((x, y) => x.hop - y.hop);
