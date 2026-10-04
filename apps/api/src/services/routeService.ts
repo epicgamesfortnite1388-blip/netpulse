@@ -500,7 +500,23 @@ export class RouteService {
   }
 }
 
-function mergeTraces(primary: TraceResult, second: TraceResult): TraceResult {
+/**
+ * Combine two observations of the same hop.
+ *
+ * A hop that produced no measurement contributes nothing rather than a zero.
+ * Averaging an unmeasured loss in as 0% invents a figure out of a probe that
+ * never ran, and the UI reads 0% as "no loss at all" — the most reassuring
+ * thing it can say about a leg it never checked. Latency and packet loss both
+ * come through here, so they cannot drift apart again.
+ */
+export function mergeMeasurement(a: number | null, b: number | null): number | null {
+  if (a == null && b == null) return null;
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.round(((a + b) / 2) * 10) / 10;
+}
+
+export function mergeTraces(primary: TraceResult, second: TraceResult): TraceResult {
   const byHop = new Map<number, RouteHop>();
   for (const hop of [...primary.hops, ...second.hops]) {
     const existing = byHop.get(hop.hop);
@@ -512,19 +528,8 @@ function mergeTraces(primary: TraceResult, second: TraceResult): TraceResult {
       existing.ip = hop.ip;
       existing.status = 'ok';
     }
-    const a = existing.latencyMs;
-    const b = hop.latencyMs;
-    if (a != null && b != null) existing.latencyMs = Math.round(((a + b) / 2) * 10) / 10;
-    else if (a == null && b != null) existing.latencyMs = b;
-    // Same rule as the latency above it: an unmeasured loss is not a measured
-    // zero. Averaging null in as 0 would invent "half this hop's real loss" and,
-    // for a hop that answered on one side only, quietly produce a 0% loss the
-    // UI renders as "no loss warning at all".
-    if (existing.packetLoss != null && hop.packetLoss != null) {
-      existing.packetLoss = Math.round(((existing.packetLoss + hop.packetLoss) / 2) * 10) / 10;
-    } else if (existing.packetLoss == null && hop.packetLoss != null) {
-      existing.packetLoss = hop.packetLoss;
-    }
+    existing.latencyMs = mergeMeasurement(existing.latencyMs, hop.latencyMs);
+    existing.packetLoss = mergeMeasurement(existing.packetLoss, hop.packetLoss);
   }
   const hops = [...byHop.values()].sort((x, y) => x.hop - y.hop);
   const last = [...hops].reverse().find((h) => h.latencyMs != null) ?? null;

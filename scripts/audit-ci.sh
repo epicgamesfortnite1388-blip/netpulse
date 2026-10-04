@@ -103,7 +103,7 @@ run "security: worker ops gate + CORS allow-list" npx vitest run --root cloud/wo
 #    apps/api/test/helpers/waitForSignal.ts — vi.waitFor's own 1000 ms default
 #    raced real completion signals, and abandoning an in-flight sweep leaked its
 #    timers into later files). It now holds across repeated full runs.
-run "api: full suite (81 files, every API path)" npx vitest run --root apps/api --reporter=basic
+run "api: full suite (every API path)" npx vitest run --root apps/api --reporter=basic
 #    The web suite, likewise complete rather than hand-picked. It was not run at
 #    all before this, which is how an honesty fix on the node page could ship
 #    with no test rendering it anywhere in the repo.
