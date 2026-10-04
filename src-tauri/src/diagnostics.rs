@@ -33,7 +33,7 @@ use std::path::Path;
 use tauri::AppHandle;
 
 use crate::paths;
-use crate::sidecar::log_info;
+use crate::logging::log_info;
 use crate::status::{runtime_status, RuntimeStatus};
 
 /// Fragments that mark a line as carrying credential material, matched

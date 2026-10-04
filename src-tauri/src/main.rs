@@ -27,16 +27,20 @@
 
 mod diagnostics;
 mod elevation;
+mod logging;
 mod os_open;
 mod paths;
+mod ports;
 mod safe_mode;
 mod sidecar;
 mod status;
+mod tray;
 mod updater_feed;
+mod webview_gc;
 mod window;
 
 use serde::Serialize;
-use sidecar::{log_error, log_info, log_warn};
+use logging::{log_error, log_info, log_warn};
 use tauri::{AppHandle, Manager};
 use window::present_main_window;
 
@@ -168,9 +172,9 @@ fn init_logging_early() -> Option<String> {
     // console path and in the debug build's console.
     let dir = paths::data_dir_without_handle().map(|d| d.to_string_lossy().to_string());
     if let Some(d) = &dir {
-        sidecar::init_logging(d);
+        logging::init_logging(d);
     }
-    sidecar::install_panic_hook();
+    logging::install_panic_hook();
     dir
 }
 
@@ -187,7 +191,7 @@ fn main() {
     // Kill webview children orphaned by a previous abnormal exit BEFORE the
     // single-instance plugin runs (a stale webview holding the app's window
     // class can otherwise confuse second-launch handling).
-    sidecar::sweep_orphaned_webviews();
+    webview_gc::sweep_orphaned_webviews();
     log_info!("=== NetPulse desktop starting (v{}) ===", env!("CARGO_PKG_VERSION"));
     log_info!("exe: {}", std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "<unknown>".into()));
     let dll_next_to_exe = std::env::current_exe()
@@ -253,7 +257,7 @@ fn main() {
             // down. Optional subsystems (tray, migrations path, sidecar) fail
             // soft — they log and continue.
 
-            if let Err(e) = sidecar::build_tray(&handle) {
+            if let Err(e) = tray::build_tray(&handle) {
                 log_warn!("tray unavailable (app continues without it): {e}");
             }
 

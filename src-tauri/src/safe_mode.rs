@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{AppHandle, Manager};
 
-use crate::sidecar::log_info;
+use crate::logging::log_info;
 
 /// Managed flag so the IPC command can answer without touching `argv` again.
 pub struct SafeModeState(AtomicBool);

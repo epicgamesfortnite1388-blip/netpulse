@@ -45,7 +45,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
-use crate::sidecar::{log_error, log_info, log_warn};
+use crate::logging::{log_error, log_info, log_warn};
 
 /// Allow-listed WireGuard executables. Installed by the official WireGuard
 /// MSI into Program Files (admin-writable only), so a standard user process

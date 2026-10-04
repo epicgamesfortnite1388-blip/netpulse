@@ -12,7 +12,7 @@
 //! This module owns *only* presentation. It decides where the window goes and
 //! how big it is; it never decides what the app does.
 
-use crate::sidecar::{log_error, log_info, log_warn};
+use crate::logging::{log_error, log_info, log_warn};
 use tauri::{AppHandle, Manager};
 
 /// Never smaller than this: 240px sidebar + an `lg`-width content column.

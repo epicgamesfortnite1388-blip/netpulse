@@ -61,6 +61,6 @@ pub fn runtime_status(app: AppHandle) -> RuntimeStatus {
         data_dir: paths::data_dir(&app),
         log_dir: paths::log_dir(&app),
         log_file_bytes: paths::log_file_bytes(&app),
-        log_rotation_cap_bytes: sidecar::LOG_CAP_BYTES,
+        log_rotation_cap_bytes: crate::logging::LOG_CAP_BYTES,
     }
 }

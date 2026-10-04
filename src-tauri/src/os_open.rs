@@ -210,7 +210,7 @@ fn validated_external_url(url: &str) -> Result<tauri::Url, String> {
 pub fn open_external(url: String) -> Result<(), String> {
     let parsed = validated_external_url(&url)?;
     let host = parsed.host_str().unwrap_or("");
-    crate::sidecar::log_info!("opening external link for host {host}");
+    crate::logging::log_info!("opening external link for host {host}");
 
     #[cfg(target_os = "windows")]
     {

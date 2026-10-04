@@ -1,85 +1,35 @@
+//! Sidecar supervision: spawn the bundled Node backend, keep it alive, and
+//! tear it down deterministically.
+//
+//! Everything here is about a CHILD PROCESS — what to run, on which
+//! loopback port, with which in-memory token, what to do when it dies, and
+//! when a crash-loop must stop being retried. Concerns that merely looked
+//! adjacent live elsewhere:
+//!   - `logging`     — who writes the rotating log (this file only calls it)
+//!   - `ports`       — the two pure OS questions about a loopback port
+//!   - `webview_gc`  — reaping webview processes orphaned by a past crash
+//!   - `tray`        — the tray icon and its quit path
+//!
+//! The watchdog decision itself (`watchdog_tick`) is a pure function on
+//! purpose: the respawn budget, the cooldown and the re-arm rule are the
+//! policy most likely to be wrong and the hardest to see failing live, so
+//! they are tested without a Tauri app or a real child.
+
+use crate::logging::{log_error, log_info, log_warn};
+use crate::ports::{port_bindable, reserve_ephemeral_port};
 use rand::RngCore;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager, menu::{Menu, MenuItem}, tray::TrayIconBuilder};
+use tauri::{AppHandle, Emitter, Manager};
 
+// spawn_sidecar sets CREATE_NO_WINDOW so no console window flashes
+// beside the app; a release build has no console to inherit.
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-// ---------------------------------------------------------------------------
-// Logging facade — eprintln in dev, always mirrored to a rotating log file in
-// the app data dir once logging is initialized. Startup failures MUST be
-// visible somewhere the user can find them (a console window does not exist in
-// a windows_subsystem="windows" release build).
-// ---------------------------------------------------------------------------
-use std::fs::OpenOptions;
-use std::io::Write as IoWrite;
-use std::path::PathBuf;
-use std::sync::OnceLock;
-
-static LOG_FILE: OnceLock<Option<PathBuf>> = OnceLock::new();
-static LOG_SEQ: AtomicU64 = AtomicU64::new(0);
-
-pub fn init_logging(data_dir: &str) {
-    // The same resolver every reader uses, so the directory we CREATE is by
-    // construction the directory `paths::log_dir` reports.
-    let dir = crate::paths::log_dir_in(std::path::Path::new(data_dir));
-    let _ = std::fs::create_dir_all(&dir);
-    // Rotate: keep the previous file as .log.1, cap size at ~1 MB.
-    let path = dir.join("netpulse.log");
-    if path.exists() {
-        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        if size > LOG_CAP_BYTES {
-            let _ = std::fs::rename(&path, dir.join("netpulse.log.1"));
-        }
-    }
-    LOG_FILE.set(Some(path)).ok();
-    log_info!("logging initialized (data dir: {data_dir})");
-}
-
-pub fn write_log(level: &str, msg: &str) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let seq = LOG_SEQ.fetch_add(1, Ordering::Relaxed);
-    eprintln!("[netpulse:{level}] {msg}");
-    if let Some(Some(path)) = LOG_FILE.get() {
-        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(f, "{ts} {seq} [{level}] {msg}");
-        }
-    }
-}
-
-macro_rules! log_info {
-    ($($arg:tt)*) => { $crate::sidecar::write_log("info", &format!($($arg)*)) };
-}
-#[allow(unused_macros)]
-macro_rules! log_warn {
-    ($($arg:tt)*) => { $crate::sidecar::write_log("warn", &format!($($arg)*)) };
-}
-macro_rules! log_error {
-    ($($arg:tt)*) => { $crate::sidecar::write_log("error", &format!($($arg)*)) };
-}
-
-pub(crate) use log_error;
-pub(crate) use log_info;
-pub(crate) use log_warn;
-
-/// Install a panic hook that records panics into the same log file. A panic
-/// during startup previously vanished (no console in release); now it lands
-/// in %APPDATA%/app.netpulse.desktop/logs/netpulse.log.
-pub fn install_panic_hook() {
-    let default = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        log_error!("PANIC: {info}");
-        default(info);
-    }));
-}
 
 /// ---------------------------------------------------------------------------
 /// Sidecar supervisor
@@ -121,10 +71,6 @@ pub struct SidecarInner {
     pub last_restart_at_unix: Option<u64>,
     shutting_down: bool,
 }
-
-/// Hard cap for the rotating startup log (~512 KB, two files total). Public so
-/// runtime_status can surface the limit on the System Health page.
-pub const LOG_CAP_BYTES: u64 = 512 * 1024;
 
 impl SidecarState {
     pub fn new() -> Self {
@@ -178,78 +124,12 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Sweep msedgewebview2.exe child processes whose NetPulse parent is gone.
-/// An abnormal desktop exit (panic, Task Manager kill, crash) leaves the
-/// webview children running forever — a real leak observed in the field.
-/// Runs once at startup; matching is strict (image name AND dead parent AND
-/// owned by this user), so it cannot touch unrelated Edge/webview processes.
-#[cfg(target_os = "windows")]
-pub fn sweep_orphaned_webviews() {
-    // Identify ORPHAN ROOT webview processes only: marker procs whose parent
-    // is neither a live netpulse-desktop.exe nor another webview process.
-    // Killing the root with /T tears down its whole tree (renderers, GPU);
-    // alive roots keep their children untouched. Windows PowerShell 5.1
-    // compatible (no Process.Parent property there).
-    const PS: &str = concat!(
-        "$np = Get-CimInstance Win32_Process -Filter \"Name='netpulse-desktop.exe'\" | ForEach-Object { $_.ProcessId }; ",
-        "$wv = @(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -like '*--webview-exe-name=netpulse-desktop.exe*' }); ",
-        "$ids = @($wv | ForEach-Object { $_.ProcessId }); ",
-        "@($wv | Where-Object { -not ($np -contains $_.ParentProcessId) -and -not ($ids -contains $_.ParentProcessId) } | ForEach-Object { $_.ProcessId }) -join ' '"
-    );
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", PS])
-        .creation_flags(0x0800_0000)
-        .output();
-    match output {
-        Ok(o) if o.status.success() => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let pids: Vec<&str> = stdout.split_whitespace().collect();
-            if !pids.is_empty() {
-                log_warn!(
-                    "sweeping {} orphaned webview root process(es) from a previous crash: {}",
-                    pids.len(),
-                    pids.join(",")
-                );
-                for pid in pids {
-                    if let Ok(id) = pid.parse::<u32>() {
-                        // Never touch our own process tree.
-                        if id != std::process::id() {
-                            let _ = std::process::Command::new("taskkill")
-                                .args(["/PID", &id.to_string(), "/F", "/T"])
-                                .creation_flags(0x0800_0000)
-                                .output();
-                        }
-                    }
-                }
-            }
-        }
-        Ok(_) => log_warn!("webview orphan sweep probe failed (non-zero exit)"),
-        Err(e) => log_warn!("webview orphan sweep unavailable: {e}"),
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn sweep_orphaned_webviews() {}
-
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         s.push_str(&format!("{b:02x}"));
     }
     s
-}
-
-/// Ask the OS for a free loopback port (bind to 127.0.0.1:0, read it, drop).
-fn reserve_ephemeral_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .map(|l| l.local_addr().map(|a| a.port()).unwrap_or(0))
-        .unwrap_or(0)
-}
-
-/// True when WE can still bind the port (a stolen reserved port would make
-/// the sidecar die with EADDRINUSE before printing anything useful).
-fn port_bindable(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 /// How long `bootstrap` waits for the sidecar to answer before handing the
@@ -668,42 +548,6 @@ pub fn allow_respawn(app: &AppHandle) {
         inner.shutting_down = false;
         inner.spawned_at = None;
     }
-}
-
-/// ---------------------------------------------------------------------------
-/// System tray
-/// ---------------------------------------------------------------------------
-pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open NetPulse", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
-
-    TrayIconBuilder::with_id("main")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .tooltip("NetPulse")
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.unminimize();
-                    let _ = win.set_focus();
-                }
-            }
-            "quit" => {
-                // Destroy windows BEFORE app.exit: with close-to-tray the main
-                // window is hidden rather than closed, and quitting through
-                // tao's destroy-during-teardown path has crashed with
-                // "cannot move state from Destroyed" (fatal under panic=abort).
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.destroy();
-                }
-                app.exit(0);
-            }
-            _ => {}
-        })
-        .build(app)?;
-    Ok(())
 }
 
 /// ---------------------------------------------------------------------------

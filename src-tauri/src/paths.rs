@@ -5,7 +5,7 @@
 //! shape of bug where the System Health page reports a path nothing writes to.
 //!
 //! The trap this module exists to prevent: the rotating diagnostic log lives
-//! under the app DATA dir (`<data>/logs`, created by `sidecar::init_logging`
+//! under the app DATA dir (`<data>/logs`, created by `logging::init_logging`
 //! before the Tauri app exists), NOT under Tauri's `app_log_dir()`, which
 //! resolves to LocalAppData on Windows while `app_data_dir()` resolves to
 //! AppData\Roaming. Every reader of the log goes through `log_dir` below.
@@ -18,7 +18,7 @@
 //!     CREATES the log directory, before any AppHandle exists — and Tauri's
 //!     resolver — the one everything else READS — point at different places,
 //!     and every consumer stays green while reading the wrong root.
-//!   - `LOG_SUBDIR` is also what `sidecar::init_logging` writes to, because it
+//!   - `LOG_SUBDIR` is also what `logging::init_logging` writes to, because it
 //!     calls `log_dir_in` rather than repeating `join("logs")`.
 
 use std::path::{Path, PathBuf};
@@ -89,7 +89,7 @@ pub fn require_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// `<data>/logs` for an already-resolved data dir.
 ///
-/// The single definition of that subdirectory: `sidecar::init_logging`, which
+/// The single definition of that subdirectory: `logging::init_logging`, which
 /// creates the directory the log is written into, calls this rather than
 /// repeating the name, so the writer and every reader cannot drift apart.
 pub fn log_dir_in(data_dir: &Path) -> PathBuf {
@@ -109,7 +109,7 @@ fn resolve_log_dir(data_dir: Option<PathBuf>) -> String {
     }
 }
 
-/// `<data>/logs` — where `sidecar::init_logging` actually writes netpulse.log.
+/// `<data>/logs` — where `logging::init_logging` actually writes netpulse.log.
 pub fn log_dir(app: &AppHandle) -> String {
     resolve_log_dir(data_dir_path(app))
 }
