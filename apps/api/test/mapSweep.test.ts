@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { waitForSignal } from './helpers/waitForSignal';
+
 import { clearProcessNameCache, processNameForPid } from '../src/util/processNames';
 import { MapService, cymruCountryOf } from '../src/services/mapService';
 import { RealtimeBus } from '../src/realtime/bus';
@@ -99,7 +101,7 @@ describe('MapService.startSweep', () => {
     const first = svc.startSweep(['cloudflare:speed', 'dns:cloudflare-1111']);
     expect(first.accepted).toBe(2);
     expect(() => svc.startSweep(null)).toThrow(/already running/);
-    await vi.waitFor(() => expect(svc.sweep(first.sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(first.sweepId)?.completed).toBe(true));
   });
 
   it('ranks reachable targets first and marks unreachable ones with a reason', async () => {
@@ -113,7 +115,7 @@ describe('MapService.startSweep', () => {
     const deps = fakeDeps(controller);
     const svc = new MapService(deps);
     const { sweepId } = svc.startSweep(['cloudflare:speed', 'dns:quad9-9999']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     const result = svc.sweep(sweepId)!;
     expect(result.completed).toBe(true);
     expect(result.rows.length).toBe(2);
@@ -130,7 +132,7 @@ describe('MapService.startSweep', () => {
     });
     const svc = new MapService(fakeDeps(controller));
     const { sweepId } = svc.startSweep(['dns:quad9-9999']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     const row = svc.sweep(sweepId)!.rows[0]!;
     expect(row.method).toBe('tcp');
     expect(row.status).toBe('excellent');
@@ -142,7 +144,7 @@ describe('MapService.startSweep', () => {
     });
     const svc = new MapService(fakeDeps(controller));
     const { sweepId } = svc.startSweep(['cloudflare:speed']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     const row = svc.sweep(sweepId)!.rows[0]!;
     expect(row.method).toBe('tcp');
     expect(row.latencyMs).toBeGreaterThan(0);
@@ -155,7 +157,7 @@ describe('MapService.startSweep', () => {
     });
     const svc = new MapService(fakeDeps(controller));
     const { sweepId } = svc.startSweep(['cloudflare:speed']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     const row = svc.sweep(sweepId)!.rows[0]!;
     expect(row.method).toBeNull();
     expect(row.latencyMs).toBeNull();
@@ -167,7 +169,7 @@ describe('MapService.startSweep', () => {
     const frames: string[] = [];
     svc['deps'].bus.subscribe('map', (m) => { if (m.type === 'map:sweep') frames.push('sweep'); });
     const { sweepId } = svc.startSweep(['cloudflare:speed', 'game:valorant:eu', 'game:cs2:global']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     // at least one frame per target + a terminal frame
     expect(frames.length).toBeGreaterThanOrEqual(3);
   });
@@ -181,7 +183,7 @@ describe('MapService.startSweep', () => {
     const controller = fakeController();
     const svc = new MapService(fakeDeps(controller));
     const { sweepId } = svc.startSweep(['dns:cloudflare-1111', 'cloudflare:speed']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     const rows = svc.sweep(sweepId)!.rows;
     expect(rows.length).toBe(2);
     const dnsRow = rows.find((r) => r.target.type === 'dns');
@@ -266,7 +268,7 @@ describe('sweep with a connected tunnel', () => {
     const deps = fakeDeps(controller);
     const svc = new MapService(deps);
     const { sweepId } = svc.startSweep(['cloudflare:speed']);
-    await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+    await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
     expect(svc.sweep(sweepId)!.rows[0]!.latencyMs).not.toBeNull();
   });
 });

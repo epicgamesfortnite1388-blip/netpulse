@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { waitForSignal } from './helpers/waitForSignal';
+
 /**
  * The TUN gateway state machine — one owner for every engine that can take the
  * OS default route. These tests pin the three rules the two former
@@ -174,7 +176,7 @@ describe('TunGatewayHandle', () => {
     expect(sweep).toHaveBeenCalledTimes(1);
 
     h.devices[0]!.fireClose(9);
-    await vi.waitFor(() => expect(h.devices).toHaveLength(2));
+    await waitForSignal(() => expect(h.devices).toHaveLength(2));
 
     expect(h.startGateway).toHaveBeenCalledTimes(2);
     expect(sweep).toHaveBeenCalledTimes(1);
@@ -418,7 +420,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
 
     first.fireClose(9);
     // The drop reaches the kill switch BEFORE anything is healed.
-    await vi.waitFor(() => expect(h.devices).toHaveLength(2));
+    await waitForSignal(() => expect(h.devices).toHaveLength(2));
 
     expect(dropped).toEqual(['TUN gateway exited unexpectedly (code 9)']);
     const mid = handle.status();
@@ -448,7 +450,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
     h.startGateway.mockImplementation(async () => ({ ok: false, error: 'TUN gateway did not become ready in 8000ms' }));
 
     h.devices[0]!.fireClose(9);
-    await vi.waitFor(() => expect(handle.status().tunError).toMatch(/automatic re-arm/));
+    await waitForSignal(() => expect(handle.status().tunError).toMatch(/automatic re-arm/));
 
     const status = handle.status();
     expect(status.tun).toBeNull(); // the drop stands
@@ -468,7 +470,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
     await handle.start();
 
     h.devices[0]!.fireClose(1);
-    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+    await waitForSignal(() => expect(handle.status().tun).toBe('active'));
     expect(h.devices).toHaveLength(2);
 
     // A flapping gateway gets its one attempt and no more.
@@ -494,12 +496,12 @@ describe('TunGatewayHandle self-healing watchdog', () => {
     await handle.start();
 
     h.devices[0]!.fireClose(1);
-    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+    await waitForSignal(() => expect(handle.status().tun).toBe('active'));
     h.devices[1]!.fireClose(1); // long enough by this policy
-    await vi.waitFor(() => expect(h.devices).toHaveLength(3));
+    await waitForSignal(() => expect(h.devices).toHaveLength(3));
 
     expect(h.startGateway).toHaveBeenCalledTimes(3);
-    await vi.waitFor(() => expect(handle.status().tun).toBe('active'));
+    await waitForSignal(() => expect(handle.status().tun).toBe('active'));
   });
 
   it('abandons the re-arm when the user stops the tunnel while the drop is being handled', async () => {
@@ -518,7 +520,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
     await handle.start();
 
     h.devices[0]!.fireClose(2);
-    await vi.waitFor(() => expect(releaseDrop).not.toBeNull());
+    await waitForSignal(() => expect(releaseDrop).not.toBeNull());
     handle.stop();
     releaseDrop!();
     await new Promise((r) => setTimeout(r, 20));
@@ -537,7 +539,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
     await handle.start();
 
     h.devices[0]!.fireClose(1);
-    await vi.waitFor(() => expect(handle.status().tunError).toMatch(/no relay proof within 60ms/));
+    await waitForSignal(() => expect(handle.status().tunError).toMatch(/no relay proof within 60ms/));
 
     const status = handle.status();
     expect(status.tun).toBeNull();
@@ -551,7 +553,7 @@ describe('TunGatewayHandle self-healing watchdog', () => {
 
 /** Wait until the watchdog has reported the healed capture. */
 async function verifyDone(events: TunGatewayEvent[]): Promise<void> {
-  await vi.waitFor(() => expect(events.at(-1)?.kind).toBe('recovered'));
+  await waitForSignal(() => expect(events.at(-1)?.kind).toBe('recovered'));
 }
 
 /**
@@ -560,6 +562,6 @@ async function verifyDone(events: TunGatewayEvent[]): Promise<void> {
  * asynchronous by design.
  */
 async function theDegradedEvent(events: TunGatewayEvent[]): Promise<TunGatewayEvent | undefined> {
-  await vi.waitFor(() => expect(events.at(-1)?.kind).toBe('degraded'));
+  await waitForSignal(() => expect(events.at(-1)?.kind).toBe('degraded'));
   return events.at(-1);
 }

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { waitForSignal } from './helpers/waitForSignal';
+
 import dnsPromises from 'node:dns/promises';
 
 import { resetGeoGuardForTests, setGeoOverridesForTest } from '../src/services/geoGuard';
@@ -85,7 +87,7 @@ function fakeDeps(controller: PlatformNetworkController): ConstructorParameters<
 
 async function sweepRow(svc: MapService, targetId: string) {
   const { sweepId } = svc.startSweep([targetId]);
-  await vi.waitFor(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
+  await waitForSignal(() => expect(svc.sweep(sweepId)?.completed).toBe(true));
   const row = svc.sweep(sweepId)!.rows.find((r) => r.target.id === targetId);
   expect(row, `sweep row for ${targetId}`).toBeDefined();
   return row!;

@@ -52,8 +52,20 @@ export function freePort(start) {
 /**
  * The webview's page target, or null. `tries` bounds the wait: the app is
  * launched asynchronously, so the endpoint answers before the page exists.
+ *
+ * The default is 60 polls at 500 ms — 30 s — and that is not slack, it is the
+ * app's own cold-start budget. `BOOTSTRAP_READY_TIMEOUT` in sidecar.rs is 20 s
+ * of sidecar bring-up BEFORE the webview bridge exists, and the very first
+ * launch additionally runs database migrations and integrity checks. The old
+ * default of 40 polls (20 s) therefore raced the product's own timeout: on a
+ * loaded machine `audit-contrast` failed with "the app never exposed a CDP
+ * page" while every assertion would have passed. `audit-ipc.mjs` had already
+ * overridden this to 60 for that reason; this makes the shared default match
+ * the bound the suite had already established as necessary, so a gate cannot
+ * fail for having used a tighter one. Same real signal, same hard failure if
+ * the app truly never comes up — only the deadline before declaring defeat.
  */
-export async function findCdpTarget(port, tries = 40) {
+export async function findCdpTarget(port, tries = 60) {
   for (let i = 0; i < tries; i++) {
     try {
       const targets = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());

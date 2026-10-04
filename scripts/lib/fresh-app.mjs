@@ -17,6 +17,15 @@
  *
  * The build command is the packaged one on purpose. `cargo build` alone yields a
  * dev-URL binary with no bundled assets, which is not what the gates need.
+ *
+ * The inputs include the WEB sources, not just the Rust ones. `tauri.conf.json`
+ * sets `beforeBuildCommand: npm run build -w @netpulse/web` and
+ * `frontendDist: ../apps/web/dist`, so the packaged binary embeds the built
+ * React app — half of what these gates measure. Walking only `src-tauri/` meant
+ * a frontend-only change never marked the binary stale, so contrast, layout and
+ * the IPC gate all graded a bundle built before the change: the same "green
+ * gate that graded the wrong binary" this module exists to prevent, on the side
+ * of the app the Rust walk could not see.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,6 +65,8 @@ export function newestBuildInput(root) {
     }
   };
   walk(path.join(root, 'src-tauri', 'src'));
+  // The bundled half of the app. Same rule, other side of the build.
+  walk(path.join(root, 'apps', 'web', 'src'));
   return newest;
 }
 

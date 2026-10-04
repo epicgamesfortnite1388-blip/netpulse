@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { waitForSignal } from './helpers/waitForSignal';
+
 /**
  * TUN mode against the machine, not the mock: the gateway is a real sing-box
  * process whose TUN device takes the DEFAULT ROUTE. Two contracts follow from
@@ -279,7 +281,7 @@ describe('TUN gateway relay verification', () => {
 
     // Then the watchdog does its one bounded re-arm — through this service's own
     // relay seam — and the capture is back, with the healing on the record.
-    await vi.waitFor(() => expect(svc.getStatus().tun).toBe('active'));
+    await waitForSignal(() => expect(svc.getStatus().tun).toBe('active'));
     expect(events.some((e) => e.startsWith('tunnel:tun_recovering'))).toBe(true);
     expect(events.some((e) => e.startsWith('tunnel:tun_recovered'))).toBe(true);
     expect(svc.getStatus().tunWatchdog).toMatchObject({ autoAttempts: 1, rearming: false, lastError: null });
