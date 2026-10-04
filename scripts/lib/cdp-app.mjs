@@ -50,11 +50,14 @@ export function freePort(start) {
 }
 
 /**
- * The webview's page target, or null. `tries` bounds the wait: the app is
- * launched asynchronously, so the endpoint answers before the page exists.
+ * How long to wait for the webview's page target after spawning the app:
+ * 60 polls at 500 ms = 30 s. One named value, because this bound was
+ * previously written twice — once here and once as a default parameter on
+ * `attachToApp` — and fixing only one of them left the gates that go through
+ * `attachToApp` (contrast, layout) still polling for the old, shorter budget.
  *
- * The default is 60 polls at 500 ms — 30 s — and that is not slack, it is the
- * app's own cold-start budget. `BOOTSTRAP_READY_TIMEOUT` in sidecar.rs is 20 s
+ * It is not slack, it is the app's own cold-start budget.
+ * `BOOTSTRAP_READY_TIMEOUT` in sidecar.rs is 20 s
  * of sidecar bring-up BEFORE the webview bridge exists, and the very first
  * launch additionally runs database migrations and integrity checks. The old
  * default of 40 polls (20 s) therefore raced the product's own timeout: on a
@@ -65,7 +68,9 @@ export function freePort(start) {
  * fail for having used a tighter one. Same real signal, same hard failure if
  * the app truly never comes up — only the deadline before declaring defeat.
  */
-export async function findCdpTarget(port, tries = 60) {
+export const CDP_PAGE_TRIES = 60;
+
+export async function findCdpTarget(port, tries = CDP_PAGE_TRIES) {
   for (let i = 0; i < tries; i++) {
     try {
       const targets = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
@@ -118,7 +123,7 @@ export async function waitForTauriBridge(evaluate, timeoutMs = 15_000) {
  *   app never exposes a page; it is expected to report and exit
  * @returns {Promise<object>} session handle
  */
-export async function attachToApp({ exe, cwd, port, reuse = false, tries = 40, beforeSpawn, onNoTarget }) {
+export async function attachToApp({ exe, cwd, port, reuse = false, tries = CDP_PAGE_TRIES, beforeSpawn, onNoTarget }) {
   let child = null;
   let target = reuse ? await findCdpTarget(port, 2) : null;
 

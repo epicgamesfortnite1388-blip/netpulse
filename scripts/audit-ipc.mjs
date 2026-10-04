@@ -146,7 +146,9 @@ async function main() {
     cwd: root,
     port,
     reuse,
-    tries: 60,
+    // No `tries` here on purpose: the shared CDP_PAGE_TRIES default is the one
+    // bound every app-launching gate should use, and overriding it per caller
+    // is how contrast and layout ended up on a tighter budget than this file.
     onNoTarget: (child) => {
       child.kill();
       die('the app never exposed a CDP page (another instance holding the single-instance lock?)');
