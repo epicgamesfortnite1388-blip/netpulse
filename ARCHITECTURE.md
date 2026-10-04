@@ -70,18 +70,26 @@ context `main.rs` does not have.
 | `window.rs` | Main-window presentation only: restore, size to the monitor's **work area** in logical pixels (DPI-scaled), centre, focus, and the bounded post-startup re-assert | `logging`, `tauri::Manager` |
 | `paths.rs` | The single resolver for the app data dir and the rotating log dir, plus the `data_paths` command | `tauri::PathResolver` |
 | `safe_mode.rs` | The `--safe-mode` flag end to end: parsed once from `argv`, held in managed state, announced to the sidecar | `logging` |
-| `status.rs` | The runtime-status snapshot the System Health page polls — an aggregator, owning nothing itself | `sidecar`, `paths`, `safe_mode`, `logging` |
+| `status.rs` | The runtime-status snapshot the System Health page polls — an aggregator, owning nothing itself, and forbidden from inventing good news | `sidecar`, `paths`, `safe_mode`, `logging` |
 | `diagnostics.rs` | Redacted log tail and the exported JSON diagnostic report (the second secret filter) | `paths`, `status`, `logging` |
 | `os_open.rs` | The only two places the webview can make the OS act: reveal a path inside the app's own directories, open an https URL — both allow-listed, both without a shell in the chain | `tauri::Url`, `logging` |
 | `main.rs` | Process assembly and the IPC surface: the bootstrap handshake, the cross-module repair/reset commands, and the `setup` / window-event / run-loop wiring | all of the above |
 
-Four rules hold this together:
+Five rules hold this together:
 
 - **Window presentation is one decision made in one place.** Sizing, centring and restoring all
   live in `window.rs` and are triggered from `RunEvent::Ready` — not in `setup` (Windows has not
   finished showing the window, and minimises it again afterwards) and not in `tauri.conf.json`
   (a fixed pixel size is wrong on every display but the one it was written on). If you are
   changing how large or where the window appears, `window.rs` is the only file to edit.
+- **A status page that guesses is worse than one that says nothing.** This page exists because
+  something is already wrong, so its failure mode is a snapshot that reassures: a stopped sidecar
+  publishing its old port (the `Child` handle outlives the process, so the port is right there in the
+  state), or a lock we could not read reporting `0` restarts — which is a real claim, "this sidecar
+  has never crashed", and the most comforting thing the struct could say. So `status::compose` takes
+  what was observed and decides what may be **published**: a port only while something is listening,
+  and an unreadable state as absent fields, never as zeros. Known zero and unknown are different
+  answers and the wire format says which is which (`sidecar_restarts` is `number | null`).
 - **The log macros are the one shared channel.** `log_*!` all funnel through
   `logging::write_log`, so a module can log without knowing where logs are stored or how. Use
   them rather than `println!`/`eprintln!`. Not every module logs: `paths.rs`, `ports.rs`,

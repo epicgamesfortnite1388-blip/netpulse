@@ -35,7 +35,8 @@ export interface HealthReport {
 
 export interface RuntimeStatus {
   sidecar_running: boolean;
-  sidecar_restarts: number;
+  /** Respawns this session, or null when the backend could not read it. */
+  sidecar_restarts: number | null;
   /** Loopback port the sidecar listens on (null = not running). */
   sidecar_port: number | null;
   /** Why the sidecar last restarted (decoded exit code + stderr tail). */

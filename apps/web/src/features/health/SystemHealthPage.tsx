@@ -394,7 +394,7 @@ export default function SystemHealthPage() {
               'Backend',
               runtime
                 ? runtime.sidecar_running
-                  ? `running${runtime.sidecar_port ? ` · 127.0.0.1:${runtime.sidecar_port}` : ''} (restarts: ${runtime.sidecar_restarts})`
+                  ? `running${runtime.sidecar_port ? ` · 127.0.0.1:${runtime.sidecar_port}` : ''} (restarts: ${runtime.sidecar_restarts ?? '?'})`
                   : 'not running'
                 : '…',
             ],

@@ -176,6 +176,14 @@ pub const LOG_CAP_BYTES: u64 = 512 * 1024;
 // binary. Anything that needs its own directory — rotation, the cap
 // boundary, a missing directory — drives `append_line` / `rotate_if_over_cap`
 // with an explicit path instead.
+//
+// Because that sink is process-wide, EVERY other test in this binary writes
+// to the same file, in parallel, while these tests hold the window. So none
+// of them counts lines: each one keys off a marker unique to its own writes
+// and ignores anything else. That does not weaken them. A damaged line can
+// no longer match its own marker and pattern, so an interleaved write still
+// drops the count below what it should be — which is the failure being
+// looked for.
 
 #[cfg(test)]
 mod tests {
@@ -265,14 +273,12 @@ mod tests {
             log_warn!("boot sequence marker two");
             log_error!("boot sequence marker three");
             let added = appended_since(path, &before);
-
-            assert!(
-                added.ends_with('\n'),
-                "the last write lost its newline: {added:?}"
-            );
-            let lines: Vec<&str> = added.lines().collect();
+            let mine: Vec<&str> = added
+                .lines()
+                .filter(|l| l.contains("boot sequence marker"))
+                .collect();
             assert_eq!(
-                lines.len(),
+                mine.len(),
                 3,
                 "one write must produce exactly one line: {added:?}"
             );
@@ -281,7 +287,7 @@ mod tests {
                 ("warn", "boot sequence marker two"),
                 ("error", "boot sequence marker three"),
             ];
-            for (line, (want_level, want_msg)) in lines.iter().zip(expected) {
+            for (line, (want_level, want_msg)) in mine.iter().zip(expected) {
                 let (level, msg) = split_line(line);
                 assert_eq!(level, want_level, "level not carried through: {line:?}");
                 assert_eq!(msg, want_msg, "message not written verbatim: {line:?}");
@@ -299,11 +305,19 @@ mod tests {
             let before = read(path);
             log_info!("refreshing session {jwt}");
             let added = appended_since(path, &before);
-            let lines: Vec<&str> = added.lines().collect();
-            assert_eq!(lines.len(), 1, "the JWT must land on one line: {added:?}");
-            let (_, msg) = split_line(lines[0]);
-            assert!(
-                msg.contains(jwt),
+            // Count the lines that CARRY the JWT. Split it in two and neither
+            // half matches, so this fails exactly when the credential would
+            // have reached the filter unrecognisable.
+            let carriers: Vec<&str> = added.lines().filter(|l| l.contains(jwt)).collect();
+            assert_eq!(
+                carriers.len(),
+                1,
+                "the JWT must appear whole on exactly one line: {added:?}"
+            );
+            let (_, msg) = split_line(carriers[0]);
+            assert_eq!(
+                msg,
+                format!("refreshing session {jwt}"),
                 "the JWT was split or mangled, so `diagnostics` cannot redact it: {msg:?}"
             );
         });
@@ -320,10 +334,12 @@ mod tests {
             std::thread::scope(|scope| {
                 for t in 0..CONC_THREADS {
                     scope.spawn(move || {
-                        // A distinct filler character per writer, so any
-                        // mixing of two writers inside one line is visible.
+                        // A distinct filler character AND a distinct writer id
+                        // per thread, so any mixing of two writers inside one
+                        // line is visible two ways.
                         let marker = char::from(b'A' + t as u8);
-                        let payload = marker.to_string().repeat(CONC_PAD);
+                        let payload =
+                            format!("netpulse-conc-writer-{t} {}", marker.to_string().repeat(CONC_PAD));
                         for _ in 0..CONC_PER_THREAD {
                             log_info!("{payload}");
                         }
@@ -331,28 +347,40 @@ mod tests {
                 }
             });
             let added = appended_since(path, &before);
-            assert!(
-                added.ends_with('\n'),
-                "a write lost its newline: a line was cut short"
-            );
-
-            let lines: Vec<&str> = added.lines().collect();
+            let mine: Vec<&str> = added
+                .lines()
+                .filter(|l| l.contains("netpulse-conc-writer-"))
+                .collect();
             assert_eq!(
-                lines.len(),
+                mine.len(),
                 CONC_THREADS * CONC_PER_THREAD,
                 "lines were merged or dropped -- a write was not atomic"
             );
-            for line in &lines {
+            for line in &mine {
                 let (_, msg) = split_line(line);
+                let (writer, body) = msg
+                    .split_once(' ')
+                    .unwrap_or_else(|| panic!("a write was cut short: {line:?}"));
                 assert_eq!(
-                    msg.len(),
+                    body.len(),
                     CONC_PAD,
                     "two writers shared one line: {line:?}"
                 );
-                let first = msg.as_bytes()[0];
+                let first = body.as_bytes()[0];
                 assert!(
-                    msg.bytes().all(|b| b == first),
+                    body.bytes().all(|b| b == first),
                     "two writers' payloads were mixed into one line: {line:?}"
+                );
+                // And the filler must be THIS writer's, not a neighbour's.
+                let id: usize = writer
+                    .rsplit('-')
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or_else(|| panic!("writer id was mangled: {line:?}"));
+                assert_eq!(
+                    first,
+                    b'A' + id as u8,
+                    "the payload belongs to a different writer than the header says: {line:?}"
                 );
             }
         });
@@ -366,9 +394,12 @@ mod tests {
                 log_info!("rapid write {i} with a little padding to widen the window");
             }
             let added = appended_since(path, &before);
-            let lines: Vec<&str> = added.lines().collect();
-            assert_eq!(lines.len(), 500, "a rapid write was not atomic");
-            for (i, line) in lines.iter().enumerate() {
+            let mine: Vec<&str> = added
+                .lines()
+                .filter(|l| l.contains("rapid write "))
+                .collect();
+            assert_eq!(mine.len(), 500, "a rapid write was not atomic");
+            for (i, line) in mine.iter().enumerate() {
                 let (_, msg) = split_line(line);
                 assert_eq!(msg, format!("rapid write {i} with a little padding to widen the window"));
             }
@@ -546,15 +577,14 @@ mod tests {
                 added.contains("netpulse-panic-canary"),
                 "the panic message was lost: {added:?}"
             );
-            assert!(
-                added.ends_with('\n'),
-                "the panic line was not newline-terminated: {added:?}"
-            );
-            let lines: Vec<&str> = added.lines().collect();
-            let (_, msg) = split_line(lines[0]);
+            let line = added
+                .lines()
+                .find(|l| l.contains("PANIC"))
+                .unwrap_or_else(|| panic!("the panic hook did not reach the log writer: {added:?}"));
+            let (_, msg) = split_line(line);
             assert!(
                 msg.starts_with("PANIC:") && msg.contains("netpulse-panic-canary"),
-                "the panic must arrive as ONE whole line: {msg:?}"
+                "the panic must arrive as ONE whole line, not split across two: {msg:?}"
             );
         });
     }

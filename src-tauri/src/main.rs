@@ -250,7 +250,12 @@ fn main() {
             // Safe Mode: `--safe-mode` on the command line launches with the
             // network stack disabled (null controller) so a wedged networking
             // config cannot stop the user from reaching Settings.
-            safe_mode::announce_to_sidecar();
+            // Safe Mode is parsed ONCE, into managed state, before any window
+            // exists. Announce the value that was parsed rather than reading
+            // `argv` a second time — the backend acts on this one, so it has
+            // to be the same boolean everything else reports.
+            let safe_mode_on = handle.state::<safe_mode::SafeModeState>().active();
+            safe_mode::announce_to_sidecar(safe_mode_on);
 
             // GUI-first policy: the window is already being created by the
             // config below; nothing in this setup hook is allowed to take it
