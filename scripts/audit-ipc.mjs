@@ -213,6 +213,24 @@ async function main() {
   await send('Runtime.enable');
   await send('Log.enable');
 
+  // The CDP page target exists BEFORE Tauri injects its IPC bridge into it, so
+  // calling window.__TAURI__ the moment we attach is a race. It fails as
+  // "Cannot read properties of undefined (reading 'core')" whenever the
+  // webview wins the race, which made this gate intermittently unrunnable.
+  // Wait for the bridge, bounded, and say so plainly if it never appears.
+  {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const kind = await evaluate('typeof window.__TAURI__?.core?.invoke');
+      if (kind === 'function') break;
+      if (Date.now() > deadline) {
+        child?.kill();
+        die('the Tauri IPC bridge never appeared in the webview (window.__TAURI__.core.invoke)');
+      }
+      await sleep(100);
+    }
+  }
+
   const invoke = (cmd, args) =>
     evaluate(`window.__TAURI__.core.invoke(${JSON.stringify(cmd)}, ${JSON.stringify(args)})
       .then(v => ({ ok: true, value: v }), e => ({ ok: false, err: String(e) }))`);
