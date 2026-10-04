@@ -75,7 +75,7 @@ context `main.rs` does not have.
 | `os_open.rs` | The only two places the webview can make the OS act: reveal a path inside the app's own directories, open an https URL — both allow-listed, both without a shell in the chain | `tauri::Url`, `logging` |
 | `main.rs` | Process assembly and the IPC surface: the bootstrap handshake, the cross-module repair/reset commands, and the `setup` / window-event / run-loop wiring | all of the above |
 
-Three rules hold this together:
+Four rules hold this together:
 
 - **Window presentation is one decision made in one place.** Sizing, centring and restoring all
   live in `window.rs` and are triggered from `RunEvent::Ready` — not in `setup` (Windows has not
@@ -89,6 +89,15 @@ Three rules hold this together:
   report. `sidecar.rs` calls `logging` but never owns the writer — it was once the largest file in
   the crate precisely because it held the writer, the watchdog, the port reservation, the webview
   reaper and the tray, and changing the log format meant reading watchdog code.
+- **A log line is the unit of secret redaction.** `diagnostics` drops a line carrying a keyword or a
+  JWT and returns everything else byte-for-byte, because a partial redaction leaks whatever it kept.
+  That only works if a line on disk is a whole line, so `logging::write_log` formats into one buffer
+  and appends it under one lock, rotation moves the whole file rather than truncating it, and the
+  panic hook flattens its multi-line payload. Formatting straight into the file used to emit the
+  timestamp, sequence number, level and message as separate writes, and two threads could land
+  between them — producing lines like `1791080006 1  [info] [] 1791080006info …`, which would have
+  split a bearer token across a boundary into two lines no keyword or JWT rule matches. If you add
+  a second writer, or change how a line is built, `logging::tests` is what has to stay green.
 - **One resolver per directory, one owner per fact.** The data dir and the log dir come from
   `paths.rs` and nothing else — the `setup` hook, the `data_paths` command and `reset_app_state`
   each used to derive them independently, while the rotating log deliberately lives under the app
