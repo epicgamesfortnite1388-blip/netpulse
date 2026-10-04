@@ -14,36 +14,165 @@
  * spawn error was dropped, so even the one person who hit it saw no cause. The
  * first developer to edit Rust on a clean checkout would have hit it.
  *
- * How it is fixed follows `scripts/prepare-desktop.mjs`, which already solved
- * the same problem: run npm/npx's own CLI JavaScript with the current Node
- * executable. No shell is involved, so there is no quoting hazard and no
- * DEP0190 exposure — deliberately better than the `shell: true` workaround
- * that would otherwise be the one-character fix.
+ * How it is fixed follows `scripts/prepare-desktop.mjs`: run npm/npx's own CLI
+ * JavaScript with the current Node executable. No shell is involved, so there
+ * is no quoting hazard and no DEP0190 exposure — deliberately better than the
+ * `shell: true` workaround that would otherwise be the one-character fix.
+ *
+ * Finding that JavaScript is the hard part, because "next to node" is only true
+ * of a stock install. On nvm, Volta or nvm-windows, `node` may be reached
+ * through a symlink or a wrapper, and `process.execPath` is then not the real
+ * installation — so the sibling lookup finds nothing and a helper that gives up
+ * here reintroduces the exact ENOENT it exists to remove. The strategies below
+ * are tried in order of how much they can be trusted, and each reports itself
+ * via `how` so a failure says which layout it lost to.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/** npm ships one CLI script per tool, all in the same bin directory. */
+const CLI_FILES = { npm: 'npm-cli.js', npx: 'npx-cli.js' };
+
+/** First path that exists as a regular file, or null. */
+function firstExistingFile(candidates) {
+  for (const p of candidates) {
+    try {
+      if (fs.statSync(p).isFile()) return p;
+    } catch {
+      /* a candidate that is not there is simply not the answer */
+    }
+  }
+  return null;
+}
+
+/** npm's CLI directory below an install root, in both common layouts. */
+function cliCandidatesUnder(root, tool) {
+  return [
+    path.join(root, 'node_modules', 'npm', 'bin', CLI_FILES[tool]),
+    // nix/posix installs keep the library one level up from bin/.
+    path.join(root, 'lib', 'node_modules', 'npm', 'bin', CLI_FILES[tool]),
+  ];
+}
+
 /**
- * Rewrite an npm-managed command to `[node, <its cli js>, ...args]`.
+ * Strategy 1 — beside the running node, following it through symlinks.
  *
- * On POSIX `npm`/`npx` are ordinary executables and are returned untouched.
- * A toolchain installed outside the Node directory (nvm, Volta, a vendored
- * node) has no such sibling path, so it is left alone rather than rewritten to
- * something that does not exist.
+ * Windows-only (resolveCli returns early elsewhere), and that matters: on
+ * Windows `process.execPath` is the path the process was launched with, so on
+ * nvm-windows — where `node.exe` is a symlink into the active version
+ * directory — it names the shim, not the installation. `realpathSync` is what
+ * turns it back into the directory that actually contains `node_modules/npm`.
+ * Both are searched, because a toolchain may legitimately have the library
+ * beside the shim and not beside the target.
  */
-function resolveCli(cmd) {
-  if (process.platform !== 'win32') return { cmd, prefixArgs: [] };
-  if (cmd !== 'npm' && cmd !== 'npx') return { cmd, prefixArgs: [] };
-  const cli = path.join(
-    path.dirname(process.execPath),
-    'node_modules',
-    'npm',
-    'bin',
-    cmd === 'npm' ? 'npm-cli.js' : 'npx-cli.js',
-  );
-  if (!fs.existsSync(cli)) return { cmd, prefixArgs: [] };
-  return { cmd: process.execPath, prefixArgs: [cli] };
+function fromNodeSibling(tool) {
+  const dirs = [];
+  for (const nodePath of [process.execPath, safeRealpath(process.execPath)]) {
+    if (!nodePath) continue;
+    const dir = path.dirname(nodePath);
+    if (!dirs.includes(dir)) dirs.push(dir);
+    const up = path.dirname(dir);
+    if (!dirs.includes(up)) dirs.push(up);
+  }
+  const hit = firstExistingFile(dirs.flatMap((d) => cliCandidatesUnder(d, tool)));
+  return hit && { cmd: process.execPath, prefixArgs: [hit], how: 'node-sibling' };
+}
+
+/** realpathSync, or null — an unreadable or missing path is not a hard error. */
+function safeRealpath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strategy 2 — npm's own environment variable.
+ *
+ * When the gates are reached through `npm run …`, npm exports `npm_execpath` as
+ * the absolute path of npm-cli.js. That is authoritative and needs no guessing,
+ * and because npx-cli.js is a sibling it serves both tools.
+ */
+function fromNpmExecPath(tool) {
+  const execPath = process.env.npm_execpath;
+  if (!execPath) return null;
+  const binDir = path.dirname(execPath);
+  const hit = firstExistingFile([path.join(binDir, CLI_FILES[tool])]);
+  return hit && { cmd: process.execPath, prefixArgs: [hit], how: 'npm_execpath' };
+}
+
+/**
+ * Strategy 3 — NODE_PATH, Node's documented extra module search path.
+ * Only populated when a developer or CI has set it, so it is a bonus source.
+ */
+function fromNodePath(tool) {
+  const raw = process.env.NODE_PATH;
+  if (!raw) return null;
+  const entries = raw.split(path.delimiter).filter(Boolean);
+  const hit = firstExistingFile(entries.flatMap((e) => cliCandidatesUnder(e, tool)));
+  return hit && { cmd: process.execPath, prefixArgs: [hit], how: 'NODE_PATH' };
+}
+
+/**
+ * Strategy 4 — read the PATH shim.
+ *
+ * `npm.cmd` cannot be executed by Node, but it is a text file and it names the
+ * JavaScript it wraps, as a literal path relative to `%~dp0` (batch's "directory
+ * of this script"). Substituting the directory the shim was found in yields a
+ * concrete path, which is then verified before use. This covers a toolchain
+ * whose node is a shim and whose npm lives somewhere neither `process.execPath`
+ * nor the environment names.
+ *
+ * A shim that does not name a literal path — Volta's executables are wrappers
+ * rather than batch files — simply yields nothing here, and the next strategy
+ * runs. Nothing is guessed: only a path that exists as a file is ever used.
+ */
+function fromPathShim(tool) {
+  if (process.platform !== 'win32') return null;
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const binDirs = [];
+  for (const dir of dirs) {
+    for (const ext of [...exts, '']) {
+      for (const shimTool of ['npm', 'npx']) {
+        let text;
+        try {
+          text = fs.readFileSync(path.join(dir, `${shimTool}${ext}`), 'utf8');
+        } catch {
+          continue;
+        }
+        // npm writes: SET "NPM_CLI_JS=%~dp0\node_modules\npm\bin\npm-cli.js"
+        for (const m of text.matchAll(/([^\r\n"']*npm-cli\.js)/gi)) {
+          const resolved = path.resolve(dir, m[1].replace(/%~?dp0%?/gi, dir));
+          if (firstExistingFile([resolved])) binDirs.push(path.dirname(resolved));
+        }
+      }
+    }
+  }
+  const hit = firstExistingFile(binDirs.map((d) => path.join(d, CLI_FILES[tool])));
+  return hit && { cmd: process.execPath, prefixArgs: [hit], how: 'PATH-shim' };
+}
+
+/**
+ * How `cmd` should be executed. Returns the bare command unchanged unless we
+ * positively identified the CLI JavaScript, in which case it is run with the
+ * current node — never through a shell.
+ *
+ * `how` names the strategy that answered, and is `undefined` when none did.
+ */
+export function resolveCli(cmd) {
+  if (process.platform !== 'win32') return { cmd, prefixArgs: [], how: 'posix' };
+  if (cmd !== 'npm' && cmd !== 'npx') return { cmd, prefixArgs: [], how: 'not-npm' };
+  for (const strategy of [fromNpmExecPath, fromNodeSibling, fromNodePath, fromPathShim]) {
+    const found = strategy(cmd);
+    if (found) return found;
+  }
+  // Last resort: hand the bare name to the OS. This is the ENOENT case, but it
+  // is now reached only after four real attempts, and a spawn failure will be
+  // reported by name instead of vanishing into `exit null`.
+  return { cmd, prefixArgs: [], how: undefined };
 }
 
 /**
