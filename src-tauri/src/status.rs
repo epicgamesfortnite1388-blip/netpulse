@@ -39,7 +39,9 @@ pub struct RuntimeStatus {
     pub window_visible: bool,
     pub data_dir: String,
     pub log_dir: String,
-    pub log_file_bytes: u64,
+    /// Size of the rotating log, or `None` when it is there but could not be
+    /// read. Never `0` standing in for "we could not open it".
+    pub log_file_bytes: Option<u64>,
     pub log_rotation_cap_bytes: u64,
 }
 
@@ -111,7 +113,7 @@ fn compose(
     window_visible: bool,
     data_dir: String,
     log_dir: String,
-    log_file_bytes: u64,
+    log_file_bytes: Option<u64>,
 ) -> RuntimeStatus {
     let SidecarFacts {
         running,
@@ -187,7 +189,7 @@ mod tests {
             true,
             "C:\\data".into(),
             "C:\\data\\logs".into(),
-            4096,
+            Some(4096),
         )
     }
 
@@ -282,17 +284,32 @@ mod tests {
 
     #[test]
     fn an_unknown_restart_count_serializes_as_null_never_as_zero() {
-        // Pins the wire format. The TypeScript interface types this as
+        // Pins the wire format. The TypeScript interface types these as
         // `number | null`, so a silent change to `0` would typecheck on the
-        // Rust side and lie in the UI on the other.
-        let unknown = serde_json::to_value(snapshot(None)).expect("serialize");
+        // Rust side and lie in the UI on the other. The log size is passed
+        // explicitly rather than through `snapshot`, because `snapshot(None)`
+        // says the SIDECAR facts are unknown, not that the log is unreadable.
+        let unknown = serde_json::to_value(compose(
+            None,
+            false,
+            true,
+            "C:\\data".into(),
+            "C:\\data\\logs".into(),
+            None,
+        ))
+        .expect("serialize");
         assert!(unknown["sidecar_restarts"].is_null());
         assert_eq!(unknown["sidecar_running"], serde_json::json!(false));
+        assert!(
+            unknown["log_file_bytes"].is_null(),
+            "an unreadable log must serialize as null, not as 0 bytes"
+        );
 
         let healthy = serde_json::to_value(snapshot(Some(facts(true, Some(0), Some(47_615)))))
             .expect("serialize");
         assert_eq!(healthy["sidecar_restarts"], serde_json::json!(0));
         assert_eq!(healthy["sidecar_port"], serde_json::json!(47_615));
+        assert_eq!(healthy["log_file_bytes"], serde_json::json!(4096));
     }
 
     #[test]
@@ -310,13 +327,13 @@ mod tests {
             false,
             "C:\\Users\\x\\NetPulse".into(),
             "C:\\Users\\x\\NetPulse\\logs".into(),
-            12_288,
+            Some(12_288),
         );
         assert!(s.safe_mode, "Safe Mode must be reported as ACTIVE");
         assert!(!s.window_visible);
         assert_eq!(s.data_dir, "C:\\Users\\x\\NetPulse");
         assert_eq!(s.log_dir, "C:\\Users\\x\\NetPulse\\logs");
-        assert_eq!(s.log_file_bytes, 12_288);
+        assert_eq!(s.log_file_bytes, Some(12_288));
     }
 
     #[test]
@@ -330,9 +347,36 @@ mod tests {
             false,
             "C:\\data".into(),
             "C:\\data\\logs".into(),
-            0,
+            Some(0),
         );
         assert!(!s.window_visible);
+    }
+
+    #[test]
+    fn an_unreadable_log_is_carried_through_as_unavailable_not_as_zero() {
+        // `paths::file_size` distinguishes a fresh install (Some(0), a real
+        // measurement) from a log it could not stat (None). The page must be
+        // able to tell those apart, or "we could not read it" is displayed as
+        // the most reassuring thing the row can say.
+        let unreadable = compose(
+            Some(facts(true, Some(0), Some(47_615))),
+            false,
+            true,
+            "C:\\data".into(),
+            "C:\\data\\logs".into(),
+            None,
+        );
+        assert_eq!(unreadable.log_file_bytes, None);
+
+        let fresh_install = compose(
+            Some(facts(true, Some(0), Some(47_615))),
+            false,
+            true,
+            "C:\\data".into(),
+            "C:\\data\\logs".into(),
+            Some(0),
+        );
+        assert_eq!(fresh_install.log_file_bytes, Some(0));
     }
 
     #[test]

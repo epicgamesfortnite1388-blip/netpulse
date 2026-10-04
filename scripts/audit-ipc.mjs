@@ -190,9 +190,22 @@ async function main() {
     sidecarPort = rs.value?.sidecar_port ?? null;
     check('runtime_status.log_dir matches data_paths.log_dir',
       rs.ok && rs.value.log_dir === dp.value.log_dir);
-    check('runtime_status.log_file_bytes was measured from a file that exists',
-      rs.ok && rs.value.log_file_bytes > 0 && rs.value.log_file_bytes <= fs.statSync(logFile).size,
-      `reported ${rs.value?.log_file_bytes}`);
+    // The log file was written to by this very run, so here it MUST be
+    // readable: the honest answer is a number, and anything else means the
+    // field stopped reporting or became `null`. In particular 0 must fail --
+    // that is what an unreadable log used to report, and on the System Health
+    // page it is the most reassuring thing the row can say. The `undefined`
+    // case is named explicitly so "the field vanished" cannot pass silently.
+    {
+      const lfb = rs.value?.log_file_bytes;
+      const realSize = fs.statSync(logFile).size;
+      const why = lfb === undefined ? 'field missing from the snapshot entirely'
+        : lfb === null ? `reported null (unavailable) although the file on disk is ${realSize} bytes`
+        : lfb === 0 ? 'reported 0 bytes although the file on disk is not empty'
+        : `reported ${lfb}; the file on disk is ${realSize} bytes`;
+      check('runtime_status.log_file_bytes was measured from a file that exists',
+        rs.ok && typeof lfb === 'number' && lfb > 0 && lfb <= realSize, why);
+    }
     check('runtime_status reports the sidecar running and the window visible',
       rs.ok && rs.value.sidecar_running === true && rs.value.window_visible === true,
       `sidecar port=${sidecarPort} safe_mode=${rs.value?.safe_mode}`);

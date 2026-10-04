@@ -47,7 +47,8 @@ export interface RuntimeStatus {
   window_visible: boolean;
   data_dir: string;
   log_dir: string;
-  log_file_bytes: number;
+  /** Bytes in the rotating log, or null when it exists but could not be read. */
+  log_file_bytes: number | null;
   log_rotation_cap_bytes: number;
 }
 

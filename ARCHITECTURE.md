@@ -90,6 +90,13 @@ Five rules hold this together:
   what was observed and decides what may be **published**: a port only while something is listening,
   and an unreadable state as absent fields, never as zeros. Known zero and unknown are different
   answers and the wire format says which is which (`sidecar_restarts` is `number | null`).
+  The same rule covers `log_file_bytes`, and there the two zero cases are genuinely different: a
+  log file that does not exist yet is a real measurement of `0` (fresh install, nothing has run),
+  while a log file that is present but could not be stat'd — permissions, a lock — is `null`, i.e.
+  "unavailable", never `0`. `paths::file_size` is where that decision is made, and the System
+  Health page renders the `null` as `unavailable` rather than printing a number it did not
+  measure. Reporting it as zero would have been the same defect a third time: "we could not read
+  your log" displayed as "your log is empty".
 - **The log macros are the one shared channel.** `log_*!` all funnel through
   `logging::write_log`, so a module can log without knowing where logs are stored or how. Use
   them rather than `println!`/`eprintln!`. Not every module logs: `paths.rs`, `ports.rs`,

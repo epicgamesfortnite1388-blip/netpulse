@@ -124,13 +124,37 @@ pub fn log_file(app: &AppHandle) -> PathBuf {
     log_file_in(Path::new(&log_dir(app)))
 }
 
-/// Size of a log file, 0 when it does not exist yet.
-pub fn file_size(path: &Path) -> u64 {
-    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+/// Size of a log file.
+///
+/// Three cases, and the caller has to be able to tell them apart:
+///   - `Some(n)` — the file is there and this is how big it is.
+///   - `Some(0)` — there is no file yet. On a fresh install that is a real
+///     measurement, not a failure: nothing has been logged because nothing
+///     has run.
+///   - `None`    — there IS a file and we could not measure it. A permissions
+///     problem, a lock, a path we cannot stat. This is emphatically not zero:
+///     reporting it as zero tells the user their log is empty when the truth
+///     is that we could not read it, which is the most reassuring possible
+///     reading of the one field on the System Health page that exists to say
+///     what is wrong.
+pub fn file_size(path: &Path) -> Option<u64> {
+    size_from_metadata(std::fs::metadata(path))
 }
 
-/// Current size of the rotating log, 0 when it does not exist yet.
-pub fn log_file_bytes(app: &AppHandle) -> u64 {
+/// Classify a `metadata` outcome, so the three cases above are decided in
+/// exactly one place. Split out because only this process can provoke a
+/// genuine "present but unreadable", so the branch is pinned directly rather
+/// than through the filesystem.
+fn size_from_metadata(res: std::io::Result<std::fs::Metadata>) -> Option<u64> {
+    match res {
+        Ok(m) => Some(m.len()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(0),
+        Err(_) => None,
+    }
+}
+
+/// Current size of the rotating log. See `file_size` for what `None` means.
+pub fn log_file_bytes(app: &AppHandle) -> Option<u64> {
     file_size(&log_file(app))
 }
 
@@ -336,7 +360,12 @@ pub(crate) mod tests {
         let base = scratch("absent");
         let missing = log_file_in(&log_dir_in(&base));
         assert!(!missing.exists());
-        assert_eq!(file_size(&missing), 0, "a missing log must read as 0 bytes, not panic");
+        assert_eq!(
+            file_size(&missing),
+            Some(0),
+            "a missing log is genuinely zero bytes, and must stay distinguishable \
+             from a log we could not read"
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -348,7 +377,7 @@ pub(crate) mod tests {
         let file = log_file_in(&log_dir);
         let body = "boot line one\nboot line two\n";
         std::fs::write(&file, body).expect("write log");
-        assert_eq!(file_size(&file), body.len() as u64);
+        assert_eq!(file_size(&file), Some(body.len() as u64));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -360,7 +389,42 @@ pub(crate) mod tests {
         let log_dir = log_dir_in(&base.join("app.netpulse.desktop"));
         assert!(!log_dir.exists(), "precondition: nothing created yet");
         assert!(log_dir.ends_with("logs"));
-        assert_eq!(file_size(&log_file_in(&log_dir)), 0);
+        assert_eq!(file_size(&log_file_in(&log_dir)), Some(0));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_log_that_cannot_be_read_is_not_reported_as_zero_bytes() {
+        // The case the page would otherwise render as "0 bytes", which on the
+        // System Health page reads as "everything is fine". Two different
+        // ways to be unable to read a file that is there.
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(size_from_metadata(Err(denied)), None);
+        // Raw 32 is ERROR_SHARING_VIOLATION on Windows: the sidecar's log is
+        // there, we simply cannot stat it right now. Any non-NotFound error
+        // means the same thing, whatever the platform calls it.
+        let locked = std::io::Error::from_raw_os_error(32);
+        assert_eq!(size_from_metadata(Err(locked)), None);
+    }
+
+    #[test]
+    fn only_a_genuinely_absent_log_reads_as_zero() {
+        let not_found = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(
+            size_from_metadata(Err(not_found)),
+            Some(0),
+            "no file yet is a real measurement of an empty log"
+        );
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::InvalidData,
+        ] {
+            let err = std::io::Error::from(kind);
+            assert_eq!(
+                size_from_metadata(Err(err)),
+                None,
+                "{kind:?} is not an absent file and must not become 0 bytes"
+            );
+        }
     }
 }

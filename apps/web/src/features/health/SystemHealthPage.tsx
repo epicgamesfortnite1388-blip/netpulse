@@ -408,7 +408,19 @@ export default function SystemHealthPage() {
             ],
             ['Safe Mode', runtime ? (runtime.safe_mode ? 'ACTIVE' : 'off') : '…'],
             ['Data directory', runtime?.data_dir ?? '…'],
-            ['Log file', runtime ? `${fmtBytes(runtime.log_file_bytes)} / cap ${fmtBytes(runtime.log_rotation_cap_bytes)}` : '…'],
+            [
+              'Log file',
+              runtime
+                ? `${
+                    // null means the log is there but could not be read. Showing
+                    // "0 B" there would tell the user their log is empty when the
+                    // truth is that we could not open it.
+                    runtime.log_file_bytes === null
+                      ? 'unavailable'
+                      : fmtBytes(runtime.log_file_bytes)
+                  } / cap ${fmtBytes(runtime.log_rotation_cap_bytes)}`
+                : '…',
+            ],
           ].map(([k, v]) => (
             <div key={k} className="rounded-lg border border-line bg-surface-2 px-4 py-2.5">
               <div className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{k}</div>
