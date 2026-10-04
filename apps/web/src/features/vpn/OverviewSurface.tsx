@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { AdminAccessPanel } from './AdminAccessPanel';
 import { EngineIntakeCard } from './EngineIntakeCard';
 import { MANAGED_PROVIDER_META, PROXY_CORE_IDS, PROXY_CORE_META } from './engineMeta';
+import { tunnelExitHint } from './tunnelExitHint';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { DataList, DataRow, MetricStrip, Section } from '@/components/ui/Surface';
 import { useAetherEngine, useKillSwitch, useProxyEngines, useVpnProviders, useVpnStatus } from './useVpnData';
@@ -164,7 +165,11 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
             label: 'Active tunnel',
             value: activeTunnel ?? 'none',
             tone: activeTunnel ? 'ok' : 'faint',
-            hint: status?.verifiedPublicIp ? `exit ${status.verifiedPublicIp}` : tunnel?.exitIp ? `exit ${tunnel.exitIp}` : 'nothing is carrying traffic',
+            hint: tunnelExitHint({
+              activeTunnel,
+              verifiedPublicIp: status?.verifiedPublicIp,
+              exitIp: tunnel?.exitIp,
+            }),
           },
           {
             label: 'Kill switch',

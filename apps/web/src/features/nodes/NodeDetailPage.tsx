@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 
 import {
   Activity,
@@ -35,7 +35,7 @@ import { NodesNav } from '@/features/nodes/NodesChrome';
 import { NodeEngineActions } from '@/features/nodes/NodeEngineActions';
 import { testMessage } from '@/features/nodes/nodeActionPolicy';
 import { useNodeActions } from '@/features/nodes/useNodeActions';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { diagnoseFailure } from '@/lib/failureIntelligence';
 import { fmtDateTime, fmtMs, fmtPct } from '@/lib/format';
 import { GEO_STATUS_COPY, geoReasonOf } from '@/lib/geoStatus';
@@ -303,7 +303,10 @@ export default function NodeDetailPage() {
       </div>
     );
   }
-  if (loadingError) {
+  // A 404 is not a failure to retry: the node is gone or the id is wrong, and
+  // pressing "Try again" would fetch the same missing record forever. Route it
+  // to the not-found state below (with a way back) instead of the error box.
+  if (loadingError && !(loadingError instanceof ApiError && loadingError.status === 404)) {
     return (
       <div className="animate-fade-up">
         <NodesNav />
@@ -315,7 +318,18 @@ export default function NodeDetailPage() {
     return (
       <div className="animate-fade-up">
         <NodesNav />
-        <EmptyState title="Node not found" message="It may have been removed." />
+        <EmptyState
+          title="Node not found"
+          message="This node is not in the local pool. It may have been removed from its source since you last saw it."
+          action={
+            <Link
+              to="/nodes"
+              className="rounded-lg border border-accent/40 bg-accent-soft px-4 py-2 text-sm font-medium text-accent hover:brightness-110"
+            >
+              Back to Explorer
+            </Link>
+          }
+        />
       </div>
     );
   }

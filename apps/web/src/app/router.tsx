@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 
 import { AppShell } from './AppShell';
+import NotFoundPage from './NotFoundPage';
 import AccountPage from '@/features/account/AccountPage';
 import SystemHealthPage from '@/features/health/SystemHealthPage';
 import CloudflarePage from '@/features/cloudflare/CloudflarePage';
@@ -51,6 +52,10 @@ export const router = createBrowserRouter([
       { path: 'engines', element: <EngineManagerPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'health', element: <SystemHealthPage /> },
+      // Last child, so it only matches what nothing above claimed. Without it
+      // an unmatched URL escapes to React Router's own boundary and replaces
+      // the whole shell with a developer-facing error screen.
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);

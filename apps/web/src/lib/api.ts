@@ -19,6 +19,53 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   _retried?: boolean;
 }
 
+/** What an error body can contribute, before it is layered onto the status. */
+export interface ParsedErrorBody {
+  code?: string;
+  message?: string;
+  hint?: string;
+}
+
+function asText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+/**
+ * Pull the machine code and human message out of an error body.
+ *
+ * The API speaks two shapes and both are live: most routes send
+ * `{ error: 'not_found', message: 'Node "x" not found' }` (error is a *string*
+ * code with sibling fields), while the error-handler plugin and a few routes
+ * send `{ error: { code, message, hint } }`. Reading only the nested shape
+ * silently discarded every message from the flat shape, so the UI fell back to
+ * `res.statusText` — a missing node showed as "Not Found / http_404" instead
+ * of naming the node. Both shapes are accepted here so the message survives.
+ *
+ * `details`/`detail` are validation dumps (zod), kept out of `message`: they
+ * are multi-line and would drown the one-line reason in the error box.
+ */
+export function parseErrorBody(body: unknown): ParsedErrorBody {
+  if (typeof body !== 'object' || body === null) return {};
+  const b = body as Record<string, unknown>;
+  const err = b.error;
+
+  if (typeof err === 'object' && err !== null) {
+    const e = err as Record<string, unknown>;
+    return {
+      code: asText(e.code),
+      message: asText(e.message),
+      hint: asText(e.hint),
+    };
+  }
+
+  // Flat shape: `error` is the code itself, the prose sits beside it.
+  return {
+    code: asText(err),
+    message: asText(b.message) ?? asText(b.error_description),
+    hint: asText(b.hint),
+  };
+}
+
 /**
  * All backend traffic goes through the transport layer (see transport.ts):
  * desktop mode talks to the token-authenticated loopback sidecar chosen by
@@ -76,20 +123,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!res.ok) {
-    let code = `http_${res.status}`;
-    let message = res.statusText;
-    let hint: string | undefined;
+    let parsed: ParsedErrorBody = {};
     try {
-      const body = (await res.json()) as { error?: { code?: string; message?: string; hint?: string } };
-      if (body.error) {
-        code = body.error.code ?? code;
-        message = body.error.message ?? message;
-        hint = body.error.hint;
-      }
+      parsed = parseErrorBody(await res.json());
     } catch {
       // non-JSON error body
     }
-    throw new ApiError(code, res.status, message, hint);
+    throw new ApiError(
+      parsed.code ?? `http_${res.status}`,
+      res.status,
+      parsed.message ?? res.statusText,
+      parsed.hint,
+    );
   }
 
   // Some endpoints return plain text (e.g. config export) — return raw text
