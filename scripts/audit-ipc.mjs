@@ -53,7 +53,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { appFreshness } from './lib/fresh-app.mjs';
+import { appFreshness, newestBuildInput, rebuildPackagedApp } from './lib/fresh-app.mjs';
 import { attachToApp, freePort, sleep } from './lib/cdp-app.mjs';
 import { describeFailure, runCommand } from './lib/run-command.mjs';
 
@@ -102,15 +102,28 @@ function ensureFreshApp() {
   if (verdict.noBuild) {
     die(`binary is ${verdict.reason} and AUDIT_CONTRAST_NO_BUILD=1 — refusing to grade a stale build`);
   }
-  run(`binary is ${verdict.reason}, rebuilding the packaged app`, ['npx', 'tauri', 'build', '--no-bundle']);
+  rebuildPackagedApp({ run });
   const after = appFreshness({ root, exe: EXE, noBuild: true });
   if (!after.fresh) die(`the rebuild did not produce a binary newer than its sources (${after.reason})`);
 }
 
 function ensureBackend() {
-  if (fs.existsSync(BACKEND)) return;
-  if (process.env.AUDIT_CONTRAST_NO_BUILD) die(`${BACKEND} missing and AUDIT_CONTRAST_NO_BUILD=1`);
-  run('staging the desktop backend', ['npm', 'run', 'build:desktop-backend']);
+  // Existence was never the question. The staged bundle had been sitting there
+  // since it was first built while `apps/api/src` moved on underneath it, so
+  // this returned early forever and the gate graded a sidecar no user would
+  // ever run. What matters is whether the bundle is current with the sources
+  // it is built from — the same rule the exe is held to.
+  const staged = fs.existsSync(BACKEND) ? fs.statSync(BACKEND).mtimeMs : 0;
+  const newestSrc = newestBuildInput(root).mtimeMs;
+  if (staged && staged >= newestSrc) return;
+  if (process.env.AUDIT_CONTRAST_NO_BUILD) {
+    die(`the staged sidecar bundle is ${staged ? 'stale' : 'missing'} and AUDIT_CONTRAST_NO_BUILD=1`);
+  }
+  run('restaging the sidecar bundle', ['node', 'scripts/prepare-desktop.mjs']);
+  const after = fs.existsSync(BACKEND) ? fs.statSync(BACKEND).mtimeMs : 0;
+  if (!after || after < newestSrc) {
+    die('restaging did not produce a sidecar bundle newer than apps/api/src');
+  }
 }
 
 /* --------------------------------------------------------------- cdp plumbing */
@@ -278,6 +291,26 @@ async function main() {
       const res = await invoke('open_external', { url: u });
       check(`open_external refuses ${label}`, res.ok === false, `-> ${res.err}`);
     }
+
+    /* --------------------------------- the SHIPPED bundle, not the source tree */
+    // Every check above can pass while the installed app still runs old code:
+    // the sidecar the desktop ships is `src-tauri/backend/netpulse-backend.js`,
+    // a build product, and a test that imports `apps/api/src` proves nothing
+    // about it. That gap shipped once — a node-health fix was committed, gated
+    // green, and the running app still answered 0% packet loss for a node no
+    // probe had ever run against. So assert through the live sidecar.
+    const unmeasured = await evaluate(`(async () => {
+      const m = await window.__TAURI__.core.invoke('bootstrap');
+      const h = { authorization: 'Bearer ' + m.token };
+      const r = await fetch(m.api_base + '/nodes/node%3Aaudit-ipc-never-probed/health', { headers: h });
+      return { ok: r.ok, body: await r.json() };
+    })()`);
+    check('the shipped sidecar reports an unprobed node\'s rates as unmeasured, not as zero',
+      unmeasured.ok && unmeasured.body.lossPct === null && unmeasured.body.reliabilityPct === null,
+      `lossPct=${JSON.stringify(unmeasured.body?.lossPct)} reliabilityPct=${JSON.stringify(unmeasured.body?.reliabilityPct)}`);
+    check('...while still reporting the probe count, which is a real measurement of zero',
+      unmeasured.ok && unmeasured.body.testCount === 0,
+      `testCount=${JSON.stringify(unmeasured.body?.testCount)}`);
 
     /* ------------------------------------------------------ the UI still runs */
     const health = await evaluate(`(async () => {

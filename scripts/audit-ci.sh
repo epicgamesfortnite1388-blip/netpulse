@@ -46,6 +46,16 @@ run "depcheck" node scripts/audit-ci-depcheck.mjs
 #     again, asserting its own cleanup. Not covered: the allowing half of
 #     reveal_path / open_external, and the reparse-point case (needs Developer
 #     Mode to create a symlink). Launches its own app; needs no other instance.
+# 3z. Stage the sidecar bundle the desktop actually ships, before any app gate
+#     runs. `src-tauri/backend/netpulse-backend.js` is what the Tauri bundle
+#     copies next to the exe and what the user's app executes — it is built from
+#     `apps/api/src` and it is gitignored, so nothing else in this script would
+#     ever regenerate it. Without this step an API fix could be committed, pass
+#     every gate below, and still be absent from the installed app, which is
+#     exactly what happened once. ~1.3 s, so it is never skipped: a gate that
+#     silently graded the wrong artifact is worse than no gate.
+run "backend bundle: apps/api/src -> src-tauri/backend (the shipped sidecar)" node scripts/prepare-desktop.mjs
+
 run "ipc: redaction + reveal_path/open_external allow-lists, real app over CDP" node scripts/audit-ipc.mjs
 
 # 3b. Text contrast (WCAG AA) in BOTH themes, plus custom-property integrity,
@@ -94,5 +104,9 @@ run "security: worker ops gate + CORS allow-list" npx vitest run --root cloud/wo
 #    raced real completion signals, and abandoning an in-flight sweep leaked its
 #    timers into later files). It now holds across repeated full runs.
 run "api: full suite (81 files, every API path)" npx vitest run --root apps/api --reporter=basic
+#    The web suite, likewise complete rather than hand-picked. It was not run at
+#    all before this, which is how an honesty fix on the node page could ship
+#    with no test rendering it anywhere in the repo.
+run "web: full suite (rendered components + policies)" npx vitest run --root apps/web --reporter=basic
 
 exit $FAILED

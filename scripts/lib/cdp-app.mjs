@@ -50,23 +50,11 @@ export function freePort(start) {
 }
 
 /**
- * How long to wait for the webview's page target after spawning the app:
- * 60 polls at 500 ms = 30 s. One named value, because this bound was
- * previously written twice — once here and once as a default parameter on
- * `attachToApp` — and fixing only one of them left the gates that go through
- * `attachToApp` (contrast, layout) still polling for the old, shorter budget.
- *
- * It is not slack, it is the app's own cold-start budget.
- * `BOOTSTRAP_READY_TIMEOUT` in sidecar.rs is 20 s
- * of sidecar bring-up BEFORE the webview bridge exists, and the very first
- * launch additionally runs database migrations and integrity checks. The old
- * default of 40 polls (20 s) therefore raced the product's own timeout: on a
- * loaded machine `audit-contrast` failed with "the app never exposed a CDP
- * page" while every assertion would have passed. `audit-ipc.mjs` had already
- * overridden this to 60 for that reason; this makes the shared default match
- * the bound the suite had already established as necessary, so a gate cannot
- * fail for having used a tighter one. Same real signal, same hard failure if
- * the app truly never comes up — only the deadline before declaring defeat.
+ * Page-target wait: 60 polls at 500 ms = 30 s. One named value because this
+ * bound was written twice — here and as a default on `attachToApp` — and
+ * fixing only one left contrast and layout on the shorter budget. 20 s raced
+ * the app's own cold start (`BOOTSTRAP_READY_TIMEOUT` is 20 s of sidecar
+ * bring-up before the webview bridge exists).
  */
 export const CDP_PAGE_TRIES = 60;
 

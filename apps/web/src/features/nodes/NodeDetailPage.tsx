@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 import { ENGINE_LABELS, EngineBadge } from '@/components/EngineBadge';
+import { healthMetricItems, nodeRates } from './nodeHealthDisplay';
 import { Gauge } from '@/components/charts/Gauge';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -47,19 +48,7 @@ import type { ReactNode } from 'react';
 type NodeWebDTO = PublicNode;
 
 /** Aggregated health record returned by GET /nodes/:id/health */
-interface NodeHealthSummary {
-  testCount: number;
-  successCount: number;
-  failureCount: number;
-  /** null until a probe has actually run — 0 would mean "every probe failed" */
-  reliabilityPct: number | null;
-  medianLatencyMs: number | null;
-  /** null until a probe has actually run — 0 would read as "drops nothing" */
-  lossPct: number | null;
-  consecutiveFailures: number;
-  lastSuccessAt: number | null;
-  lastFailureAt: number | null;
-}
+import type { NodeHealthSummary } from './nodeHealthDisplay';
 
 const PROTOCOL_LABELS: Record<string, string> = {
   vless: 'VLESS',
@@ -335,15 +324,7 @@ export default function NodeDetailPage() {
   const medianTcp = node.medianTcpMs;
   const runtimeEngine = tests[0]?.engine ?? null;
   const lastTestedAt = node.lastValidated ?? null;
-  const reliability = health?.reliabilityPct ?? node.reliabilityPct;
-  // A node that has never been probed has no reliability or loss to report.
-  // The stored row seeds those columns at 0, and 0% loss is the healthiest
-  // thing this page can say — so the count of probes gates whether the rates
-  // are measurements at all. A measured 0 (probes ran, nothing dropped) still
-  // shows as 0, because that one is real.
-  const probesRecorded = health?.testCount ?? node.testCount;
-  const reliabilityPct = probesRecorded > 0 ? reliability : null;
-  const lossPct = probesRecorded > 0 ? (health?.lossPct ?? null) : null;
+  const rates = nodeRates(health, node);
   const location = node.country ? `${node.country}${node.city ? ` · ${node.city}` : ''}` : 'Location unknown';
 
   // Result box for the last probe, including the failure-intelligence read of
@@ -457,8 +438,8 @@ export default function NodeDetailPage() {
         items={[
           { label: 'Median proxy', value: medianProxy != null ? fmtMs(medianProxy) : '—', hint: 'measured through the local core', mono: true },
           { label: 'Median TCP', value: medianTcp != null ? fmtMs(medianTcp) : '—', hint: 'direct reachability', mono: true },
-          { label: 'Reliability', value: fmtPct(reliabilityPct), tone: reliabilityPct == null ? 'faint' : reliabilityPct >= 95 ? 'ok' : reliabilityPct >= 80 ? 'warn' : 'danger', hint: probesRecorded > 0 ? `${probesRecorded} probes recorded` : 'no probes recorded yet — nothing measured' },
-          { label: 'Recent loss', value: fmtPct(node.recentLossPct), tone: node.recentLossPct <= 1 ? 'ok' : node.recentLossPct <= 5 ? 'warn' : 'danger', hint: 'lost probes in the recent window' },
+          { label: 'Reliability', value: fmtPct(rates.reliabilityPct), tone: rates.reliabilityTone, hint: rates.probesRecorded > 0 ? `${rates.probesRecorded} probes recorded` : 'no probes recorded yet — nothing measured' },
+          { label: 'Recent loss', value: fmtPct(rates.recentLossPct), tone: rates.lossTone, hint: 'lost probes in the recent window' },
         ]}
       />
 
@@ -547,7 +528,7 @@ export default function NodeDetailPage() {
               >
                 <DetailGrid>
                   <DetailItem label="Score" value={node.score.toFixed(0)} mono />
-                  <DetailItem label="Reliability" value={fmtPct(node.reliabilityPct)} mono />
+                  <DetailItem label="Reliability" value={fmtPct(rates.reliabilityPct)} mono />
                   <DetailItem label="Freshness" value={<span className="capitalize">{node.freshness}</span>} />
                   <DetailItem label="Tags" value={node.tags.length > 0 ? node.tags.join(', ') : '—'} />
                   <DetailItem label="Last tested" value={node.lastValidated != null ? fmtDateTime(node.lastValidated) : '—'} mono />
@@ -681,10 +662,7 @@ export default function NodeDetailPage() {
           <MetricStrip
             className="mb-5"
             items={[
-              { label: 'Probes', value: health?.testCount ?? 0, hint: 'successes + failures', mono: true },
-              { label: 'Reliability', value: fmtPct(reliabilityPct), tone: reliabilityPct == null ? 'faint' : reliabilityPct >= 95 ? 'ok' : reliabilityPct >= 80 ? 'warn' : 'danger' },
-              { label: 'Median latency', value: health?.medianLatencyMs != null ? fmtMs(health.medianLatencyMs) : '—', hint: 'across successful probes', mono: true },
-              { label: 'Packet loss', value: fmtPct(lossPct), tone: lossPct == null ? 'faint' : lossPct <= 1 ? 'ok' : lossPct <= 5 ? 'warn' : 'danger' },
+              ...healthMetricItems(rates, health?.medianLatencyMs ?? null),
             ]}
           />
           <Section

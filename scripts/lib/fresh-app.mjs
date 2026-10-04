@@ -18,14 +18,17 @@
  * The build command is the packaged one on purpose. `cargo build` alone yields a
  * dev-URL binary with no bundled assets, which is not what the gates need.
  *
- * The inputs include the WEB sources, not just the Rust ones. `tauri.conf.json`
- * sets `beforeBuildCommand: npm run build -w @netpulse/web` and
- * `frontendDist: ../apps/web/dist`, so the packaged binary embeds the built
- * React app — half of what these gates measure. Walking only `src-tauri/` meant
- * a frontend-only change never marked the binary stale, so contrast, layout and
- * the IPC gate all graded a bundle built before the change: the same "green
- * gate that graded the wrong binary" this module exists to prevent, on the side
- * of the app the Rust walk could not see.
+ * The inputs include the WEB and API sources, not just the Rust ones.
+ * `tauri.conf.json` sets `beforeBuildCommand: npm run build -w @netpulse/web`
+ * and `frontendDist: ../apps/web/dist`, so the packaged binary embeds the built
+ * React app; `prepare-desktop.mjs` bundles `apps/api/src` into
+ * `src-tauri/backend/netpulse-backend.js`, which the Tauri bundle ships
+ * verbatim. Walking only `src-tauri/` meant neither half of that could make the
+ * binary stale, so a frontend or backend change left every app gate grading a
+ * build made before it — the same "green gate that graded the wrong binary"
+ * this module exists to prevent, on the parts of the app the Rust walk could
+ * not see. That is not hypothetical: an API fix was committed, gated by a test
+ * that passed, and the shipped app still ran the old code.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,8 +68,11 @@ export function newestBuildInput(root) {
     }
   };
   walk(path.join(root, 'src-tauri', 'src'));
-  // The bundled half of the app. Same rule, other side of the build.
+  // The two bundled halves of the app. Same rule, other side of the build:
+  // `beforeBuildCommand` runs the web build, and `prepare-desktop.mjs` runs the
+  // sidecar bundle, so a change in either marks the packaged app stale.
   walk(path.join(root, 'apps', 'web', 'src'));
+  walk(path.join(root, 'apps', 'api', 'src'));
   return newest;
 }
 
@@ -98,4 +104,24 @@ export function appFreshness({ root, exe, noBuild = false }) {
       ? `stale: ${path.basename(exe)} predates ${path.relative(root, newest.file)}`
       : `missing: ${exe} does not exist`,
   };
+}
+
+/**
+ * Rebuild the packaged app so a gate grades what would actually be installed.
+ *
+ * Both halves, in order, because `npx tauri build` only runs the web
+ * `beforeBuildCommand`: `prepare-desktop.mjs` stages `src-tauri/backend/`
+ * (the sidecar bundle + its runtime), and the Tauri build then copies that
+ * directory next to the exe as a resource. Rebuilding only the Tauri side is
+ * what let a committed API fix sit in the source tree while the shipped
+ * `netpulse-backend.js` kept running the old code — the exe looked fresh,
+ * because nothing had touched a Rust file.
+ *
+ * One implementation, so the three app gates cannot drift on which halves a
+ * rebuild covers. `run(label, cmd, args)` is the caller's existing runner, so
+ * each gate keeps its own output prefix and failure wording.
+ */
+export function rebuildPackagedApp({ run }) {
+  run('staging the sidecar bundle (apps/api/src -> src-tauri/backend)', ['node', 'scripts/prepare-desktop.mjs']);
+  run('building the packaged app (web bundle + exe)', ['npx', 'tauri', 'build', '--no-bundle']);
 }

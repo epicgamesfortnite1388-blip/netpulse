@@ -36,7 +36,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { appFreshness } from './lib/fresh-app.mjs';
+import { appFreshness, rebuildPackagedApp } from './lib/fresh-app.mjs';
 import { attachToApp, freePort, sleep } from './lib/cdp-app.mjs';
 import { describeFailure, runCommand } from './lib/run-command.mjs';
 
@@ -101,7 +101,7 @@ function ensureApp() {
     process.stderr.write(`[contrast] binary is ${verdict.reason} and AUDIT_CONTRAST_NO_BUILD=1; cannot run\n`);
     process.exit(1);
   }
-  run(`binary is ${verdict.reason}, building the packaged app (npx tauri build --no-bundle)`, ['npx', 'tauri', 'build', '--no-bundle']);
+  rebuildPackagedApp({ run });
   const after = appFreshness({ root, exe: EXE, noBuild: true });
   if (!after.fresh) {
     process.stderr.write(`[contrast] the build did not produce a binary newer than its sources (${after.reason})\n`);

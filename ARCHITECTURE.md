@@ -96,16 +96,11 @@ Five rules hold this together:
   "unavailable", never `0`. `paths::file_size` is where that decision is made, and the System
   Health page renders the `null` as `unavailable` rather than printing a number it did not
   measure. Reporting it as zero would have been the same defect a third time: "we could not read
-  your log" displayed as "your log is empty".
-  The rule is not confined to the desktop status struct, and the direction that matters is
-  always the reassuring one. `GET /nodes/:id/health` answered `lossPct: 0` for a node no probe
-  had ever run against — and `0%` loss renders green, so an unprobed node looked perfect; it now
-  answers `null` while `medianLatencyMs` and the timestamps already did. `save_diagnostic_report`
-  wrote `"bootLogTail": []` when the log could not be *read*, which reads as "the app logged
-  nothing" in the artifact a user sends for support; it now writes `null`, and a readable but
-  empty log still writes `[]`. When a field can be absent, ask which of the two zeros it is before
-  defaulting it, and make the wire format say which it is. `audit-ci.sh` runs
-  `apps/api/test/unmeasuredMeasurements.test.ts` so a regression here fails a release.
+  your log" displayed as "your log is empty". The rule generalises, and the direction that
+  matters is always the reassuring one: `GET /nodes/:id/health` answered `lossPct: 0` for a node
+  no probe had run against, which renders green, and `save_diagnostic_report` wrote an empty
+  `bootLogTail` for a log it could not *read*. Both are `null` now. When a field can be absent,
+  decide which of the two zeros it is before defaulting it, and let the wire format say which.
 - **The log macros are the one shared channel.** `log_*!` all funnel through
   `logging::write_log`, so a module can log without knowing where logs are stored or how. Use
   them rather than `println!`/`eprintln!`. Not every module logs: `paths.rs`, `ports.rs`,
