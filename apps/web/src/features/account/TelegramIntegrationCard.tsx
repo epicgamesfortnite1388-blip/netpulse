@@ -90,8 +90,10 @@ export function TelegramIntegrationCard() {
           setLastSyncAt(Date.now());
           setSyncError(null);
         })
-        .catch(() => {
-          setSyncError('background_sync_failed');
+        .catch((err) => {
+          // The reason, not a code: "background_sync_failed" told the user
+          // nothing about whether to start their tunnel.
+          setSyncError(err instanceof CloudError ? err.message : 'background sync failed');
         });
     }, 15 * 60_000);
     return () => window.clearInterval(timer);
@@ -150,7 +152,7 @@ export function TelegramIntegrationCard() {
       setLastSyncAt(Date.now());
       setSyncError(null);
     } catch (err) {
-      setSyncError(err instanceof CloudError ? err.code : 'sync_failed');
+      setSyncError(err instanceof CloudError ? err.message : 'sync failed');
     } finally {
       setSyncing(false);
     }

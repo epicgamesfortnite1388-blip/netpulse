@@ -37,6 +37,32 @@ function regPut(value: string, type: 'REG_DWORD' | 'REG_SZ', data: string): Prom
   });
 }
 
+/**
+ * Registered by services/egressProxy.ts so a proxy change invalidates the
+ * cached outbound decision immediately.
+ *
+ * Kept as a hook rather than a direct import because egressProxy already
+ * imports this module; importing back would be a cycle. Additive, so a
+ * subscriber never silently replaces another. Failures are ignored — this is
+ * an optimisation, never a correctness need.
+ */
+const proxyChangedHooks = new Set<() => void>();
+
+export function onSystemProxyChanged(fn: () => void): void {
+  proxyChangedHooks.add(fn);
+}
+
+/** Exported so the invalidation can be exercised without touching HKCU. */
+export function notifySystemProxyChanged(): void {
+  for (const fn of proxyChangedHooks) {
+    try {
+      fn();
+    } catch {
+      // A broken hook must not fail a registry write that already succeeded.
+    }
+  }
+}
+
 /** Nudge WinINET (InternetSetOption via a tiny inline PowerShell call) so
  *  running apps notice the proxy change. Best-effort — never throws. */
 function refreshWinInet(): void {
@@ -86,6 +112,11 @@ export async function setSystemProxy(proxyOrNull: string | null): Promise<{ ok: 
     // would not actually be a restore.
     await regPut('ProxyServer', 'REG_SZ', '');
   }
+  // Outbound cloud traffic reads this same setting (services/egressProxy.ts)
+  // and caches it briefly. Invalidate that cache here so the *first* request
+  // after a tunnel starts already goes through the new proxy — the exact
+  // sequence a filtered-network user performs: turn the tunnel on, then sign in.
+  notifySystemProxyChanged();
   refreshWinInet();
   return { ok: true };
 }

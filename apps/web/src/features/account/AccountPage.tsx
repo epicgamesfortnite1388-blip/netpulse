@@ -56,7 +56,17 @@ function WelcomeGate() {
       else await register(email.trim(), password);
       toast('ok', mode === 'signin' ? 'Signed in' : 'Account created');
     } catch (err) {
-      setError(err instanceof CloudError ? err.message : 'Could not reach the cloud service — check your connection');
+      // Never "check your connection": by far the most common cause is that the
+      // cloud is filtered on this network and a tunnel/proxy would fix it, and
+      // the client already knows which. Showing a code or a generic sentence
+      // sent people to debug the connection that was working fine.
+      setError(
+        err instanceof CloudError
+          ? err.message
+          : err instanceof Error && err.message
+            ? err.message
+            : 'Could not reach the cloud service. If this network blocks it, turn on your VPN or tunnel and try again.',
+      );
     }
   };
 

@@ -119,7 +119,13 @@ export function lastSyncError(): string | null {
  * error to show. Pure so the rule is unit-testable.
  */
 export function classifySyncError(err: unknown): { offline: boolean; message: string } {
-  if (err instanceof CloudError && err.code === 'network_error') return { offline: true, message: 'cloud: network_error' };
+  // `offline` decides whether the loop backs off; `message` is what the user
+  // reads. Keep both: flattening a transport failure to the literal string
+  // "cloud: network_error" hid the one fact that matters (a proxy that was
+  // never consulted) behind a code nobody can act on.
+  if (err instanceof CloudError && err.code === 'network_error') {
+    return { offline: true, message: err.message || 'cloud: network_error' };
+  }
   if (err instanceof CloudError || err instanceof ApiError) return { offline: false, message: err.message };
   return { offline: true, message: err instanceof Error ? err.message : 'sync failed' };
 }

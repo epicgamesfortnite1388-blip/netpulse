@@ -6,8 +6,18 @@
  * origin (CORS applies; timeouts are real), the access token expires every 30
  * minutes (silent refresh via the stored refresh token), and a reused/rotated
  * refresh token kills the whole session chain (sign out locally, never loop).
+ *
+ * Every request goes through the local sidecar (`POST /api/v1/cloud/egress`),
+ * NOT straight out of the webview. A webview `fetch` cannot honour a system
+ * proxy, so in Iran — where the Worker is commonly blocked directly but the
+ * user already has a tunnel publishing one — sign-in and Telegram sync failed
+ * with "check your connection" while the proxy went entirely unused. The
+ * sidecar owns the proxy decision (apps/api/src/services/egressProxy.ts) and
+ * reports *why* a call failed, so the UI can name the cause instead of
+ * guessing. See `describeEgressFailure`.
  */
 
+import { ApiError, api } from '@/lib/api';
 import {
   adoptAuthResponse,
   adoptRefresh,
@@ -39,8 +49,10 @@ export class CloudError extends Error {
   }
 }
 
-/** The production Worker. Config comes from the sidecar bootstrap in dev. */
-export const CLOUD_API_BASE = 'https://netpulse-cloud.shuridehradin.workers.dev';
+// The cloud origin deliberately does NOT live here. It is owned by the sidecar
+// (apps/api/src/services/egressProxy.ts), which is what builds the URL the
+// request is actually sent to; a second copy in the webview would be a second
+// place to update and a second thing to disagree about.
 
 const TIMEOUT_MS = 15_000;
 
@@ -50,17 +62,114 @@ interface RequestOptions {
   _retriedRefresh?: boolean;
 }
 
+/**
+ * What the sidecar answers for a cloud call: the upstream status, the few
+ * headers worth keeping, and the body verbatim.
+ */
+interface EgressResult {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/**
+ * A response-shaped object over the sidecar's answer.
+ *
+ * The rest of this module only ever needs `ok`, `status`, `statusText` and
+ * `json()`, so the egress hop does not have to fake a real `Response` — and
+ * pretending to would hide that these bodies came from somewhere else.
+ */
+function asResponse(result: EgressResult): Response {
+  const status = result.status;
+  const text = result.body ?? '';
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    headers: new Headers(result.headers ?? {}),
+    json: async () => JSON.parse(text) as unknown,
+    text: async () => text,
+  } as unknown as Response;
+}
+
+/**
+ * The transport outcomes the sidecar reports, and nothing else. A code outside
+ * this set means the sidecar itself failed, which is a different problem with a
+ * different fix.
+ */
+const EGRESS_REASONS: ReadonlySet<string> = new Set([
+  'proxy_unreachable',
+  'direct_unreachable',
+  'timeout',
+  'tls_failed',
+  'socks_unsupported',
+]);
+
+/**
+ * Why a cloud call could not be delivered, phrased for the person who has to
+ * fix it.
+ *
+ * The sidecar classifies the transport failure; this turns that into a sentence
+ * that names the actual problem. The old generic "check your connection" was
+ * actively misleading: the most common cause by far was a proxy that was never
+ * consulted, which the user could only fix by *using* it — which the app was
+ * not doing.
+ */
+export function describeEgressFailure(reason: string, hint: string | undefined): string {
+  const proxy = hint?.startsWith('proxy: ') ? hint.slice('proxy: '.length) : null;
+  switch (reason) {
+    case 'proxy_unreachable':
+      return `Could not reach your proxy at ${proxy ?? 'the system proxy address'}. Turn the tunnel on (or start your proxy client), then try again.`;
+    case 'timeout':
+      return proxy
+        ? `The cloud did not answer through ${proxy} in time. The tunnel may not be routing this app.`
+        : 'The cloud did not answer in time. It is blocked or slow on this network.';
+    case 'tls_failed':
+      return 'The encrypted connection was rejected — this connection is being filtered. Turn on your VPN/tunnel and try again.';
+    case 'socks_unsupported':
+      return 'Your system proxy is a SOCKS listener, which this app cannot route the cloud through. Turn on TUN mode, or set an HTTP proxy.';
+    default:
+      return 'Could not reach the cloud — it is blocked or offline on this network. Turning on a VPN or tunnel usually fixes this.';
+  }
+}
+
+/**
+ * One cloud request, delivered by the sidecar through the resolved proxy.
+ *
+ * The client sends a *path*, never a URL: the sidecar builds the absolute URL
+ * from its own cloud origin, so this cannot be used to reach anything else.
+ */
 async function rawFetch(path: string, options: RequestOptions, token: string | null): Promise<Response> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.json !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${CLOUD_API_BASE}${path}`, {
-    method: options.method,
-    headers,
-    body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  return res;
+
+  try {
+    const result = await api.post<EgressResult>('/cloud/egress', {
+      path,
+      method: options.method,
+      headers,
+      body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+      timeoutMs: TIMEOUT_MS,
+    });
+    return asResponse(result);
+  } catch (err) {
+    // The sidecar reports a delivery failure as `502 <egress reason>`. That
+    // reason is the whole point — it is what tells the user to start their
+    // tunnel instead of debugging their connection — so it must survive.
+    const apiErr = err instanceof ApiError ? err : null;
+    const code = apiErr?.code ?? '';
+    if (EGRESS_REASONS.has(code)) {
+      throw new CloudError(code, 0, describeEgressFailure(code, apiErr?.hint));
+    }
+    // Anything else is a failure talking to the sidecar itself, which is on
+    // loopback and never blocked — so the network is not the explanation.
+    throw new CloudError(
+      'network_error',
+      0,
+      'The local backend did not respond, so the cloud request was never sent.',
+    );
+  }
 }
 
 async function parseError(res: Response): Promise<CloudError> {

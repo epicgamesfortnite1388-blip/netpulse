@@ -39,6 +39,7 @@ import { registerGamingRoutes } from './routes/gaming';
 import { registerEndpointRoutes } from './routes/endpoints';
 import { registerEventRoutes } from './routes/events';
 import { registerHistoryRoutes } from './routes/history';
+import { registerCloudRoutes } from './routes/cloud';
 import { registerIpRoutes } from './routes/ip';
 import { registerIranRoutes } from './routes/iran';
 import { registerMapRoutes } from './routes/map';
@@ -719,6 +720,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerEventRoutes(app, ctx);
   registerServerRoutes(app, ctx);
   registerHistoryRoutes(app, ctx);
+  registerCloudRoutes(app, ctx);
   registerVpnRoutes(app, ctx);
   registerTunnelRoutes(app, ctx);
   registerWebrtcRoutes(app, ctx);
