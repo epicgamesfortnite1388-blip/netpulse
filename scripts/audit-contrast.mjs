@@ -32,18 +32,13 @@
  * Exit code 0 = every text node meets AA in both themes and no var() falls
  * back to inherit/initial; 1 = failures.
  */
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { appFreshness } from './lib/fresh-app.mjs';
+import { attachToApp, freePort, sleep } from './lib/cdp-app.mjs';
 import { describeFailure, runCommand } from './lib/run-command.mjs';
-
-const require = createRequire(import.meta.url);
-const WebSocket = require('ws');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXE = path.join(root, 'src-tauri', 'target', 'release', 'netpulse-desktop.exe');
@@ -114,32 +109,6 @@ function ensureApp() {
   }
 }
 
-function freePort(start) {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.once('error', () => resolve(freePort(start + 1)));
-    s.listen(start, '127.0.0.1', () => {
-      const { port } = s.address();
-      s.close(() => resolve(port));
-    });
-  });
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function cdpTarget(port, tries = 40) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const targets = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
-      const page = targets.find((t) => t.type === 'page' && t.url.includes('tauri'));
-      if (page) return page;
-    } catch {
-      /* not up yet */
-    }
-    await sleep(500);
-  }
-  return null;
-}
 
 /* ------------------------------------------------------- in-page measurement */
 
@@ -429,43 +398,29 @@ async function main() {
   process.stdout.write(`[contrast] routes: ${list.length} (${list.join(' ')})\n`);
 
   const port = Number(process.env.PROBE_PORT || 0) || (await freePort(9334));
-  let child = null;
-  let target = process.env.PROBE_PORT ? await cdpTarget(port, 2) : null;
 
-  if (!target) {
-    ensureBackend();
-    ensureApp();
-    process.stdout.write(`[contrast] launching the app with CDP on 127.0.0.1:${port}\n`);
-    child = spawn(EXE, [], {
-      cwd: root,
-      detached: false,
-      stdio: 'ignore',
-      env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
-    });
-    target = await cdpTarget(port);
-    if (!target) {
+  // Launch and attach live in scripts/lib/cdp-app.mjs, shared with the other
+  // two app gates. This gate measures colours, but it still waits for Tauri to
+  // have booted: a page captured mid-load reports the wrong colours.
+  const session = await attachToApp({
+    exe: EXE,
+    cwd: root,
+    port,
+    reuse: Boolean(process.env.PROBE_PORT),
+    beforeSpawn: () => {
+      ensureBackend();
+      ensureApp();
+      process.stdout.write(`[contrast] launching the app with CDP on 127.0.0.1:${port}\n`);
+    },
+    onNoTarget: (child) => {
       if (child) child.kill();
       process.stderr.write('[contrast] the app never exposed a CDP page\n');
       process.exit(1);
-    }
-  }
-
-  const ws = new WebSocket(target.webSocketDebuggerUrl, { maxPayload: 64 * 1024 * 1024 });
-  await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-  let mid = 0;
-  const pending = new Map();
-  ws.on('message', (raw) => {
-    const m = JSON.parse(raw.toString());
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+    },
   });
-  const send = (method, params = {}) => new Promise((r) => { const i = ++mid; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'evaluate failed');
-    return r.result?.result?.value;
-  };
+  const { ws, send, evaluate } = session;
+  const child = session.child;
 
-  await send('Runtime.enable');
 
   // A dynamic route (nodes/:id) is only reachable with a real id — ask the
   // running backend for one so the detail page is covered too, not skipped.

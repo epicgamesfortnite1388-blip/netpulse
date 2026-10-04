@@ -48,18 +48,14 @@
  *
  * Exit 0 = every check passed; 1 = a check failed; 2 = the run was untrustworthy.
  */
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { appFreshness } from './lib/fresh-app.mjs';
+import { attachToApp, freePort, sleep } from './lib/cdp-app.mjs';
 import { describeFailure, runCommand } from './lib/run-command.mjs';
-
-const require = createRequire(import.meta.url);
-const WebSocket = require('ws');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXE = path.join(root, 'src-tauri', 'target', 'release', 'netpulse-desktop.exe');
@@ -69,7 +65,6 @@ const REDACTED = '[redacted by diagnostics filter]';
 /** Unique marker on every line this gate writes to the log, so cleanup is exact. */
 const PROBE = 'audit-ipc-probe:';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 
 // Per-check lines are prefixed and lower-cased so they cannot be mistaken for
@@ -120,29 +115,6 @@ function ensureBackend() {
 
 /* --------------------------------------------------------------- cdp plumbing */
 
-function freePort(start) {
-  return new Promise((resolve) => {
-    const s = net.createServer();
-    s.once('error', () => resolve(freePort(start + 1)));
-    s.listen(start, '127.0.0.1', () => {
-      const { port } = s.address();
-      s.close(() => resolve(port));
-    });
-  });
-}
-
-async function cdpTarget(port, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const targets = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
-      const page = targets.find((t) => t.type === 'page' && t.url.includes('tauri'));
-      if (page) return page;
-    } catch { /* not up yet */ }
-    await sleep(500);
-  }
-  return null;
-}
-
 /** Is something still listening on this loopback port? */
 function portBusy(port) {
   return new Promise((resolve) => {
@@ -166,70 +138,27 @@ async function main() {
   // Everything this gate writes to the real log is removed in `finally`.
   process.stdout.write(`[ipc] launching the app with CDP on 127.0.0.1:${port}\n`);
 
-  let child = null;
-  let target = reuse ? await cdpTarget(port, 2) : null;
-  if (!target) {
-    child = spawn(EXE, [], {
-      cwd: root,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      },
-    });
-    target = await cdpTarget(port);
-    if (!target) {
+  // Launch and attach live in scripts/lib/cdp-app.mjs, shared with the other
+  // two app gates. This gate needs the bridge: it invokes Tauri commands, so a
+  // missing `window.__TAURI__` is fatal rather than merely premature.
+  const session = await attachToApp({
+    exe: EXE,
+    cwd: root,
+    port,
+    reuse,
+    tries: 60,
+    logDomain: true,
+    onNoTarget: (child) => {
       child.kill();
       die('the app never exposed a CDP page (another instance holding the single-instance lock?)');
-    }
-  }
-
-  const ws = new WebSocket(target.webSocketDebuggerUrl, { maxPayload: 64 * 1024 * 1024 });
-  await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-  let mid = 0;
-  const pending = new Map();
-  const pageErrors = [];
-  const consoleErrors = [];
-  ws.on('message', (raw) => {
-    const m = JSON.parse(raw.toString());
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-    if (m.method === 'Runtime.exceptionThrown') {
-      pageErrors.push(m.params?.exceptionDetails?.exception?.description?.split('\n')[0] ?? 'exception');
-    }
-    if (m.method === 'Runtime.consoleAPICalled' && (m.params?.type === 'error' || m.params?.type === 'warning')) {
-      const text = (m.params.args ?? []).map((a) => a.value ?? a.description ?? '').join(' ').slice(0, 200);
-      consoleErrors.push(`${m.params.type}: ${text}`);
-    }
+    },
   });
-  const send = (method, params = {}) =>
-    new Promise((resolve) => { const i = ++mid; pending.set(i, resolve); ws.send(JSON.stringify({ id: i, method, params })); });
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-    if (r.result?.exceptionDetails) {
-      throw new Error(r.result.exceptionDetails.exception?.description?.split('\n')[0] ?? 'evaluate failed');
-    }
-    return r.result?.result?.value;
-  };
-  await send('Runtime.enable');
-  await send('Log.enable');
-
-  // The CDP page target exists BEFORE Tauri injects its IPC bridge into it, so
-  // calling window.__TAURI__ the moment we attach is a race. It fails as
-  // "Cannot read properties of undefined (reading 'core')" whenever the
-  // webview wins the race, which made this gate intermittently unrunnable.
-  // Wait for the bridge, bounded, and say so plainly if it never appears.
-  {
-    const deadline = Date.now() + 15_000;
-    for (;;) {
-      const kind = await evaluate('typeof window.__TAURI__?.core?.invoke');
-      if (kind === 'function') break;
-      if (Date.now() > deadline) {
-        child?.kill();
-        die('the Tauri IPC bridge never appeared in the webview (window.__TAURI__.core.invoke)');
-      }
-      await sleep(100);
-    }
+  const { ws, send, evaluate, pageErrors, consoleErrors } = session;
+  if (!session.bridgeReady) {
+    session.child?.kill();
+    die('the Tauri IPC bridge never appeared in the webview (window.__TAURI__.core.invoke)');
   }
+  const child = session.child;
 
   const invoke = (cmd, args) =>
     evaluate(`window.__TAURI__.core.invoke(${JSON.stringify(cmd)}, ${JSON.stringify(args)})
