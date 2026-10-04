@@ -147,7 +147,6 @@ async function main() {
     port,
     reuse,
     tries: 60,
-    logDomain: true,
     onNoTarget: (child) => {
       child.kill();
       die('the app never exposed a CDP page (another instance holding the single-instance lock?)');
@@ -308,15 +307,31 @@ async function main() {
     }
     if (child) child.kill();
     if (sidecarPort) {
-      // The sidecar holds a loopback port. If it is still bound after the app
-      // is gone, this gate left a process behind and must say so.
-      let busy = true;
-      for (let i = 0; i < 20 && busy; i++) {
-        await sleep(500);
-        busy = await portBusy(sidecarPort);
+      // The gate may have spawned the app, or borrowed one that was already
+      // listening on PROBE_PORT. Only the first gives it the right to expect
+      // the sidecar to go away: a borrowed instance belongs to whoever started
+      // it, and its sidecar staying bound is the correct outcome, not a leak.
+      // Asserting release in reuse mode reported every correct run as a leak.
+      //
+      // Keyed on `borrowed` rather than on PROBE_PORT, because PROBE_PORT set
+      // with nothing listening makes this gate spawn after all — and then it
+      // genuinely owns the process and must still assert it was cleaned up.
+      const borrowed = reuse && child === null;
+      if (borrowed) {
+        const alive = await portBusy(sidecarPort);
+        check('the borrowed instance was left running rather than killed',
+          alive, `port ${sidecarPort} ${alive ? 'still bound' : 'unexpectedly released'}`);
+      } else {
+        // The sidecar holds a loopback port. If it is still bound after the app
+        // is gone, this gate left a process behind and must say so.
+        let busy = true;
+        for (let i = 0; i < 20 && busy; i++) {
+          await sleep(500);
+          busy = await portBusy(sidecarPort);
+        }
+        check('no sidecar process was left behind after the app exited', !busy,
+          busy ? `port ${sidecarPort} is still bound` : `port ${sidecarPort} released`);
       }
-      check('no sidecar process was left behind after the app exited', !busy,
-        busy ? `port ${sidecarPort} is still bound` : `port ${sidecarPort} released`);
     }
   }
 

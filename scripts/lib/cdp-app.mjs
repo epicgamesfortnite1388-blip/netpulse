@@ -104,10 +104,9 @@ export async function waitForTauriBridge(evaluate, timeoutMs = 15_000) {
  *   actually needed — its build and freshness checks and its own message
  * @param {Function} [opts.onNoTarget] gate hook called with the child when the
  *   app never exposes a page; it is expected to report and exit
- * @param {boolean} [opts.logDomain] also enable the Log domain
  * @returns {Promise<object>} session handle
  */
-export async function attachToApp({ exe, cwd, port, reuse = false, tries = 40, beforeSpawn, onNoTarget, logDomain = false }) {
+export async function attachToApp({ exe, cwd, port, reuse = false, tries = 40, beforeSpawn, onNoTarget }) {
   let child = null;
   let target = reuse ? await findCdpTarget(port, 2) : null;
 
@@ -163,7 +162,6 @@ export async function attachToApp({ exe, cwd, port, reuse = false, tries = 40, b
   };
 
   await send('Runtime.enable');
-  if (logDomain) await send('Log.enable');
 
   // Applies to every gate: measuring a page whose bundle has not run risks
   // recording a loading state as the real layout.
