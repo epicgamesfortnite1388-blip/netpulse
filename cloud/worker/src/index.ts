@@ -7,7 +7,9 @@
  * one place. Errors are a consistent JSON envelope; internals never leak.
  */
 import {
+  AdminPlanPatchSchema,
   ChangePasswordSchema,
+  CreateAdminAccountSchema,
   FavoriteSchema,
   ForgotSchema,
   HistoryPushSchema,
@@ -52,6 +54,7 @@ import {
   handleNetpulseInbox,
 } from './netpulse-integration';
 import { opsPageHtml, handleNetpulseOpsApi } from './ops-page';
+import { handleNetpulseSessionApi } from './netpulse-sessions';
 
 // Desktop app and Worker are same-origin; CORS is only needed for browser-based
 // attacks that misuse a stolen bearer token. For the authenticated API (bearer
@@ -127,9 +130,56 @@ interface UserRow {
   created_at: number;
   last_login_at: number | null;
   disabled: number;
+  role: string;
 }
 
-const userDto = (u: UserRow) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastLoginAt: u.last_login_at });
+const userDto = (u: UserRow) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastLoginAt: u.last_login_at, role: u.role });
+
+function isAdmin(roleRow: { role: string } | null | undefined): boolean {
+  return roleRow?.role === 'admin';
+}
+
+/**
+ * Admin-only mutations are recorded in `admin_events` (the feed served by
+ * /api/v1/admin/events), separate from the generic `audit_events` log. The
+ * generic helper writes `audit_events`, which is why this exists: the admin
+ * feed must never be empty while role and plan changes are happening.
+ */
+async function adminAudit(
+  db: D1Database,
+  actedBy: string,
+  action: string,
+  targetUserId: string | null,
+  detail?: string,
+): Promise<void> {
+  await db
+    .prepare(`INSERT INTO admin_events (acted_by, acted_at, action, target_user_id, detail) VALUES (?, ?, ?, ?, ?)`)
+    .bind(actedBy, Date.now(), action, targetUserId, detail ?? null)
+    .run();
+}
+
+/**
+ * Plan defaults are stored as JSON arrays of opaque keys. A malformed value
+ * would be handed to every consumer of the plan of record, so it is rejected
+ * at write time instead of corrupting the row.
+ */
+function assertJsonStringArray(text: string, field: string): void {
+  try {
+    const v = JSON.parse(text) as unknown;
+    if (!Array.isArray(v) || v.some((entry) => typeof entry !== 'string')) throw new Error('not a string array');
+    if (v.length > 1000) throw new Error('too many entries');
+  } catch {
+    throw new HttpError(400, 'invalid_plan_defaults', `${field} must be a JSON array of strings`);
+  }
+}
+
+const DEFAULT_PLAN_ID = 'plan_pro';
+const DEFAULT_PLAN_CODE = 'pro';
+const DEFAULT_PLAN_NAME = 'Pro';
+const DEFAULT_PROFILES_JSON = '[]';
+const DEFAULT_NODES_JSON = '[]';
+const DEFAULT_SCAN_PROFILE = 'balanced';
+const DEFAULT_PROXY_ENGINE = 'auto';
 
 function normalizeEmail(email: string): string {
   const at = email.lastIndexOf('@');
@@ -165,6 +215,12 @@ export default {
       // for its two paths; null falls through to the human API.
       const inboxResponse = await handleNetpulseInbox(req, env, ip);
       if (inboxResponse) return inboxResponse;
+
+      // -------- NetPulse ↔ bot signed device management (machine surface) --------
+      // Same trust as the inbox: HMAC-signed, fail-closed, and never mixed with
+      // the bearer-authenticated human API below.
+      const sessionResponse = await handleNetpulseSessionApi(req, env, ip);
+      if (sessionResponse) return sessionResponse;
 
       // -------- health (public, includes honest D1 probe) --------
       if (path === '/api/v1/health' && req.method === 'GET') {
@@ -225,16 +281,33 @@ export default {
           created_at: t,
           last_login_at: null,
           disabled: 0,
+          role: 'normal',
         };
         await env.DB.prepare(
-          `INSERT INTO users (id, email, normalized_email, password_hash, password_algo, password_updated_at, created_at, last_login_at, disabled)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO users (id, email, normalized_email, password_hash, password_algo, password_updated_at, created_at, last_login_at, disabled, role)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-          .bind(user.id, user.email, user.normalized_email, user.password_hash, user.password_algo, user.password_updated_at, user.created_at, user.last_login_at, user.disabled)
+          .bind(user.id, user.email, user.normalized_email, user.password_hash, user.password_algo, user.password_updated_at, user.created_at, user.last_login_at, user.disabled, user.role)
           .run();
         await env.DB.prepare(`INSERT INTO user_settings (user_id, payload, updated_at) VALUES (?, '{}', ?)`).bind(user.id, t).run();
         const session = await createSession(env.DB, user.id, body.device);
         await audit(env.DB, 'register', user.id, ip);
+        // First account in a fresh database is the natural bootstrap point for
+        // the admin Plan-of-record. This is guarded by absence of any existing
+        // admin account, never by presence of the caller, so a late-joining
+        // registrant never silently becomes admin.
+        const firstAdmin = await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first<{ id: string }>();
+        if (!firstAdmin) {
+          const now = Date.now();
+          await env.DB
+            .prepare(
+              `INSERT INTO plans (id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (id) DO NOTHING`,
+            )
+            .bind(DEFAULT_PLAN_ID, DEFAULT_PLAN_CODE, DEFAULT_PLAN_NAME, DEFAULT_PROFILES_JSON, DEFAULT_NODES_JSON, DEFAULT_SCAN_PROFILE, DEFAULT_PROXY_ENGINE, now)
+            .run();
+        }
         return json(201, {
           user: userDto(user),
           accessToken: session.accessToken,
@@ -359,6 +432,74 @@ export default {
             'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",
             ...resetCors,
           },
+        });
+      }
+
+      // ---- admin bootstrap: the FIRST administrator (unauthenticated) ----
+      // Runs before the auth gate because a fresh deployment has no admin to
+      // authenticate as. Deliberately NOT a general admin-creation endpoint: an
+      // admin can promote through /admin/users/:id/promote, and anyone can
+      // create a NORMAL account through /auth/register. The only thing this can
+      // do is put the first administrator onto a deployment that has none.
+      //
+      // The limiter is checked BEFORE the "admin already exists" probe so that
+      // repeated attempts against a deployment that HAS an admin still consume
+      // budget instead of being free probes.
+      if (path === '/api/v1/admin/account' && req.method === 'POST') {
+        const limiter = await rateLimit(env.DB, `admin_reg:${ip}`, 3, 3600_000);
+        if (!limiter.ok) return fail(429, 'rate_limited', 'Too many admin-account creation attempts — try later');
+        const firstAdmin = await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).first<{ id: string }>();
+        if (firstAdmin) {
+          return fail(409, 'admin_already_exists', 'An administrator account already exists on this deployment');
+        }
+        const body = CreateAdminAccountSchema.parse(await readJson(req));
+        const normalized = normalizeEmail(body.email);
+        const existing = await env.DB.prepare(`SELECT id FROM users WHERE normalized_email = ?`).bind(normalized).first<{ id: string }>();
+        if (existing) {
+          await audit(env.DB, 'admin_account.exists', null, ip, normalized.slice(0, 3));
+          return fail(409, 'email_taken', 'An account with this email already exists');
+        }
+        const t = Date.now();
+        const user: UserRow = {
+          id: newId('usr'),
+          email: body.email,
+          normalized_email: normalized,
+          password_hash: await hashPassword(body.password),
+          password_algo: 'PBKDF2-SHA256',
+          password_updated_at: t,
+          created_at: t,
+          last_login_at: null,
+          disabled: 0,
+          role: 'admin',
+        };
+        await env.DB.prepare(
+          `INSERT INTO users (id, email, normalized_email, password_hash, password_algo, password_updated_at, created_at, last_login_at, disabled, role)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(user.id, user.email, user.normalized_email, user.password_hash, user.password_algo, user.password_updated_at, user.created_at, user.last_login_at, user.disabled, user.role)
+          .run();
+        await env.DB.prepare(`INSERT INTO user_settings (user_id, payload, updated_at) VALUES (?, '{}', ?)`).bind(user.id, t).run();
+        const session = await createSession(env.DB, user.id, undefined);
+        await audit(env.DB, 'admin_account.created', user.id, ip);
+        const planNow = await env.DB.prepare(`SELECT id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at FROM plans WHERE id = ?`).bind(DEFAULT_PLAN_ID).first<{
+          id: string; code: string; name: string; default_profiles: string; default_nodes: string; default_scan_profile: string; preferred_proxy_engine: string; updated_at: number;
+        }>();
+        if (!planNow) {
+          const now = Date.now();
+          await env.DB
+            .prepare(
+              `INSERT INTO plans (id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .bind(DEFAULT_PLAN_ID, DEFAULT_PLAN_CODE, DEFAULT_PLAN_NAME, DEFAULT_PROFILES_JSON, DEFAULT_NODES_JSON, DEFAULT_SCAN_PROFILE, DEFAULT_PROXY_ENGINE, now)
+            .run();
+        }
+        return json(201, {
+          user: userDto(user),
+          role: user.role,
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          session: session.session,
         });
       }
 
@@ -665,12 +806,18 @@ export default {
         return json(200, { subscriptions: rows });
       }
 
-      if (path === '/api/v1/subscriptions/:id' && req.method === 'GET') {
-        // A single mirrored entitlement — safe model fields only (no config
-        // URLs, no credentials; those are delivered by the bot's own channels).
-        const match = path.match(/\/api\/v1\/subscriptions\/([^/]+)/);
-        if (!match) return fail(404, 'not_found', 'Invalid subscription ID format');
-        const subId = match[1];
+      // A single mirrored entitlement — safe model fields only (no config
+      // URLs, no credentials; those are delivered by the bot's own channels).
+      //
+      // This used to read `path === '/api/v1/subscriptions/:id'`, comparing the
+      // request path against the LITERAL template string. No request can ever
+      // equal it, so the route was unreachable: GET /api/v1/subscriptions/42
+      // fell through to "No API route for GET …", and the only thing that ever
+      // reached this code was nothing at all. It is the one parameterised route
+      // in this router, and it had no test — which is how it stayed dead.
+      const subscriptionMatch = req.method === 'GET' ? path.match(/^\/api\/v1\/subscriptions\/([^/]+)$/) : null;
+      if (subscriptionMatch) {
+        const subId = subscriptionMatch[1];
         const row = await env.DB
           .prepare(
             `SELECT subscription_id, plan_code, status, started_at, expires_at, auto_renew, total_gb, used_gb, ip_limit, config_updated_at
@@ -699,6 +846,190 @@ export default {
       // and server credentials are bot-owned and never mirrored here (§8 of
       // the integration contract). The desktop app consumes configs via the
       // bot's Telegram delivery, not this API.
+
+      // ---- admin: plan of record + account role management ----
+      // Every admin route below re-derives the user from the verified session.
+      // The plan `code` field is the SAME field the bot mirrors into
+      // np_entitlements.plan_code, so cross-checking is deterministic. (The
+      // first-admin bootstrap above the auth gate is the one exception, and it
+      // is gated on there being no admin at all.)
+
+      if (path === '/api/v1/admin/plan' && req.method === 'GET') {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const planRow = await env.DB.prepare(`SELECT id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at FROM plans WHERE id = ?`).bind(DEFAULT_PLAN_ID).first<{
+          id: string; code: string; name: string; default_profiles: string; default_nodes: string; default_scan_profile: string; preferred_proxy_engine: string; updated_at: number;
+        }>();
+        if (!planRow) return fail(404, 'not_found', 'Plan of record not found');
+        return json(200, {
+          plan: {
+            id: planRow.id,
+            code: planRow.code,
+            name: planRow.name,
+            defaultProfiles: planRow.default_profiles,
+            defaultNodes: planRow.default_nodes,
+            defaultScanProfile: planRow.default_scan_profile,
+            preferredProxyEngine: planRow.preferred_proxy_engine,
+            updatedAt: planRow.updated_at,
+          },
+        });
+      }
+
+      if (path === '/api/v1/admin/plan' && req.method === 'PATCH') {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const rowBefore = await env.DB.prepare(`SELECT id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at FROM plans WHERE id = ?`).bind(DEFAULT_PLAN_ID).first<{
+          id: string; code: string; name: string; default_profiles: string; default_nodes: string; default_scan_profile: string; preferred_proxy_engine: string; updated_at: number;
+        }>() ?? {
+          id: DEFAULT_PLAN_ID,
+          code: DEFAULT_PLAN_CODE,
+          name: DEFAULT_PLAN_NAME,
+          default_profiles: DEFAULT_PROFILES_JSON,
+          default_nodes: DEFAULT_NODES_JSON,
+          default_scan_profile: DEFAULT_SCAN_PROFILE,
+          preferred_proxy_engine: DEFAULT_PROXY_ENGINE,
+          updated_at: 0,
+        };
+        const beforeCode = rowBefore.code;
+        const beforeName = rowBefore.name;
+        const beforeProfiles = rowBefore.default_profiles;
+        const beforeNodes = rowBefore.default_nodes;
+        const beforeScan = rowBefore.default_scan_profile;
+        const beforeEngine = rowBefore.preferred_proxy_engine;
+        const body = AdminPlanPatchSchema.parse(await readJson(req));
+        const code = body.code?.trim() ?? null;
+        const name = body.name?.trim() ?? null;
+        const defaultProfiles = body.defaultProfiles ?? null;
+        const defaultNodes = body.defaultNodes ?? null;
+        const defaultScanProfile = body.defaultScanProfile?.trim() ?? null;
+        const preferredProxyEngine = body.preferredProxyEngine?.trim() ?? null;
+        if (defaultProfiles !== null) assertJsonStringArray(defaultProfiles, 'defaultProfiles');
+        if (defaultNodes !== null) assertJsonStringArray(defaultNodes, 'defaultNodes');
+        // Mirror cross-check: an admin cannot set the app's plan code to something
+        // the bot has never issued — the plan code becomes the entitlement code
+        // surface the UI displays, and inventing one would be a silent lie.
+        const knownCodes = await env.DB.prepare(`SELECT DISTINCT plan_code FROM np_entitlements LIMIT 500`).all<{ plan_code: string }>();
+        const allowedCodes = new Set((knownCodes.results ?? []).map((r) => r.plan_code));
+        if (code && !allowedCodes.has(code)) {
+          return fail(400, 'invalid_plan_code', `Plan code "${code}" is not a known entitlement code on this account`);
+        }
+        const t = Date.now();
+        const nextCode = code ?? beforeCode;
+        const nextName = name ?? beforeName;
+        const nextProfiles = defaultProfiles ?? beforeProfiles;
+        const nextNodes = defaultNodes ?? beforeNodes;
+        const nextScan = defaultScanProfile ?? beforeScan;
+        const nextEngine = preferredProxyEngine ?? beforeEngine;
+        await env.DB
+          .prepare(
+            `UPDATE plans SET code = ?, name = ?, default_profiles = ?, default_nodes = ?, default_scan_profile = ?, preferred_proxy_engine = ?, updated_at = ? WHERE id = ?`,
+          )
+          .bind(nextCode, nextName, nextProfiles, nextNodes, nextScan, nextEngine, t, DEFAULT_PLAN_ID)
+          .run();
+        await adminAudit(env.DB, userId, 'admin.plan_updated', null, JSON.stringify({ code: nextCode, name: nextName, defaultProfiles: nextProfiles, defaultNodes: nextNodes, defaultScanProfile: nextScan, preferredProxyEngine: nextEngine }));
+        return json(200, {
+          plan: {
+            id: DEFAULT_PLAN_ID,
+            code: nextCode,
+            name: nextName,
+            defaultProfiles: nextProfiles,
+            defaultNodes: nextNodes,
+            defaultScanProfile: nextScan,
+            preferredProxyEngine: nextEngine,
+            updatedAt: t,
+          },
+          changed: {
+            code: beforeCode !== nextCode,
+            name: beforeName !== nextName,
+            defaultProfiles: beforeProfiles !== nextProfiles,
+            defaultNodes: beforeNodes !== nextNodes,
+            defaultScanProfile: beforeScan !== nextScan,
+            preferredProxyEngine: beforeEngine !== nextEngine,
+          },
+        });
+      }
+
+      if (path === '/api/v1/admin/users' && req.method === 'GET') {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const rows = await env.DB.prepare(`SELECT id, email, role, created_at, last_login_at, disabled FROM users ORDER BY created_at ASC LIMIT 500`).all<{
+          id: string; email: string; role: string; created_at: number; last_login_at: number | null; disabled: number;
+        }>();
+        return json(200, {
+          users: (rows.results ?? []).map((r) => ({
+            id: r.id,
+            email: r.email,
+            role: r.role,
+            createdAt: r.created_at,
+            lastLoginAt: r.last_login_at,
+            disabled: r.disabled === 1,
+          })),
+        });
+      }
+
+      // Parameterised paths are matched with a regex against the real URL. The
+      // old `path === '/api/v1/admin/users/:id/promote'` compared against the
+      // LITERAL template string, so this route could never run at all.
+      const promoteMatch = req.method === 'POST' ? path.match(/^\/api\/v1\/admin\/users\/([^/]+)\/promote$/) : null;
+      if (promoteMatch) {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const targetId = promoteMatch[1];
+        const target = await env.DB.prepare(`SELECT id, email, role FROM users WHERE id = ?`).bind(targetId).first<{ id: string; email: string; role: string }>();
+        if (!target) return fail(404, 'not_found', 'Target account not found');
+        if (target.id === userId) return fail(400, 'validation_error', 'An administrator cannot promote themselves through this route');
+        if (target.role === 'admin') return fail(409, 'already_admin', 'Target account is already an administrator');
+        await env.DB.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).bind(targetId).run();
+        await adminAudit(env.DB, userId, 'admin.user_promoted', targetId, JSON.stringify({ targetEmail: target.email }));
+        return json(200, { ok: true, user: { id: target.id, email: target.email, role: 'admin' } });
+      }
+
+      const demoteMatch = req.method === 'POST' ? path.match(/^\/api\/v1\/admin\/users\/([^/]+)\/demote$/) : null;
+      if (demoteMatch) {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const targetId = demoteMatch[1];
+        const target = await env.DB.prepare(`SELECT id, email, role FROM users WHERE id = ?`).bind(targetId).first<{ id: string; email: string; role: string }>();
+        if (!target) return fail(404, 'not_found', 'Target account not found');
+        if (target.id === userId) {
+          const adminCount = await env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).first<{ n: number }>();
+          if ((adminCount?.n ?? 1) <= 1) return fail(400, 'validation_error', 'At least one administrator must remain');
+        }
+        if (target.role !== 'admin') return fail(409, 'not_admin', 'Target account is not an administrator');
+        await env.DB.prepare(`UPDATE users SET role = 'normal' WHERE id = ?`).bind(targetId).run();
+        await adminAudit(env.DB, userId, 'admin.user_demoted', targetId, JSON.stringify({ targetEmail: target.email }));
+        return json(200, { ok: true, user: { id: target.id, email: target.email, role: 'normal' } });
+      }
+
+      if (path === '/api/v1/admin/events' && req.method === 'GET') {
+        {
+          const row = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+          if (!isAdmin(row)) return fail(403, 'admin_required', 'This route is restricted to administrators');
+        }
+        const rows = await env.DB.prepare(`SELECT id, acted_by, acted_at, action, target_user_id, detail FROM admin_events ORDER BY acted_at DESC LIMIT 200`).all<{
+          id: number; acted_by: string; acted_at: number; action: string; target_user_id: string | null; detail: string | null;
+        }>();
+        return json(200, {
+          events: (rows.results ?? []).map((r) => ({
+            id: r.id,
+            actedBy: r.acted_by,
+            actedAt: r.acted_at,
+            action: r.action,
+            targetUserId: r.target_user_id,
+            detail: r.detail,
+          })),
+        });
+      }
 
       // -------- preferences (key/value) --------
       if (path === '/api/v1/preferences' && req.method === 'GET') {

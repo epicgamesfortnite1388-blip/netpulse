@@ -43,6 +43,7 @@ export const UserSchema = z.object({
   email: z.string(),
   createdAt: z.number(),
   lastLoginAt: z.number().nullable(),
+  role: z.literal('admin').or(z.literal('normal')),
 });
 
 export const AuthResponseSchema = z.object({
@@ -102,6 +103,40 @@ export const ResetSchema = z.object({ token: z.string().min(20).max(200), newPas
 
 export const RefreshSchema = z.object({ refreshToken: z.string().min(20).max(200) });
 
+export const CreateAdminAccountSchema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
+  password: PasswordSchema,
+});
+
+export const AdminPlanPatchSchema = z.object({
+  code: z.string().trim().min(1).max(40).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  defaultProfiles: z.string().max(60_000).optional(),
+  defaultNodes: z.string().max(60_000).optional(),
+  defaultScanProfile: z.string().trim().min(1).max(40).optional(),
+  preferredProxyEngine: z.string().trim().min(1).max(40).optional(),
+}).refine((v) => Object.keys(v).length > 0, { message: 'At least one updatable field must be supplied' });
+
+export const PlanSchema = z.object({
+  id: z.string(),
+  code: z.string().min(1).max(40),
+  name: z.string().min(1).max(120),
+  defaultProfiles: z.string(),
+  defaultNodes: z.string(),
+  defaultScanProfile: z.string().min(1).max(40),
+  preferredProxyEngine: z.string().min(1).max(40),
+  updatedAt: z.number().int(),
+});
+
+export const AdminAccountSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: z.literal('admin').or(z.literal('normal')),
+  createdAt: z.number().int(),
+  lastLoginAt: z.number().nullable(),
+  disabled: z.boolean(),
+});
+
 /**
  * E2E encrypted profile backup. `ciphertext` is an opaque blob the Worker
  * cannot read (client-side AES-GCM over the full profile config); the schema
@@ -121,6 +156,9 @@ export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 export type UserDto = z.infer<typeof UserSchema>;
 export type ProfileEnvelope = z.infer<typeof ProfileEnvelopeSchema>;
 export type VaultPut = z.infer<typeof VaultPutSchema>;
+export type CreateAdminAccount = z.infer<typeof CreateAdminAccountSchema>;
+export type Plan = z.infer<typeof PlanSchema>;
+export type AdminUser = z.infer<typeof AdminAccountSchema>;
 
 export const errorBody = (code: string, message: string): { error: { code: string; message: string } } => ({
   error: { code, message },

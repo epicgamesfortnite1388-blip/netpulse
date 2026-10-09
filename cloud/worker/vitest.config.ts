@@ -14,6 +14,7 @@ const migrationSql = [
   '0001_init.sql',
   '0002_profile_vaults.sql',
   '0003_telegram_integration.sql',
+  '0004_admin_plans.sql',
 ]
   .map((f) => readFileSync(path.join(migrationsDir, f), 'utf8'))
   .join('\n');

@@ -69,7 +69,7 @@ client - linking is verified by the bot itself.
 ```bash
 npx wrangler secret put NETPULSE_SERVICE_SECRET   # SAME value as the bot's
 npx wrangler secret put TELEGRAM_BOT_BASE_URL     # e.g. https://abystral-bot.<account>.workers.dev
-npx wrangler d1 migrations apply netpulse-cloud --remote   # applies 0003
+npx wrangler d1 migrations apply netpulse-cloud --remote   # applies 0003 + 0004
 ```
 
 - Inbound (bot -> here): `POST /api/internal/netpulse/v1/events` and
@@ -79,9 +79,22 @@ npx wrangler d1 migrations apply netpulse-cloud --remote   # applies 0003
 - Outbound (here -> bot): `/link/request`, `/link/claim`, `/link/status/:id`,
   `/link/:id`, `/entitlement/:id` - same signature scheme, every call audited
   in `np_outbound_log` (action + path + status; never signature material).
+- Signed-in devices (bot -> here, NEW): `GET /api/internal/netpulse/v1/session
+  ?netpulseAccountId=<npa_…>` lists an account's live sessions and
+  `DELETE /api/internal/netpulse/v1/session/<sessionId>` (body:
+  `{ netpulseAccountId }`) revokes exactly one. Same HMAC scheme, fail-closed,
+  rate-limited per account, audited. The account is identified by the
+  `netpulse_account_id` the bot already holds from `link/request` and that
+  `np_links` indexes - never a Telegram id, never a NetPulse user id - and only
+  while `np_links.status = 'active'`, so a revoked link stops answering
+  identically to an unknown id. Reuses the same rows as the app's
+  `/api/v1/account/sessions`; no token material crosses the boundary. "Sign out
+  everywhere" is deliberately NOT exposed here: it is one mis-tap away in
+  Telegram and cannot be undone from the same screen.
 - App-facing routes: `GET /api/v1/account/telegram`, `POST .../link`,
   `POST .../link/confirm`, `POST .../unlink`,
-  `POST /api/v1/integrations/telegram/status|sync`, `GET /api/v1/subscriptions`.
+  `POST /api/v1/integrations/telegram/status|sync`, `GET /api/v1/subscriptions`,
+  `GET /api/v1/subscriptions/:id`.
 - Events dedup on `event_id`; entitlement upserts are guarded by
   `config_updated_at`, so out-of-order deliveries never regress state.
 - Full contract: `docs/netpulse-integration.md` in the Abystral repo.
@@ -100,6 +113,37 @@ fail-closed when `OPS_TOKEN` is unset, and shows:
 - link counts (active / pending / unlinked) + last entitlement pull-sync age
 - inbox health: `np_events` processed-status breakdown + the 10 newest events
 - outbound-call health: 24h ok-rate, per-action totals/failures, recent errors
+
+## Admin: plan of record (default VPN configs and nodes)
+
+Migration `0004` adds `users.role` and the single `plans` row. Every existing
+account becomes `normal`, so a freshly migrated deployment has **zero admins**
+by design and needs an explicit bootstrap. The bootstrap route only answers
+while no admin exists and is rate-limited to 3 attempts/hour per IP:
+
+```bash
+# The password is chosen here and never stored in the repo.
+curl -sS -X POST https://<worker>/api/v1/admin/account \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"<admin-email>","password":"<strong-password>"}'
+```
+
+The response carries the admin's access/refresh tokens. Those tokens unlock
+the admin-only routes; normal accounts get `403 admin_required` on every one
+of them:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/v1/admin/plan` | read the plan of record |
+| `PATCH /api/v1/admin/plan` | set `name`, `defaultProfiles` (default VPN configs), `defaultNodes` (default node keys), `defaultScanProfile`, `preferredProxyEngine`; `code` only to a code the bot has already issued |
+| `GET /api/v1/admin/users` | account list with roles |
+| `POST /api/v1/admin/users/:id/promote` and `.../demote` | role changes; the last admin cannot be demoted |
+| `GET /api/v1/admin/events` | audit of role changes and plan edits |
+
+`defaultProfiles` and `defaultNodes` are JSON string arrays; anything else is
+rejected with `400 invalid_plan_defaults`. Normal accounts keep exactly their
+own data (profiles, favorites, subscriptions) - no user-scoped route exposes
+the plan defaults.
 
 ## Tests
 

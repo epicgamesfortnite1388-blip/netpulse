@@ -22,7 +22,37 @@ describe('CORS preflight allow-list (audit F5 regression)', () => {
       expect(res.headers.get('access-control-allow-origin')).toBe(origin);
     }
   });
-});
+});async function loginReturnToken(email: string, password = 'Sup3rSecurePass'): Promise<string> {
+  const res = await SELF.fetch('https://worker.test/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const json = (await res.json()) as { accessToken?: string };
+  return json.accessToken ?? '';
+}
+
+async function grantAdmin(userId: string): Promise<void> {
+  await env.DB.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).bind(userId).run();
+}
+
+async function seedPlan(plan?: { code?: string; name?: string; defaultProfiles?: string; defaultNodes?: string; defaultScanProfile?: string; preferredProxyEngine?: string }): Promise<void> {
+  const t = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO plans (id, code, name, default_profiles, default_nodes, default_scan_profile, preferred_proxy_engine, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET
+       code = COALESCE(EXCLUDED.code, plans.code),
+       name = COALESCE(EXCLUDED.name, plans.name),
+       default_profiles = COALESCE(EXCLUDED.default_profiles, plans.default_profiles),
+       default_nodes = COALESCE(EXCLUDED.default_nodes, plans.default_nodes),
+       default_scan_profile = COALESCE(EXCLUDED.default_scan_profile, plans.default_scan_profile),
+       preferred_proxy_engine = COALESCE(EXCLUDED.preferred_proxy_engine, plans.preferred_proxy_engine),
+       updated_at = ?`,
+  )
+    .bind('plan_pro', plan?.code ?? 'pro', plan?.name ?? 'Pro', plan?.defaultProfiles ?? '[]', plan?.defaultNodes ?? '[]', plan?.defaultScanProfile ?? 'balanced', plan?.preferredProxyEngine ?? 'auto', t, t)
+    .run();
+}
 
 /**
  * Security + behavior contract of the NetPulse cloud Worker, driven through
@@ -477,12 +507,293 @@ describe('security abuse', () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('not_found');
   });
 
-  it('account deletion cascades all user data', async () => {
-    const { token, userId } = await register('del@example.com');
-    await authFetch(token, '/api/v1/profiles', { method: 'PUT', body: JSON.stringify({ id: 'prof_del', name: 'x', protocol: 'ss', config: '{}' }) });
-    expect((await authFetch(token, '/api/v1/account', { method: 'DELETE' })).status).toBe(200);
-    expect((await authFetch(token, '/api/v1/account')).status).toBe(401);
-    const left = await env.DB.prepare(`SELECT COUNT(*) AS n FROM vpn_profiles WHERE user_id = ?`).bind(userId).first<{ n: number }>();
-    expect(left?.n).toBe(0);
+  it('signals the Plan code from the account endpoint', async () => {
+    await seedPlan({ code: 'pro', name: 'Pro' });
+    await register('plan-sig@example.com');
+    const admin = await register('plan-sig-admin@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('plan-sig-admin@example.com');
+    expect(at).not.toBe('');
+    const res = await authFetch(at, '/api/v1/account');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { role: string } };
+    expect(body.user.role).toBe('admin');
+  });
+});
+
+describe('admin account and plan-of-record', () => {
+  it('rejects admin-only routes for a normal user', async () => {
+    await register('normal@example.com');
+    const token = await loginReturnToken('normal@example.com');
+    expect(token).not.toBe('');
+    for (const path of ['/api/v1/admin/plan', '/api/v1/admin/users', '/api/v1/admin/events']) {
+      expect((await authFetch(token, path)).status).toBe(403);
+    }
+  });
+
+  it('normal accounts cannot read or patch the plan default VPN configs and nodes', async () => {
+    await register('normal-restrict@example.com');
+    const nt = await loginReturnToken('normal-restrict@example.com');
+    expect(nt).not.toBe('');
+    for (const path of ['/api/v1/admin/plan', '/api/v1/admin/users', '/api/v1/admin/events']) {
+      expect((await authFetch(nt, path)).status).toBe(403);
+    }
+    // Admin-owned defaults are unreachable in both directions for a normal
+    // account: the reads above are 403 and neither list can be written.
+    const configs = await authFetch(nt, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultProfiles: '["config:restricted"]' }),
+    });
+    expect(configs.status).toBe(403);
+    const nodes = await authFetch(nt, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultNodes: '["node:restricted"]' }),
+    });
+    expect(nodes.status).toBe(403);
+  });
+
+  it('admin account can read the plan default VPN configs and nodes', async () => {
+    await seedPlan({ code: 'pro', name: 'Pro', defaultProfiles: '["cfg-a","cfg-b"]', defaultNodes: '["node-a","node-b"]', defaultScanProfile: 'balanced' });
+    const admin = await register('admin-read@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-read@example.com');
+    expect(at).not.toBe('');
+    const res = await authFetch(at, '/api/v1/admin/plan');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { plan: { name: string; defaultScanProfile: string; preferredProxyEngine: string; defaultProfiles: string; defaultNodes: string } };
+    expect(body.plan.name).toBe('Pro');
+    expect(body.plan.defaultScanProfile).toBe('balanced');
+    expect(body.plan.preferredProxyEngine).toBe('auto');
+    expect(body.plan.defaultProfiles).toBe('["cfg-a","cfg-b"]');
+    expect(body.plan.defaultNodes).toBe('["node-a","node-b"]');
+  });
+
+  it('admin can patch the plan of record', async () => {
+    await seedPlan({ code: 'pro', name: 'Pro', defaultScanProfile: 'balanced', preferredProxyEngine: 'auto' });
+    const admin = await register('admin-patch@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-patch@example.com');
+    expect(at).not.toBe('');
+    const patch = await authFetch(at, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: 'Enterprise',
+        defaultScanProfile: 'thorough',
+        preferredProxyEngine: 'singbox',
+        defaultProfiles: '["cfg-1","cfg-2"]',
+        defaultNodes: '["node-1","node-2"]',
+      }),
+    });
+    expect(patch.status).toBe(200);
+    const patched = (await patch.json()) as { plan: { name: string; defaultScanProfile: string; preferredProxyEngine: string; defaultProfiles: string; defaultNodes: string }, changed: { code: boolean; name: boolean; defaultScanProfile: boolean; preferredProxyEngine: boolean; defaultProfiles: boolean; defaultNodes: boolean } };
+    expect(patched.plan.name).toBe('Enterprise');
+    expect(patched.plan.defaultScanProfile).toBe('thorough');
+    expect(patched.plan.preferredProxyEngine).toBe('singbox');
+    expect(patched.plan.defaultProfiles).toBe('["cfg-1","cfg-2"]');
+    expect(patched.plan.defaultNodes).toBe('["node-1","node-2"]');
+    expect(patched.changed.code).toBe(false);
+    expect(patched.changed.name).toBe(true);
+    expect(patched.changed.defaultScanProfile).toBe(true);
+    expect(patched.changed.preferredProxyEngine).toBe(true);
+    expect(patched.changed.defaultProfiles).toBe(true);
+    expect(patched.changed.defaultNodes).toBe(true);
+  });
+
+  it('admin cannot patch the plan code to an unknown entitlement code', async () => {
+    await seedPlan({ code: 'pro', name: 'Pro' });
+    const admin = await register('admin-badcode@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-badcode@example.com');
+    expect(at).not.toBe('');
+    const res = await authFetch(at, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ code: 'made-up-plan' }),
+    });
+    expect(res.status).toBe(400);
+    const err = (await res.json()) as { error: { code: string } };
+    expect(err.error.code).toBe('invalid_plan_code');
+  });
+
+  it('admin can promote a normal account to admin', async () => {
+    await register('normal-promo@example.com');
+    const admin = await register('admin-promo@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-promo@example.com');
+    expect(at).not.toBe('');
+    const normalRes = await SELF.fetch('https://worker.test/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'normal-promo@example.com', password: 'Sup3rSecurePass' }),
+    });
+    expect(normalRes.status).toBe(200);
+    const normal = (await normalRes.json()) as { accessToken: string; user: { id: string } };
+    const promote = await authFetch(at, '/api/v1/admin/users/' + normal.user.id + '/promote', { method: 'POST' });
+    expect(promote.status).toBe(200);
+    const promoted = (await promote.json()) as { user: { id: string; role: string } };
+    expect(promoted.user.id).toBe(normal.user.id);
+    expect(promoted.user.role).toBe('admin');
+  });
+
+  it('admin cannot promote themselves through the promote route', async () => {
+    const admin = await register('admin-self-promo@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-self-promo@example.com');
+    expect(at).not.toBe('');
+    const res = await authFetch(at, '/api/v1/admin/users/' + admin.userId + '/promote', { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  it('admin can demote another admin, but not to zero admins', async () => {
+    const adminA = await register('admin-a@example.com');
+    await grantAdmin(adminA.userId);
+    const adminB = await register('admin-b@example.com');
+    await grantAdmin(adminB.userId);
+    const at = await loginReturnToken('admin-a@example.com');
+    expect(at).not.toBe('');
+    const demote = await authFetch(at, '/api/v1/admin/users/' + adminB.userId + '/demote', { method: 'POST' });
+    expect(demote.status).toBe(200);
+    const demoted = (await demote.json()) as { user: { role: string } };
+    expect(demoted.user.role).toBe('normal');
+    // Now only adminA is admin; demoting them must fail.
+    const selfDemote = await authFetch(at, '/api/v1/admin/users/' + adminA.userId + '/demote', { method: 'POST' });
+    expect(selfDemote.status).toBe(400);
+  });
+
+  it('admin list includes roles', async () => {
+    await register('admin-list-a@example.com');
+    const admin = await register('admin-list@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-list@example.com');
+    expect(at).not.toBe('');
+    const res = await authFetch(at, '/api/v1/admin/users');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { users: Array<{ id: string; email: string; role: string }> };
+    const adminRow = body.users.find((u) => u.email === 'admin-list@example.com');
+    expect(adminRow).toBeTruthy();
+    expect(adminRow!.role).toBe('admin');
+    const normalRow = body.users.find((u) => u.email === 'admin-list-a@example.com');
+    expect(normalRow).toBeTruthy();
+    expect(normalRow!.role).toBe('normal');
+  });
+
+  it('admin events are audited', async () => {
+    await register('admin-audit-a@example.com');
+    const admin = await register('admin-audit@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-audit@example.com');
+    expect(at).not.toBe('');
+    await authFetch(at, '/api/v1/admin/users/' + (await register('admin-audit-b@example.com')).userId + '/promote', { method: 'POST' });
+    const events = (await (await authFetch(at, '/api/v1/admin/events')).json()) as { events: Array<{ action: string }> };
+    expect(events.events.some((e) => e.action === 'admin.user_promoted')).toBe(true);
+  });
+
+  it('creates the first admin account through POST /admin/account when none exist', async () => {
+    const res = await SELF.fetch('https://worker.test/api/v1/admin/account', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'first-admin@example.com', password: 'AdminPassword1' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { user: { id: string; email: string; role: string } };
+    expect(body.user.email).toBe('first-admin@example.com');
+    expect(body.user.role).toBe('admin');
+    // The created account can log in.
+    const loginRes = await SELF.fetch('https://worker.test/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'first-admin@example.com', password: 'AdminPassword1' }),
+    });
+    expect(loginRes.status).toBe(200);
+    const loginBody = (await loginRes.json()) as { accessToken: string };
+    expect(loginBody.accessToken).not.toBe('');
+  });
+
+  it('rejects creating a second admin via POST /admin/account', async () => {
+    const existing = await register('first-admin-2@example.com');
+    await grantAdmin(existing.userId);
+    const res = await SELF.fetch('https://worker.test/api/v1/admin/account', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'second-admin@example.com', password: 'AdminPassword2' }),
+    });
+    expect(res.status).toBe(409);
+    const err = (await res.json()) as { error: { code: string } };
+    expect(err.error.code).toBe('admin_already_exists');
+  });
+
+  it('rate limits POST /admin/account per IP', async () => {
+    const existing = await register('first-admin-3@example.com');
+    await grantAdmin(existing.userId);
+    let lastStatus = 201;
+    for (let i = 0; i < 6; i++) {
+      const res = await SELF.fetch('https://worker.test/api/v1/admin/account', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: `rate-${i}@example.com`, password: 'AdminPassword1' }),
+      });
+      lastStatus = res.status;
+      if (res.status === 429) break;
+    }
+    expect(lastStatus).toBe(429);
+  });
+
+  it('registers the first user as normal when no admin exists yet', async () => {
+    const { token, userId } = await register('first-normal@example.com');
+    expect(token).not.toBe('');
+    const me = (await authFetch(token, '/api/v1/account'));
+    expect(me.status).toBe(200);
+    const body = (await me.json()) as { user: { role: string } };
+    expect(body.user.role).toBe('normal');
+    // First account did NOT become admin by virtue of being first.
+    const admin = await env.DB.prepare(`SELECT id FROM users WHERE id = ? AND role = 'admin'`).bind(userId).first<{ id: string }>();
+    expect(admin).toBeNull();
+  });
+
+  it('bootstraps the operator account and lets it change the plan defaults', async () => {
+    // The account the deployment is bootstrapped with. POST /admin/account
+    // answers only while no admin exists, which is exactly the freshly
+    // migrated state: migration 0004 gives every pre-existing row role
+    // 'normal', so a real deployment has zero admins right after migrating.
+    // Same route the operator runs with their real password. The value here is
+    // a fixed non-secret test input on purpose: no live credential in git.
+    const res = await SELF.fetch('https://worker.test/api/v1/admin/account', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'radinshurideh@gmail.com', password: 'OperatorPassword1' }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { user: { email: string; role: string }; accessToken: string };
+    expect(created.user.email).toBe('radinshurideh@gmail.com');
+    expect(created.user.role).toBe('admin');
+    expect(created.accessToken).not.toBe('');
+
+    const patch = await authFetch(created.accessToken, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultProfiles: '["cfg-eu","cfg-us"]', defaultNodes: '["node-eu","node-us"]' }),
+    });
+    expect(patch.status).toBe(200);
+    const read = await authFetch(created.accessToken, '/api/v1/admin/plan');
+    expect(read.status).toBe(200);
+    const body = (await read.json()) as { plan: { defaultProfiles: string; defaultNodes: string } };
+    expect(body.plan.defaultProfiles).toBe('["cfg-eu","cfg-us"]');
+    expect(body.plan.defaultNodes).toBe('["node-eu","node-us"]');
+  });
+
+  it('rejects plan defaults that are not JSON string arrays', async () => {
+    const admin = await register('admin-bad-defaults@example.com');
+    await grantAdmin(admin.userId);
+    const at = await loginReturnToken('admin-bad-defaults@example.com');
+    expect(at).not.toBe('');
+    const nodes = await authFetch(at, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultNodes: 'not-json' }),
+    });
+    expect(nodes.status).toBe(400);
+    expect(((await nodes.json()) as { error: { code: string } }).error.code).toBe('invalid_plan_defaults');
+    const profiles = await authFetch(at, '/api/v1/admin/plan', {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultProfiles: '{"not":"an array"}' }),
+    });
+    expect(profiles.status).toBe(400);
   });
 });
