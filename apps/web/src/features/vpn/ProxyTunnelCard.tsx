@@ -32,10 +32,11 @@ import type { GatewayMemoryEntry, ProxyTunnelStatus, QuickConnectResult, ScanPro
  *     differs from the entry edge — including when it does not.
  */
 
+/** The subset of `NodeView` this card reads. No host/port — never sent. */
 interface PickableNodeDto {
   id: string;
-  host: string;
-  port: number;
+  /** Server-built display name; always non-empty. */
+  label: string;
   protocol: string;
   country: string | null;
   city: string | null;
@@ -55,11 +56,11 @@ const STATE_TONE: Record<ProxyTunnelStatus['state'], 'ok' | 'warn' | 'danger' | 
 function nodeLabel(n: PickableNodeDto): string {
   const where = [n.city, n.country].filter(Boolean).join(', ');
   const ms = n.medianProxyMs != null ? `${n.medianProxyMs} ms` : null;
-  return [n.remark || n.host, where, ms].filter(Boolean).join(' · ');
+  return [n.label, where, ms].filter(Boolean).join(' · ');
 }
 
 function gatewayLabel(g: GatewayMemoryEntry): string {
-  const where = [g.name || g.host, g.exitCountry ? `exit ${g.exitCountry}` : null].filter(Boolean).join(' · ');
+  const where = [g.name || g.label, g.exitCountry ? `exit ${g.exitCountry}` : null].filter(Boolean).join(' · ');
   const state = g.successStreak > 0 ? `${g.successStreak}× proven` : 'last attempt failed';
   return `${where} — ${state}`;
 }
@@ -197,7 +198,7 @@ export function ProxyTunnelCard() {
   const nodeName =
     tunnel?.nodeName ??
     (tunnel?.nodeId
-      ? candidates.find((n) => n.id === tunnel.nodeId)?.remark || candidates.find((n) => n.id === tunnel.nodeId)?.host || tunnel.nodeId
+      ? candidates.find((n) => n.id === tunnel.nodeId)?.label || tunnel.nodeId
       : null);
 
   return (
@@ -282,10 +283,10 @@ export function ProxyTunnelCard() {
                   {tunnel.chain.hops.map((h, i) => (
                     <li key={h.nodeId} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
                       <Badge tone="neutral">{i === 0 ? 'entry' : 'exit'}</Badge>
-                      <span className="min-w-0 truncate text-text">{h.name ?? `${h.host}:${h.port}`}</span>
+                      <span className="min-w-0 truncate text-text">{h.label}</span>
                       <span className="text-muted">{h.engine}</span>
-                      <span className="text-muted">
-                        {h.host}:{h.port}
+                      <span className="text-faint" title="This hop's address is withheld — the core dialed it on the server">
+                        endpoint hidden
                       </span>
                       <span className="text-muted">
                         exit IP {h.exitIp ?? 'unverified'}
@@ -339,9 +340,9 @@ export function ProxyTunnelCard() {
                         <span className="text-faint">
                           {a.source === 'memory' ? 'remembered gateway' : a.source === 'discovery' ? 'discovered' : 'database'}
                         </span>
-                        <span className="min-w-0 truncate text-text">{a.name ?? a.nodeId}</span>
-                        <span className="text-muted">
-                          {a.host}:{a.port}
+                        <span className="min-w-0 truncate text-text">{a.label}</span>
+                        <span className="text-faint" title="The node's address is withheld — the tunnel dialed it on the server">
+                          endpoint hidden
                         </span>
                         {a.exitIp && <span className="text-muted">exit {a.exitIp}</span>}
                         <span className="text-faint">

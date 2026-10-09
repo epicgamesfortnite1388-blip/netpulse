@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   // Auto-connect preference: same helper as the dev server, same quick-connect
   // path as the Connect button (remembered gateways → discovery scan).
-  runAutoConnectIfNeeded(app, ctx, stdinToken);
+  runAutoConnectIfNeeded(app, ctx);
 
   // Notify the supervisor that we are listening (stderr is piped to the app log).
   process.stderr.write(`sidecar-ready port=${boundPort}\n`);

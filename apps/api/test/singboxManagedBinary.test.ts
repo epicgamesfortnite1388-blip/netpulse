@@ -13,12 +13,21 @@ import { detectVpnBinaries, findSingBoxLaunch, managedSingBoxPath } from '../src
  * cores dir.
  */
 let restoreEnv: Array<[string, string | undefined]> = [];
-function withCoresDir(body: () => void): void {
+/**
+ * MUST await the body: two tests pass `async () => …`, and a detached body
+ * outlives this function's `finally` — which deletes `NETPULSE_CORES_DIR`
+ * before `findSingBoxLaunch()` reads it. That made the assertion reject in a
+ * fire-and-forget promise: the test reported green without ever running its
+ * check, and under a shared-thread pool the rejection surfaced as an
+ * unhandled error in a *later* file's run. Awaiting keeps the env and tmp dir
+ * alive for exactly as long as the assertion needs them.
+ */
+async function withCoresDir(body: () => void | Promise<void>): Promise<void> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'np-singbox-detect-'));
   process.env['NETPULSE_CORES_DIR'] = tmp;
   restoreEnv.push(['NETPULSE_CORES_DIR', undefined]);
   try {
-    body();
+    await body();
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
     for (const [key] of restoreEnv) delete process.env[key];
@@ -32,8 +41,8 @@ afterEach(() => {
 });
 
 describe('managed sing-box detection', () => {
-  it('treats the app-managed cores-dir binary as installed', () => {
-    withCoresDir(() => {
+  it('treats the app-managed cores-dir binary as installed', async () => {
+    await withCoresDir(() => {
       const name = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
       fs.writeFileSync(path.join(coresPath(), name), '#!/bin/sh\nexit 0\n');
       expect(managedSingBoxPath()).not.toBeNull();
@@ -41,14 +50,14 @@ describe('managed sing-box detection', () => {
     });
   });
 
-  it('returns null when nothing is installed', () => {
-    withCoresDir(() => {
+  it('returns null when nothing is installed', async () => {
+    await withCoresDir(() => {
       expect(managedSingBoxPath()).toBeNull();
     });
   });
 
   it('detectVpnBinaries sees the managed binary', async () => {
-    withCoresDir(async () => {
+    await withCoresDir(async () => {
       const name = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
       fs.writeFileSync(path.join(coresPath(), name), 'x');
       const bins = await detectVpnBinaries();
@@ -57,7 +66,7 @@ describe('managed sing-box detection', () => {
   });
 
   it('findSingBoxLaunch returns the managed path, not a bare name', async () => {
-    withCoresDir(async () => {
+    await withCoresDir(async () => {
       const name = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
       const managed = path.join(coresPath(), name);
       fs.writeFileSync(managed, 'x');

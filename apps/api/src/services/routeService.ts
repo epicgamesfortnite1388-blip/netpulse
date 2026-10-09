@@ -8,6 +8,7 @@ import type { RouteComparisonRepository, TestsRepository } from '../db/repositor
 import type { PlatformNetworkController } from '../providers/platform/types';
 import { parseCymruOrigin } from '../util/traceParse';
 import { familyOfIp, pickIp, resolveTarget } from '../util/targetGuard';
+import { makeScrubber, scrubEndpoints } from './endpointScrub';
 import type { SettingsService } from './settingsService';
 import type { EventService } from './eventService';
 
@@ -182,11 +183,22 @@ export class RouteService {
     },
   ) {}
 
-  async runTrace(req: RouteTestRequest, testIdOverride?: string): Promise<RouteTestResult> {
+  async runTrace(req: RouteTestRequest, testIdOverride?: string, opts?: { displayTarget?: string }): Promise<RouteTestResult> {
     const { controller, tests, events, bus } = this.deps;
 
     const target = await resolveTarget(req.target);
     const ip = pickIp(target.ips, req.family);
+    // What events, the stored summary and the analysis call this target. A
+    // hidden-endpoint caller (the map tracing a stored node) passes its NAME
+    // so nothing written during this run records the address — events are a
+    // user-visible surface, and analysis sentences end up in stored results.
+    // `params` keep the real target: compareVpnRoutes pairs rows by matching
+    // it, and the READ paths scrub what they return.
+    const display = opts?.displayTarget ?? target.host;
+    const maskMsg = (text: string): string =>
+      opts?.displayTarget
+        ? text.split(req.target).join(opts.displayTarget).split(ip).join(opts.displayTarget)
+        : text;
     const family = familyOfIp(ip);
     const testId = testIdOverride ?? crypto.randomUUID();
     // VPN state AT CAPTURE TIME is what makes before/after pairing honest:
@@ -240,12 +252,12 @@ export class RouteService {
         }
       }
 
-      const analysis = analyzeTrace(trace, { lossPctAtDestination, target: target.host });
+      const analysis = analyzeTrace(trace, { lossPctAtDestination, target: display });
 
       tests.finish(testId, {
         status: 'done',
         summary: {
-          target: target.host,
+          target: display,
           resolvedIp: ip,
           family,
           hops: trace.totalHops,
@@ -258,7 +270,7 @@ export class RouteService {
       events.record(
         'info',
         'routing',
-        `Route to ${target.host}: ${trace.totalHops} hops, ${trace.totalLatencyMs ?? '—'} ms, score ${analysis.score ?? '—'}`,
+        `Route to ${display}: ${trace.totalHops} hops, ${trace.totalLatencyMs ?? '—'} ms, score ${analysis.score ?? '—'}`,
         { testId },
       );
 
@@ -267,7 +279,7 @@ export class RouteService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       tests.finish(testId, { status: 'error', error: message });
-      events.record('error', 'routing', `Route test to ${req.target} failed: ${message}`, { testId });
+      events.record('error', 'routing', `Route test to ${display} failed: ${maskMsg(message)}`, { testId });
       throw err;
     }
   }
@@ -281,21 +293,43 @@ export class RouteService {
       providerId: s.connected ? (s.providerId ?? null) : null,
       verifiedPublicIp: s.connected ? (s.verifiedPublicIp ?? null) : null,
     };
-  }
-
-  /**
-   * Direct-vs-VPN route comparison for one target, built ONLY from stored
-   * route tests (each tagged with the VPN state captured while it ran).
-   * Never invents a side: missing data is reported, not fabricated.
-   */
-  async compareVpnRoutes(targetInput: string, opts: { limit?: number } = {}): Promise<VpnRouteCompareResult> {
+  }/**
+ * Direct-vs-VPN route comparison for one target, built ONLY from stored
+ * route tests (each tagged with the VPN state captured while it ran).
+ * Never invents a side: missing data is reported, not fabricated.
+ *
+ * ## Targets the user typed vs. nodes the user picked
+ *
+ * `target` is a host the user typed, so echoing it back discloses nothing.
+ * `node` is a stored node: its address is configuration, so the server
+ * resolves the row itself, matches stored traces against the row's own
+ * addresses, and reports the node's LABEL instead. The comparison is exactly
+ * as complete; only the disclosure changes.
+ */
+async compareVpnRoutes(
+    which: { target: string } | { node: { host: string; ipv4: string[]; ipv6: string[]; label: string } },
+    opts: { limit?: number } = {},
+  ): Promise<VpnRouteCompareResult> {
     const { tests } = this.deps;
     // Reuse the list endpoint's filter path: type 'route', newest first.
     // 200 rows is plenty of pairing context while staying bounded.
     const limit = Math.min(Math.max(opts.limit ?? 200, 10), 500);
     const rows = tests.list({ type: 'route', limit });
 
-    const wanted = targetInput.trim().toLowerCase();
+    const hidden = 'node' in which;
+    // What the response calls the target: the typed string, or the node's label.
+    const display = hidden ? which.node.label : which.target;
+    // Everything a stored trace might have recorded this target as. A node can
+    // appear under its hostname or under any address it resolved to.
+    const wanted = new Set(
+      (hidden
+        ? [which.node.host, ...which.node.ipv4, ...which.node.ipv6]
+        : [which.target]
+      )
+        .filter((s) => s.trim().length > 0)
+        .map((s) => s.trim().toLowerCase()),
+    );
+
     const withTrace: { row: (typeof rows)[number]; vpn: RouteVpnTag; trace: TraceResult | null; loss: number | null }[] = [];
     for (const row of rows) {
       if (row.status !== 'done') continue;
@@ -305,7 +339,7 @@ export class RouteService {
       const rowResolved = String(params?.resolvedIp ?? result?.resolvedIp ?? '').toLowerCase();
       // Match on the target the user asked for OR its resolved IP (a trace
       // stored by hostname still pairs with one stored by IP).
-      if (wanted !== rowTarget && wanted !== rowResolved) continue;
+      if (!wanted.has(rowTarget) && !wanted.has(rowResolved)) continue;
       const full = tests.get(row.id);
       const trace = (full?.result as { trace?: TraceResult } | null)?.trace ?? null;
       const analysis = (full?.result as { analysis?: RouteAnalysis } | null)?.analysis ?? null;
@@ -335,22 +369,46 @@ export class RouteService {
       return null;
     };
 
-    const direct = pickNewest(false);
-    const vpn = pickNewest(true);
+    const direct0 = pickNewest(false);
+    const vpn0 = pickNewest(true);
+    // A hidden comparison may pair with traces stored against the node's own
+    // addresses (the map traces node targets through this pipeline). Those
+    // traces carry the address in trace.target, trace.resolvedIp, the
+    // destination hop and analysis sentences — exactly what this comparison
+    // must not hand back — so the sides are rewritten before they enter any
+    // response. Internal matching above used the RAW rows; only what leaves
+    // is scrubbed. The substitute is the same label the response already
+    // reports as `target`, so the two never disagree.
+    let direct = direct0;
+    let vpn = vpn0;
+    if (hidden) {
+      const node = which.node;
+      const scrubber = makeScrubber([{ label: display, addresses: [node.host, ...node.ipv4, ...node.ipv6] }]);
+      if (scrubber.size > 0) {
+        if (direct) {
+          direct = { ...direct, trace: scrubEndpoints(direct.trace, scrubber), analysis: scrubEndpoints(direct.analysis, scrubber) };
+        }
+        if (vpn) {
+          vpn = { ...vpn, trace: scrubEndpoints(vpn.trace, scrubber), analysis: scrubEndpoints(vpn.analysis, scrubber) };
+        }
+      }
+    }
 
     if (!direct && !vpn) {
       return {
-        target: targetInput,
+        target: display,
+        ...(hidden ? { endpointHidden: true as const } : {}),
         direct: null,
         vpn: null,
         status: 'unavailable',
-        note: `No stored traceroutes for "${targetInput}" yet. Run a trace (ideally once disconnected, then once connected) and the comparison will appear here.`,
+        note: `No stored traceroutes for "${display}" yet. Run a trace (ideally once disconnected, then once connected) and the comparison will appear here.`,
         deltas: null,
       };
     }
     if (!vpn) {
       return {
-        target: targetInput,
+        target: display,
+        ...(hidden ? { endpointHidden: true as const } : {}),
         direct,
         vpn: null,
         status: 'unpaired_vpn',
@@ -360,7 +418,8 @@ export class RouteService {
     }
     if (!direct) {
       return {
-        target: targetInput,
+        target: display,
+        ...(hidden ? { endpointHidden: true as const } : {}),
         direct: null,
         vpn,
         status: 'unpaired_direct',
@@ -391,7 +450,8 @@ export class RouteService {
       reason = 'Route scores are within 10 points — the difference is not meaningful from single runs.';
     }
     return {
-      target: targetInput,
+      target: display,
+      ...(hidden ? { endpointHidden: true as const } : {}),
       direct,
       vpn,
       status: 'complete',
@@ -406,6 +466,8 @@ export class RouteService {
     startedAt: number;
     target: string;
     resolvedIp: string | null;
+    /** true when target/resolvedIp name a stored node — the address was rewritten to its label */
+    endpointHidden?: true;
     hops: number | null;
     latencyMs: number | null;
     score: number | null;

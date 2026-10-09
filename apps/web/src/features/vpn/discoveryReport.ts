@@ -111,7 +111,11 @@ export function needsMissingCore(profile: string, effectiveEngine: string | null
   return depth === 'proxy' && !effectiveEngine;
 }
 
-/** Compact label for one candidate row. Real fields only; missing ones are omitted. */
+/**
+ * Compact label for one candidate row. Prefers the remark, falls back to the
+ * server-built label. It never falls back to the address — that field is not
+ * sent, and `label` exists so this can never end up rendering empty.
+ */
 export function outcomeLabel(o: DiscoveryOutcome): string {
-  return o.name ? o.name : o.host;
+  return o.name ? o.name : o.label;
 }

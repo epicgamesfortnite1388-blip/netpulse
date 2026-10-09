@@ -198,9 +198,9 @@ export function VpnHistoryCard() {
                       {gateways.map((g: GatewayReliabilityRow) => (
                         <tr key={g.nodeId} className="border-t border-line">
                           <td className="py-1.5 pr-3">
-                            <span className="text-text">{g.name ?? g.host}</span>
-                            <span className="ml-1.5 text-faint">
-                              {g.host}:{g.port}
+                            <span className="text-text">{g.name ?? g.label}</span>
+                            <span className="ml-1.5 text-faint" title="The gateway's address is withheld — the tunnel dialed it on the server">
+                              endpoint hidden
                             </span>
                             {g.exitCountry && <span className="ml-1.5 text-faint">({g.exitCountry})</span>}
                           </td>

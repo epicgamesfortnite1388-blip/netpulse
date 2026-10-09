@@ -16,10 +16,6 @@ import { z } from 'zod';
 import {
   normalizeBypass,
   type BypassRuleSet,
-  type GatewayMemoryEntry,
-  type QuickConnectAttempt,
-  type QuickConnectResult,
-  type ScanProfileId,
 } from '@netpulse/shared';
 import { badRequest, newNotFound } from '../util/appError';
 import { chainExitProtocolUnsupported, type DnsThroughTunnel } from '../services/proxyCores';
@@ -27,6 +23,8 @@ import { QuickConnectSchema, DiscoverSchema } from '@netpulse/shared';
 import type { FastifyInstance } from 'fastify';
 
 import type { AppContext } from './context';
+import { serializeVpnOp } from '../vpn/networkOwnership';
+import { quickConnectCore } from '../services/autoConnect';
 import type { PublicNodeRow } from '../db/repositories';
 import type { TunnelNodeInput } from '../services/proxyTunnel';
 
@@ -84,12 +82,6 @@ function tunnelable(row: {
   return true;
 }
 
-/** Bounded quick-connect: never spend more than this on the whole chain. */
-const QUICK_BUDGET_MS = 90_000;
-/** Candidates tried after the discovery run (each one is fully verified). */
-const QUICK_DISCOVERY_ATTEMPTS = 3;
-const QUICK_DEFAULT_MEMORY_ATTEMPTS = 2;
-
 /** Split-tunnel rules, applied only when the user enabled them. */
 function activeBypass(ctx: AppContext): BypassRuleSet | null {
   const settings = ctx.services.settings.get();
@@ -118,12 +110,46 @@ function autoSelectEnabled(ctx: AppContext): boolean {
   return ctx.services.settings.get().vpn?.autoSelectServer ?? true;
 }
 
+/**
+ * Hand the machine's network over from the engine VPNs to the proxy tunnel.
+ *
+ * The two modes write the same system proxy, arm the same kill-switch hold
+ * and (in TUN form) claim the same default route; each captures a
+ * `previousProxy` at its own start and restores it at stop. Starting the
+ * tunnel while an engine still held those made the restore paths overwrite
+ * each other — the survivor's handoff was wiped, or a mode restored a port
+ * that had belonged to the mode before it, and traffic ended up on a dead
+ * proxy. The only safe order is: the previous owner fully releases, then the
+ * new mode starts.
+ *
+ * Callers MUST hold the ownership queue (serializeVpnOp) — that is what makes
+ * "stop the other mode, then start this one" atomic against a connect arriving
+ * from the other surface. The watchdog is acknowledged first, deliberately:
+ * this is a mode switch, not a crash to recover from, and an unacknowledged
+ * drop would let it reconnect the engine in the middle of the handover.
+ */
+async function handOverFromEngines(ctx: AppContext): Promise<void> {
+  ctx.services.watchdog?.acknowledgeUserDisconnect();
+  const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status().catch(() => null)));
+  const active = statuses.find((s) => s?.connected);
+  if (!active?.providerId) return;
+  const provider = ctx.vpn.get(active.providerId);
+  if (!provider) return;
+  await provider.disconnect().catch(() => undefined);
+  ctx.services.events.record(
+    'info',
+    'vpn',
+    `Engine VPN \"${active.serverName ?? active.providerId}\" disconnected to hand the network over to the proxy tunnel`,
+  );
+}
+
 export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/v1/vpn/tunnel/status', async () => {
     return { tunnel: ctx.services.tunnel.getStatus() };
   });
 
-  app.post('/api/v1/vpn/tunnel/start', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/api/v1/vpn/tunnel/start', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => serializeVpnOp(async () => {
+    await handOverFromEngines(ctx);
     const body = TunnelStartSchema.parse(req.body ?? {});
     const wantSystemProxy = body.systemProxy ?? DEFAULTS.systemProxy;
     const preferred = ctx.services.settings.get().proxyEngine?.preferred ?? 'auto';
@@ -196,15 +222,16 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
       source,
     });
     return { tunnel: status };
-  });
+  }));
 
-  app.post('/api/v1/vpn/tunnel/stop', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async () => {
+  app.post('/api/v1/vpn/tunnel/stop', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async () => serializeVpnOp(async () => {
     return { tunnel: await ctx.services.tunnel.stop() };
-  });
+  }));
 
-  app.post('/api/v1/vpn/tunnel/reconnect', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async () => {
+  app.post('/api/v1/vpn/tunnel/reconnect', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async () => serializeVpnOp(async () => {
     const cur = ctx.services.tunnel.getStatus();
     if (!cur.nodeId) throw badRequest('tunnel_not_active', 'no tunnel to reconnect');
+    await handOverFromEngines(ctx);
     // A nested tunnel re-establishes the whole pair it was started with —
     // re-resolving only the exit node would silently drop to one hop.
     if (cur.chain) return { tunnel: await ctx.services.tunnel.restartStored() };
@@ -221,7 +248,7 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
         source: 'explicit',
       }),
     };
-  });
+  }));
 
   /* --------------------------- gateway memory ---------------------------- */
 
@@ -260,103 +287,22 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
    * One click: retry the gateways this app has already proven, then discover
    * something new, and verify whichever candidate is tried. Every attempt is a
    * real tunnel start, so the result is never a memory-based claim.
+   *
+   * This route WRAPS the shared `quickConnectCore` (defined in
+   * `autoConnect.ts`) in the global VPN-op FIFO (`serializeVpnOp`) so a user
+   * quick-connect cannot race with a concurrent start/stop/reconnect. The boot
+   * autoConnect path calls `quickConnectCore` DIRECTLY (no FIFO) so a slow
+   * boot verification cannot wedge every subsequent user VPN action.
    */
-  app.post('/api/v1/vpn/tunnel/quick', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/api/v1/vpn/tunnel/quick', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (req) => serializeVpnOp(async () => {
     const body = QuickConnectSchema.parse(req.body ?? {});
-    const settings = ctx.services.settings.get();
-    const wantSystemProxy = body.systemProxy ?? DEFAULTS.systemProxy;
-    const wantTun = body.tun ?? false;
-    const preferred = settings.proxyEngine?.preferred ?? 'auto';
-    const bypass = activeBypass(ctx);
-    const deadline = Date.now() + QUICK_BUDGET_MS;
-    // The caller's profile wins over the stored setting. Declaring an input and
-    // then ignoring it is worse than not accepting it: the request looks
-    // honoured while a different trade-off runs.
-    const profile = (body.profile ?? settings.vpn?.scanProfile ?? 'balanced') as ScanProfileId;
-
-    const attempts: QuickConnectAttempt[] = [];
-    const quickStartedAt = Date.now();
-
-    /** Start the tunnel on one node and record the verified outcome. */
-    const attempt = async (nodeId: string, source: QuickConnectAttempt['source'], name: string | null) => {
-      const node = ctx.repos.publicNodes.get(nodeId);
-      if (!node) return null;
-      const startedAt = Date.now();
-      const status = await ctx.services.tunnel.start(node, {
-        systemProxy: wantSystemProxy,
-        preferredEngine: preferred,
-        bypass,
-        dns: activeDns(ctx),
-        tun: wantTun,
-        source: source === 'memory' ? 'gateway-memory' : source === 'discovery' ? 'discovery' : 'auto',
-      });
-      const ok = status.state === 'active';
-      attempts.push({
-        nodeId,
-        name: name ?? node.remark ?? null,
-        host: node.host,
-        port: node.port,
-        source,
-        ok,
-        error: ok ? null : (status.error ?? 'tunnel did not come up'),
-        exitIp: status.exitIp,
-        tookMs: Date.now() - startedAt,
-      });
-      return ok ? status : null;
-    };
-
-    // 1) remembered gateways, best-first. A node that no longer exists is
-    //    dropped from memory instead of being retried forever.
-    const maxMemory = body.maxMemoryAttempts ?? QUICK_DEFAULT_MEMORY_ATTEMPTS;
-    const remembered: GatewayMemoryEntry[] = ctx.services.gatewayMemory.ranked().slice(0, maxMemory);
-    for (const g of remembered) {
-      if (Date.now() > deadline) break;
-      if (!ctx.repos.publicNodes.get(g.nodeId)) {
-        ctx.services.gatewayMemory.forget(g.nodeId);
-        continue;
-      }
-      const status = await attempt(g.nodeId, 'memory', g.name);
-      if (status) {
-        const memoryWin = finish(true, profile, attempts);
-        ctx.services.vpnHistory.recordQuickConnectRun(memoryWin, Date.now() - quickStartedAt);
-        return { tunnel: status, quick: memoryWin };
-      }
-    }
-
-    // 2) nothing remembered worked — discover fresh candidates at the user's
-    //    profile, then verify them one by one.
-    if (Date.now() < deadline) {
-      const report = await ctx.services.discovery.run({ profile });
-      // The scan inside quick connect is a real discovery run; it lands in the
-      // same history the dashboard reads, labelled with its origin.
-      ctx.services.vpnHistory.recordDiscoveryRun(report, 'quick-connect', 'quick-connect');
-      const ordered = [...report.outcomes]
-        .filter((o) => o.failure === null)
-        .sort((a, b) => (a.latencyMs ?? Number.POSITIVE_INFINITY) - (b.latencyMs ?? Number.POSITIVE_INFINITY))
-        .slice(0, QUICK_DISCOVERY_ATTEMPTS);
-      for (const candidate of ordered) {
-        if (Date.now() > deadline) break;
-        const status = await attempt(candidate.nodeId, 'discovery', candidate.name);
-        if (status) {
-          const wonResult = finish(true, profile, attempts, report.summary);
-          ctx.services.vpnHistory.recordQuickConnectRun(wonResult, Date.now() - quickStartedAt);
-          return { tunnel: status, quick: wonResult };
-        }
-      }
-      if (ordered.length === 0) {
-        const noneResult = finish(false, profile, attempts, report.summary);
-        ctx.services.vpnHistory.recordQuickConnectRun(noneResult, Date.now() - quickStartedAt);
-        return {
-          tunnel: ctx.services.tunnel.getStatus(),
-          quick: noneResult,
-        };
-      }
-    }
-
-    const quickResult = finish(false, profile, attempts);
-    ctx.services.vpnHistory.recordQuickConnectRun(quickResult, Date.now() - quickStartedAt);
-    return { tunnel: ctx.services.tunnel.getStatus(), quick: quickResult };
-  });
+    return quickConnectCore(ctx, {
+      systemProxy: body.systemProxy ?? DEFAULTS.systemProxy,
+      wantTun: body.tun ?? false,
+      maxMemoryAttempts: body.maxMemoryAttempts,
+      profile: body.profile ?? undefined,
+    });
+  }));
 
   /* ------------------------------- history -------------------------------- */
 
@@ -368,34 +314,6 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.get('/api/v1/vpn/history', async () => {
     return { history: ctx.services.vpnHistory.report() };
   });
-}
-
-/** Honest summary of a quick-connect run: what was tried, what was proven. */
-function finish(
-  ok: boolean,
-  profile: ScanProfileId,
-  attempts: QuickConnectAttempt[],
-  discoverySummary?: string,
-): QuickConnectResult {
-  const tried = attempts.length;
-  let summary: string;
-  if (ok) {
-    const won = attempts[attempts.length - 1]!;
-    summary =
-      won.source === 'memory'
-        ? `Reconnected to remembered gateway ${won.name ?? won.nodeId} — exit ${won.exitIp ?? 'unverified'}.`
-        : `Connected through a newly discovered node ${won.name ?? won.nodeId} — exit ${won.exitIp ?? 'unverified'}.`;
-  } else if (tried === 0) {
-    // Nothing was even attempted: say so, and hand over the discovery report
-    // so the user learns why (no nodes imported, filter too narrow, ...)
-    // rather than reading a bare failure.
-    summary = discoverySummary
-      ? `Nothing was remembered, and discovery found nothing usable. ${discoverySummary}`
-      : 'Nothing was remembered and nothing was discovered.';
-  } else {
-    summary = `Tried ${tried} candidate${tried === 1 ? '' : 's'}; none carried traffic.${discoverySummary ? ` ${discoverySummary}` : ''}`;
-  }
-  return { ok, profile, attempts, summary };
 }
 
 /**

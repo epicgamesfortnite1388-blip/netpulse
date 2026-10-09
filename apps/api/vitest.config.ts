@@ -10,8 +10,22 @@ export default defineConfig({
   test: {
     hookTimeout: 60_000,
     testTimeout: 30_000,
+    // Secret vaults default to Windows Credential Manager on win32. A test run
+    // must not write entries into the developer's real credential store (or
+    // leave them behind after the suite finishes), so tests pin the file store.
+    // The keychain path is covered by its own tests, which exercise the store's
+    // fallback rules without touching a real store.
+    env: {
+      NETPULSE_VAULT_KEY_STORE: 'file',
+    },
     // Keep files in one pool so SQLite-backed suites never contend on the
-    // same temp database directories.
+    // same temp database directories. `pool: 'threads'` is what makes the
+    // option below actually apply: vitest 3 defaults to the `forks` pool,
+    // which silently ignored `poolOptions.threads` — files ran in parallel
+    // child processes and the real-socket suites (SOCKS/proxy listeners,
+    // spawned cores) timed out under the contention, failing different tests
+    // on every run.
+    pool: 'threads',
     poolOptions: {
       threads: { singleThread: true },
     },

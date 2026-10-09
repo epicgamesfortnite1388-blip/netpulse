@@ -53,10 +53,30 @@ Profiles (WireGuard INI, `.ovpn`) are parsed server-side:
 
 ## Secret vault
 
-`FileSecretVault` (apps/api/src/vpn/vpnService.ts) encrypts secrets with AES-256-GCM
-using a machine-local key file (mode 0600). Vault files use hashed filenames (Windows
-does not allow `:` in names). A packaged build should swap this for the OS keychain;
-the vault is a single class behind one interface.
+`FileSecretVault` (apps/api/src/vpn/vpnService.ts) encrypts secrets with AES-256-GCM.
+Vault files use hashed filenames (Windows does not allow `:` in names).
+
+Where the 32-byte master key lives is decided by `apps/api/src/vpn/keychain.ts`:
+
+* **Windows (default):** Windows Credential Manager, stored as a generic
+  credential under the current user and protected by DPAPI. The data directory
+  then contains ciphertext and no readable key beside it — copying it to another
+  machine yields nothing. An existing `<vault>.key` is adopted on first use,
+  verified by a round-trip read, and only then removed, so every secret already
+  on disk stays readable.
+* **Elsewhere, or if the store is unavailable:** the original key file
+  (mode 0600, Windows ACL enforced via `icacls`). A store that *fails* — as
+  opposed to simply having no key — always falls back to the file rather than
+  minting new material, because re-keying would silently make every stored
+  secret unreadable.
+
+Override with `NETPULSE_VAULT_KEY_STORE=file` (the test suite sets this so a test
+run never writes to a developer's real credential store) or `=keychain`.
+
+Caveat worth knowing: credential stores are per-user, so a data directory moved
+to another account or machine will not open there and its credentials must be
+re-imported. That is the behaviour you opt into by taking the key off disk.
+Vault files use hashed filenames; the vault is a single class behind one interface.
 
 ## Connect / disconnect flow
 

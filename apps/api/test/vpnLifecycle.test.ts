@@ -91,17 +91,24 @@ describe('vpn profile lifecycle', () => {
     expect(created.statusCode).toBe(201);
     const profile = created.json().profile;
     expect(profile.protocol).toBe('vless');
-    expect(profile.endpoint).toBe('example.com:443');
+    // The dial address is configuration: withheld from every response as an
+    // ABSENT key (not null — null would render as a blank field), while the
+    // repo row below keeps it so the server can still connect.
+    expect('endpoint' in profile).toBe(false);
+    expect(JSON.stringify(profile)).not.toContain('example.com'); // host never rides along either
     expect(JSON.stringify(profile)).not.toContain('11111111'); // secret never echoed
 
-    // visible through the API
+    // visible through the API — and the list is endpoint-free too
     const list = await get('/api/v1/vpn/profiles');
     expect(list.json().profiles.some((p: { id: string }) => p.id === profile.id)).toBe(true);
+    expect(JSON.stringify(list.json())).not.toContain('example.com');
 
     // durable: row exists in SQLite with the secret only as a vault reference
     const row = ctx.repos.vpnProfiles.get(profile.id);
     expect(row).toBeDefined();
     expect(row!.providerId).toBe('singbox');
+    // the server-side half of the split: the row keeps what the wire drops
+    expect(row!.endpoint).toBe('example.com:443');
     expect(row!.secretRef).not.toContain('11111111');
 
     // sanitized config on disk must not contain the credential

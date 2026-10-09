@@ -81,7 +81,7 @@ describe('autoConnect boot helper', () => {
   it('does nothing when the preference is off (no quick-connect run recorded)', async () => {
     ctx.services.settings.update({ vpn: { autoConnect: false } });
     const before = (await app.inject({ method: 'GET', url: '/api/v1/vpn/history', headers: H() })).json() as { history: { quickConnect: { totalRuns: number } } };
-    runAutoConnectIfNeeded(app, ctx, 'tok'.padEnd(40, 'x'));
+    runAutoConnectIfNeeded(app, ctx);
     await new Promise((r) => setTimeout(r, 300));
     const after = (await app.inject({ method: 'GET', url: '/api/v1/vpn/history', headers: H() })).json() as { history: { quickConnect: { totalRuns: number } } };
     expect(after.history.quickConnect.totalRuns).toBe(before.history.quickConnect.totalRuns);
@@ -90,8 +90,8 @@ describe('autoConnect boot helper', () => {
   it('drives the REAL quick-connect path when enabled (run lands in history)', async () => {
     ctx.services.settings.update({ vpn: { autoConnect: true } });
     try {
-      // The same token acquisition the dev entry point uses.
-      runAutoConnectIfNeeded(app, ctx, fs.readFileSync(ctx.config.tokenFile, 'utf8').trim());
+      // The same boot-time entry point the dev server uses.
+      runAutoConnectIfNeeded(app, ctx);
       // The empty-DB quick connect finishes honestly (no memory, nothing discovered).
       await new Promise((r) => setTimeout(r, 6_000));
       const history = (await app.inject({ method: 'GET', url: '/api/v1/vpn/history', headers: H() })).json() as {

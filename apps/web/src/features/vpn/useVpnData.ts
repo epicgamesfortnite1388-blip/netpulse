@@ -13,13 +13,17 @@ import type { ProxyEngineStatus, VpnProviderInfo, VpnStatus } from '@netpulse/sh
  * tunnel status, 5 s for the kill switch, 15 s for connection history.
  */
 
-/** A stored profile as exposed by GET /vpn/profiles (never contains secrets). */
+/**
+ * A stored profile as exposed by GET /vpn/profiles (never contains secrets,
+ * never the dial endpoint — that is configuration and is withheld; surfaces
+ * render "endpoint hidden" in its place).
+ */
 export interface VpnProfileDto {
   id: string;
   providerId: string;
   name: string;
   protocol: string;
-  endpoint: string | null;
+  endpoint?: string | null;
   createdAt: number;
 }
 
@@ -41,7 +45,8 @@ export interface VpnConnectionRow {
   id: string;
   providerId: string;
   serverName: string | null;
-  endpoint: string | null;
+  /** dial address — withheld from the response (configuration); absent, not null */
+  endpoint?: string | null;
   protocol: string;
   status: string;
   connectedAt: number | null;

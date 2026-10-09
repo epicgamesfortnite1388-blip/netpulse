@@ -299,7 +299,7 @@ export function DiscoveryCard() {
                 </span>
                 <span className="text-text">{outcomeLabel(report.winner)}</span>
                 <span className="text-muted">
-                  {report.winner.host}:{report.winner.port} · {report.winner.protocol}
+                  {report.winner.protocol} · endpoint hidden
                 </span>
                 <span className="text-muted">
                   {formatLatency(report.winner.latencyMs) ?? 'latency not measured'}
@@ -342,8 +342,8 @@ export function DiscoveryCard() {
                   {rows.map((o) => (
                     <li key={o.nodeId} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs">
                       <span className="min-w-0 flex-1 truncate text-text">{outcomeLabel(o)}</span>
-                      <span className="text-faint">
-                        {o.host}:{o.port}
+                      <span className="text-faint" title="The node's address is withheld — the probe was run on the server">
+                        endpoint hidden
                       </span>
                       <span className="text-faint">{o.protocol}</span>
                       {o.failure === null ? (

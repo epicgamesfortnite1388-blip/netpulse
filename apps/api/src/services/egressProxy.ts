@@ -23,20 +23,27 @@
  *   4. Direct — correct when nothing proxies, and also correct under a TUN-mode
  *      VPN, which intercepts traffic below this process and needs no proxy.
  *
- * Deliberately NOT supported: SOCKS proxies. undici has no SOCKS agent, and
- * silently ignoring a `socks=` system proxy would reintroduce the exact bug this
- * file fixes. It is detected and reported instead (see `SOCKS_UNSUPPORTED`).
- * A user whose only route is a SOCKS listener needs a TUN-mode VPN or an HTTP
- * proxy; both work here.
+ * SOCKS5 is supported here rather than refused, because it is what the affected
+ * users actually run: v2rayN's default listener is SOCKS on 127.0.0.1:10808.
+ * undici has no SOCKS agent, so the handshake is ours (see `socksConnector`) —
+ * which also means no new dependency that could fail to survive being inlined
+ * into the desktop sidecar bundle. A SOCKS **4** listener uses a different
+ * handshake that we genuinely cannot speak; it is reported by name
+ * (`socks_unsupported`) rather than quietly connecting direct.
  *
  * Failures are classified rather than flattened to "unreachable", because the
  * cause determines the advice: a dead proxy is fixed by starting the tunnel, a
  * TLS failure is usually filtering.
  */
 
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { Agent, ProxyAgent, fetch as undiciFetch } from 'undici';
+
+import net from 'node:net';
+import tls from 'node:tls';
 
 import { getSystemProxy, onSystemProxyChanged } from './systemProxy';
+
+import type { Dispatcher } from 'undici';
 
 /** The Worker that owns accounts, sync and the Telegram bridge. */
 export const CLOUD_API_BASE = 'https://netpulse-cloud.shuridehradin.workers.dev';
@@ -55,17 +62,9 @@ export type EgressReason =
   | 'direct_unreachable'
   | 'timeout'
   | 'tls_failed'
+  | 'socks_failed'
   | 'socks_unsupported';
 
-export interface EgressFailureDetail {
-  reason: EgressReason;
-  /** The proxy we tried to use, if any — named so the message can point at it. */
-  proxy: string | null;
-  /** One sentence the UI can show verbatim. */
-  message: string;
-}
-
-/** Thrown for every transport-level failure. Carries the reason, not just text. */
 export class EgressError extends Error {
   constructor(
     readonly reason: EgressReason,
@@ -75,27 +74,31 @@ export class EgressError extends Error {
     super(message);
     this.name = 'EgressError';
   }
-
-  toDetail(): EgressFailureDetail {
-    return { reason: this.reason, proxy: this.proxy, message: this.message };
-  }
 }
 
+/** The SOCKS listener speaks a handshake we cannot perform (SOCKS4/4a). */
 export const SOCKS_UNSUPPORTED =
-  'This app can route cloud traffic through an HTTP proxy, but the system proxy is a SOCKS listener. ' +
-  'Turn on TUN mode, or point the system proxy at the HTTP port of your client.';
+  'The system proxy is a SOCKS4 listener, which this app cannot speak. ' +
+  'Switch your proxy client to SOCKS5 (or HTTP), or turn on TUN mode.';
 
 /**
- * Normalise a WinINET / env proxy value into something undici accepts.
+ * Normalise a WinINET / env proxy value into something the egress path can use.
  *
- * WinINET stores three shapes and they are all still in the wild:
- *   `127.0.0.1:8080`                  bare host:port, the usual
- *   `http=…;https=…`                  per-protocol, written by several clients
- *   `socks=127.0.0.1:1080`            SOCKS, which undici cannot speak
+ * WinINET stores several shapes and they are all still in the wild:
+ *   `127.0.0.1:8080`                       bare host:port, the usual
+ *   `http=…;https=…`                       per-protocol, written by several clients
+ *   `socks=127.0.0.1:10808`                v2rayN's default — SOCKS5
+ *   `https=…;socks=…`                      mixed lists, one client serving both
+ *   `socks5://host:1080`                   env-var form
  *
- * Returns `null` when there is no proxy, and the sentinel
- * `SOCKS_UNSUPPORTED` when a SOCKS proxy is configured, so the caller can
- * report it rather than quietly connecting direct.
+ * A mixed list is served by its HTTP entry — cloud calls are HTTPS, so an HTTP
+ * listener carries them with no handshake at all. Only a SOCKS-only list falls
+ * through to the SOCKS5 path, and the whole string is never treated as one
+ * host: `socks=127.0.0.1:10808` is a scheme and an endpoint, not a hostname
+ * containing an equals sign.
+ *
+ * Returns `null` when there is no proxy, and the `SOCKS_UNSUPPORTED` sentinel
+ * for a SOCKS4 listener, so the caller reports it rather than connecting direct.
  */
 export function normalizeProxy(raw: string | null | undefined): string | null | typeof SOCKS_UNSUPPORTED {
   const value = (raw ?? '').trim();
@@ -109,16 +112,47 @@ export function normalizeProxy(raw: string | null | undefined): string | null | 
       if (eq <= 0) continue;
       parts.set(pair.slice(0, eq).trim().toLowerCase(), pair.slice(eq + 1).trim());
     }
-    const scheme = parts.get('socks') ? 'socks' : null;
-    if (scheme && !parts.get('https') && !parts.get('http')) return SOCKS_UNSUPPORTED;
-    const picked = parts.get('https') ?? parts.get('http');
-    if (picked) return withScheme(picked);
-    if (scheme) return SOCKS_UNSUPPORTED;
+    const http = parts.get('https') ?? parts.get('http');
+    if (http) return withScheme(http);
+    for (const scheme of SOCKS_SCHEMES) {
+      const server = parts.get(scheme);
+      if (server) return socksUrl(scheme, server);
+    }
     return null;
   }
 
-  if (/^socks/i.test(value)) return SOCKS_UNSUPPORTED;
+  // `socks5://host:port` / `socks4://host:port`
+  const urlMatch = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(value);
+  if (urlMatch) {
+    const scheme = (urlMatch[1] ?? '').toLowerCase();
+    const server = urlMatch[2] ?? '';
+    if (scheme === 'http' || scheme === 'https') return withScheme(value);
+    if (scheme.startsWith('socks')) return socksUrl(scheme, server);
+    return null;
+  }
+
+  // `socks:host:port` — scheme and endpoint, no `://`.
+  const colonMatch = /^(socks[0-9a-z]*)\s*[:=]\s*(.+)$/i.exec(value);
+  if (colonMatch) return socksUrl((colonMatch[1] ?? '').toLowerCase(), colonMatch[2] ?? '');
+
   return withScheme(value);
+}
+
+/** Scheme keys a Windows proxy list may use for a SOCKS listener. */
+const SOCKS_SCHEMES = ['socks', 'socks5', 'socks5h', 'socks4', 'socks4a'] as const;
+
+/**
+ * A SOCKS5 endpoint, or the sentinel for a variant we cannot speak.
+ *
+ * SOCKS4/4a negotiate differently (no domain names, different handshake) and
+ * are vanishingly rare — but reporting them by name beats the alternative,
+ * which is connecting direct behind the user's back.
+ */
+function socksUrl(scheme: string, server: string): string | null | typeof SOCKS_UNSUPPORTED {
+  const value = server.trim().replace(/^\/\//, '');
+  if (value === '') return SOCKS_UNSUPPORTED;
+  if (/^socks4/i.test(scheme)) return SOCKS_UNSUPPORTED;
+  return `socks5://${value}`;
 }
 
 function withScheme(server: string): string | null {
@@ -189,15 +223,278 @@ export function resetProxyCache(): void {
 // on would go direct — and fail — which is the exact report this fixes.
 onSystemProxyChanged(resetProxyCache);
 
-/** One agent per proxy URL; undici pools connections per dispatcher. */
-const agents = new Map<string, ProxyAgent>();
-function agentFor(proxy: string): ProxyAgent {
+/** One dispatcher per proxy URL; undici pools connections per dispatcher. */
+const agents = new Map<string, Dispatcher>();
+function agentFor(proxy: string): Dispatcher {
   let agent = agents.get(proxy);
   if (!agent) {
-    agent = new ProxyAgent(proxy);
+    agent = /^socks5?:/i.test(proxy)
+      ? new Agent({ connect: socksConnector(proxy) })
+      : new ProxyAgent(proxy);
     agents.set(proxy, agent);
   }
   return agent;
+}
+
+/* ------------------------------ SOCKS5 ------------------------------------ */
+
+/** A SOCKS5 listener that would not carry the connection. Named, not generic. */
+export class SocksTunnelError extends Error {
+  constructor(readonly detail: string) {
+    super(`SOCKS5 tunnel failed: ${detail}`);
+    this.name = 'SocksTunnelError';
+  }
+}
+
+/** Bytes a SOCKS5 reply occupies after the two-byte version/reply prefix. */
+function replyLength(buf: Buffer): number | null {
+  if (buf.length < 4) return null;
+  switch (buf[3]) {
+    case 0x01:
+      return 10; // IPv4 + port
+    case 0x04:
+      return 22; // IPv6 + port
+    case 0x03:
+      return buf.length >= 5 ? 7 + (buf[4] ?? 0) : null; // domain + port
+    default:
+      return -1; // address type we do not know
+  }
+}
+
+/**
+ * Open a TCP tunnel to `host:port` through a SOCKS5 proxy (RFC 1928): greeting
+ * with "no authentication", then CONNECT. Only the "no auth" method is
+ * offered, because every client these users run — v2rayN, Clash, Xray — serves
+ * it; a listener demanding credentials fails loudly instead of hanging.
+ */
+/** Credentials for a SOCKS listener that authenticates (RFC 1929). */
+export interface SocksCredentials {
+  username: string;
+  password: string;
+}
+
+function socksTunnel(
+  proxyHost: string,
+  proxyPort: number,
+  host: string,
+  port: number,
+  credentials: SocksCredentials | null,
+): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: proxyHost, port: proxyPort });
+    let stage: 'greeting' | 'auth' | 'reply' = 'greeting';
+    let buf: Buffer = Buffer.alloc(0);
+    let settled = false;
+
+    const fail = (detail: string): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      reject(new SocksTunnelError(detail));
+    };
+    const succeed = (leftover: Buffer): void => {
+      if (settled) return;
+      settled = true;
+      socket.removeListener('data', onData);
+      socket.removeListener('error', fail);
+      // Bytes the proxy already sent past the reply belong to the TLS
+      // handshake that starts next; dropping them would hang the connection.
+      socket.pause();
+      if (leftover.length > 0) socket.unshift(leftover);
+      resolve(socket);
+    };
+
+    function sendConnect(): void {
+      stage = 'reply';
+      const name = Buffer.from(host, 'utf8');
+      socket.write(
+        Buffer.concat([
+          Buffer.from([0x05, 0x01, 0x00, 0x03, name.length]),
+          name,
+          Buffer.from([(port >> 8) & 0xff, port & 0xff]),
+        ]),
+      );
+    }
+
+    function onData(chunk: Buffer): void {
+      buf = Buffer.concat([buf, chunk]);
+
+      if (stage === 'greeting') {
+        if (buf.length < 2) return;
+        const method = buf[1] ?? 0;
+        if (buf[0] !== 0x05) {
+          fail(`it is not a SOCKS5 listener (reply 0x${method.toString(16)})`);
+          return;
+        }
+        if (method === 0x00) {
+          buf = buf.subarray(2);
+          sendConnect();
+          return;
+        }
+        if (method === 0xff) {
+          // A listener that requires auth answers 0xFF when we offered none.
+          // That is the ordinary v2rayN-with-a-password case, so say so.
+          fail(
+            credentials
+              ? 'it refused every authentication method we offered'
+              : 'it requires a password, and the Windows system-proxy setting cannot carry one. ' +
+                  'Turn off SOCKS authentication in your proxy client, or use an HTTP proxy or TUN mode',
+          );
+          return;
+        }
+        if (method !== 0x02) {
+          fail(`it demands an authentication method we do not offer (reply 0x${method.toString(16)})`);
+          return;
+        }
+        // Username/password (RFC 1929). Credentials reach us only through the
+        // proxy URL — the Windows system-proxy setting is host:port and cannot
+        // carry one — so say THAT, not "restart your client".
+        if (!credentials) {
+          fail(
+            'it requires a password, and the Windows system-proxy setting cannot carry one. ' +
+              'Turn off SOCKS authentication in your proxy client, or use an HTTP proxy or TUN mode',
+          );
+          return;
+        }
+        stage = 'auth';
+        buf = buf.subarray(2);
+        const user = Buffer.from(credentials.username.slice(0, 255), 'utf8');
+        const pass = Buffer.from(credentials.password.slice(0, 255), 'utf8');
+        socket.write(
+          Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]),
+        );
+      }
+
+      if (stage === 'auth') {
+        if (buf.length < 2) return;
+        if (buf[0] !== 0x01 || buf[1] !== 0x00) {
+          const who = credentials ? `"${credentials.username}"` : 'the supplied credentials';
+          fail(`it rejected ${who} (status 0x${(buf[1] ?? 0).toString(16).padStart(2, '0')})`);
+          return;
+        }
+        buf = buf.subarray(2);
+        sendConnect();
+      }
+
+      if (stage !== 'reply') return;
+      const total = replyLength(buf);
+      if (total === null) return;
+      if (total === -1) {
+        fail('the listener sent a malformed reply');
+        return;
+      }
+      if (buf.length < total) return;
+      const reply = buf[1] ?? 0;
+      if (reply !== 0x00) {
+        fail(`the listener refused the tunnel (SOCKS5 reply 0x${reply.toString(16).padStart(2, '0')})`);
+        return;
+      }
+      succeed(buf.subarray(total));
+    }
+
+    socket.on('data', onData);
+    socket.once('error', (err: NodeJS.ErrnoException) => fail(`the connection failed (${err.message})`));
+    socket.once('connect', () => {
+      // Greeting: SOCKS5 offering "no authentication" and, when we have them,
+      // username/password.
+      socket.write(credentials ? Buffer.from([0x05, 0x02, 0x00, 0x02]) : Buffer.from([0x05, 0x01, 0x00]));
+    });
+  });
+}
+
+/**
+ * A connector undici can use instead of its own.
+ *
+ * undici applies NO TLS of its own once a connector is supplied — it writes to
+ * whatever socket comes back — so for https the tunnel is wrapped in TLS here,
+ * with the servername the request used. Getting this wrong yields a socket the
+ * HTTP parser cannot read, which is why the TLS step lives in this function
+ * rather than being assumed.
+ */
+/** The fields undici hands a connector; all optional so its own type fits. */
+interface ConnectorOptions {
+  host?: string;
+  hostname?: string;
+  protocol?: string;
+  port?: number | string;
+  servername?: string | null;
+  localAddress?: string | null;
+}
+
+/**
+ * undici's connector callback shape, mirrored locally: undici does not export
+ * it, and a success carries the socket while a failure carries no socket at all.
+ */
+type ConnectorCallback = (...args: [null, net.Socket | tls.TLSSocket] | [Error, null]) => void;
+
+/**
+ * The port to ask the SOCKS listener for.
+ *
+ * undici hands the connector the port from the parsed URL, which is an EMPTY
+ * STRING when the URL names no port — and `Number('') === 0`, which produced a
+ * tunnel request for port 0 and a silent hang until the request timed out. The
+ * default comes from the protocol, the way a browser does it.
+ */
+export function socksTargetPort(port: number | string | null | undefined, protocol: string): number {
+  const parsed = Number(port);
+  if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  return protocol === 'http:' ? 80 : 443;
+}
+
+export function socksConnector(proxy: string): (opts: ConnectorOptions, cb: ConnectorCallback) => void {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(proxy);
+  } catch {
+    throw new Error(`invalid SOCKS proxy url: ${proxy}`);
+  }
+  const proxyPort = Number(endpoint.port || 1080);
+  const proxyHost = endpoint.hostname.replace(/^\[|\]$/g, '');
+
+  return (opts, callback) => {
+    const hostname = opts.hostname ?? opts.host ?? '';
+    const protocol = opts.protocol ?? 'https:';
+    const port = socksTargetPort(opts.port, protocol);
+    const servername = opts.servername ?? null;
+    let done = false;
+    const finish = (err: Error | null, socket?: net.Socket): void => {
+      if (done) return;
+      done = true;
+      if (err) callback(...([err, null] as [Error, null]));
+      else callback(...([null, socket as net.Socket] as [null, net.Socket]));
+    };
+
+    const credentials =
+      endpoint.username || endpoint.password
+        ? { username: decodeURIComponent(endpoint.username), password: decodeURIComponent(endpoint.password) }
+        : null;
+
+    socksTunnel(proxyHost, proxyPort, hostname, port, credentials).then((socket) => {
+      if (protocol !== 'https:') return finish(null, socket);
+      const secure = tls.connect({
+        socket,
+        servername: servername || hostname,
+        host: hostname,
+        port,
+        ALPNProtocols: ['http/1.1'],
+      });
+      secure.once('secureConnect', () => finish(null, secure));
+      secure.once('error', (err: Error) => finish(err));
+    }, (err: Error) => finish(err));
+  };
+}
+
+/**
+ * undici nests transport errors — `fetch` rejects with a TypeError whose cause
+ * holds the real one — so the error worth naming can be several links down.
+ */
+function findSocksError(err: unknown): SocksTunnelError | null {
+  let current: unknown = err;
+  for (let depth = 0; current != null && depth < 5; depth++) {
+    if (current instanceof SocksTunnelError) return current;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
 }
 
 /** Turn a thrown transport error into the reason a user can act on. */
@@ -205,6 +502,17 @@ export function classify(err: unknown, proxy: string | null): EgressError {
   const e = err as { name?: string; message?: string; cause?: { code?: string }; code?: string };
   const code = e?.cause?.code ?? e?.code ?? '';
   const name = e?.name ?? '';
+
+  // A SOCKS listener we reached but could not use is its own failure mode: it
+  // is not "unreachable", and it is not filtering. Say which listener and why.
+  const socks = findSocksError(err);
+  if (socks) {
+    return new EgressError(
+      'socks_failed',
+      `The SOCKS proxy at ${proxy} could not carry the connection: ${socks.detail}.`,
+      proxy,
+    );
+  }
 
   if (name === 'AbortError' || name === 'TimeoutError' || code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT') {
     return new EgressError(

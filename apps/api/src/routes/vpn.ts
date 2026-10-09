@@ -3,14 +3,27 @@ import fs from 'node:fs';
 import { z } from 'zod';
 
 import { AppError, badRequest, newNotFound } from '../util/appError';
+import { replyApiError } from '../util/apiError';
 import { adminStatus, invalidatePrivilegeCache } from '../util/privileges';
 import { engineSupports, findEngineBinary } from '../services/proxyCores';
+import { nodeLabel } from '../services/nodeView';
+import {
+  deleteCloudBackup,
+  fetchCloudProfile,
+  pushProfileToCloud,
+  tombstoneCloudProfile,
+} from '../services/profileCloudSync';
+
+import { ProfileCloudError } from '../services/profileCloudSync';
+
 import type { LinkExport } from '../services/nodeLinkExport';
-import { BundleError, buildProfileBundle } from '../services/profileBundle';
+import type { ProfileCloudVault } from '../services/profileCloudVault';
+import type { VpnStatus } from '@netpulse/shared';
 
 import type { FastifyInstance } from 'fastify';
 
 import { vpnError } from '../vpn/vpnService';
+import { serializeVpnOp } from '../vpn/networkOwnership';
 
 import type { AppContext } from './context';
 import type { VpnProvider } from '../vpn/vpnService';
@@ -30,13 +43,12 @@ const ConnectSchema = z.object({
   elevation: z.object({ opId: z.string().min(1).max(64) }).optional(),
 });
 
-/**
- * Promote a stored node into an engine profile.
- *
- * Only sing-box consumes share links today; the local cores (xray / v2ray) are
- * driven straight from the node row by the proxy tunnel and need no profile, so
- * they are not offered here rather than accepted and silently ignored.
- */
+/** Promote a stored node into an engine profile.
+*
+* Only sing-box consumes share links today; the local cores (xray / v2ray) are
+* driven straight from the node row by the proxy tunnel and need no profile, so
+* they are not offered here rather than accepted and silently ignored.
+*/
 const FromNodeSchema = z.object({
   nodeId: z.string().min(1).max(64),
   providerId: z.literal('singbox').default('singbox'),
@@ -50,10 +62,59 @@ const FromNodeSchema = z.object({
 
 type ImportProviderId = 'wireguard' | 'openvpn' | 'singbox' | 'aether';
 
-/**
- * The single profile-creation path: a pasted config and a promoted node both
- * land here, so both get the same provider validation, vault write and event.
- */
+/** A cloud failure reported as the HTTP status it actually is: an expired session
+* is 401 (sign in again), an unreachable Worker is 502 (check your connection — the
+* same wording the egress route uses for the same cause), and everything else keeps
+* its own code so the UI can tell "not backed up yet" from "this engine cannot be
+* backed up".
+*/
+function asHttpError(err: unknown): unknown {
+  if (!(err instanceof ProfileCloudError)) return err;
+  const status = err.code === 'cloud_unauthorized' ? 401 : err.code === 'cloud_unreachable' ? 502 : err.code === 'not_found' ? 404 : 409;
+  const hint =
+    err.code === 'cloud_unauthorized'
+      ? 'Sign in to the cloud again, then retry the backup.'
+      : err.code === 'cloud_unreachable'
+        ? 'Start the tunnel or set a system proxy if the cloud is unreachable from here.'
+        : undefined;
+  return vpnError(status, err.code, err.message, hint);
+}
+
+/** The cloud sealer is built once at boot because it owns a key file. A build
+* that somehow lacks it (an older context, a partially-migrated test double) must
+* say so rather than silently skip the backup and report success.
+*/
+function requireProfileCloudVault(ctx: AppContext): ProfileCloudVault {
+  const vault = ctx.services.profileCloudVault;
+  if (!vault) {
+    throw new AppError(503, 'cloud_backup_unavailable', 'Cloud profile backup is not available in this build.');
+  }
+  return vault;
+}
+
+/** Cloud backup requests carry the caller's cloud bearer token and nothing else.
+*
+* The token is a credential the browser already holds for its own account; what it
+* replaces is a flow where the browser was handed a profile's real `configText`.
+* `configText` is deliberately NOT a field here — there is no shape of this request
+* that accepts or returns one.
+*/
+const CloudBackupSchema = z.object({
+  accessToken: z.string().min(1).max(4096),
+});
+
+const CloudRestoreSchema = z.object({
+  accessToken: z.string().min(1).max(4096),
+  cloudProfileId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^np-local-[A-Za-z0-9_-]{1,64}$/, 'must be a cloud profile id created by this app'),
+});
+
+/** The single profile-creation path: a pasted config and a promoted node both
+* land here, so both get the same provider validation, vault write and event.
+*/
 async function importProfileVia(ctx: AppContext, providerId: ImportProviderId, name: string, configText: string) {
   const provider = ctx.vpn.get(providerId);
   if (!provider) throw new AppError(400, 'unknown_provider', 'Unknown VPN provider');
@@ -83,21 +144,13 @@ async function importProfileVia(ctx: AppContext, providerId: ImportProviderId, n
     providerId,
     name: profile.name,
     protocol: profile.protocol,
-    endpoint: profile.endpoint,
+    // No endpoint: the summary IS the address the config dials, and a profile
+    // promoted from a node would put that node's address back on the wire.
+    // The repo insert above keeps it — the server needs it to connect.
     createdAt: profile.createdAt,
   };
 }
 
-/**
- * Full elevated WireGuard connect: stage the op for the Rust bridge, wait for
- * the UAC outcome, then let the provider verify the interface. The opId is
- * minted by the UI; the descriptor is built by the broker from the provider's
- * own staged config, so no untrusted path ever reaches the privileged side.
- *
- * Only WireGuard on Windows uses the bridge today. Other providers either do
- * not need elevation (sing-box proxy mode) or are not wired to the broker —
- * they run the plain unprivileged path and fail honestly.
- */
 async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, opId: string) {
   const profile = ctx.vpn.getProfile(profileId);
   if (!profile) throw new AppError(404, 'not_found', 'Profile not found');
@@ -106,18 +159,6 @@ async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, o
   }
   const provider = ctx.vpn.get('wireguard');
   if (!provider) throw new AppError(400, 'unknown_provider', 'WireGuard provider is unavailable');
-
-  // Ordering:
-  //  1. prepareElevatedConnect materializes the REAL config (key material)
-  //     into the private tmp dir — the file the tunnel service will consume.
-  //  2. register the op: the broker hashes THAT file into the descriptor.
-  //  3. the UI invokes the Rust bridge with the opId; Rust fetches the
-  //     descriptor (nonce-gated, re-hashed at fetch), validates the fixed
-  //     exe/args shape, prompts UAC once, launches, reports the outcome.
-  //  4. the long-poll below resolves and we verify the interface came up.
-  // The unprivileged attempt is skipped entirely: on Windows it can only
-  // fail (access denied) — going straight to the prompt is one action,
-  // one UAC dialog, no double error.
   const wg = provider as typeof provider & { prepareElevatedConnect?: (p: typeof profile) => string };
   if (!wg.prepareElevatedConnect) {
     throw badRequest('elevation_unsupported', 'The WireGuard provider does not support the elevation flow in this build');
@@ -125,10 +166,7 @@ async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, o
   const stagedConfigPath = wg.prepareElevatedConnect(profile);
   ctx.elevationBroker.registerWireGuardInstall({ opId, configPath: stagedConfigPath });
   ctx.repos.vpnProfiles.touch(profile.id);
-
   try {
-    // Long-poll: resolved by POST /vpn/elevation/result from the Rust bridge,
-    // or by TTL expiry (never hangs forever).
     const outcome = await ctx.elevationBroker.wait(opId);
     if (!outcome.ok) {
       ctx.services.events.record('warn', 'vpn', outcome.declined ? 'Elevation prompt declined by user' : `Elevation failed: ${outcome.error ?? 'unknown error'}`);
@@ -137,11 +175,8 @@ async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, o
       }
       throw vpnError(500, 'elevation_failed', outcome.error ?? 'The elevated tunnel install did not complete.');
     }
-
-    // The bridge launched wireguard.exe successfully — verify the interface.
     let status = await provider.status();
     if (!status.connected) {
-      // The tunnel service can take a moment; retry once before failing.
       await new Promise((r) => setTimeout(r, 1_500));
       status = await provider.status();
       if (!status.connected) {
@@ -149,67 +184,66 @@ async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, o
       }
     }
     ctx.services.events.record('info', 'vpn', `WireGuard tunnel "${profile.name}" is up (elevated install)`);
-    return { outcome: 'connected' as const, status };
+    // Same rule as every other status surface: the dial address never leaves.
+    return { outcome: 'connected' as const, status: publicStatus(status) };
   } finally {
-    // The materialized config contains the REAL private key: delete it on
-    // EVERY exit path (success, decline, expiry, error).
     try { fs.rmSync(stagedConfigPath, { force: true }); } catch { /* best effort */ }
   }
 }
 
 /**
- * Global VPN operation mutex.
+ * Hand the machine's network over from the proxy tunnel to an engine profile.
  *
- * connect/reconnect/disconnect mutate provider child-process state; running
- * two of them concurrently produces double-spawned tunnels, leaked processes
- * or lost disconnects. Serializing them at the API boundary makes the state
- * machine race-free from the UI's perspective: the second click simply waits
- * (bounded) instead of interleaving.
+ * Both modes write the system proxy, arm the kill switch and (in TUN form)
+ * claim the default route — each capturing the value it must restore at ITS
+ * own start time. Starting an engine while the tunnel still held those made
+ * the two restore paths overwrite each other: whichever stopped second
+ * "restored" a port the other mode had set, and traffic ended up on a dead
+ * proxy or the kill-switch hold was released from under the survivor. The
+ * only safe order is: previous owner fully releases, then the new mode starts
+ * — with the tunnel's own internal chain, never nested inside another queued
+ * section's re-entry (the caller already holds the ownership queue).
  */
-let vpnOp: Promise<unknown> = Promise.resolve();
-function serializeVpnOp<T>(op: () => Promise<T>): Promise<T> {
-  const next = vpnOp.then(op, op);
-  // Swallow rejection here so the chain never becomes poisoned; callers get
-  // their own rejection via `next`.
-  vpnOp = next.catch(() => undefined);
-  return next;
+async function stopTunnelForEngine(ctx: AppContext): Promise<void> {
+  const tunnel = ctx.services.tunnel.getStatus();
+  if (tunnel.state === 'idle') return;
+  await ctx.services.tunnel.stop();
+  ctx.services.events.record(
+    'info',
+    'vpn',
+    `Proxy tunnel${tunnel.nodeName ? ` \"${tunnel.nodeName}\"` : ''} stopped to hand the network over to the VPN engine`,
+  );
+}
+
+/**
+ * A provider status without its dial address. The endpoint summary is
+ * `host:port` — the profile's configuration — and for a profile promoted
+ * from a node it is THAT node's address, which this app never hands back
+ * (`endpointHidden` replaces it everywhere else). Spread + delete leaves the
+ * key ABSENT (VpnStatus.endpoint is optional): withheld, not unknown, so no
+ * surface renders it as a blank or null gap. Latency to the endpoint
+ * survives — the measurement is still real and still useful.
+ */
+function publicStatus(status: VpnStatus): VpnStatus {
+  if (status.endpoint === undefined) return status;
+  const copy = { ...status };
+  delete copy.endpoint;
+  return copy;
 }
 
 export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/v1/vpn/providers', async () => ({
     providers: ctx.vpn.all().map((p) => p.info),
   }));
-
-  // Kill switch state — the honest answer to "is traffic actually blocked
-  // right now, and what is exempt". Reports the live enforcement state, not
-  // the preference: `blocking` is true only while the sink is really set.
   app.get('/api/v1/vpn/killswitch', async () => ({
     killSwitch: ctx.services.killSwitch.status(),
   }));
-
-  // Administrator rights — the honest answer to "what can this app do that
-  // Windows only lets an admin do, and what do I do about it".
-  //
-  // Detection is real (util/privileges runs the OS check); nothing here is
-  // inferred from a setting. `privileges[]` carries a reason for every entry and
-  // a remedy where one exists, so the UI never has to invent wording and a
-  // refusal is never a dead end.
-  // Both capability inputs are filesystem checks, so this is cheap enough to
-  // answer on every poll and never depends on a network probe succeeding.
   const readAdmin = (fresh: boolean) => {
     if (fresh) invalidatePrivilegeCache();
     return { admin: adminStatus({ tunGatewayCoreInstalled: findEngineBinary('sing-box') != null }) };
   };
-
   app.get('/api/v1/vpn/admin', async () => readAdmin(false));
-
-  // Re-probe after an elevated relaunch or a Settings change, so the UI does
-  // not keep showing a stale "no admin" from the 60 s cache.
   app.post('/api/v1/vpn/admin/recheck', async () => readAdmin(true));
-
-  // Aether engine lifecycle: version/install-state, and a verified
-  // install/update through the same release pipeline as the proxy cores.
-  // Rate-limited: each call downloads + verifies a ~15 MB asset.
   app.get('/api/v1/vpn/aether/engine', async () => {
     const provider = ctx.vpn.get('aether') as (VpnProvider & { installOrUpdate?: () => Promise<unknown> }) | undefined;
     if (!provider) return { installed: false, version: null, note: 'Aether provider is not registered in this build' };
@@ -229,8 +263,6 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
         version = null;
       }
     }
-    // The TUN preference lives on the provider (applied at the next connect),
-    // so it is read from there rather than duplicated in settings.
     const tunCapable = provider as unknown as { getTunPreference?: () => boolean };
     return {
       installed,
@@ -246,15 +278,6 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
             : 'aether is not installed — use Install/Update',
     };
   });
-
-  // System-wide (TUN) mode for Aether.
-  //
-  // Aether serves SOCKS5, so on its own it only captures apps that honour a
-  // proxy setting. This puts the shared sing-box TUN gateway in front of that
-  // port so the OS default route carries everything — the same mechanism the
-  // local cores use. The preference is applied to the NEXT connect; an active
-  // tunnel is never silently re-routed, and `tun` in the status is only
-  // 'active' after traffic provably traversed the whole path.
   app.post('/api/v1/vpn/aether/tun', async (req) => {
     const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
     if (!parsed.success) throw parsed.error;
@@ -265,7 +288,6 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     provider.setTunPreference(parsed.data.enabled);
     return { tun: provider.getTunPreference?.() ?? parsed.data.enabled };
   });
-
   app.post(
     '/api/v1/vpn/aether/engine/install',
     { config: { rateLimit: { max: 3, timeWindow: '5 minutes' } } },
@@ -283,18 +305,17 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       return outcome;
     },
   );
-
   app.get('/api/v1/vpn/profiles', async () => ({
     profiles: ctx.vpn.listProfiles().map((p) => ({
       id: p.id,
       providerId: p.providerId,
       name: p.name,
       protocol: p.protocol,
-      endpoint: p.endpoint,
+      // endpoint withheld: the stored dial address is configuration, and for
+      // a promoted node it is that node's endpoint. The repo row keeps it.
       createdAt: p.createdAt,
     })),
   }));
-
   app.post(
     '/api/v1/vpn/profiles',
     { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
@@ -306,54 +327,90 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       return { profile };
     },
   );
+  app.get('/api/v1/vpn/profiles/:id/bundle', async (_req, reply) =>
+    replyApiError(reply, 410, 'profile_bundle_retired', 'Profile configuration bundles are no longer served. Nothing in this app hands a stored configuration back to the client. Cloud backup and restore still work — they run on the server.'),
+  );
 
-  /**
-   * Full-config export for end-to-end ENCRYPTED cloud backup. The response
-   * carries the real credential (reconstructed from the vault) — it exists
-   * so the webview can encrypt it client-side before anything leaves the
-   * machine; the cloud only ever receives ciphertext. Loopback + bearer
-   * gated like every local route, and rate-limited harder than reads.
-   */
-  app.get(
-    '/api/v1/vpn/profiles/:id/bundle',
+  app.post(
+    '/api/v1/vpn/profiles/:id/cloud-backup',
     { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
-    async (req) => {
-      const { id } = req.params as { id: string };
-      try {
-        return buildProfileBundle(ctx.vpn, id);
-      } catch (err) {
-        if (err instanceof BundleError) {
-          if (err.code === 'not_found') throw newNotFound(`Profile "${id}" not found`);
-          throw new AppError(409, err.code, err.message);
-        }
-        throw err;
-      }
+    async (req, reply) => {
+      const parsed = CloudBackupSchema.safeParse(req.body ?? {});
+      if (!parsed.success) throw parsed.error;
+      const vault = requireProfileCloudVault(ctx);
+      const id = (req.params as { id: string }).id;
+      if (!ctx.vpn.getProfile(id)) throw newNotFound(`Profile "${id}" not found`);
+      const result = await pushProfileToCloud({ registry: ctx.vpn, vault }, id, parsed.data.accessToken).catch((err) => {
+        throw asHttpError(err);
+      });
+      reply.status(200);
+      // envelopeId, name, protocol — nothing that describes the config.
+      return result;
     },
   );
 
-  /**
-   * Add a stored node to an engine profile immediately.
-   *
-   * The node's link is rebuilt from its row plus the vaulted credential (the
-   * database never held the original config text), round-tripped through the
-   * parser, and then imported exactly like a pasted link. When the rebuild or
-   * the engine's protocol support says no, the route refuses with the reason
-   * instead of creating a profile that could only fail at connect time.
-   */
+  app.post(
+    '/api/v1/vpn/profiles/cloud-restore',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const parsed = CloudRestoreSchema.safeParse(req.body ?? {});
+      if (!parsed.success) throw parsed.error;
+      const vault = requireProfileCloudVault(ctx);
+      const source = await fetchCloudProfile({ registry: ctx.vpn, vault }, parsed.data.cloudProfileId, parsed.data.accessToken).catch(
+        (err) => {
+          throw asHttpError(err);
+        },
+      );
+      const providerId = source.payload.providerId as ImportProviderId;
+      if (!['wireguard', 'openvpn', 'singbox', 'aether'].includes(providerId)) {
+        throw vpnError(400, 'restore_unsupported', `The backup names an engine this app does not have: "${providerId}".`);
+      }
+      // Imported through the one profile-creation path, so the restored profile is
+      // byte-for-byte what a paste would have produced.
+      const created = await importProfileVia(ctx, providerId, source.name, source.payload.configText);
+
+      // New backup first (pushProfileToCloud re-keys under the new profile id):
+      // an interruption here can lose the pointer, never the only copy.
+      await pushProfileToCloud({ registry: ctx.vpn, vault }, created.id, parsed.data.accessToken).catch((err) => {
+        throw asHttpError(err);
+      });
+      await tombstoneCloudProfile(parsed.data.accessToken, source.envelopeId, created.name, created.protocol).catch((err) => {
+        throw asHttpError(err);
+      });
+      await deleteCloudBackup(parsed.data.accessToken, source.envelopeId).catch((err) => {
+        throw asHttpError(err);
+      });
+      ctx.services.events.record('info', 'vpn', `VPN profile "${created.name}" restored from cloud backup`);
+      reply.status(201);
+      // id, providerId, name, protocol, createdAt — and no endpoint, because the
+      // create path's endpoint summary is the address the restored profile dials.
+      // `endpoint: undefined` drops the key from the JSON body (JSON omits undefined)
+      // without leaving an unused binding behind.
+      return { profile: { ...created, endpoint: undefined } };
+    },
+  );
+
   app.post(
     '/api/v1/vpn/profiles/from-node',
     { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const parsed = FromNodeSchema.safeParse(req.body);
       if (!parsed.success) throw parsed.error;
-
       const node = ctx.repos.publicNodes.get(parsed.data.nodeId);
       if (!node) throw newNotFound(`Node "${parsed.data.nodeId}" not found`);
 
       // One owner for "rebuild a stored node's link": the node service reads the
-      // row, takes the credential from the vault and round-trips the result
-      // through the parser. This route only decides what to do with it.
+      // row, takes the credential from the vault and round-trips the result through
+      // the parser. This route only decides what to do with it.
       const built = ctx.services.nodes.shareLink(node.id) as LinkExport | null;
+
+      // The default profile name must not be the endpoint: a node with no remark
+      // used to name itself `host:port`, and the create response echoes the profile
+      // — so an unnamed node would have put the address straight back on the wire.
+      // `nodeLabel` supplies a name that is never an address, and we reuse the same
+      // base through the 400 path so every branch names the same node.
+      const baseName = (parsed.data.name ?? '').trim() || nodeLabel(node).slice(0, 100);
+
       if (!built) throw newNotFound(`Node "${parsed.data.nodeId}" not found`);
       if (!built.ok) {
         throw vpnError(
@@ -363,7 +420,6 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
           "Add the node's original config instead, or re-import the source it came from so its credential is vaulted.",
         );
       }
-
       if (!engineSupports('sing-box', node.protocol)) {
         throw vpnError(
           400,
@@ -373,12 +429,22 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
         );
       }
 
-      const baseName = (node.remark?.trim() || `${node.host}:${node.port}`).slice(0, 100);
-      const profile = await importProfileVia(ctx, 'singbox', parsed.data.name ?? baseName, built.link);
+      const profile = await importProfileVia(ctx, 'singbox', baseName, built.link);
+      ctx.services.events.record('info', 'vpn', `Node ${node.id} added to the sing-box engine as a profile`);
 
-      ctx.services.events.record('info', 'vpn', `Node ${node.host}:${node.port} added to the sing-box engine as a profile`);
+      // The response names WHICH node was promoted and nothing about how to reach it.
+      // Two things had to come off for that to be true: `node.host`, `node.port`, and
+      // then `profile.endpoint` — the promote response embeds the imported profile,
+      // whose `endpoint` summary is `host:port`, so stripping the node fields alone
+      // still put the address on the wire. The globe picker shows place and ping instead,
+      // and neither the link nor the address leaves the server.
+      //
+      // `endpoint: undefined` rather than a spread-omit: JSON drops undefined values,
+      // so the key is absent from the response body, and no local binding is left behind
+      // for a later edit to accidentally re-add.
+      const profileWithoutEndpoint = { ...profile, endpoint: undefined };
       reply.status(201);
-      return { profile, node: { id: node.id, protocol: node.protocol, host: node.host, port: node.port } };
+      return { profile: profileWithoutEndpoint, node: { id: node.id, protocol: node.protocol } };
     },
   );
 
@@ -395,13 +461,9 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/api/v1/vpn/status', async () => {
     const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
-    // the active provider is whichever reports a live tunnel
     const active = statuses.find((s) => s.connected);
-    // The kill switch outlives the tunnel it was armed by: when it is blocking
-    // there is no connected provider, so the aggregate status must still say so
-    // rather than reporting a bare "disconnected" over fail-closed traffic.
     const blocking = ctx.services.killSwitch.status().blocking;
-    if (active) return { ...active, killSwitchActive: active.killSwitchActive || blocking };
+    if (active) return { ...publicStatus(active), killSwitchActive: active.killSwitchActive || blocking };
     return {
       connected: false,
       serverId: null,
@@ -417,7 +479,7 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
     const active = statuses.find((s) => s.connected);
     if (!active?.providerId) {
-      return { connected: false, rxBytes: null, txBytes: null, handshakeAgeSec: null, endpointLatencyMs: null, endpoint: null, note: 'No active tunnel' };
+      return { connected: false, rxBytes: null, txBytes: null, handshakeAgeSec: null, endpointLatencyMs: null, note: 'No active tunnel' };
     }
     const provider = ctx.vpn.get(active.providerId);
     const health = provider?.health ? await provider.health().catch(() => null) : null;
@@ -426,7 +488,6 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       providerId: active.providerId,
       serverName: active.serverName,
       protocol: active.protocol,
-      endpoint: active.endpoint ?? null,
       since: active.since,
       rxBytes: health?.rxBytes ?? active.rxBytes ?? null,
       txBytes: health?.txBytes ?? active.txBytes ?? null,
@@ -446,17 +507,28 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const provider = ctx.vpn.get(profile.providerId);
       if (!provider) throw new AppError(400, 'unknown_provider', 'Provider for this profile is unavailable');
 
-      // Desktop elevated flow: the UI mints an opId, arms the Rust bridge,
-      // and this request long-polls until the UAC outcome lands.
+      // Desktop elevated flow: the UI mints an opId, arms the Rust bridge, and this
+      // request long-polls until the UAC outcome lands.
       if (parsed.data.elevation?.opId) {
         ctx.services.events.record('info', 'vpn', `Elevated connect requested for "${profile.name}"`);
-        const result = await runElevatedWireGuardConnect(ctx, parsed.data.profileId, parsed.data.elevation.opId);
+        // The elevated flow holds the ownership queue too: the network is
+        // handed over from any active proxy tunnel at the moment the elevated
+        // install runs, and nothing else may transition meanwhile.
+        const result = await serializeVpnOp(async () => {
+          await stopTunnelForEngine(ctx);
+          return runElevatedWireGuardConnect(ctx, parsed.data.profileId, parsed.data.elevation!.opId);
+        });
         ctx.services.events.record('info', 'vpn', `Connected VPN profile "${profile.name}" (elevated)`);
-        return { status: result.status, outcome: result.outcome };
+        return { status: publicStatus(result.status), outcome: result.outcome };
       }
 
       ctx.repos.vpnProfiles.touch(profile.id);
-      const status = await serializeVpnOp(() => provider.connect(profile));
+      const status = publicStatus(
+        await serializeVpnOp(async () => {
+          await stopTunnelForEngine(ctx);
+          return provider.connect(profile);
+        }),
+      );
       ctx.services.events.record('info', 'vpn', `Connected VPN profile "${profile.name}"`);
       return { status };
     },
@@ -473,15 +545,17 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const provider = ctx.vpn.get(profile.providerId);
       if (!provider) throw new AppError(400, 'unknown_provider', 'Provider for this profile is unavailable');
       ctx.repos.vpnProfiles.touch(profile.id);
-      const status = await serializeVpnOp(async () => {
-        // bring the tunnel down first if something is up
-        const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
+      const status = publicStatus(
+        await serializeVpnOp(async () => {
+          await stopTunnelForEngine(ctx);
+          const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
         if (statuses.some((s) => s.connected)) {
           const activeProvider = ctx.vpn.get(statuses.find((s) => s.connected)!.providerId!);
           await activeProvider?.disconnect().catch(() => undefined);
         }
-        return provider.connect(profile);
-      });
+          return provider.connect(profile);
+        }),
+      );
       ctx.services.events.record('info', 'vpn', `Reconnected VPN profile "${profile.name}"`);
       return { status };
     },
@@ -489,35 +563,45 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.post('/api/v1/vpn/disconnect', async () => {
     const status = await serializeVpnOp(async () => {
+      // Deliberate: the drop watchdog must not read this as a crash and
+      // reconnect the profile (or an in-flight reconnect chain of its own)
+      // right after the user asked for the tunnel to be down.
+      ctx.services.watchdog?.acknowledgeUserDisconnect();
       const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
       const active = statuses.find((s) => s.connected);
+      let result: Awaited<ReturnType<VpnProvider['disconnect']>>;
       if (!active?.providerId) {
-        // No provider is connected — but the kill switch may still be holding
-        // the machine fail-closed after a drop. "Disconnect" is the user's way
-        // out, so it must release that block (restoring their own proxy)
-        // instead of returning a bare disconnected status over blocked traffic.
         const ks = ctx.services.killSwitch.status();
         if (ks.armed || ks.blocking) {
           const released = await ctx.services.killSwitch.onTunnelStopped();
           ctx.services.events.record('warn', 'vpn', 'Kill switch released by explicit disconnect — previous proxy restored');
-          return { connected: false, killSwitchReleased: true, note: released.note } as Awaited<ReturnType<VpnProvider['disconnect']>> & { killSwitchReleased: boolean; note: string | null };
+          result = { connected: false, killSwitchReleased: true, note: released.note } as Awaited<ReturnType<VpnProvider['disconnect']>> & { killSwitchReleased: boolean; note: string | null };
+        } else {
+          result = { connected: false } as Awaited<ReturnType<VpnProvider['disconnect']>>;
         }
-        return { connected: false } as Awaited<ReturnType<VpnProvider['disconnect']>>;
+      } else {
+        const provider = ctx.vpn.get(active.providerId);
+        if (!provider) throw new AppError(500, 'provider_missing', 'Active provider disappeared');
+        result = publicStatus(await provider.disconnect());
       }
-      const provider = ctx.vpn.get(active.providerId);
-      if (!provider) throw new AppError(500, 'provider_missing', 'Active provider disappeared');
-      return provider.disconnect();
+      // "Disconnect" means the machine is offline from this app, not only the
+      // engine profiles: the proxy tunnel is a connection too, and leaving it
+      // up after an engine disconnect made the button look broken whenever the
+      // tunnel was the active mode.
+      const tunnel = ctx.services.tunnel.getStatus();
+      if (tunnel.state !== 'idle') {
+        await ctx.services.tunnel.stop();
+        ctx.services.events.record(
+          'info',
+          'vpn',
+          `Proxy tunnel${tunnel.nodeName ? ` \"${tunnel.nodeName}\"` : ''} stopped by disconnect`,
+        );
+      }
+      return result;
     });
     ctx.services.events.record('info', 'vpn', 'VPN tunnel disconnected');
     return { status };
   });
-
-  // ---- Per-action elevation bridge (Windows WireGuard connect) ----
-  //
-  // These two endpoints serve the RUST elevation broker, not the webview:
-  // the Rust command fetches the pending descriptor (with the nonce the UI
-  // passed it) and reports the launch outcome. Authenticated like every other
-  // route; the nonce additionally binds each call to the UI round-trip.
 
   app.get('/api/v1/vpn/elevation/pending', async (req) => {
     const q = z.object({ opId: z.string().min(1).max(64), nonce: z.string().min(16).max(128) }).safeParse(req.query);
@@ -539,12 +623,18 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     const q = z.coerce.number().int().min(1).max(100).default(20).safeParse((req.query as { limit?: string }).limit ?? undefined);
     const limit = q.success ? q.data : 20;
     return {
-      connections: ctx.repos.vpnConnections.latest(limit),
+      // A past session's dial address is configuration too. The row keeps it
+      // in the DB; the response names the server, protocol and times without
+      // it — the web's session line renders exactly those.
+      connections: ctx.repos.vpnConnections.latest(limit).map((c) => {
+        const copy = { ...c } as Partial<typeof c>;
+        delete copy.endpoint;
+        return copy;
+      }),
     };
   });
 
   app.post('/api/v1/vpn/verify', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async () => {
-    // re-verify the active tunnel: current public IP vs the IP recorded at connect
     const statuses = await Promise.all(ctx.vpn.all().map((p) => p.status()));
     const active = statuses.find((s) => s.connected);
     if (!active) throw badRequest('not_connected', 'No active tunnel to verify');
@@ -566,3 +656,4 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     };
   });
 }
+

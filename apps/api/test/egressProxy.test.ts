@@ -41,11 +41,17 @@ describe('normalizeProxy', () => {
     expect(normalizeProxy('http=127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
   });
 
-  it('reports a SOCKS proxy instead of silently bypassing it', () => {
-    expect(normalizeProxy('socks=127.0.0.1:1080')).toBe(SOCKS_UNSUPPORTED);
-    expect(normalizeProxy('socks5://127.0.0.1:1080')).toBe(SOCKS_UNSUPPORTED);
-    // undici has no SOCKS agent; quietly falling back to direct is the very
-    // bug this module exists to remove.
+  it('uses a SOCKS5 proxy rather than bypassing it, and names the one it cannot', () => {
+    // CHANGED CONTRACT: this used to assert that ANY SOCKS value resolved to
+    // SOCKS_UNSUPPORTED, because undici had no SOCKS agent. Now SOCKS5 is
+    // spoken by our own connector (see socksConnector) — refusing it sent
+    // v2rayN users straight back to a failed sign-in. What must still hold is
+    // the part that was always the point: resolution never quietly answers
+    // "no proxy, connect direct".
+    expect(normalizeProxy('socks=127.0.0.1:1080')).toBe('socks5://127.0.0.1:1080');
+    expect(normalizeProxy('socks5://127.0.0.1:1080')).toBe('socks5://127.0.0.1:1080');
+    // A variant we genuinely cannot speak is still named, never silently used.
+    expect(normalizeProxy('socks4=127.0.0.1:1080')).toBe(SOCKS_UNSUPPORTED);
     expect(normalizeProxy('socks=127.0.0.1:1080')).not.toBeNull();
   });
 });
@@ -113,14 +119,12 @@ describe('classify', () => {
     expect(e.message).toMatch(/filtered/i);
   });
 
-  it('carries the reason and message out for the UI', () => {
-    const d = classify({ cause: { code: 'ECONNREFUSED' } }, 'http://127.0.0.1:2080').toDetail();
-    expect(d).toEqual({
-      reason: 'proxy_unreachable',
-      proxy: 'http://127.0.0.1:2080',
-      message: d.message,
-    });
-    expect(d.message.length).toBeGreaterThan(10);
+  it('carries the reason and the sentence the user will read', () => {
+    const e = classify({ cause: { code: 'ECONNREFUSED' } }, 'http://127.0.0.1:2080');
+    expect(e.reason).toBe('proxy_unreachable');
+    expect(e.proxy).toBe('http://127.0.0.1:2080');
+    expect(e.message.length).toBeGreaterThan(10);
+    expect(e.message).toContain('127.0.0.1:2080');
   });
 });
 

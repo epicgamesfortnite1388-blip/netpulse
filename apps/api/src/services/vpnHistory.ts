@@ -90,7 +90,9 @@ export class VpnHistoryService {
         origin,
         trigger,
         summary: report.summary,
-        winner: winner ? { host: winner.host, port: winner.port, protocol: winner.protocol, latencyMs: winner.latencyMs } : null,
+        winner: winner
+          ? { label: winner.label, endpointHidden: true, protocol: winner.protocol, latencyMs: winner.latencyMs }
+          : null,
         validatedDepth: validatedDepthOf(report),
       };
       this.deps.events.insert({ kind: KIND_DISCOVERY, at: Date.now(), payload: payload as unknown as Record<string, unknown> });
@@ -250,8 +252,8 @@ export function reliabilityRow(g: GatewayMemoryEntry, _now: number): GatewayReli
   return {
     nodeId: g.nodeId,
     name: g.name,
-    host: g.host,
-    port: g.port,
+    label: g.label,
+    endpointHidden: true,
     protocol: g.protocol,
     engine: g.engine as ProxyEngineId,
     exitCountry: g.exitCountry,

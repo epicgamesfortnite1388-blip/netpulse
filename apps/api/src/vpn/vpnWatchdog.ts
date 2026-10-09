@@ -1,4 +1,5 @@
 import type { VpnRegistry } from './vpnService';
+import { serializeVpnOp } from './networkOwnership';
 import type { Logger } from '../logger';
 import type { RealtimeBus } from '../realtime/bus';
 
@@ -17,10 +18,11 @@ import type { RealtimeBus } from '../realtime/bus';
  *
  * It deliberately does NOT attempt unbounded reconnection: a server that is
  * gone should surface as a failed tunnel, not an infinite retry loop.
- * Reconnects run through the same serialized operation chain as user actions
- * (serializeVpnOp in routes/vpn.ts) is NOT used here — the watchdog calls the
- * provider directly, and user-triggered reconnects race-resolution happens in
- * the provider's own connect() which refuses when a tunnel is already up.
+ * Reconnect attempts run on the SAME ownership queue as user actions
+ * (serializeVpnOp in networkOwnership.ts) and are fenced by an epoch: an
+ * acknowledge — user disconnect, or a mode handover to the proxy tunnel —
+ * both clears the remembered profile and invalidates a chain already in
+ * flight, so a deliberate stop can never be outrun by a queued reconnect.
  */
 
 const DROP_POLL_MS = 10_000;
@@ -32,6 +34,12 @@ export class VpnDropWatchdog {
   private lastConnectedProfileId: string | null = null;
   private lastConnectedProviderId: string | null = null;
   private reconnecting = false;
+  /**
+   * Deliberate-action fence. Bumped by `acknowledgeUserDisconnect`; a
+   * reconnect chain captures it at the drop and stops at the next check when
+   * it moves, including while waiting its turn on the ownership queue.
+   */
+  private epoch = 0;
 
   constructor(
     private readonly vpn: VpnRegistry,
@@ -60,10 +68,13 @@ export class VpnDropWatchdog {
     }
   }
 
-  /** User-initiated disconnect: forget the last profile so no auto-reconnect fires. */
+  /** User-initiated disconnect or a mode handover: forget the last profile and
+   *  abort any reconnect chain already running, so nothing reconnects after a
+   *  deliberate stop. */
   acknowledgeUserDisconnect(): void {
     this.lastConnectedProfileId = null;
     this.lastConnectedProviderId = null;
+    this.epoch += 1;
   }
 
   private async tick(): Promise<void> {
@@ -89,15 +100,29 @@ export class VpnDropWatchdog {
       if (!provider || !profile) return;
 
       this.reconnecting = true;
+      const epochAtStart = this.epoch;
       this.opts.event?.('warn', `VPN tunnel for "${profile.name}" dropped — starting bounded reconnect`, { profileId, providerId });
       this.opts.bus?.publish('vpn', { type: 'vpn:dropped', profileId, providerId });
 
       for (let attempt = 1; attempt <= RECONNECT_DELAYS_MS.length; attempt++) {
-        if (this.cancelled) break;
+        if (this.cancelled || this.epoch !== epochAtStart) break;
         if (attempt > 1) await new Promise((r) => setTimeout(r, RECONNECT_DELAYS_MS[attempt - 1]));
+        if (this.cancelled || this.epoch !== epochAtStart) break;
         this.opts.onReconnect?.(profileId, providerId, attempt);
         try {
-          await provider.connect(profile);
+          // The attempt runs on the ownership queue: a deliberate transition
+          // queued before it wins, and the epoch check inside the queued
+          // section re-verifies that after the wait — a reconnect can no
+          // longer land on top of (or be stomped by) a user action.
+          let ran = false;
+          await serializeVpnOp(async () => {
+            if (this.cancelled || this.epoch !== epochAtStart) return;
+            await provider.connect(profile);
+            ran = true;
+          });
+          // Superseded while queued: the user's transition owns the outcome;
+          // this chain reports nothing and stops.
+          if (!ran) break;
           this.opts.event?.('info', `VPN tunnel for "${profile.name}" restored (attempt ${attempt})`, { profileId, attempt });
           this.opts.bus?.publish('vpn', { type: 'vpn:reconnected', profileId, providerId, attempt });
           break;

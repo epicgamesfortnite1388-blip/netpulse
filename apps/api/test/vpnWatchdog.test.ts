@@ -117,6 +117,31 @@ describe('VpnDropWatchdog (process-killed mid-session supervision)', () => {
     wd.stop();
   });
 
+  it('an acknowledge during the reconnect chain aborts the remaining attempts', async () => {
+    // The user (or a mode handover) deliberate-stops WHILE the watchdog is
+    // mid-chain, between a failed attempt and its backoff. The remaining
+    // attempts must not run — otherwise a deliberate disconnect gets
+    // outrun by a queued reconnect and the tunnel comes back.
+    const behaviour = { connected: false, connectShould: 'fail' as const };
+    const provider = makeProvider(behaviour);
+    const reg = makeRegistry(provider);
+    const wd = new VpnDropWatchdog(reg, {});
+    (wd as unknown as { lastConnectedProfileId: string }).lastConnectedProfileId = 'p1';
+    (wd as unknown as { lastConnectedProviderId: string }).lastConnectedProviderId = 'wireguard';
+    wd.start();
+
+    // drop tick: attempt 1 fires immediately and fails; the chain is now
+    // waiting out the first backoff (5 s).
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(provider.connectCalls).toBe(1);
+
+    wd.acknowledgeUserDisconnect();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(provider.connectCalls, 'the chain kept reconnecting after a deliberate stop').toBe(1);
+    wd.stop();
+  });
+
   it('survives status probes throwing (engine gone entirely)', async () => {
     const failing = {
       info: { id: 'wireguard', name: 'WireGuard', kind: 'wireguard', capabilities: [], available: false },

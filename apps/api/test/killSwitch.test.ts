@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import net from 'node:net';
+
 import { KillSwitchService, KILL_SWITCH_SINK } from '../src/services/killSwitch';
 import { renderAetherRoutes } from '../src/vpn/aetherProvider';
 
@@ -275,7 +277,14 @@ describe('kill switch survives a drop → heal → stop cycle', () => {
  */
 describe('force-kill cleanup guard (recoverAfterRestart)', () => {
   interface Rec { writes: Array<string | null>; events: string[]; saved: unknown[] }
-  function makeRecoverable(opts: { hold: { previousProxy: string | null; label: string; blocking: boolean } | null; current: string | null }) {
+  /**
+   * `hold` is `unknown` because the real loader hands back whatever JSON sits
+   * in the settings row — including the `{}` a cleared hold leaves behind.
+   * `alive` answers "is something listening on the OS's current proxy?", which
+   * defaults to a dead port so the force-kill cases stay deterministic; the
+   * probe itself is exercised for real at the end of this block.
+   */
+  function makeRecoverable(opts: { hold: unknown; current: string | null; alive?: boolean }) {
     const rec: Rec = { writes: [], events: [], saved: [] };
     let current = opts.current;
     let persisted = opts.hold;
@@ -287,6 +296,7 @@ describe('force-kill cleanup guard (recoverAfterRestart)', () => {
       event: (level, message) => rec.events.push(`${level}: ${message}`),
       loadHold: () => persisted,
       saveHold: (record) => { persisted = record; rec.saved.push(record); },
+      endpointAlive: async () => opts.alive ?? false,
     });
     return { ks, rec, current: () => current };
   }
@@ -335,5 +345,67 @@ describe('force-kill cleanup guard (recoverAfterRestart)', () => {
     await ks.recoverAfterRestart();
     expect(rec.writes).toEqual([]);
     expect(rec.events).toEqual([]);
+  });
+
+  it('does not delete a proxy that a cleared record never captured', async () => {
+    // The live bug: `saveHold(null)` persists `{}`, `loadHold` returns it, and
+    // recovery read "no capture" as "captured null" → ProxyEnable=0 on every
+    // launch. A user on a filtered network lost their working proxy one second
+    // after opening the app, which is why sign-in then reported "could not
+    // reach the cloud service" with no proxy anywhere in the picture.
+    const { ks, rec } = makeRecoverable({ hold: {}, current: '127.0.0.1:10809' });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]);
+    expect(rec.events).toEqual([]);
+  });
+
+  it('never claims a loopback proxy that something is answering on', async () => {
+    // v2rayN, Clash and Xray all listen on loopback, and this app competes
+    // with them for that one setting. A port that answers belongs to a tool
+    // running now — restoring our captured value would delete it.
+    const { ks, rec } = makeRecoverable({
+      hold: { previousProxy: null, label: 'proxy tunnel', blocking: false },
+      current: '127.0.0.1:10809',
+      alive: true,
+    });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]);
+    expect(rec.events).toEqual([]);
+  });
+
+  it('restores a dead loopback handoff while some other proxy stays live', async () => {
+    // Liveness is judged on the OS's CURRENT value only — a dead port is still
+    // our stranded handoff, and the user's captured proxy still goes back.
+    const { ks, rec } = makeRecoverable({
+      hold: { previousProxy: '127.0.0.1:10809', label: 'proxy tunnel', blocking: false },
+      current: '127.0.0.1:54179',
+      alive: false,
+    });
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual(['127.0.0.1:10809']);
+  });
+
+  it('probes a real listener instead of guessing', async () => {
+    // Same two cases with the REAL probe (no `endpointAlive` dep), so the
+    // decision is tied to what is actually answering on the port.
+    const server = net.createServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const port = (server.address() as net.AddressInfo).port;
+    const rec: Rec = { writes: [], events: [], saved: [] };
+    const ks = new KillSwitchService({
+      setSystemProxy: async (p) => { rec.writes.push(p); return { ok: true }; },
+      getSystemProxy: async () => ({ proxy: `127.0.0.1:${port}` }),
+      enabled: () => false,
+      bypass: () => null,
+      loadHold: () => ({ previousProxy: null, label: 'proxy tunnel', blocking: false }),
+      saveHold: () => {},
+    });
+
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([]); // a listener is there: not a stranded handoff
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await ks.recoverAfterRestart();
+    expect(rec.writes).toEqual([null]); // nothing answers now: ours, restore it
   });
 });

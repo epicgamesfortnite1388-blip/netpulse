@@ -57,6 +57,7 @@ import {
   type DnsThroughTunnel,
 } from './proxyCores';
 import { TunGatewayHandle, type TunGatewayEvent } from './tunGatewayHandle';
+import { nodeLabel } from './nodeView';
 
 import type { NodeSecretVault } from './nodeSecretVault';
 
@@ -178,6 +179,8 @@ export interface TunnelNodeInput {
   realityShortId: string | null;
   realityServerName: string | null;
   remark: string | null;
+  /** used only to name the node without printing its address */
+  canonicalFingerprint?: string;
 }
 
 /** What the service was asked to keep up — what reconnect restores. */
@@ -246,8 +249,17 @@ export class ProxyTunnelService {
   private stopping = false;
   /** serialized start/stop so rapid toggles can't interleave */
   private transition: Promise<void> = Promise.resolve();
-  /** bumped by stop() so a queued restart's start() aborts instead of resurrecting */
+  /** bumped by stop() so a queued start aborts instead of resurrecting a stopped tunnel */
   private stopGeneration = 0;
+  /**
+   * Separate fence for the BOUNDED RESTART CHAIN. A failed start bumps this,
+   * never `stopGeneration`: conflating the two meant one candidate failing in
+   * quick-connect (or any start failing verification) silently DROPPED every
+   * start already queued behind it — the user's switch to another node was
+   * discarded and answered with the previous candidate's failure. A stop must
+   * drop queued starts; a failure must only end the retry chain.
+   */
+  private restartGeneration = 0;
   /** DNS-through-tunnel wiring captured from the most recent start options. */
   private dns: DnsThroughTunnel | null = null;
   /**
@@ -491,8 +503,8 @@ export class ProxyTunnelService {
           nodeId: entryNode.id,
           name: entryNode.remark ?? null,
           engine: entry.engine,
-          host: entryNode.host,
-          port: entryNode.port,
+          label: nodeLabel({ ...entryNode, canonicalFingerprint: entryNode.canonicalFingerprint ?? undefined }),
+          endpointHidden: true,
           exitIp: ip,
           exitCountry: traceField(trace, 'loc'),
           inboundPort: entry.run.inboundPort,
@@ -532,8 +544,8 @@ export class ProxyTunnelService {
             nodeId: exitNode.id,
             name: exitNode.remark ?? null,
             engine: exit.engine,
-            host: exitNode.host,
-            port: exitNode.port,
+            label: nodeLabel({ ...exitNode, canonicalFingerprint: exitNode.canonicalFingerprint ?? undefined }),
+            endpointHidden: true,
             exitIp: ip,
             exitCountry: loc,
             inboundPort: exit.run.inboundPort,
@@ -560,8 +572,7 @@ export class ProxyTunnelService {
       this.deps.onVerifiedGateway?.({
         nodeId: exitNode.id,
         name: exitNode.remark ?? null,
-        host: exitNode.host,
-        port: exitNode.port,
+        label: nodeLabel({ ...exitNode, canonicalFingerprint: exitNode.canonicalFingerprint ?? undefined }),
         protocol: exitNode.protocol,
         engine: exit.engine,
         exitIp: ip,
@@ -572,7 +583,9 @@ export class ProxyTunnelService {
       // The cores started but cannot relay — that is a dead tunnel; be honest.
       // Cancel any pending restart chain: reconnecting into a target that just
       // failed traffic verification would resurrect a dead node over and over.
-      this.stopGeneration += 1;
+      // (restartGeneration, NOT stopGeneration — a queued USER start must
+      // survive a previous candidate's failure and still run.)
+      this.restartGeneration += 1;
       if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
       this.status = { ...this.status, state: 'down', error: `started but verification failed: ${message(err)}` };
       this.deps.publish('tunnel:error', { nodeId: exitNode.id, error: this.status.error });
@@ -632,8 +645,9 @@ export class ProxyTunnelService {
   /** Honest failure: record it, publish it, and leave no core behind. */
   private fail(error: string, nodeId: string): void {
     // Cancel any pending restart chain: a failure must not be followed by
-    // reconnect attempts against a target that just proved dead.
-    this.stopGeneration += 1;
+    // reconnect attempts against a target that just proved dead. Restart
+    // generation only — queued user starts are unaffected (see the field).
+    this.restartGeneration += 1;
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
     this.status = { ...this.status, state: 'down', error };
     this.deps.publish('tunnel:error', { nodeId, error });
@@ -676,6 +690,16 @@ export class ProxyTunnelService {
   }
 
   async stop(): Promise<TunnelStatus> {
+    // Fence FIRST, before queueing. The generation marks "a deliberate stop
+    // happened"; bumping it at the moment of the call (not deep inside the
+    // teardown that eventually runs) is what lets a start() queued behind
+    // this stop see it as the newer intent and run after it — while starts
+    // queued BEFORE this call are superseded and abort. The teardown itself
+    // must NOT bump: `startTarget` stops the previous tunnel as its first
+    // step, and that bump made every start queued behind a running one —
+    // the ordinary "switch to another node" click — abort as if the user had
+    // pressed Stop.
+    this.stopGeneration += 1;
     const prev = this.transition;
     let done!: () => void;
     this.transition = new Promise<void>((res) => { done = res; });
@@ -689,7 +713,6 @@ export class ProxyTunnelService {
 
   private async stopInner(o: { keepStatus: boolean }): Promise<TunnelStatus> {
     this.stopping = true;
-    this.stopGeneration += 1;
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null; }
     const wasNodeId = this.status.nodeId;
 
@@ -768,14 +791,15 @@ export class ProxyTunnelService {
     // leaving the user to guess whether anything is happening.
     this.status = { ...this.status, reconnectAttempts: this.restarts, reconnectLimit: RESTART_MAX_TRIES };
     const delay = RESTART_BASE_MS * 2 ** (this.restarts - 1);
-    const myGeneration = this.stopGeneration;
+    const myGeneration = this.restartGeneration;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopping || this.status.state === 'active') return;
       void this.restartStored().then((s) => {
         // start() is a no-op if a stop() superseded us (generation moved);
         // state will be idle — do not reschedule from a dead restart chain.
-        if (this.stopGeneration !== myGeneration) return;
+        // A failed attempt moved restartGeneration, which also ends the chain.
+        if (this.restartGeneration !== myGeneration) return;
         if (s.state === 'down' && !s.error?.includes('gave up')) this.scheduleRestart();
       });
     }, delay);

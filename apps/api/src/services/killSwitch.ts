@@ -29,6 +29,8 @@
  */
 import { bypassSummary } from '@netpulse/shared';
 
+import net from 'node:net';
+
 import type { BypassRuleSet } from '@netpulse/shared';
 
 /**
@@ -54,6 +56,56 @@ function isLoopbackProxy(value: string | null): boolean {
   if (!value) return false;
   const host = value.split(':')[0]?.trim().toLowerCase() ?? '';
   return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+}
+
+/**
+ * A CLEARED hold is persisted as `{}` (see `saveHold`), which is not evidence
+ * that this app ever took the system proxy over. The boolean `blocking` flag is
+ * what every live hold record carries — and what `saveHold(null)` writes
+ * without — so requiring it is what separates "there is a handoff to undo" from
+ * "the last session left nothing behind". Trusting the empty row instead meant
+ * every launch of the app could write the proxy setting.
+ */
+function isHoldRecord(value: unknown): value is KillSwitchHoldRecord {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as KillSwitchHoldRecord).blocking === 'boolean'
+  );
+}
+
+/** `host:port` / `[::1]:port` as an endpoint, or null for anything else. */
+function parseHostPort(value: string | null): { host: string; port: number } | null {
+  if (!value) return null;
+  const match = value.trim().match(/^\[?([^\]:]+)\]?:(\d+)$/);
+  if (!match) return null;
+  const port = Number(match[2]);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
+  return { host: match[1] ?? '', port };
+}
+
+/**
+ * Is anything listening on this loopback proxy endpoint? A bare TCP connect
+ * sends no bytes, so a live proxy sees a connection that is immediately
+ * dropped, and a port with no listener fails at once.
+ */
+async function proxyEndpointAlive(proxy: string | null): Promise<boolean> {
+  const endpoint = parseHostPort(proxy);
+  if (!endpoint) return false;
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: endpoint.host, port: endpoint.port });
+    let settled = false;
+    const finish = (alive: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(alive);
+    };
+    socket.setTimeout(300);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
 }
 
 export interface KillSwitchStatus {
@@ -98,8 +150,12 @@ export interface KillSwitchDeps {
   bypass(): BypassRuleSet | null;
   event?(level: 'info' | 'warn' | 'error', message: string): void;
   publish?(kind: string, payload: Record<string, unknown>): void;
-  /** persisted hold, so a crash mid-block can be undone on the next boot */
-  loadHold?(): KillSwitchHoldRecord | null;
+  /** persisted hold, so a crash mid-block can be undone on the next boot.
+   *  `unknown`: the row is JSON in a settings table — including the `{}` that a
+   *  cleared hold leaves behind — so it is validated before it is believed. */
+  loadHold?(): unknown;
+  /** Is a proxy endpoint answering? Injected by tests; defaults to a TCP probe. */
+  endpointAlive?(proxy: string | null): Promise<boolean>;
   saveHold?(record: KillSwitchHoldRecord | null): void;
 }
 
@@ -284,10 +340,22 @@ export class KillSwitchService {
    *     Restore the captured value in both cases; if the OS already shows the
    *     user's own value (clean shutdown got there first), write nothing.
    * The record is dropped either way — it describes the previous session.
+   *
+   * Two things this guard must NOT do, both learned from live behavior:
+   *   - believe a CLEARED record (`{}`) as a hold: it captured nothing, so it
+   *     restores nothing — writing here deletes the user's proxy every launch;
+   *   - claim a loopback proxy as OURS because it is loopback. This app is a
+   *     VPN client competing for one setting with every other proxy tool on
+   *     the machine, and those are all loopback too. Observed live: boot
+   *     recovery deleted a user's working v2rayN proxy within a second of
+   *     launch, after which the app's own cloud traffic had to go direct into
+   *     a filtered network. Liveness decides: a dead port is our stranded
+   *     handoff (restore), a port something answers on belongs to someone who
+   *     is here now (leave it).
    */
   async recoverAfterRestart(): Promise<KillSwitchStatus> {
     const record = this.deps.loadHold?.() ?? null;
-    if (!record) return this.status();
+    if (!isHoldRecord(record)) return this.status();
     let current: string | null = null;
     try {
       current = (await this.deps.getSystemProxy()).proxy;
@@ -299,13 +367,15 @@ export class KillSwitchService {
     const strandedSink = record.blocking && ours === KILL_SWITCH_SINK;
     /**
      * A stale handoff is only claimed when the OS points at a LOOPBACK proxy
-     * that differs from what we captured — that is the shape of every handoff
-     * this app writes. If the OS shows a non-loopback proxy or nothing at all,
-     * some other tool may own the current state after our death, and writing
-     * our captured value could stomp theirs; restoring nothing never breaks
-     * networking, replacing a dead local port always fixes it.
+     * that differs from what we captured AND nothing is answering on that port.
+     * A non-loopback value belongs to a tool on the network (a corp proxy), and
+     * a loopback port that answers belongs to a tool running right now —
+     * writing our captured value over either would stomp a proxy that works.
+     * Replacing a dead local port always fixes something; restoring nothing
+     * never breaks networking.
      */
-    const strandedHandoff = ours !== captured && isLoopbackProxy(ours);
+    const strandedHandoff =
+      ours !== captured && isLoopbackProxy(ours) && !(await this.endpointAlive(ours));
     if (strandedSink || strandedHandoff) {
       const set = await this.deps.setSystemProxy(record.previousProxy);
       this.deps.event?.(
@@ -320,6 +390,11 @@ export class KillSwitchService {
     this.deps.saveHold?.(null);
     this.clearHold();
     return this.status();
+  }
+
+  /** Who owns the proxy the OS currently points at. Test seam over the probe. */
+  private endpointAlive(proxy: string | null): Promise<boolean> {
+    return this.deps.endpointAlive?.(proxy) ?? proxyEndpointAlive(proxy);
   }
 
   private clearHold(): void {

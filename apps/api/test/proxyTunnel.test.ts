@@ -461,3 +461,43 @@ describe('tunnel audit fixes', () => {
     expect(written).toBeUndefined();
   });
 });
+
+describe('ProxyTunnelService queue semantics (rapid switches)', () => {
+  it('a start queued behind a failing start still runs — a failure never drops a user switch', async () => {
+    // The user picks node A, then immediately switches to node B while A is
+    // still starting. A's verification trace fails. B was queued behind A and
+    // must still run: `stopGeneration` is only for deliberate stops, and the
+    // restart fence is separate — previously a failed start bumped the stop
+    // generation and B was silently discarded, answered with A's failure.
+    const { deps } = makeDeps({
+      traces: [new Error('trace refused'), 'ip=203.0.113.77\nloc=DE\ncolo=Fra\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const a = svc.start(node({ id: 'nA' }), { systemProxy: false, preferredEngine: 'auto' });
+    const b = svc.start(node({ id: 'nB' }), { systemProxy: false, preferredEngine: 'auto' });
+    const [sa, sb] = await Promise.all([a, b]);
+
+    expect(sa.state).toBe('down');
+    expect(sa.error, 'the first candidate should fail verification').toContain('verification failed');
+    expect(sb.state, 'the queued switch was dropped by the previous candidate failure').toBe('active');
+    expect(sb.nodeId).toBe('nB');
+  });
+
+  it('a start queued behind a SUCCESSFUL start still runs (the switch lands)', async () => {
+    // The same race without a failure: A comes up, B is queued. B must tear
+    // A down and take over — the single-tunnel invariant, held across the
+    // queue rather than only across sequential awaits.
+    const { deps, killedPorts } = makeDeps({
+      traces: ['ip=203.0.113.1\nloc=NL\ncolo=AMS\n', 'ip=198.51.100.20\nloc=DE\ncolo=Fra\n'],
+    });
+    const svc = new ProxyTunnelService(deps);
+    const a = svc.start(node({ id: 'nA' }), { systemProxy: false, preferredEngine: 'auto' });
+    const b = svc.start(node({ id: 'nB' }), { systemProxy: false, preferredEngine: 'auto' });
+    const [sa, sb] = await Promise.all([a, b]);
+
+    expect(sa.state).toBe('active');
+    expect(sb.state).toBe('active');
+    expect(sb.nodeId).toBe('nB');
+    expect(killedPorts, 'the first core was not torn down by the switch').toContain(45678);
+  });
+});

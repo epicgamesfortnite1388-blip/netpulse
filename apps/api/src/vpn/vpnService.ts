@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 
 import { spawnCoreProcess, startupReason } from '../services/coreProcess';
 import { runCommand } from '../util/exec';
+import { createVaultKeyStore, type VaultKeyStore } from './keychain';
 
 import type { CoreProcess } from '../services/coreProcess';
 import type { ChildProcess } from 'node:child_process';
@@ -128,37 +128,26 @@ export function vpnError(statusCode: number, code: string, message: string, hint
  * Minimal secret vault: AES-256-GCM encrypted file under the data dir.
  * Private keys never touch the database, the API or logs.
  */
-/* ----------------------- vault key ACL hardening --------------------------- */
+/* ----------------------- vault key storage ------------------------------- */
 
-/**
- * Windows ACL enforcement for the vault .key file.
- *
- * On POSIX the file mode 0o600 is respected. On Windows it is NOT — Node's
- * fs.chmod has no effect on the NTFS ACL. `icacls` directly manipulates the
- * ACL: it replaces the existing entries with one entry granting access to the
- * current user only (Everyone and SYSTEM are removed). This prevents other
- * local accounts or processes from reading the vault key material.
- *
- * Failure is deliberately silent — a vault that cannot be hardened is still
- * better than no vault, and a noisy failure would make the app unusable on
- * locked-down WinPE/AD environments where the current user lacks icacls rights.
- */
-function enforceWindowsAcl(filePath: string): void {
-  if (process.platform !== 'win32') return;
-  try {
-    // %USERNAME% expands to the current user. /T recursively resets child objects.
-    execSync(`icacls "${filePath}" /inheritance:r /grant:r "%USERNAME%:(R)" /c`, { stdio: 'ignore' });
-  } catch {
-    // best-effort: non-zero exit on restricted environments
-  }
-}
+// Where the vault's master key lives is no longer this module's business: it
+// is the key store's. `FileKeyStore` keeps the old <vault>.key file and its
+// icacls hardening; `WindowsCredentialKeyStore` puts the key in Credential
+// Manager so the data directory holds ciphertext and nothing that opens it.
+// See `vpn/keychain.ts` for the trade-offs and the migration rules.
 
 export class FileSecretVault {
-  constructor(private readonly file: string) {
+  private readonly keyStore: VaultKeyStore;
+  private cachedKey: Buffer | null = null;
+
+  constructor(private readonly file: string, keyStore?: VaultKeyStore) {
     // The vault writes its key + entry files eagerly; a missing parent dir
     // used to turn every set() into a silent ENOENT (callers swallow vault
     // failures by design), so secrets silently never persisted.
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Injectable so the fallback rules can be tested against a store that
+    // errors, without depending on a real credential store.
+    this.keyStore = keyStore ?? createVaultKeyStore(file);
   }
 
   /** Windows-safe filename for a ref: colon characters are not allowed there. */
@@ -167,36 +156,141 @@ export class FileSecretVault {
     return `${this.file}.${hash}`;
   }
 
-  private key(): Buffer {
-    // machine-derived key file (0600). A packaged build swaps this for the OS keychain.
-    const keyFile = `${this.file}.key`;
-    if (!fs.existsSync(keyFile)) {
-      fs.writeFileSync(keyFile, crypto.randomBytes(32), { mode: 0o600 });
-      void enforceWindowsAcl(keyFile);
+  private legacyKeyFile(): string {
+    return `${this.file}.key`;
+  }
+
+  /** The pre-keychain key file, if one is present and looks like a real key. */
+  private readLegacyKey(): Buffer | null {
+    try {
+      const f = this.legacyKeyFile();
+      if (!fs.existsSync(f)) return null;
+      const b = fs.readFileSync(f);
+      return b.length === 32 ? b : null;
+    } catch {
+      return null;
     }
-    return Buffer.from(fs.readFileSync(keyFile));
+  }
+
+  private fallBackToKeyFile(reason: string): Buffer {
+    const legacy = this.readLegacyKey();
+    if (legacy) {
+      this.cachedKey = legacy;
+      return legacy;
+    }
+    const value = crypto.randomBytes(32);
+    try {
+      fs.writeFileSync(this.legacyKeyFile(), value, { mode: 0o600 });
+    } catch (err) {
+      throw new Error(
+        `vault key unavailable (${reason}) and the key file is unwritable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    this.cachedKey = value;
+    return value;
+  }
+
+  /**
+   * Resolves the vault key, migrating an existing key file into the key store.
+   *
+   * Three properties matter, in order:
+   *
+   *  1. **Never rekey by accident.** A store that *fails* (as opposed to simply
+   *     having no key yet) must not cause fresh key material to be generated,
+   *     or every secret already on disk becomes permanently unreadable. Errors
+   *     therefore fall back to the file instead of minting a new key.
+   *  2. **Never delete the file before the store has handed the key back.**
+   *     The round-trip read below is what makes the migration safe to complete;
+   *     a successful write followed by an unusable read would otherwise have
+   *     destroyed the only copy.
+   *  3. **Cache.** The previous implementation re-read the key file on every
+   *     seal and open. Key material never changes for the life of a vault, so
+   *     it is read once.
+   */
+  private key(): Buffer {
+    if (this.cachedKey) return this.cachedKey;
+
+    const stored = this.keyStore.read();
+
+    if (stored.state === 'ok') {
+      if (stored.value.length === 32) {
+        this.cachedKey = stored.value;
+        return stored.value;
+      }
+      return this.fallBackToKeyFile('the stored credential is not a 32-byte key');
+    }
+    if (stored.state === 'error') {
+      return this.fallBackToKeyFile(`the key store could not be read: ${stored.error}`);
+    }
+
+    // 'missing': nothing in the store yet. Adopt an existing file key so every
+    // secret already sealed stays readable, otherwise generate fresh material.
+    const legacy = this.readLegacyKey();
+    const value = legacy ?? crypto.randomBytes(32);
+    const written = this.keyStore.write(value);
+    if (written.ok) {
+      const again = this.keyStore.read();
+      if (again.state === 'ok' && again.value.equals(value)) {
+        if (legacy) {
+          try {
+            fs.rmSync(this.legacyKeyFile(), { force: true });
+          } catch {
+            // Leaving it is harmless — the store is now authoritative.
+          }
+        }
+        this.cachedKey = value;
+        return value;
+      }
+    }
+    // The store could not hold the key (locked store, PowerShell blocked, no
+    // permission). The file stays the source of truth: exactly the old
+    // behaviour, rather than a vault that has silently lost its keys.
+    return this.fallBackToKeyFile(written.error ?? 'the key store write did not round-trip');
   }
 
   set(ref: string, secret: string): void {
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', this.key(), iv);
-    const enc = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
-    const blob = Buffer.concat([iv, cipher.getAuthTag(), enc]);
-    fs.writeFileSync(this.pathFor(ref), blob, { mode: 0o600 });
+    fs.writeFileSync(this.pathFor(ref), this.seal(ref, secret), { mode: 0o600 });
   }
 
   get(ref: string): string | null {
     try {
-      const blob = fs.readFileSync(this.pathFor(ref));
-      const iv = blob.subarray(0, 12);
-      const tag = blob.subarray(12, 28);
-      const data = blob.subarray(28);
-      const decipher = crypto.createDecipheriv('aes-256-gcm', this.key(), iv);
-      decipher.setAuthTag(tag);
-      return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+      return this.open(ref, fs.readFileSync(this.pathFor(ref)));
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Encrypt to a blob without touching the filesystem.
+   *
+   * Same AES-256-GCM envelope and same key file as `set`/`get` — one cipher, one
+   * key, so a blob sealed here opens with `get` and vice versa. It exists for
+   * the cloud backup path, where the ciphertext's destination is the network
+   * rather than a file: sealing it on disk first and reading the file back would
+   * be the same bytes with two pointless writes, and — worse — would leave a
+   * decrypted-config-shaped file on disk on its way out.
+   *
+   * `ref` is deliberately NOT bound as AES-GCM additional data: every blob
+   * already on disk was sealed without it, and adding AAD changes what the auth
+   * tag covers, which would make every existing node secret and profile secret
+   * in every user's vault fail to decrypt. Ref binding is worth having and worth
+   * doing in a versioned envelope later; it is not worth bricking the vault.
+   */
+  seal(_ref: string, secret: string): Buffer {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.key(), iv);
+    const enc = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), enc]);
+  }
+
+  /** The inverse of `seal`. Throws when the blob is corrupt or was sealed under another key. */
+  open(_ref: string, blob: Buffer): string {
+    const iv = blob.subarray(0, 12);
+    const tag = blob.subarray(12, 28);
+    const data = blob.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', this.key(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   }
 
   delete(ref: string): void {
