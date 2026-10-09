@@ -393,10 +393,18 @@ export class NodesService {
       });
     }
 
-    // nodeIds lists only what this call actually CREATED — the UI links
-    // "added" rows to detail pages, and a duplicate row would link the same
-    // node twice (once as added, once as already-known).
-    return { imported: created.length, duplicates, invalid, nodeIds: created };
+    // nodeIds lists every node this call operated on — both newly created
+    // AND duplicates already known to the DB — so callers (including the
+    // packaged-app VPN lifecycle proof driver) can always pick up the node
+    // it just imported or re-validated, even when it was a duplicate.
+    //
+    // Deduped on purpose: a NEW node is pushed into `created` (for the count)
+    // and also into `touched` (meaning "operated on"), so the raw concat
+    // returned each freshly imported id exactly twice. Any caller indexing
+    // nodeIds[i] then read a different node than it imported — and the VPN
+    // proof driver does exactly that. A duplicate lands only in `touched`,
+    // so the union is still the complete set either way.
+    return { imported: created.length, duplicates, invalid, nodeIds: [...new Set([...created, ...touched])] };
   }
 
   /* ----------------------------- testing ----------------------------- */
@@ -796,7 +804,18 @@ export class NodesService {
       sortDir: 'desc',
     });
 
-    let filtered = rows.map((r) => toWebDTO(r));
+    // Address-presence filtering happens on the ROW, before the DTO is built:
+    // the view layer no longer carries ipv4/ipv6 (see nodeView.ts), and it never
+    // should — these are capability checks, not things the client needs to see.
+    let candidates = rows;
+    if (preset === 'best-ipv6') {
+      candidates = candidates.filter((r) => r.ipv6.length > 0);
+    } else if (preset === 'best-for-current-network') {
+      if (options.ipv4) candidates = candidates.filter((r) => r.ipv4.length > 0);
+      if (options.ipv6) candidates = candidates.filter((r) => r.ipv6.length > 0);
+    }
+
+    const filtered = candidates.map((r) => toWebDTO(r));
 
     // Apply preset-specific filtering
     switch (preset) {
@@ -839,18 +858,12 @@ export class NodesService {
         break;
 
       case 'best-for-current-network':
-        // Prefer nodes that match user's current network characteristics
-        if (options.ipv4) {
-          filtered = filtered.filter((n) => n.ipv4.length > 0);
-        }
-        if (options.ipv6) {
-          filtered = filtered.filter((n) => n.ipv6.length > 0);
-        }
+        // address-family filtering already applied above, on the row
         filtered.sort((a, b) => (b.score - a.score) * 100);
         break;
 
       case 'best-ipv6':
-        filtered = filtered.filter((n) => n.ipv6.length > 0);
+        // ipv6 filtering already applied above, on the row
         filtered.sort((a, b) => (b.score - a.score) * 100);
         break;
 

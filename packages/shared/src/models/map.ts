@@ -8,9 +8,24 @@ export interface NetworkTarget {
   id: string;
   type: NetworkTargetType;
   name: string;
-  host: string;
-  /** Destination port only when actually configured — never invented. */
+  /**
+   * The address to measure. ABSENT when `endpointHidden` is set.
+   *
+   * Most map targets are public infrastructure (DNS resolvers, Cloudflare
+   * edges) or the user's own typing, and naming them is the whole point of the
+   * tool. Two kinds are not: a stored proxy node, and a VPN profile the app
+   * itself built from one. Their address is the node's configuration, so it is
+   * resolved and dialled on the server from the target id and never sent. The
+   * measurement is unaffected — only the disclosure changes.
+   */
+  host?: string;
+  /**
+   * Destination port only when actually configured — never invented. Absent
+   * when `endpointHidden` is set, for the same reason as `host`.
+   */
   port?: number | null;
+  /** True when this target's endpoint is deliberately withheld. See `host`. */
+  endpointHidden?: true;
   /** 'tcp' | 'udp' | 'tls' | 'https' | 'dns' | 'wg' — the configured protocol. */
   protocol?: string | null;
   expectedRegion?: string | null;
@@ -44,6 +59,12 @@ export interface MapGeo {
 
 export interface MapHop {
   hop: number;
+  /**
+   * This hop's address. Null for the FINAL hop of an observation whose target
+   * endpoint is hidden: the last hop IS the node's address, so printing it
+   * would undo the withholding. Every intermediate hop is a third-party
+   * router and is reported normally.
+   */
   ip: string | null;
   hostname: string | null;
   latencyMs: number | null;
@@ -82,6 +103,12 @@ export interface MapObservation {
   id: string;
   target: NetworkTarget;
   family: IpFamily | null;
+  /**
+   * The address the target resolved to. Null when the target's endpoint is
+   * hidden (`target.endpointHidden`) — the observation was still really
+   * measured, but reporting the address would hand back exactly what was
+   * withheld.
+   */
   resolvedIp: string | null;
   protocol: string;
   port: number | null;

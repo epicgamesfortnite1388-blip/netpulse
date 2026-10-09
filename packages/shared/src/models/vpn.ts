@@ -87,8 +87,13 @@ export interface VpnProfile {
   providerId: string;
   name: string;
   kind: 'wireguard' | 'openvpn' | 'sing-box' | 'aether' | 'custom';
-  /** endpoint summary for display only — never includes secrets/keys */
-  endpoint: string | null;
+  /**
+   * Endpoint summary (`host:port`) — withheld from responses. It is the
+   * profile's dial configuration, and for a profile promoted from a stored
+   * node it IS that node's endpoint. The server keeps it to connect; the key
+   * is absent from the wire, never null-blanked.
+   */
+  endpoint?: string | null;
   createdAt: number;
   lastUsedAt: number | null;
 }

@@ -4,7 +4,9 @@ import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../util/appError';
 import { replyApiError, replyValidationError } from '../util/apiError';
+import { scrubberFromRows } from '../services/endpointScrub';
 import { isPrivateIp } from '../util/targetGuard';
+import { maskSourceUrl } from '../util/redact';
 import { MAX_LIST_LIMIT } from '../db/repositories';
 
 import type { AppContext } from './context';
@@ -167,26 +169,23 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   /**
-   * One node as a share link — the same rebuild "Add to engine" and bulk export
-   * use, so a link copied here is exactly what the engines would receive.
+   * RETIRED — was `GET /api/v1/nodes/:id/link`.
    *
-   * 200 with `ok: false` + `reason` when the node exists but has no usable link
-   * (credential never reached the vault, SSR, WireGuard): the reason is the
-   * answer, and a copy button has to be able to show it rather than treat it as
-   * a transport failure. 404 only when there is no such node.
+   * This handed the caller a complete, credential-bearing share link
+   * (`vless://<uuid>@host:port?…`). Hiding the button that called it was never a
+   * fix: the webview console can call any route, so the capability had to leave
+   * the API entirely. Nodes are now chosen by place and ping on the globe and
+   * dialled by `POST /vpn/profiles/from-node`, which rebuilds the link
+   * server-side and never returns it.
+   *
+   * 410 Gone rather than a 404: this endpoint existed and answered, so "not
+   * found" would read to an older client as a typo or a bug. Gone says the
+   * capability was withdrawn deliberately, and that is the truth. It is a
+   * tombstone, not a re-gate — no caller, and no entitlement, gets a link back.
    */
-  app.get('/api/v1/nodes/:id/link', async (req, reply) => {
-    if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
-
-    const raw = (req.params as { id: string }).id;
-    const parsed = IdSchema.safeParse(raw);
-    if (!parsed.success) return replyValidationError(reply, 'invalid_id', parsed.error);
-    const id = parsed.data;
-    const result = nodesService.shareLink(id);
-    if (!result) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
-
-    return { nodeId: id, ...result };
-  });
+  app.get('/api/v1/nodes/:id/link', async (_req, reply) =>
+    replyApiError(reply, 410, 'share_link_retired', 'Share links are no longer served. Pick a node by location and ping on the map, or add it to an engine, and the app dials it without ever handing the configuration out.'),
+  );
 
   // Search nodes
   app.get('/api/v1/nodes/search', async (req) => {
@@ -264,6 +263,12 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       throw new AppError(400, 'private_target_not_allowed', 'Private or link-local targets are not allowed');
     }
 
+    // The raw row (not the DTO): probe failures quote what they tried to
+    // reach — DNS refusals embed the hostname, socket errors the IP:port — so
+    // error text is masked against this node's own addresses before it leaves.
+    const rawRow = ctx.repos.publicNodes.get(id) ?? null;
+    const scrub = rawRow ? scrubberFromRows([rawRow]) : null;
+    const maskMsg = (text: string): string => (scrub && scrub.size > 0 ? scrub.mask(text) : text);
     // Check rate limit
     const node = nodesService.getNode(id);
     if (!node) return replyApiError(reply, 404, 'not_found', `Node "${id}" not found`);
@@ -276,14 +281,25 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     try {
       const result = await nodesService.testNode(id, type, body.data.ip || undefined);
-      return result;
+      // `probedIp` IS the address that was dialled (the node's own, unless the
+      // caller supplied the override it already knows), and the error string
+      // can quote it — both stay server-side. Absent key, not null: the field
+      // is withheld, not unknown.
+      const response = { ...result };
+      delete response.probedIp;
+      if (response.error) response.error = maskMsg(response.error);
+      return response;
     } catch (err) {
       // AppError (e.g. private_target_not_allowed from the SSRF guard) is
       // rethrown so the global error handler renders it with the standard
-      // nested error shape and the AppError's own 4xx status.
-      if (err instanceof AppError) throw err;
+      // nested error shape and the AppError's own 4xx status. Its message is
+      // masked first: `"<host>" did not resolve` would otherwise hand the
+      // endpoint back through the failure path.
+      if (err instanceof AppError) {
+        throw scrub && scrub.size > 0 ? new AppError(err.status, err.code, scrub.mask(err.message), err.hint) : err;
+      }
       const message = err instanceof Error ? err.message : String(err);
-      return replyApiError(reply, 500, 'test_failed', message);
+      return replyApiError(reply, 500, 'test_failed', maskMsg(message));
     }
   });
 
@@ -311,13 +327,24 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         if (!nodeId) break;
         try {
           const result = await nodesService.testNode(nodeId, type);
+          let error = result.error || undefined;
+          if (error) {
+            // Same rule as the single-test route: a probe error may quote the
+            // node's address, so it is masked against that node's row.
+            const row = ctx.repos.publicNodes.get(nodeId);
+            const s = row ? scrubberFromRows([row]) : null;
+            if (s && s.size > 0) error = s.mask(error);
+          }
           results[nodeId] = {
             success: result.status === 'done',
             latencyMs: result.latencyMs || undefined,
-            error: result.error || undefined,
+            error,
           };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          let message = err instanceof Error ? err.message : String(err);
+          const row = ctx.repos.publicNodes.get(nodeId);
+          const s = row ? scrubberFromRows([row]) : null;
+          if (s && s.size > 0) message = s.mask(message);
           results[nodeId] = { success: false, error: message };
         }
       }
@@ -416,26 +443,21 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     },
   );
 
-  app.get('/api/v1/nodes/export', async (req, _reply) => {
-    if (!nodesService) throw new AppError(503, 'service_unavailable', 'Node service not configured in this environment');
-
-    const q = req.query as { nodeIds?: string; format?: string };
-    const nodeIdsParam = q.nodeIds || '';
-    const format = (q.format || 'uri') as 'uri' | 'plaintext' | 'base64' | 'json' | 'clash' | 'singbox';
-
-    const nodeIds = nodeIdsParam.split(',').filter((s) => s.trim().length > 0);
-    if (nodeIds.length === 0) throw new AppError(400, 'no_node_ids', 'Provide at least one node id');
-    if (nodeIds.length > 1000) throw new AppError(400, 'too_many_nodes', 'Maximum 1000 node ids per request');
-
-    const exportData = nodesService.exportNodes(nodeIds, format);
-
-    return {
-      format,
-      exportedAt: Date.now(),
-      count: nodeIds.length,
-      data: exportData,
-    };
-  });
+  /**
+   * RETIRED — was `GET /api/v1/nodes/export`.
+   *
+   * Bulk export in six formats (uri/plaintext/base64/json/clash/sing-box). Up
+   * to 1000 nodes per request, each rebuilt from the vault with its real
+   * credential — so this was not a metadata export under a friendly name. It is
+   * withdrawn for the same reason as `/nodes/:id/link`, and with it goes the
+   * "Passwords, keys and UUIDs are never rendered here" claim that sat above
+   * the UI panel calling it: that notice described an export that never existed.
+   *
+   * 410 Gone, deliberately — see `/nodes/:id/link` above.
+   */
+  app.get('/api/v1/nodes/export', async (_req, reply) =>
+    replyApiError(reply, 410, 'node_export_retired', 'Configuration export is no longer served. No entitlement unlocks it; pick a node by location and ping instead.'),
+  );
 
   // ================================================================
   // SOURCES
@@ -445,6 +467,11 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/api/v1/sources', async () => {
     // DB is the single source of truth (built-ins are seeded at boot; custom
     // sources live here too). Falls back to constants if the DB is empty.
+    //
+    // `urls` is masked on the way out. A subscription URL is the configuration —
+    // whoever holds it can fetch every node outside the app — so this response
+    // carries only enough to recognise a source, on any plan. The full URLs are
+    // still stored and still fetched with; they just do not cross to a client.
     const dbRows = ctx.repos.publicSources.list();
     const sources = dbRows.length > 0
       ? dbRows.map((r) => ({
@@ -482,7 +509,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         repositoryUrl: s.repositoryUrl,
         enabled: s.enabled,
         type: s.type,
-        urls: s.urls,
+        urls: s.urls.map(maskSourceUrl),
         formats: s.formats,
         intervalMinutes: s.intervalMinutes,
         lastFetch: s.lastFetch,
@@ -515,7 +542,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     const source = row ?? getKnownSources().find((s) => s.id === id);
     if (!source) return replyApiError(reply, 404, 'not_found', `Source "${id}" not found`);
 
-    return source;
+    // Masked for the same reason as the list route. Nothing in the app reads a
+    // source URL back over HTTP — the fetcher works from the DB row — so there
+    // was never a reason for this endpoint to carry one.
+    return { ...source, urls: source.urls.map(maskSourceUrl) };
   });
 
   // Toggle a source enabled/disabled (sources UI).
@@ -561,7 +591,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
     for (const url of input.urls) {
       const validation = isValidSourceUrl(url);
       if (!validation.ok) {
-        return replyApiError(reply, 400, 'invalid_url', validation.error ?? 'Invalid source URL', { hint: url ?? undefined });
+        return replyApiError(reply, 400, 'invalid_url', validation.error ?? 'Invalid source URL', { hint: maskSourceUrl(url) });
       }
     }
 
@@ -595,7 +625,10 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       createdAt: source.createdAt,
     });
 
-    return reply.status(201).send(source);
+    // The created source is echoed so the UI can show what was added — masked like
+    // every other read of a source URL, so "no response body carries a raw
+    // subscription URL" holds for the create path too, not just the reads.
+    return reply.status(201).send({ ...source, urls: source.urls.map(maskSourceUrl) });
   });
 
   // Fetch source manually
@@ -894,6 +927,13 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const tests = ctx.repos.nodeTests.recentForNode(id, since);
     const limited = tests.slice(0, limit);
+    // Stored probe rows carry the dialled address twice — as `probedIp` and as
+    // the `testEndpoint` they were written with — and can quote it in `error`.
+    // The row keeps all of it for the server's own bookkeeping; the response
+    // gets masked errors and neither raw key — withheld, so they read as
+    // absent rather than blank.
+    const rawRow = ctx.repos.publicNodes.get(id) ?? null;
+    const scrub = rawRow ? scrubberFromRows([rawRow]) : null;
 
     return {
       tests: limited.map((t) => ({
@@ -908,10 +948,8 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         authorized: t.authorized,
         httpStatus: t.httpStatus,
         responseSize: t.responseSize,
-        error: t.error,
+        error: t.error != null && scrub && scrub.size > 0 ? scrub.mask(t.error) : t.error,
         family: t.family,
-        probedIp: t.probedIp,
-        testEndpoint: t.testEndpoint,
         engine: t.engine,
       })),
       total: tests.length,

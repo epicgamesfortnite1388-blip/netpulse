@@ -23,6 +23,10 @@ import {
 export interface DiscoveryCandidate {
   id: string;
   name: string | null;
+  /**
+   * Server-side only: the address to probe. Never copied into an outcome —
+   * `DiscoveryOutcome.label` is what a client sees.
+   */
   host: string;
   port: number;
   protocol: string;
@@ -42,6 +46,16 @@ export interface NodeDiscoveryDeps {
   log: { warn(msg: string): void };
   /** Optional progress fan-out (`done`/`total` candidates). */
   onProgress?: (p: { done: number; total: number; profile: ScanProfileId }) => void;
+}
+
+/**
+ * Name a candidate from non-address data, so a probe result can be reported
+ * without printing the address it was aimed at. Falls back to the remark, then
+ * to the node id — never to the host.
+ */
+function candidateLabel(c: DiscoveryCandidate): string {
+  const name = (c.name ?? '').trim();
+  return name || `Node ${c.id}`;
 }
 
 export class NodeDiscoveryService {
@@ -115,8 +129,8 @@ export class NodeDiscoveryService {
         outcomes[index] = {
           nodeId: candidate.id,
           name: candidate.name,
-          host: candidate.host,
-          port: candidate.port,
+          label: candidateLabel(candidate),
+          endpointHidden: true,
           protocol: candidate.protocol,
           depth: result.ok ? depth : 'tcp',
           latencyMs: result.ok ? result.latencyMs : null,
@@ -155,7 +169,7 @@ function summarise(
   if (!winner) {
     return `${head}${tail} No node passed, so nothing was recommended.`.trim();
   }
-  const where = winner.name ? `${winner.name} (${winner.host})` : winner.host;
+  const where = winner.label;
   const latency = winner.latencyMs != null ? ` at ${Math.round(winner.latencyMs)} ms` : '';
   return `${head}${tail} Best: ${where}${latency}.`.trim();
 }

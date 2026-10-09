@@ -103,6 +103,36 @@ export interface MeasureRequest {
 }
 
 const MAX_CONCURRENT = 3;
+
+/**
+ * Strip a deliberately withheld endpoint from a target on its way to a client.
+ *
+ * `endpointHidden` targets are stored proxy nodes and the VPN profiles the app
+ * built from them; their address is the node's configuration. Every read path
+ * that returns a target goes through here, so the rule is one function rather
+ * than a convention each route has to remember.
+ */
+function publicTarget(t: NetworkTarget): NetworkTarget {
+  if (t.endpointHidden !== true) return t;
+  const copy: NetworkTarget = { ...t, endpointHidden: true };
+  // Delete rather than destructure-to-omit: the rule the shape encodes is that
+  // these two keys are GONE for hidden targets, and an explicit delete states
+  // that directly (destructuring into `_host` leaves an unused binding).
+  delete copy.host;
+  delete copy.port;
+  return copy;
+}
+
+/** A sweep row whose target endpoint is withheld is withheld too. */
+function publicSweepRow(r: MapSweepRow): MapSweepRow {
+  if (r.target.endpointHidden !== true) return r;
+  return { ...r, target: publicTarget(r.target), resolvedIp: null };
+}
+
+/** Same, for a whole sweep — used on the read path AND the websocket push. */
+function publicSweepResult(s: MapSweepResult): MapSweepResult {
+  return { ...s, rows: s.rows.map(publicSweepRow) };
+}
 const PROBE_TIMEOUT_MS = 3_000;
 
 function countryCentroidGeo(country: string | null): MapGeo | null {
@@ -140,6 +170,15 @@ export class MapService {
   ) {}
 
   /* ------------------------------- targets -------------------------------- */
+
+  /**
+   * The target list as a client may see it: every endpoint that is a stored
+   * node's configuration is withheld, and the measurement is unaffected
+   * because it resolves the address from the id on the server.
+   */
+  listTargetsForClient(): NetworkTarget[] {
+    return this.listTargets().map(publicTarget);
+  }
 
   listTargets(): NetworkTarget[] {
     const targets: NetworkTarget[] = [];
@@ -234,7 +273,10 @@ export class MapService {
       }
     }
 
-    // VPN profiles (endpoints the user configured).
+    // VPN profiles (endpoints the user configured). The endpoint is withheld
+    // on the wire: a profile the app built from a node carries that node's
+    // host:port, so listing it here would reopen exactly what the node routes
+    // refuse to hand over.
     for (const profile of this.deps.vpn.listProfiles()) {
       if (!profile.endpoint) continue;
       const host = profile.endpoint.replace(/^\[/, '').replace(/\]$/, '').split(':')[0] ?? profile.endpoint;
@@ -243,6 +285,7 @@ export class MapService {
         id: `vpn:${profile.id}`,
         type: 'vpn',
         name: `VPN · ${profile.name}`,
+        endpointHidden: true,
         host,
         port: Number.isFinite(port) ? port : profile.protocol === 'wireguard' ? 51820 : undefined,
         protocol: profile.protocol === 'wireguard' ? 'wg' : profile.protocol === 'openvpn' ? 'udp' : 'tcp',
@@ -275,6 +318,8 @@ export class MapService {
         id: `node:${node.id}`,
         type: 'custom',
         name: node.label,
+        // The node's address stays on the server; the client measures it by id.
+        endpointHidden: true,
         host: node.host,
         port: node.port,
         protocol: node.protocol,
@@ -292,6 +337,29 @@ export class MapService {
     return this.listTargets().find((t) => t.id === id) ?? null;
   }
 
+  /**
+   * The same target resolved for measurement: `host` is always present,
+   * because the probes need it. Callers that build a response must go through
+   * `publicTarget` / `publicObservation` instead of sending this.
+   */
+  private targetForProbe(id: string): (NetworkTarget & { host: string }) | null {
+    const t = this.targetById(id);
+    return t?.host != null ? (t as NetworkTarget & { host: string }) : null;
+  }
+
+  /** One stored observation with a withheld endpoint actually withheld. */
+  publicObservation(o: MapObservation): MapObservation {
+    if (!o.target.endpointHidden) return o;
+    // The hop that reached the destination IS the destination's address. A
+    // traceroute does not always end there (it is frequently cut short), so
+    // this matches on the address rather than assuming the last hop.
+    const reached = o.resolvedIp;
+    const hops = reached
+      ? o.hops.map((h) => (h.ip === reached ? { ...h, ip: null, hostname: null } : h))
+      : o.hops;
+    return { ...o, target: publicTarget(o.target), resolvedIp: null, hops };
+  }
+
   /* ------------------------------ measuring ------------------------------- */
 
   measure(req: MeasureRequest): { observationId: string } {
@@ -301,11 +369,13 @@ export class MapService {
         code: 'map_busy',
       });
     }
-    const target = req.targetId ? this.targetById(req.targetId) : null;
+    const target = req.targetId ? this.targetForProbe(req.targetId) : null;
     if (req.targetId && !target) {
       throw Object.assign(new Error(`Target "${req.targetId}" not found`), { statusCode: 404, code: 'not_found' });
     }
-    let resolvedTarget: NetworkTarget;
+    // Always has a host: probes need it. `endpointHidden` only governs what
+    // leaves the server, and `publicObservation` enforces that on the way out.
+    let resolvedTarget: NetworkTarget & { host: string };
     if (target) {
       resolvedTarget = target;
     } else if (req.custom?.host) {
@@ -336,12 +406,20 @@ export class MapService {
     void this.runMeasurement(observationId, resolvedTarget).catch((err) => {
       this.deps.log.error({ err, target: resolvedTarget.id }, 'map measurement crashed');
       this.running.delete(observationId);
-      this.deps.bus.publish('map', { type: 'map:error', targetId: resolvedTarget.id, message: err instanceof Error ? err.message : String(err) });
+      // The crash message can quote what was being resolved — for a hidden
+      // target that is the node's address, and this event goes straight to
+      // the UI over the map socket. The name is sent instead.
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message =
+        resolvedTarget.endpointHidden === true
+          ? rawMessage.split(resolvedTarget.host).join(resolvedTarget.name)
+          : rawMessage;
+      this.deps.bus.publish('map', { type: 'map:error', targetId: resolvedTarget.id, message });
     });
     return { observationId };
   }
 
-  private async runMeasurement(observationId: string, target: NetworkTarget): Promise<void> {
+  private async runMeasurement(observationId: string, target: NetworkTarget & { host: string }): Promise<void> {
     const { controller, route, ipInfo, vpn, observations, events, bus } = this.deps;
     const startedAt = Date.now();
     const family = target.family && target.family !== 'auto' ? target.family : 4;
@@ -349,7 +427,15 @@ export class MapService {
     const vpnLabel = vpnState.connected ? (vpnState.serverName ?? vpnState.providerId ?? 'VPN tunnel') : null;
 
     try {
-      bus.publish('map', { type: 'map:progress', observationId, targetId: target.id, phase: 'resolve', message: `Resolving ${target.host}` });
+      bus.publish('map', {
+        type: 'map:progress',
+        observationId,
+        targetId: target.id,
+        phase: 'resolve',
+        // The address is in the message for public targets and withheld for
+        // hidden ones — this text is rendered in the UI, so it is a surface.
+        message: target.endpointHidden ? `Resolving ${target.name}` : `Resolving ${target.host}`,
+      });
       const resolved = await resolveTarget(target.host);
       const ip = pickIp(resolved.ips, family);
       const resolvedFamily = familyOfIp(ip);
@@ -459,11 +545,23 @@ export class MapService {
       }
 
       // Traceroute with ASN enrichment (reuses the RouteService pipeline)
-      bus.publish('map', { type: 'map:progress', observationId, targetId: target.id, phase: 'trace', message: `Tracing route to ${ip}` });
+      bus.publish('map', {
+        type: 'map:progress',
+        observationId,
+        targetId: target.id,
+        phase: 'trace',
+        message: target.endpointHidden ? `Tracing route to ${target.name}` : `Tracing route to ${ip}`,
+      });
       let trace: TraceResult | null = null;
       let analysisNote: string | null = null;
       try {
-        const r = await route.runTrace({ target: ip, family: resolvedFamily, maxHops: 24, measureLoss: false });
+        const r = await route.runTrace(
+          { target: ip, family: resolvedFamily, maxHops: 24, measureLoss: false },
+          undefined,
+          // Hidden targets: the stored trace's events, summary and analysis
+          // name the node by label instead of the address this probe resolved.
+          target.endpointHidden ? { displayTarget: target.name } : undefined,
+        );
         trace = r.trace;
         const interesting = r.analysis.findings
           .filter((f) => f.severity !== 'info')
@@ -659,7 +757,7 @@ export class MapService {
         targetId: target.id,
         observationId,
       });
-      bus.publish('map', { type: 'map:observation', observationId, targetId: target.id, observation });
+      bus.publish('map', { type: 'map:observation', observationId, targetId: target.id, observation: this.publicObservation(observation) });
     } catch (err) {
       this.running.delete(observationId);
       const message = err instanceof Error ? err.message : String(err);
@@ -671,11 +769,14 @@ export class MapService {
   /* ------------------------------- history -------------------------------- */
 
   listObservations(options: { targetId?: string; limit?: number }) {
-    return this.deps.observations.list({ targetId: options.targetId, limit: options.limit });
+    return this.deps.observations
+      .list({ targetId: options.targetId, limit: options.limit })
+      .map((r) => ({ ...r, payload: this.publicObservation(r.payload as MapObservation) }));
   }
 
   observation(id: string) {
-    return this.deps.observations.get(id);
+    const row = this.deps.observations.get(id);
+    return row ? { ...row, payload: this.publicObservation(row.payload as MapObservation) } : undefined;
   }
 
   clearObservations(): { cleared: number } {
@@ -692,8 +793,8 @@ export class MapService {
     if (!current) {
       return { targetId, compared: false, note: 'No measurements yet for this target — measure it first.' };
     }
-    const cur = current.payload as MapObservation;
-    const prev = previous ? (previous.payload as MapObservation) : null;
+    const cur = this.publicObservation(current.payload as MapObservation);
+    const prev = previous ? this.publicObservation(previous.payload as MapObservation) : null;
     const diff = diffObservations(cur, prev);
     // Direct vs VPN honesty: only meaningful when the two runs used different paths
     const directVpn: { directMs: number | null; vpnMs: number | null; verdict: string } | null =
@@ -859,8 +960,8 @@ export class MapService {
         code: 'sweep_busy',
       });
     }
-    const all = this.listTargets();
-    let targets: NetworkTarget[];
+    const all = this.listTargets().filter((t): t is NetworkTarget & { host: string } => t.host != null);
+    let targets: (NetworkTarget & { host: string })[];
     if (targetIds && targetIds.length > 0) {
       const wanted = new Set(targetIds.slice(0, 60));
       targets = all.filter((t) => wanted.has(t.id));
@@ -891,17 +992,18 @@ export class MapService {
       if (s && !s.completed) {
         s.completed = true;
         s.error = err instanceof Error ? err.message : String(err);
-        this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result: s });
+        this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result: publicSweepResult(s) });
       }
     });
     return { sweepId, accepted: targets.length };
   }
 
   sweep(sweepId: string): MapSweepResult | null {
-    return this.sweeps.get(sweepId) ?? null;
+    const s = this.sweeps.get(sweepId);
+    return s ? publicSweepResult(s) : null;
   }
 
-  private async runSweep(sweepId: string, targets: NetworkTarget[]): Promise<void> {
+  private async runSweep(sweepId: string, targets: (NetworkTarget & { host: string })[]): Promise<void> {
     const result = this.sweeps.get(sweepId);
     if (!result) return;
     const startedAt = Date.now();      const vpnState = await detectVpnState(this.deps.vpn); // labeled in a later pass; keeps tunnel-state awareness on the hot path
@@ -915,7 +1017,7 @@ export class MapService {
         rows.push(await this.sweepOne(t, vpnState));
         // incremental push so the UI ranks as results land
         result.rows = [...rows].sort(sortSweepRows);
-        this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result: { ...result, rows: result.rows } });
+        this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result: publicSweepResult(result) });
       }
     };
     await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, targets.length) }, worker));
@@ -926,10 +1028,10 @@ export class MapService {
     for (const [id, s] of this.sweeps) {
       if (id !== sweepId && s.completed) this.sweeps.delete(id);
     }
-    this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result });
+    this.deps.bus.publish('map', { type: 'map:sweep', sweepId, result: publicSweepResult(result) });
   }
 
-  private async sweepOne(t: NetworkTarget, _vpnState: VpnStateSummary): Promise<MapSweepRow> {
+  private async sweepOne(t: NetworkTarget & { host: string }, _vpnState: VpnStateSummary): Promise<MapSweepRow> {
     const { controller } = this.deps;
     const base: MapSweepRow = {
       target: t,

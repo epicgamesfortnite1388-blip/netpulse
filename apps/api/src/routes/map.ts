@@ -22,7 +22,7 @@ const ListQuerySchema = z.object({
 });
 
 export function registerMapRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get('/api/v1/map/targets', async () => ({ targets: ctx.services.map.listTargets() }));
+  app.get('/api/v1/map/targets', async () => ({ targets: ctx.services.map.listTargetsForClient() }));
 
   app.post('/api/v1/map/measure', { config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req) => {
     const parsed = MeasureSchema.safeParse(req.body ?? {});

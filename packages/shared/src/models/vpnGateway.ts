@@ -14,8 +14,16 @@ export interface GatewayMemoryEntry {
   nodeId: string;
   /** label captured at success time (node remarks change between imports) */
   name: string | null;
-  host: string;
-  port: number;
+  /**
+   * The gateway named from non-address data. `host` and `port` used to be
+   * stored here "so an attempt is identifiable when the node has no remark",
+   * but the retry already resolves the node by `nodeId`, and the pair is the
+   * node's dial endpoint — part of its configuration, which no client may
+   * read. A gateway is identified by its name; a nameless one by this label.
+   */
+  label: string;
+  /** Always true. See `label`: the endpoint the gateway dials is never sent. */
+  endpointHidden: true;
   protocol: string;
   engine: ProxyEngineId;
   /** exit IP read from a trace fetched THROUGH the tunnel, never asserted */
@@ -45,8 +53,8 @@ export const GATEWAY_MEMORY_MAX = 12;
 export interface GatewaySuccessInput {
   nodeId: string;
   name: string | null;
-  host: string;
-  port: number;
+  /** See `GatewayMemoryEntry.label` — no host/port, by the same rule. */
+  label: string;
   protocol: string;
   engine: ProxyEngineId;
   exitIp: string | null;
@@ -99,6 +107,7 @@ export function applyGatewaySuccess(
     ? {
         ...existing,
         ...input,
+        endpointHidden: true,
         successStreak: existing.successStreak + 1,
         successCount: existing.successCount + 1,
         lastSuccessAt: now,
@@ -106,6 +115,7 @@ export function applyGatewaySuccess(
       }
     : {
         ...input,
+        endpointHidden: true,
         successStreak: 1,
         successCount: 1,
         failCount: 0,
@@ -147,14 +157,16 @@ export function parseGatewayMemory(raw: unknown): GatewayMemoryState {
     if (typeof e !== 'object' || e === null) continue;
     const r = e as Record<string, unknown>;
     if (typeof r['nodeId'] !== 'string' || !r['nodeId']) continue;
-    if (typeof r['host'] !== 'string' || !r['host']) continue;
-    if (typeof r['port'] !== 'number') continue;
     if (typeof r['engine'] !== 'string') continue;
+    const name = typeof r['name'] === 'string' ? r['name'] : null;
     clean.push({
       nodeId: r['nodeId'],
-      name: typeof r['name'] === 'string' ? r['name'] : null,
-      host: r['host'],
-      port: r['port'],
+      name,
+      // Blobs written before the endpoint was withheld carry host/port and no
+      // label. They are kept (the gateway is still a gateway) and named from
+      // the remark they already had — never from the host they used to store.
+      label: typeof r['label'] === 'string' && r['label'] ? r['label'] : (name ?? 'Remembered gateway'),
+      endpointHidden: true,
       protocol: typeof r['protocol'] === 'string' ? r['protocol'] : 'unknown',
       engine: r['engine'] as ProxyEngineId,
       exitIp: typeof r['exitIp'] === 'string' ? r['exitIp'] : null,

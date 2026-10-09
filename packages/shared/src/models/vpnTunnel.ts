@@ -18,8 +18,15 @@ export interface TunnelHop {
   name: string | null;
   /** local core that ran this hop — the engine that actually carried traffic */
   engine: ProxyEngineId;
-  host: string;
-  port: number;
+  /**
+   * This hop's node, named from non-address data. The dial endpoint (host,
+   * port) is NOT sent: it is part of the node's configuration, and the
+   * standing rule is that nothing a client can read reveals it. The server
+   * still holds the row and dials it.
+   */
+  label: string;
+  /** Always true — see `label`. Present so a surface can say "hidden on purpose". */
+  endpointHidden: true;
   /** exit IP observed through this hop alone (entry) / through the chain (exit) */
   exitIp: string | null;
   exitCountry: string | null;
@@ -146,8 +153,10 @@ export interface TunWatchdogState {
 export interface DiscoveryOutcome {
   nodeId: string;
   name: string | null;
-  host: string;
-  port: number;
+  /** candidate named from non-address data; host/port are never sent */
+  label: string;
+  /** Always true — see `label`. */
+  endpointHidden: true;
   protocol: string;
   /**
    * Deepest probe that was RUN for this candidate. This is not a claim that it
@@ -181,9 +190,10 @@ export interface DiscoveryReport {
 export interface QuickConnectAttempt {
   nodeId: string;
   name: string | null;
-  /** endpoint, so an attempt is identifiable when the node has no remark */
-  host: string;
-  port: number;
+  /** the node named from non-address data; host/port are never sent */
+  label: string;
+  /** Always true — see `label`. */
+  endpointHidden: true;
   /** where this candidate came from: remembered gateway, or a fresh DB pick */
   source: 'memory' | 'database' | 'discovery';
   ok: boolean;
@@ -216,7 +226,8 @@ export interface DiscoveryRunRecord {
   origin: 'manual' | 'quick-connect';
   /** who triggered it, when known */
   trigger: 'user' | 'quick-connect' | 'scheduler';
-  winner: { host: string; port: number; protocol: string; latencyMs: number | null } | null;
+  /** the winning candidate named from non-address data; host/port are never sent */
+  winner: { label: string; endpointHidden: true; protocol: string; latencyMs: number | null } | null;
   summary: string;
 }
 
@@ -251,8 +262,10 @@ export interface QuickConnectRunRecord {
 export interface GatewayReliabilityRow {
   nodeId: string;
   name: string | null;
-  host: string;
-  port: number;
+  /** the gateway named from non-address data; host/port are never sent */
+  label: string;
+  /** Always true — see `label`. */
+  endpointHidden: true;
   protocol: string;
   engine: ProxyEngineId;
   exitCountry: string | null;

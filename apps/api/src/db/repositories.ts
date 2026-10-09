@@ -1355,6 +1355,41 @@ export class PublicNodesRepository {
   }
 
   /**
+   * The address-index columns and nothing else: the handful of fields the
+   * endpoint scrubber needs to recognise an address and name its node.
+   *
+   * A separate slim projection rather than `list()` because this runs on read
+   * paths that only need to KNOW the addresses — stored route history, probe
+   * error masking — and pulling every column of every node to compare strings
+   * against would make a scrub a full-table materialisation.
+   */
+  listAddressRows(): Array<
+    Pick<
+      PublicNodeRow,
+      'id' | 'canonicalFingerprint' | 'protocol' | 'host' | 'ipv4' | 'ipv6' | 'port' | 'remark'
+    >
+  > {
+    return this.handle.db
+      .select({
+        id: publicNodes.id,
+        canonicalFingerprint: publicNodes.canonicalFingerprint,
+        protocol: publicNodes.protocol,
+        host: publicNodes.host,
+        ipv4: publicNodes.ipv4,
+        ipv6: publicNodes.ipv6,
+        port: publicNodes.port,
+        remark: publicNodes.remark,
+      })
+      .from(publicNodes)
+      .all() as Array<
+      Pick<
+        PublicNodeRow,
+        'id' | 'canonicalFingerprint' | 'protocol' | 'host' | 'ipv4' | 'ipv6' | 'port' | 'remark'
+      >
+    >;
+  }
+
+  /**
    * Candidates for the autonomous tester, one bucket at a time, chosen in SQL.
    *
    * Every bucket used to be computed by loading the newest 2,000 rows and

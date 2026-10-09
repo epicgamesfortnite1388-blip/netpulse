@@ -270,6 +270,64 @@ export interface NodeFingerprint {
   ssrProtocol: string | null;
 }
 
+/**
+ * The node shape a CLIENT is allowed to see: `PublicNode` without the dialing
+ * recipe, plus two fields that name the node honestly in its absence.
+ *
+ * Why this type exists rather than a comment on the route: the web imported
+ * `PublicNode` to type its node objects, so `node.host` compiled there and
+ * read like a normal field. Omitting the fields from the shape the client
+ * codes against is what stops the endpoint coming back — the type is the
+ * boundary, not a convention someone has to remember.
+ *
+ * `host`, `port`, `ipv4`, `ipv6`, `sni`, `hostHeader` and `realityServerName`
+ * are withheld together because each one can identify where the node is:
+ * `ipv4` IS the address, and `sni` / `hostHeader` are routinely the same value
+ * as `host`. `path` and `serviceName` stay — a route on the server is not the
+ * server, and it is a protocol fact the user can act on.
+ *
+ * The server keeps all of it and needs it: probing, engine import and the file
+ * vault read the stored row, never this shape.
+ */
+export type NodeView = Omit<
+  PublicNode,
+  | 'host'
+  | 'port'
+  | 'ipv4'
+  | 'ipv6'
+  | 'sni'
+  | 'hostHeader'
+  | 'realityServerName'
+  | 'geoLastAttempt'
+  // re-declared below as plain strings: these are enum columns the server
+  // passes through verbatim, and a stored value the view layer does not
+  // recognise must reach the client as-is rather than be narrowed away.
+  | 'transport'
+  | 'security'
+  | 'freshness'
+  | 'status'
+  | 'confidence'
+> & {
+  /**
+   * A stable, non-empty name for this node, derived only from data that is not
+   * an address: the source's display remark when it is safe to show, otherwise
+   * the protocol plus a short canonical fingerprint. Surfaces that used to fall
+   * back to `node.remark || node.host` use this instead, so an unnamed node
+   * still reads as a node instead of as a missing value.
+   */
+  label: string;
+  /** Always true. The endpoint is never sent; this states that explicitly. */
+  endpointHidden: true;
+  protocolLabel: string;
+  transportLabel: string;
+  securityLabel: string;
+  transport: string;
+  security: string;
+  freshness: string;
+  status: string;
+  confidence: string;
+};
+
 /** One canonical public node. Connection secrets are stored in the vault, not here. */
 export interface PublicNode {
   id: string;
@@ -463,10 +521,18 @@ export interface NodeTestResult {
   error: string | null;
   /** probe family used */
   family: 4 | 6 | null;
-  /** IP actually probed (resolved at test time) */
-  probedIp: string | null;
-  /** test endpoint used for proxy tests */
-  testEndpoint: string | null;
+  /**
+   * IP actually probed (resolved at test time). Withheld from responses — it
+   * IS the node's address by construction (or an override the caller itself
+   * supplied, which it already knows). The DB row keeps it; the wire does not.
+   */
+  probedIp?: string | null;
+  /**
+   * Endpoint used for proxy tests, written as the dialled `host:port`. Same
+   * rule as `probedIp`: the DB row keeps it, responses omit it, because it is
+   * the node's address. Absent on the wire, not null.
+   */
+  testEndpoint?: string | null;
   /** which local core produced a proxy result: xray | sing-box */
   engine: string | null;
 }

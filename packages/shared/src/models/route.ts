@@ -82,7 +82,17 @@ export interface VpnRouteCompareSide {
  * when a side is missing the status says so instead of inventing one.
  */
 export interface VpnRouteCompareResult {
+  /**
+   * The target as it should be displayed: the host the user typed, or — when
+   * the comparison was requested for a stored node — that node's label.
+   */
   target: string;
+  /**
+   * True when `target` is a node label and the node's address was resolved on
+   * the server instead of being echoed. Present so a surface can say the
+   * endpoint is withheld rather than render `target` as if it were the address.
+   */
+  endpointHidden?: true;
   direct: VpnRouteCompareSide | null;
   vpn: VpnRouteCompareSide | null;
   /**
