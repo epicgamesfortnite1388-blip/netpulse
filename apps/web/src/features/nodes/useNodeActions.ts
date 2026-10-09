@@ -3,37 +3,35 @@ import { useCallback, useRef, useState } from 'react';
 
 import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
-import { copyText, downloadText } from '@/lib/transfer';
 
 import {
-  exportErrorMessage,
-  exportFileName,
-  exportMessage,
   favoriteErrorMessage,
   favoriteMessage,
   geoErrorMessage,
   geoOutcomeMessage,
   promoteErrorMessage,
   promoteMessage,
-  shareLinkClipboardFailureMessage,
-  shareLinkCopiedMessage,
-  shareLinkErrorMessage,
-  shareLinkRefusalMessage,
   testErrorMessage,
   testMessage,
 } from './nodeActionPolicy';
 
-import type { ActionMessage, ExportEnvelope, ExportFormat, GeoRecheckOutcome, PromotedProfile, ShareLinkResult } from './nodeActionPolicy';
+import type { ActionMessage, GeoRecheckOutcome, PromotedProfile } from './nodeActionPolicy';
 import type { NodeTestResult, NodeTestType } from '@netpulse/shared';
 
 /**
  * The per-node actions a row or a detail page can run: test, geo re-check,
- * favorite, copy share link, export. One owner for both the in-flight state and
+ * favorite, promote to an engine. One owner for both the in-flight state and
  * the outcome policy, because these actions are the same work whether they start
  * from a list row or from the node page — before this hook the explorer and the
  * detail page each carried their own copy of the fetch/decide/toast sequence and
  * their own busy flag, which is how the two drifted into different wording for
  * the same refusal.
+ *
+ * Copy share link and export are NOT here and must not be added back. They were
+ * the two actions that handed the user the provider's credential; the routes
+ * behind them are gone (see routes/nodes.ts tombstones). A node is chosen by
+ * where it is and how fast it pings, and the app connects to it — nobody reads
+ * or copies the raw configuration, on any plan.
  *
  * What stays with the caller (it is a rendering concern, not an action one):
  *   - what to re-render when a node changes (`onChanged`)
@@ -45,12 +43,12 @@ import type { NodeTestResult, NodeTestType } from '@netpulse/shared';
  * because the tunnel outlives a single request.
  */
 
-export type NodeActionKind = 'test' | 'geo' | 'favorite' | 'copy' | 'export' | 'promote';
+export type NodeActionKind = 'test' | 'geo' | 'favorite' | 'promote';
 
 export interface PendingNodeAction {
   nodeId: string;
   kind: NodeActionKind;
-  /** Action-specific detail the UI may want: the test type, the export format. */
+  /** Action-specific detail the UI may want: the test type. */
   detail: string | null;
 }
 
@@ -153,33 +151,14 @@ export function useNodeActions<TNode = unknown>(options: NodeActionOptions<TNode
   );
 
   /**
-   * Rebuild the node's share link server-side and hand it to the clipboard.
-   * The only honest outcomes are "copied" and "here is why it cannot be
-   * rebuilt" — a link that never reached the clipboard must not read as success.
-   */
-  const copyShareLink = useCallback(
-    async (nodeId: string) => {
-      const outcome = await run(nodeId, 'copy', null, () => api.get<ShareLinkResult>(`/nodes/${nodeId}/link`));
-      if (outcome.status === 'done') {
-        const res = outcome.value;
-        if (!res.ok || !res.link) {
-          say(shareLinkRefusalMessage(res));
-          return outcome;
-        }
-        const copied = await copyText(res.link);
-        say(copied ? shareLinkCopiedMessage(res) : shareLinkClipboardFailureMessage());
-      } else if (outcome.status === 'failed') {
-        say(shareLinkErrorMessage(outcome.error));
-      }
-      return outcome;
-    },
-    [run, say],
-  );
-
-  /**
    * Turn a stored node into an engine profile (the node survives as a named
    * profile with its own Connect button). Available from the row as well as the
    * detail page, so a likely node can be promoted while scanning the list.
+   *
+   * This is the whole of what a node is good for now: the server rebuilds the
+   * credential from its vault, writes the engine config on disk, and the core
+   * dials it. The response carries the profile and nothing about how to reach
+   * the node.
    */
   const promote = useCallback(
     async (nodeId: string) => {
@@ -197,20 +176,6 @@ export function useNodeActions<TNode = unknown>(options: NodeActionOptions<TNode
     [qc, run, say],
   );
 
-  const downloadExport = useCallback(
-    async (nodeIds: string[], format: ExportFormat, prefix: string, scope: string) => {
-      const outcome = await run(nodeIds[0] ?? '', 'export', format, async () => {
-        const res = await api.get<ExportEnvelope>(`/nodes/export?nodeIds=${encodeURIComponent(nodeIds.join(','))}&format=${format}`);
-        downloadText(exportFileName(prefix, format), res.data);
-        return res;
-      });
-      if (outcome.status === 'done') say(exportMessage(format, scope));
-      else if (outcome.status === 'failed') say(exportErrorMessage(outcome.error));
-      return outcome;
-    },
-    [run, say],
-  );
-
   /** Is `nodeId` currently running an action (optionally of a given kind)? */
   const busy = useCallback(
     (nodeId: string, kind?: NodeActionKind) => pending?.nodeId === nodeId && (kind === undefined || pending.kind === kind),
@@ -220,5 +185,5 @@ export function useNodeActions<TNode = unknown>(options: NodeActionOptions<TNode
   /** Is any node running this kind of action? For actions that cover many nodes at once. */
   const busyKind = useCallback((kind: NodeActionKind) => pending?.kind === kind, [pending]);
 
-  return { pending, busy, busyKind, anyBusy: pending !== null, test, recheckGeo, toggleFavorite, copyShareLink, promote, downloadExport };
+  return { pending, busy, busyKind, anyBusy: pending !== null, test, recheckGeo, toggleFavorite, promote };
 }

@@ -4,11 +4,11 @@ import {
   ChevronRight,
   Clock,
   Cpu,
-  Download,
+  
   Flag,
   Globe2,
   Info,
-  Link2,
+  
   LocateFixed,
   RefreshCw,
   Search,
@@ -49,7 +49,7 @@ import type {
   NodeSortDir,
   NodeSortField,
   NodeStatus,
-  PublicNode,
+  NodeView,
   ProxyEngineStatus,
 } from '@netpulse/shared';
 
@@ -83,7 +83,7 @@ interface NodesStatsSummary {
 }
 
 interface NodeListResponse {
-  nodes: PublicNode[];
+  nodes: NodeView[];
   total: number;
   limit: number;
   offset: number;
@@ -161,7 +161,7 @@ const SORT_OPTIONS: { value: NodeSortField; label: string; defaultDir: NodeSortD
 ];
 
 /** Status glyph. Tones map to real tokens (the old `text-status-*` did not exist). */
-function StatusGlyph({ status }: { status: NodeStatus }) {
+function StatusGlyph({ status }: { status: NodeStatus | string }) {
   const base = 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-2';
   switch (status) {
     case 'healthy':
@@ -297,7 +297,7 @@ export default function NodeExplorerPage() {
   ].filter(Boolean).length;
 
   const patchNode = useCallback(
-    (node: PublicNode) => {
+    (node: NodeView) => {
       qc.setQueryData<NodeListResponse | undefined>(listKey, (prev) =>
         prev ? { ...prev, nodes: prev.nodes.map((n) => (n.id === node.id ? node : n)) } : prev,
       );
@@ -311,7 +311,7 @@ export default function NodeExplorerPage() {
   // page-specific behaviour is `onChanged` — the re-checked row is patched in
   // place so scroll position and other rows' spinners survive, while a list
   // refetch would replace the page under the user.
-  const actions = useNodeActions<PublicNode>({
+  const actions = useNodeActions<NodeView>({
     onChanged: (node) => {
       if (node) patchNode(node);
     },
@@ -367,14 +367,6 @@ export default function NodeExplorerPage() {
         }`}
         actions={
           <>
-            <Button
-              variant="ghost"
-              loading={actions.busyKind('export')}
-              onClick={() => void actions.downloadExport(nodes.map((n) => n.id), 'uri', 'nodes', `${nodes.length} nodes on this page`)}
-            >
-              <Download size={13} />
-              Export page
-            </Button>
             <Button variant="secondary" onClick={handleRefresh} loading={listQuery.isFetching}>
               <RefreshCw size={13} />
               Refresh
@@ -627,8 +619,7 @@ export default function NodeExplorerPage() {
                 <StatusGlyph status={node.status} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                    <span className="break-all font-mono text-sm text-text">{node.host}</span>
-                    <span className="font-mono text-xs text-faint">:{node.port}</span>
+                    <span className="break-all text-sm text-text">{node.label}</span>
                     <ProtocolBadge protocol={node.protocol} />
                     <Badge tone={node.security === 'reality' ? 'accent' : node.security === 'tls' ? 'ok' : 'neutral'}>{node.security}</Badge>
                     <span className="text-xs text-faint">{node.transport}</span>
@@ -636,7 +627,6 @@ export default function NodeExplorerPage() {
                   </div>
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
-                    {node.ipv4[0] && <span className="font-mono">{node.ipv4[0]}</span>}
                     {node.country ? (
                       <span className="flex items-center gap-1">
                         <Flag size={11} />
@@ -652,7 +642,13 @@ export default function NodeExplorerPage() {
                       {node.freshness}
                     </span>
                     <span className="capitalize">{node.status}</span>
-                    {node.remark && <span className="max-w-[280px] truncate">{node.remark}</span>}
+                    {/* `label` above already shows the remark when it is safe to
+                        show; this chip only adds value when the two differ (i.e.
+                        the server withheld an address-shaped remark). Showing it
+                        unconditionally would repeat the title. */}
+                    {node.remark && node.remark !== node.label && (
+                      <span className="max-w-[280px] truncate">{node.remark}</span>
+                    )}
                   </div>
 
                   {/* Six across only fits once the labels are legible: at 1024px a
@@ -703,16 +699,6 @@ export default function NodeExplorerPage() {
                     <button
                       type="button"
                       className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
-                      title="Copy this node's share link (rebuilt from the stored config)"
-                      aria-label={`Copy share link for ${node.host}`}
-                      disabled={actions.anyBusy}
-                      onClick={() => void actions.copyShareLink(node.id)}
-                    >
-                      {actions.busy(node.id, 'copy') ? <RefreshCw size={14} className="animate-spin" /> : <Link2 size={14} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
                       title={node.country || node.lat != null ? 'Re-check location (fresh GeoIP lookup)' : 'Look up location now'}
                       aria-label="Re-check location"
                       disabled={actions.anyBusy}
@@ -738,7 +724,7 @@ export default function NodeExplorerPage() {
                           ? 'Use in an engine — store this node as a named engine profile'
                           : `${node.protocol} nodes have no share-link form an engine profile can be built from`
                       }
-                      aria-label={`Add ${node.host} to an engine`}
+                      aria-label={`Add ${node.label} to an engine`}
                       disabled={actions.anyBusy || !canBecomeEngineProfile(node.protocol)}
                       onClick={() => void actions.promote(node.id)}
                     >
@@ -748,7 +734,7 @@ export default function NodeExplorerPage() {
                       type="button"
                       className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-text"
                       title="View details"
-                      aria-label={`View details for ${node.host}`}
+                      aria-label={`View details for ${node.label}`}
                       onClick={() => navigate(`/nodes/${node.id}`)}
                     >
                       <ChevronRight size={14} />

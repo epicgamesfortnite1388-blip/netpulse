@@ -5,11 +5,10 @@ import {
   Activity,
   CheckCircle2,
   Clock,
-  Copy,
-  Download,
   Flag,
   Info,
   Loader2,
+  Lock,
   Network,
   RefreshCw,
   Route as RouteIcon,
@@ -41,11 +40,10 @@ import { fmtDateTime, fmtMs, fmtPct } from '@/lib/format';
 import { GEO_STATUS_COPY, geoReasonOf } from '@/lib/geoStatus';
 import { usePersistentState } from '@/lib/usePersistentState';
 
-import type { ExportFormat } from '@/features/nodes/nodeActionPolicy';
-import type { NodeTestResult, NodeTestType, PublicNode } from '@netpulse/shared';
+import type { NodeTestResult, NodeTestType, NodeView } from '@netpulse/shared';
 import type { ReactNode } from 'react';
 
-type NodeWebDTO = PublicNode;
+type NodeWebDTO = NodeView;
 
 /** Aggregated health record returned by GET /nodes/:id/health */
 import type { NodeHealthSummary } from './nodeHealthDisplay';
@@ -85,6 +83,20 @@ function DetailItem({ label, value, mono = false }: { label: string; value: Reac
       <dt className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{label}</dt>
       <dd className={`mt-0.5 break-words text-sm text-text ${mono ? 'metric-num text-xs' : ''}`}>{value}</dd>
     </div>
+  );
+}
+
+/**
+ * A field the server deliberately did not send. It renders as a stated
+ * omission, never as a dash or an empty cell — an empty cell reads as
+ * "we do not know", and this is not that: it is "we are not telling you".
+ */
+function HiddenField({ reason }: { reason: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-faint" title={reason}>
+      <Lock size={12} className="shrink-0" />
+      <span>hidden on purpose</span>
+    </span>
   );
 }
 
@@ -199,7 +211,7 @@ export default function NodeDetailPage() {
 
   useEffect(() => { void loadNode(); }, [loadNode]);
 
-  // Per-node actions (test, geo re-check, favorite, copy link, export) come from
+  // Per-node actions (test, geo re-check, favorite, promote) come from
   // one hook shared with the explorer: it owns the request, the in-flight state
   // and the wording for every outcome, so this page and a list row cannot report
   // the same refusal differently. This page only decides what changed state it
@@ -283,14 +295,6 @@ export default function NodeDetailPage() {
       clearInterval(poll);
     };
   }, [pendingTest, id, loadNode, setPendingTest, toast]);
-
-  const exportNode = useCallback(
-    (format: ExportFormat) => {
-      if (!node) return Promise.resolve({ status: 'skipped' as const });
-      return actions.downloadExport([node.id], format, `node-${node.id.slice(0, 8)}`, node.id.slice(0, 8));
-    },
-    [actions, node],
-  );
 
   // The nav renders in every state, so the node area keeps one stable frame
   // while the record loads or fails — the chrome never appears out of nowhere
@@ -395,7 +399,7 @@ export default function NodeDetailPage() {
 
   return (
     <DisclosureScope name="node-detail" className="animate-fade-up">
-      <NodesNav current={node.remark || node.host} />
+      <NodesNav current={node.label} />
 
       <EngineHero
         glyph={
@@ -403,8 +407,8 @@ export default function NodeDetailPage() {
             <Server size={22} />
           </EngineGlyph>
         }
-        name={node.remark || node.host}
-        tagline={`${PROTOCOL_LABELS[node.protocol] ?? node.protocol} · ${node.host}:${node.port}`}
+        name={node.label}
+        tagline={`${PROTOCOL_LABELS[node.protocol] ?? node.protocol} · ${node.transportLabel || node.transport} · ${node.securityLabel || node.security} · endpoint hidden`}
         badges={
           <>
             <Badge tone={statusTone(node.status)}>
@@ -421,7 +425,7 @@ export default function NodeDetailPage() {
             )}
           </>
         }
-        description={`${location}${node.isp ? ` — announced by ${node.isp}` : ''}. Probe history, health and export live here; every measurement is attributable to the local core that produced it.`}
+        description={`${location}${node.isp ? ` — announced by ${node.isp}` : ''}. Probe history and health live here; every measurement is attributable to the local core that produced it.`}
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => node && void actions.toggleFavorite(node)}>
@@ -429,24 +433,10 @@ export default function NodeDetailPage() {
               {node.favorite ? 'Favorited' : 'Favorite'}
             </Button>
             <Button
-              variant="secondary"
-              size="sm"
-              loading={actions.busy(node.id, 'copy')}
-              onClick={() => void actions.copyShareLink(node.id)}
-              title="Copy the rebuilt share link for this node"
-            >
-              <Copy size={14} />
-              Copy share link
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => void exportNode('json')}>
-              <Download size={14} />
-              Export JSON
-            </Button>
-            <Button
               variant="ghost"
               size="sm"
-              title="Compare direct vs VPN traceroutes to this node's endpoint"
-              onClick={() => navigate(`/routes?tab=vpn-compare&target=${encodeURIComponent(node.ipv4[0] || node.host)}`)}
+              title="Compare direct vs VPN traceroutes to this node's endpoint — the server resolves the address, so it is never sent here"
+              onClick={() => navigate(`/routes?tab=vpn-compare&nodeId=${encodeURIComponent(node.id)}`)}
             >
               <RouteIcon size={14} />
               Direct vs VPN
@@ -473,7 +463,6 @@ export default function NodeDetailPage() {
           { value: 'overview', label: 'Overview' },
           { value: 'tests', label: tests.length > 0 ? `Tests · ${tests.length}` : 'Tests' },
           { value: 'health', label: 'Health' },
-          { value: 'export', label: 'Export' },
         ]}
       >
         {/* Sections inside every tab fold; Expand all / Collapse all works
@@ -487,27 +476,33 @@ export default function NodeDetailPage() {
                 pinned
                 id="endpoint"
                 defaultOpen
-                summary="Protocol, host, port, transport, TLS — the dial-in facts"
+                summary="Protocol, transport, TLS — the dial-in facts, minus the address"
                 title="Endpoint & transport"
                 icon={<Network size={15} />}
-                subtitle="What a client must dial to reach this node — no credentials, they are not stored in the clear."
+                subtitle="Where this node lives is part of its configuration, so it is never sent to this app. Everything else about how to reach it is below."
               >
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-mini leading-relaxed text-muted">
+                  <Lock size={14} className="mt-0.5 shrink-0 text-accent" />
+                  <span>
+                    <span className="font-medium text-text">Host, port and addresses are withheld.</span> They are the node's
+                    configuration: copy them out and you have a server to connect to without this app. Testing, tunnelling
+                    and engine import all still work — they run on the server, which keeps the address. Nothing below is
+                    missing data; these fields are deliberately not sent.
+                  </span>
+                </div>
                 <DetailGrid cols={3}>
                   <DetailItem label="Protocol" value={PROTOCOL_LABELS[node.protocol] ?? node.protocol} />
-                  <DetailItem label="Host" value={node.host} mono />
-                  <DetailItem label="Port" value={node.port} mono />
+                  <DetailItem label="Host" value={<HiddenField reason="the node's address is its configuration" />} mono />
+                  <DetailItem label="Port" value={<HiddenField reason="the node's port is part of its configuration" />} mono />
                   <DetailItem label="Transport" value={TRANSPORT_LABELS[node.transport] ?? node.transport} />
                   <DetailItem label="Security" value={node.security.toUpperCase()} />
-                  {node.sni && <DetailItem label="SNI" value={node.sni} mono />}
                   {node.path && <DetailItem label="Path" value={node.path} mono />}
-                  {node.hostHeader && <DetailItem label="Host header" value={node.hostHeader} mono />}
                   {node.serviceName && <DetailItem label="gRPC service" value={node.serviceName} />}
                   {node.flow && <DetailItem label="Flow" value={node.flow} />}
                   {node.alpn && node.alpn.length > 0 && <DetailItem label="ALPN" value={node.alpn.join(', ')} mono />}
                   {node.realityPublicKey && <DetailItem label="Reality public key" value={`${node.realityPublicKey.slice(0, 24)}…`} mono />}
                   <DetailItem label="Allow insecure" value={node.allowInsecure ? 'Yes' : 'No'} />
-                  <DetailItem label="Addresses" value={node.ipv4.join(', ') || '—'} mono />
-                  {node.ipv6.length > 0 && <DetailItem label="IPv6" value={node.ipv6.join(', ')} mono />}
+                  <DetailItem label="Addresses" value={<HiddenField reason="the node's resolved IPs identify where it runs" />} mono />
                   <DetailItem label="Sources" value={node.sourceCount} mono />
                   <DetailItem label="Fingerprint" value={`${node.canonicalFingerprint.slice(0, 16)}…`} mono />
                 </DetailGrid>
@@ -724,59 +719,6 @@ export default function NodeDetailPage() {
                 }
               />
             </DataList>
-          </Section>
-        </TabPanel>
-
-        <TabPanel value="export">
-          <Section
-            collapsible
-            id="export"
-            defaultOpen={false}
-            summary="Export this single node for another client — metadata only, no secrets"
-            title="Download configuration"
-            icon={<Download size={15} />}
-            subtitle="Rendered server-side for this single node, in the format each client expects."
-          >
-            <Panel>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    // Every button in this panel downloads a file — the glyph
-                    // says download. "Copy share link" in the toolbar is the
-                    // action that reaches the clipboard.
-                    ['uri', 'URI', <Download size={14} key="uri" />],
-                    ['plaintext', 'Plaintext', <Download size={14} key="pt" />],
-                    ['base64', 'Base64', <Download size={14} key="b64" />],
-                    ['json', 'JSON', <Download size={14} key="json" />],
-                    ['clash', 'Clash', <Download size={14} key="clash" />],
-                    ['singbox', 'Sing-box', <Download size={14} key="sb" />],
-                  ] as const
-                ).map(([format, label, icon]) => (
-                  <Button key={format} variant="secondary" size="sm" onClick={() => void exportNode(format)}>
-                    {icon}
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </Panel>
-
-            <p className="mt-4 text-micro font-semibold uppercase tracking-[0.14em] text-faint">Shape preview</p>
-            <Panel tone="quiet" className="mt-1.5 max-h-64 overflow-auto font-mono text-micro leading-relaxed whitespace-pre-wrap text-muted">
-              {node.protocol === 'vless' &&
-                `vless://<password>@${node.host}:${node.port}?security=${node.security}&type=${node.transport}${node.sni ? `&sni=${node.sni}` : ''}${node.path ? `&path=${node.path}` : ''}${node.hostHeader ? `&host=${node.hostHeader}` : ''}${node.flow ? `&flow=${node.flow}` : ''}#${node.remark || node.host}`}
-              {node.protocol === 'trojan' &&
-                `trojan://<password>@${node.host}:${node.port}?sni=${node.sni}&type=${node.transport}${node.path ? `&path=${node.path}` : ''}#${node.remark || node.host}`}
-              {node.protocol === 'shadowsocks' && `ss://<method>:<password>@${node.host}:${node.port}#${node.remark || node.host}`}
-              {node.protocol === 'hysteria2' && `hysteria2://<password>@${node.host}:${node.port}?sni=${node.sni}#${node.remark || node.host}`}
-              {node.protocol === 'tuic' &&
-                `tuic://<password>@${node.host}:${node.port}?sni=${node.sni}&alpn=${node.alpn?.[0] || 'h3'}#${node.remark || node.host}`}
-              {node.protocol === 'vmess' && 'VMess URI requires the node UUID — secrets are not stored in the clear, so no URI can be generated.'}
-              {node.protocol === 'shadowsocksr' && 'SSR URI requires a base64-encoded config — secrets are not stored in the clear, so no URI can be generated.'}
-              {node.protocol === 'wireguard' && 'WireGuard URI requires the node private key — secrets are not stored in the clear, so no URI can be generated.'}
-            </Panel>
-            <Notice tone="info" className="mt-3">
-              Exports carry connection metadata only. Passwords, keys and UUIDs are never rendered here — provide them in your client.
-            </Notice>
           </Section>
         </TabPanel>
       </Tabs>

@@ -37,15 +37,17 @@ import { api } from '@/lib/api';
 import { GEO_STATUS_COPY, GeoTooltipBody, geoReasonOf } from '@/lib/geoStatus';
 import { fmtMs, fmtPct, timeAgo } from '@/lib/format';
 import { usePersistentState } from '@/lib/usePersistentState';
+import { useNodeActions } from '@/features/nodes/useNodeActions';
 import { useWsTestProgress } from '@/lib/ws';
 import { GlobeCanvas } from './GlobeCanvas';
+import { NodePickerPanel } from './NodePickerPanel';
 import { ConfidenceLegendBody, ConfidenceRingGlyph, confidenceMeetsThreshold } from './mapEncoding';
 import type { ConfidenceThreshold } from './mapEncoding';
 import { clusterNodes } from './clusterNodes';
 import { nodePinsFromDb } from './nodePins';
 
 import type { GlobeArc, GlobeNode, GlobeRoute } from './mapEncoding';
-import type { PublicNode } from '@netpulse/shared';
+import type { NodeView } from '@netpulse/shared';
 import type { GeoConfidenceLevel, MapConnectionRow, MapLocalInfo, MapObservation, MapSweepResult, NetworkTarget } from '@netpulse/shared';
 import type { WsTestMessage } from '@/lib/ws';
 
@@ -159,6 +161,11 @@ export default function LiveMapPage() {
   const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(searchParams.get('target'));
+  // The node picked on the globe, and what became of it. Kept as an id (not a
+  // node object) so a background refresh of the node list cannot leave the panel
+  // describing a record that no longer exists.
+  const [pickedNodeId, setPickedNodeId] = useState<string | null>(null);
+  const [pickedConfirmation, setPickedConfirmation] = useState<{ profileName: string; nodeId: string } | null>(null);
   const [observations, setObservations] = useState<Map<string, MapObservation>>(new Map());
   const filteredOutCountRef = useRef(0);
   const [playback, setPlayback] = useState<MapObservation | null>(null);
@@ -206,7 +213,7 @@ export default function LiveMapPage() {
   // cannot flood the scene; clustering handles density.
   const dbNodesQuery = useQuery({
     queryKey: ['map', 'db-nodes'],
-    queryFn: () => api.get<{ nodes: PublicNode[]; total: number }>('/nodes?limit=1500&sortField=score&sortDir=desc'),
+    queryFn: () => api.get<{ nodes: NodeView[]; total: number }>('/nodes?limit=1500&sortField=score&sortDir=desc'),
     staleTime: 60_000,
   });
   const historyQuery = useQuery({
@@ -214,6 +221,32 @@ export default function LiveMapPage() {
     queryFn: () => api.get<ObservationsResponse>(`/map/observations?targetId=${encodeURIComponent(selectedTargetId!)}&limit=50`),
     enabled: selectedTargetId != null,
   });
+
+  // ─── Location picker ──────────────────────────────────────────────────────
+  // Selection is a POST to /vpn/profiles/from-node, the route that rebuilds the
+  // share link SERVER-side and imports it into the engine. Reusing the existing
+  // action hook means this path shares the one owner of that call and its
+  // wording, and — the point of the exercise — no link, host, port or secret is
+  // ever requested or rendered here.
+  const pickedNode = useMemo(
+    () => (pickedNodeId == null ? null : (dbNodesQuery.data?.nodes ?? []).find((n) => n.id === pickedNodeId) ?? null),
+    [dbNodesQuery.data, pickedNodeId],
+  );
+  const nodeActions = useNodeActions<NodeView>();
+  const closePicker = useCallback(() => {
+    setPickedNodeId(null);
+    setPickedConfirmation(null);
+  }, []);
+  // Named without the `use` prefix on purpose: this is an ordinary event
+  // handler that the panel calls, not a hook (the rules-of-hooks lint reads a
+  // `use*` name called from a callback as a hook call).
+  const selectPickedLocation = useCallback(
+    async (node: NodeView) => {
+      const outcome = await nodeActions.promote(node.id);
+      if (outcome.status === 'done') setPickedConfirmation({ profileName: outcome.value.profile.name, nodeId: node.id });
+    },
+    [nodeActions],
+  );
 
   // hydrate from persisted observations
   useEffect(() => {
@@ -385,20 +418,26 @@ export default function LiveMapPage() {
   }, []);
 
   const navigate = useNavigate();
-  /** DB-node pins open their detail page; map targets select on the globe.
+  /** DB-node pins open the location picker; map targets select on the globe.
    *  Cluster pins never reach here — the canvas zooms the camera itself
    *  (altitude is the clustering source of truth) and camera moves flow back
-   *  through onZoomChange, breaking the cluster into members. */
+   *  through onZoomChange, breaking the cluster into members.
+   *
+   *  A pin used to navigate straight to the node detail page. It now opens the
+   *  picker instead, because picking a server is a globe decision — place and
+   *  ping — and the detail page is one explicit click further on. Nothing was
+   *  removed: "Open node details" from the panel reaches the same page. */
   const onGlobeSelect = useCallback(
     (node: GlobeNode | null) => {
       if (!node || node.id === 'you' || node.cluster != null) return;
       if (node.id.startsWith('node:')) {
-        navigate(`/nodes/${encodeURIComponent(node.id.slice('node:'.length))}`);
+        setPickedNodeId(node.id.slice('node:'.length));
+        setPickedConfirmation(null);
         return;
       }
       setSelectedTargetId(node.id);
     },
-    [navigate],
+    [],
   );
 
   const nodes: GlobeNode[] = useMemo(() => {
@@ -736,6 +775,20 @@ export default function LiveMapPage() {
                   {progress.message}
                 </div>
               )}
+              {/* z-10 on the panel below: the legend strip that follows is later in
+                  the DOM, so without it the picker and its confirmation paint under. */}
+              {pickedNode ? (
+                <div className="absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-[320px] overflow-y-auto">
+                  <NodePickerPanel
+                    node={pickedNode}
+                    busy={nodeActions.busy(pickedNode.id, 'promote')}
+                    confirmation={pickedConfirmation ? { profileName: pickedConfirmation.profileName, node: pickedNode } : null}
+                    onUse={(node) => void selectPickedLocation(node)}
+                    onOpenDetails={(node) => navigate(`/nodes/${encodeURIComponent(node.id)}`)}
+                    onClose={closePicker}
+                  />
+                </div>
+              ) : null}
               {playback && (
                 <div className="absolute right-3 top-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro text-faint backdrop-blur">
                   Showing snapshot from <span className="text-muted">{timeAgo(playback.createdAt)}</span> — historical, not live
@@ -836,8 +889,28 @@ export default function LiveMapPage() {
                 />
                 <CardBody className="space-y-2 text-mini">
                   <Row label="Target" value={selectedObs.target.name} />
-                  <Row label="Hostname" value={hidden ? 'redacted' : selectedObs.target.host} mono />
-                  <Row label="Resolved IP" value={hidden ? maskIp(selectedObs.resolvedIp) : selectedObs.resolvedIp} mono />
+                  <Row
+                    label="Hostname"
+                    value={
+                      selectedObs.target.endpointHidden
+                        ? undefined
+                        : hidden
+                          ? 'redacted'
+                          : (selectedObs.target.host ?? null)
+                    }
+                    mono
+                  />
+                  <Row
+                    label="Resolved IP"
+                    value={
+                      selectedObs.target.endpointHidden
+                        ? undefined
+                        : hidden
+                          ? maskIp(selectedObs.resolvedIp)
+                          : selectedObs.resolvedIp
+                    }
+                    mono
+                  />
                   {(() => {
                     // Destination geo confidence — the map never shows false
                     // precision: surface HOW we know where this pin is, and
@@ -1305,11 +1378,20 @@ export default function LiveMapPage() {
   return content;
 }
 
-function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
+function Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-micro uppercase tracking-wider text-faint">{label}</span>
-      <span className={`truncate text-right text-muted ${mono ? 'font-mono' : ''}`}>{value ?? 'Unknown'}</span>
+      {value === undefined ? (
+        // Absent on purpose: the server withholds this field for targets whose
+        // endpoint is configuration. `null`/absent-after-known is different —
+        // that reads "no value", this reads "we are not telling you".
+        <span className="truncate text-right text-faint" title="This target's endpoint is configuration and is not sent to this app">
+          hidden on purpose
+        </span>
+      ) : (
+        <span className={`truncate text-right text-muted ${mono ? 'font-mono' : ''}`}>{value ?? 'Unknown'}</span>
+      )}
     </div>
   );
 }

@@ -362,7 +362,12 @@ export default function NodeSourcesPage() {
                           </Badge>
                           {s.type && <span className="text-micro uppercase tracking-wide text-faint">{s.type}</span>}
                         </div>
-                        <p className="mt-0.5 truncate font-mono text-micro text-faint">{s.urls[0]}</p>
+                        <p
+                          className="mt-0.5 truncate font-mono text-micro text-faint select-none"
+                          title="Subscription URLs are masked — a link that fetches every node in a source is the configuration, so the app never sends it to the client."
+                        >
+                          {s.urls[0]}
+                        </p>
                         {/* Four across needs xl: at 1024px a four-up grid left ~86px per cell,
                             which the labels overflowed. */}
                           <div className="mt-2 grid grid-cols-2 gap-1.5 xl:grid-cols-4">

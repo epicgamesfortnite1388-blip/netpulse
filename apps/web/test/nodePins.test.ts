@@ -2,32 +2,37 @@ import { describe, expect, it } from 'vitest';
 
 import { nodePinsFromDb } from '../src/features/map/nodePins';
 
-import type { PublicNode } from '@netpulse/shared';
+import type { NodeView } from '@netpulse/shared';
 
-/** Minimal node factory — only fields the mapper reads. */
-function dbNode(over: Partial<PublicNode>): PublicNode {
+/**
+ * Globe pins are seeded from `NodeView` — the shape the API actually sends,
+ * which has no `host`, `port` or `ipv4`. The old contract here asserted the
+ * OPPOSITE of the current one: that a pin without a remark falls back to the
+ * host. That fallback was the address reaching the globe, so it is gone, and
+ * these tests now pin what replaced it — a label that is always present and
+ * never an address, and a subtitle that always says something.
+ */
+function dbNode(over: Partial<NodeView>): NodeView {
   return {
     id: 'n1',
-    canonicalFingerprint: 'fp',
+    canonicalFingerprint: '20ea8e831399eea9346097285a1a84115653c3d6d9da57db7f1020adc46057ab',
     protocol: 'vless',
-    host: 'example.com',
-    ipv4: [],
-    ipv6: [],
-    port: 443,
+    protocolLabel: 'VLESS',
+    label: 'Frankfurt relay',
+    endpointHidden: true,
     transport: 'tcp',
+    transportLabel: 'TCP',
     security: 'tls',
-    sni: null,
+    securityLabel: 'TLS',
     alpn: [],
     fingerprint: null,
     flow: null,
     alterId: null,
     path: null,
-    hostHeader: null,
     serviceName: null,
     allowInsecure: false,
     realityPublicKey: null,
     realityShortId: null,
-    realityServerName: null,
     encryption: null,
     ssrProtocol: null,
     remark: 'Frankfurt relay',
@@ -52,8 +57,8 @@ function dbNode(over: Partial<PublicNode>): PublicNode {
     favorite: false,
     userNotes: null,
     lastProxyMs: 42,
+    lastEngine: null,
     lastTcpMs: 40,
-    geoLastAttempt: null,
     lastTlsMs: null,
     testCount: 1,
     successCount: 1,
@@ -62,8 +67,19 @@ function dbNode(over: Partial<PublicNode>): PublicNode {
     recentTestCount: 0,
     recentSuccessCount: 0,
     recentFailureCount: 0,
+    score: 80,
+    reliabilityPct: 100,
+    medianProxyMs: 42,
+    medianTcpMs: 40,
+    medianTlsMs: null,
+    recentLossPct: 0,
+    lastSuccessAt: 0,
+    lastFailureAt: null,
+    freshness: 'fresh',
+    createdAt: 0,
+    updatedAt: 0,
     ...over,
-  } as PublicNode;
+  };
 }
 
 describe('nodePinsFromDb (globe seeding from the node DB)', () => {
@@ -73,7 +89,8 @@ describe('nodePinsFromDb (globe seeding from the node DB)', () => {
     const p = pins[0]!;
     expect(p.id).toBe('node:n1');
     expect(p.label).toBe('Frankfurt relay');
-    expect(p.sub).toBe('Frankfurt, DE');
+    // The subtitle carries place and protocol — not `host:port`.
+    expect(p.sub).toBe('Frankfurt, DE · VLESS');
     expect(p.lat).toBe(50.11);
     expect(p.lon).toBe(8.68);
     expect(p.kind).toBe('vpn');
@@ -109,8 +126,28 @@ describe('nodePinsFromDb (globe seeding from the node DB)', () => {
     expect(nodePinsFromDb([dbNode({ lastProxyMs: null, lastTcpMs: null })])[0]!.latencyMs).toBeNull();
   });
 
-  it('label falls back to host when no remark exists', () => {
-    const pins = nodePinsFromDb([dbNode({ remark: null })]);
-    expect(pins[0]!.label).toBe('example.com');
+  it('labels an unnamed node with the server-supplied label, never an address', () => {
+    // The API builds this fallback (protocol + fingerprint short-hash) when a
+    // node has no usable remark. The pin must pass it through verbatim rather
+    // than reaching for something missing.
+    const pins = nodePinsFromDb([dbNode({ remark: null, label: 'VLESS · 20ea8e83' })]);
+    expect(pins[0]!.label).toBe('VLESS · 20ea8e83');
+    expect(pins[0]!.label).not.toBe('');
+  });
+
+  it('a label is never rendered blank, whatever the remark', () => {
+    for (const remark of [null, '', '   ']) {
+      const pins = nodePinsFromDb([dbNode({ remark, label: 'VLESS · 20ea8e83' })]);
+      expect(pins[0]!.label, `remark=${String(remark)}`).not.toBe('');
+      expect(pins[0]!.label, `remark=${String(remark)}`).not.toBe('undefined');
+    }
+  });
+
+  it('sub never degenerates to an address when place is unknown', () => {
+    // The old fallback here was `${host}:${port}`. Now the line always has
+    // something to say: place (or an honest admission) and the protocol.
+    const pins = nodePinsFromDb([dbNode({ city: null, country: null, label: 'VLESS · 20ea8e83' })]);
+    expect(pins[0]!.sub).toBe('Location unknown · VLESS');
+    expect(pins[0]!.sub).not.toContain(':443');
   });
 });

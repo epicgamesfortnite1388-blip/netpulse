@@ -19,75 +19,16 @@ export interface ActionMessage {
   body?: string;
 }
 
-/* --------------------------------- export --------------------------------- */
-
-export const EXPORT_FORMATS = ['uri', 'plaintext', 'base64', 'json', 'clash', 'singbox'] as const;
-export type ExportFormat = (typeof EXPORT_FORMATS)[number];
-
 /**
- * The export route answers with an envelope — `data` is the config text. Sending
- * the envelope itself to a file produced downloads containing `[object Object]`.
+ * There are deliberately no share-link or export messages here.
+ *
+ * They used to live in this file and were the only code in the app that put a
+ * credential on screen. The endpoints that fed them (`GET /nodes/:id/link`,
+ * `GET /nodes/export`, `GET /vpn/profiles/:id/bundle`) are retired with 410
+ * tombstones server-side, so the wording had nothing left to describe. Leaving
+ * it would have been an invitation to re-add the button; the choice of node is
+ * made on the globe by place and ping, and the app dials the node itself.
  */
-export interface ExportEnvelope {
-  format: ExportFormat;
-  count: number;
-  data: string;
-}
-
-/** One rule for the saved file's extension, whatever the caller's prefix is. */
-export function exportFileName(prefix: string, format: ExportFormat, at = Date.now()): string {
-  const ext = format === 'base64' ? 'b64' : format;
-  return `${prefix}-${ext}-${at}.${ext === 'json' ? 'json' : 'txt'}`;
-}
-
-export function exportMessage(format: ExportFormat, scope: string): ActionMessage {
-  return { tone: 'ok', title: 'Exported', body: `${format} — ${scope}` };
-}
-
-export function exportErrorMessage(error: unknown): ActionMessage {
-  return { tone: 'error', title: 'Export failed', body: reasonOf(error) };
-}
-
-/* ------------------------------- share links ------------------------------ */
-
-export interface ShareLinkResult {
-  ok: boolean;
-  link?: string;
-  protocol?: string;
-  reason?: string;
-}
-
-const LINK_PREVIEW_CHARS = 72;
-
-/** The rebuilt link could not be produced: the server's reason is the answer. */
-export function shareLinkRefusalMessage(res: ShareLinkResult): ActionMessage {
-  return {
-    tone: 'warn',
-    title: 'No share link for this node',
-    body: res.reason ?? 'The server did not return a usable link.',
-  };
-}
-
-export function shareLinkCopiedMessage(res: ShareLinkResult): ActionMessage {
-  const link = res.link ?? '';
-  return {
-    tone: 'ok',
-    title: `${res.protocol ?? 'Share'} link copied`,
-    body: `${link.slice(0, LINK_PREVIEW_CHARS)}${link.length > LINK_PREVIEW_CHARS ? '…' : ''}`,
-  };
-}
-
-export function shareLinkClipboardFailureMessage(): ActionMessage {
-  return {
-    tone: 'error',
-    title: 'Could not reach the clipboard',
-    body: 'The link was built but the app could not copy it — use Export JSON instead.',
-  };
-}
-
-export function shareLinkErrorMessage(error: unknown): ActionMessage {
-  return { tone: 'error', title: 'Could not build the share link', body: reasonOf(error) };
-}
 
 /* -------------------------------- geo lookup ------------------------------- */
 

@@ -1,6 +1,6 @@
 import type { GlobeNode } from './mapEncoding';
 
-import type { PublicNode } from '@netpulse/shared';
+import type { NodeView } from '@netpulse/shared';
 
 /**
  * Map verified node-DB records to honest globe pins.
@@ -14,7 +14,7 @@ import type { PublicNode } from '@netpulse/shared';
  * `id` carries the `node:` prefix that GlobeCanvas click handlers route to the
  * node detail page — DB pins are entities, not map targets.
  */
-export function nodePinsFromDb(nodes: PublicNode[]): GlobeNode[] {
+export function nodePinsFromDb(nodes: NodeView[]): GlobeNode[] {
   const out: GlobeNode[] = [];
   for (const n of nodes) {
     if (n.lat == null || n.lon == null) continue;
@@ -25,24 +25,37 @@ export function nodePinsFromDb(nodes: PublicNode[]): GlobeNode[] {
     const where = [n.city, n.country].filter(Boolean).join(', ');
     out.push({
       id: `node:${n.id}`,
-      label: n.remark ?? n.host,
-      sub: where || `${n.host}:${n.port}`,
+      // `label` is built server-side and is never empty: the remark when the
+      // source gave a safe one, otherwise protocol plus a short fingerprint.
+      // The old `remark ?? host` would put an address on the globe.
+      label: n.label,
+      // Second line: where it is, then the protocol. Not the address.
+      sub: [where || 'Location unknown', n.protocolLabel || n.protocol].join(' · '),
       lat: n.lat,
       lon: n.lon,
       kind: n.status === 'healthy' || n.status === 'proxy-tested' ? 'vpn' : 'target',
       status: pinStatus(n),
       latencyMs: n.lastProxyMs ?? n.lastTcpMs,
-      geoConfidence: n.confidence,
+      geoConfidence: pinConfidence(n.confidence),
     });
   }
   return out;
 }
 
 /** Map a node's lifecycle status to the globe's honest status palette. */
-function pinStatus(n: PublicNode): GlobeNode['status'] {
+function pinStatus(n: NodeView): GlobeNode['status'] {
   if (n.status === 'healthy') return 'good';
   if (n.status === 'degraded') return 'fair';
   if (n.status === 'failed' || n.status === 'removed') return 'unreachable';
   if (n.status === 'stale') return 'unknown';
   return 'unknown';
+}
+
+/**
+ * The wire sends the stored confidence string verbatim, so it can be a value
+ * this app does not know. An unrecognised value reads as 'unknown' — the
+ * honest bucket — rather than being cast through as if it were valid.
+ */
+function pinConfidence(raw: string): GlobeNode['geoConfidence'] {
+  return raw === 'high' || raw === 'medium' || raw === 'low' ? raw : 'unknown';
 }

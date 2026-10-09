@@ -2,16 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { NodeTestResult } from '@netpulse/shared';
 
+import * as policy from '../src/features/nodes/nodeActionPolicy';
 import {
   engineInstallMessage,
-  exportFileName,
   geoOutcomeMessage,
   promoteErrorMessage,
   promoteMessage,
   serverCheckMessage,
-  shareLinkClipboardFailureMessage,
-  shareLinkCopiedMessage,
-  shareLinkRefusalMessage,
   testErrorMessage,
   testMessage,
   tunnelReconnectMessage,
@@ -48,31 +45,30 @@ describe('geoOutcomeMessage', () => {
   });
 });
 
-describe('share link messages', () => {
-  it('surfaces the server reason for a node that cannot be rebuilt', () => {
-    const message = shareLinkRefusalMessage({ ok: false, reason: 'No credential is stored for this node' });
-    expect(message.tone).toBe('warn');
-    expect(message.body).toBe('No credential is stored for this node');
+/**
+ * The share-link and export wording is gone from this module on purpose, and
+ * these assertions are the tripwire for someone re-adding it. A helper that
+ * formats a credential for the screen is the first step back to a button that
+ * copies one, and the routes behind it answer 410 — so re-adding any of these
+ * names should fail here rather than ship.
+ */
+describe('the raw-config surface stays removed', () => {
+  const RETIRED_EXPORTS = [
+    'exportFileName',
+    'exportMessage',
+    'exportErrorMessage',
+    'shareLinkRefusalMessage',
+    'shareLinkCopiedMessage',
+    'shareLinkClipboardFailureMessage',
+    'shareLinkErrorMessage',
+  ];
+
+  it.each(RETIRED_EXPORTS)('exports no %s', (name) => {
+    expect(Object.keys(policy)).not.toContain(name);
   });
 
-  it('never claims a copy without a link', () => {
-    const message = shareLinkRefusalMessage({ ok: false });
-    expect(message.tone).toBe('warn');
-    expect(message.body).toBeTruthy();
-  });
-
-  it('previews the copied link and names the protocol', () => {
-    const link = 'vless://uuid@host:443?type=ws#' + 'x'.repeat(100);
-    const message = shareLinkCopiedMessage({ ok: true, link, protocol: 'vless' });
-    expect(message.tone).toBe('ok');
-    expect(message.title).toBe('vless link copied');
-    expect(message.body).toHaveLength(73);
-    expect(message.body?.endsWith('…')).toBe(true);
-  });
-
-  it('says so when the clipboard refused the write', () => {
-    expect(shareLinkClipboardFailureMessage().tone).toBe('error');
-    expect(shareLinkClipboardFailureMessage().body).toMatch(/Export JSON/);
+  it('offers no export format list to render buttons from', () => {
+    expect(Object.keys(policy)).not.toContain('EXPORT_FORMATS');
   });
 });
 
@@ -131,14 +127,6 @@ describe('test messages', () => {
 
   it('carries the request error text when the call itself fails', () => {
     expect(testErrorMessage('proxy', new Error('core exited during startup')).body).toBe('core exited during startup');
-  });
-});
-
-describe('exportFileName', () => {
-  it('uses the format as the extension, with b64 for base64', () => {
-    expect(exportFileName('nodes', 'uri', 1)).toBe('nodes-uri-1.txt');
-    expect(exportFileName('nodes', 'base64', 1)).toBe('nodes-b64-1.txt');
-    expect(exportFileName('nodes', 'json', 1)).toBe('nodes-json-1.json');
   });
 });
 
