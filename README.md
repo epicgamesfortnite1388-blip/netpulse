@@ -95,6 +95,26 @@ npm run test:deploy # boots the INSTALLED backend bundle: auth, real measurement
 npm run build       # typecheck + production bundles
 ```
 
+### Live VPN proof (Windows, needs an `xray` core)
+
+The gates above never open a tunnel. These do — against the SHIPPED sidecar
+bundle, with two hermetic VLESS proof servers, asserting OS state (system proxy,
+listener, process, real `curl` exit address) rather than the app's own status
+field. They are local release gates, not CI jobs: they need an interactive
+Windows desktop and they deliberately mutate the HKCU system proxy (restoring it
+in `finally`).
+
+```bash
+npm run proof:vpn        # one full lifecycle: import, test, connect, switch, disconnect
+npm run proof:vpn:soak   # acceptance population: 50 connect/disconnect cycles, 20 reconnects,
+                         # 10 crash-restarts, 10 engine kills, with leak + failure-rate reporting
+```
+
+Put `xray.exe` in `%TEMP%\netpulse-vpnproof\cores\` (or pass `--core <path>`).
+With no core present the gate exits **2** and says `SKIP` — it is never reported
+as a pass. Build the staged sidecar first with `npm run desktop:prepare` if
+`src-tauri/backend/` is absent.
+
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — system design, layers, data flow

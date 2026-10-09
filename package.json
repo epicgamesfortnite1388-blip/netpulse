@@ -33,6 +33,8 @@
     "test:signing": "node scripts/signature-trust.test.mjs",
     "test:feed": "node scripts/update-feed.test.mjs",
     "test:deploy": "node scripts/deploy-battery.mjs",
+    "proof:vpn": "node scripts/vpn-live-proof.mjs",
+    "proof:vpn:soak": "node scripts/vpn-live-proof.mjs --soak",
     "audit:ci": "bash scripts/audit-ci.sh",
     "audit:tabs": "node scripts/audit-tab-persistence.mjs",
     "stress:nodes": "tsx scripts/stress-nodes.mjs"
