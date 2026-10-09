@@ -97,9 +97,7 @@ export function registerCloudRoutes(app: FastifyInstance, _ctx: AppContext): voi
       // their proxy was the thing that broke.
       const failure =
         err instanceof EgressError ? err : classify(err, await resolvedProxyForError());
-      return replyApiError(reply, 502, failure.reason, failure.message, {
-        hint: failure.proxy ? `proxy: ${failure.proxy}` : undefined,
-      });
+      return replyApiError(reply, 502, failure.reason, failure.message);
     }
   });
 }

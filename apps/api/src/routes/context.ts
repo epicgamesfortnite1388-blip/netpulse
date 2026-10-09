@@ -58,9 +58,11 @@ import type { ProxyTunnelService } from '../services/proxyTunnel';
 import type { KillSwitchService } from '../services/killSwitch';
 import type { GatewayMemoryService } from '../services/gatewayMemory';
 import type { VpnHistoryService } from '../services/vpnHistory';
+import type { VpnDropWatchdog } from '../vpn/vpnWatchdog';
 import type { UpdateFeedHistoryService } from '../services/updateFeedHistory';
 import type { NodeDiscoveryService } from '../services/nodeDiscovery';
 import type { NodeSecretVault } from '../services/nodeSecretVault';
+import type { ProfileCloudVault } from '../services/profileCloudVault';
 import type { NodesService } from '../services/nodesService';
 import type { SourceRefreshScheduler } from '../services/nodeSourceRegistry';
 import type { Logger } from '../logger';
@@ -125,12 +127,25 @@ export interface AppContext {
     gatewayMemory: GatewayMemoryService;
     discovery: NodeDiscoveryService;
     vpnHistory: VpnHistoryService;
+    /**
+     * Drop watchdog. Exposed so deliberate stops (user disconnect, mode
+     * handover) can acknowledge it — without that, a disconnect is seen as a
+     * DROP and the watchdog reconnects the profile the user just closed.
+     */
+    watchdog?: VpnDropWatchdog;
     updateHistory: UpdateFeedHistoryService;
     map: MapService;
     iran: IranService;
     nodes: NodesService;
     /** Encrypted at-rest vault for node credentials (uuid / password). */
     nodeVault?: NodeSecretVault;
+    /**
+     * Sealer for profile configs headed for the cloud backup. Held here rather
+     * than constructed per-request because it owns a key file: constructing one
+     * per call would read (and, on a fresh data dir, create) that file on every
+     * push.
+     */
+    profileCloudVault?: ProfileCloudVault;
     sourceScheduler?: SourceRefreshScheduler;
   };
   log: Logger;

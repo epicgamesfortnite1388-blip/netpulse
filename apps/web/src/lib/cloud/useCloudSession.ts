@@ -1,49 +1,58 @@
 /**
- * useCloudSession — the React binding for the cloud session store.
+ * useCloudSession — the React binding for the cloud session.
  *
- * One tiny zustand store so every surface (welcome gate, Account page, nav
- * avatar) renders from the same state object instead of each poking
- * localStorage directly. Auth actions live here too, so the welcome page and
- * the sign-out buttons all share one code path.
+ * The session object itself is NOT held here. It lives in exactly one place,
+ * `useSessionStore` (sessionStore.ts), and every writer — sign-in, the token
+ * refresh inside a request, a finished sync, sign-out — publishes into that
+ * store. Components that need the session select it from there:
+ *
+ *     const session = useSessionStore((s) => s.session);
+ *
+ * This store owns only what is genuinely its own: whether the first storage
+ * read has happened, the sign-in form's busy flag, and the vault key status.
+ * Holding a second copy of the session here is what made the two drift — the
+ * account page rendered a snapshot taken at mount while the sync engine
+ * stamped `lastSyncAt` elsewhere, and papering over that needed a
+ * `refreshSession()` the sync path had to remember to call.
  */
 
 import { create } from 'zustand';
 
 import { cloudAuth, CloudError } from './client';
-import { currentSession } from './sessionStore';
+import { initSession } from './sessionStore';
 import { ensureVaultKeyForAccount, loadVaultKey, type VaultKeyState } from './vaultKey';
-import type { CloudSessionState, CloudUser } from './types';
 
 interface CloudSessionStore {
-  session: CloudSessionState | null;
+  /** The first read of persisted session state has happened. */
   ready: boolean;
   /** Sign-in flows set this while the request is in flight. */
   busy: boolean;
   /** E2E backup key availability on this device (drives the Account UI). */
   vault: VaultKeyState;
   init: () => void;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  /** `timeoutMs` lets a retry wait longer than the first, fast attempt. */
+  login: (email: string, password: string, timeoutMs?: number) => Promise<void>;
+  register: (email: string, password: string, timeoutMs?: number) => Promise<void>;
   signOut: (opts?: { serverRevoke?: boolean }) => Promise<void>;
-  refreshUser: (user: CloudUser) => void;
   refreshVault: () => Promise<void>;
   unlockVault: (password: string) => Promise<void>;
 }
 
 export const useCloudSession = create<CloudSessionStore>((set, get) => ({
-  session: null,
   ready: false,
   busy: false,
   vault: 'signed-out',
   init: () => {
-    set({ session: currentSession(), ready: true });
+    // Publishing the session is initSession's job; this store only has to say
+    // that reading is done, which is what un-gates the Account page.
+    initSession();
+    set({ ready: true });
     void get().refreshVault();
   },
-  login: async (email, password) => {
+  login: async (email, password, timeoutMs) => {
     set({ busy: true });
     try {
-      await cloudAuth.login(email, password);
-      set({ session: currentSession() });
+      await cloudAuth.login(email, password, timeoutMs);
       // Derive the E2E backup key while the password is still in hand; a
       // failure here must never block login — the vault stays locked with
       // an honest status and can be unlocked later.
@@ -52,23 +61,19 @@ export const useCloudSession = create<CloudSessionStore>((set, get) => ({
       set({ busy: false });
     }
   },
-  register: async (email, password) => {
+  register: async (email, password, timeoutMs) => {
     set({ busy: true });
     try {
-      await cloudAuth.register(email, password);
-      set({ session: currentSession() });
+      await cloudAuth.register(email, password, timeoutMs);
       set({ vault: await ensureVaultKeyForAccount(password) });
     } finally {
       set({ busy: false });
     }
   },
   signOut: async () => {
+    // `cloudAuth.logout` calls `clearSession`, which empties `useSessionStore`
+    // — the sign-out gate follows from that one write. Nothing to set here.
     await cloudAuth.logout(); // clears local state; server revoke is best-effort
-    set({ session: null });
-  },
-  refreshUser: (user) => {
-    const s = get().session;
-    if (s) set({ session: { ...s, user } });
   },
   refreshVault: async () => {
     const { state } = await loadVaultKey();

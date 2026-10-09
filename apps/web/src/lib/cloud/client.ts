@@ -14,7 +14,8 @@
  * with "check your connection" while the proxy went entirely unused. The
  * sidecar owns the proxy decision (apps/api/src/services/egressProxy.ts) and
  * reports *why* a call failed, so the UI can name the cause instead of
- * guessing. See `describeEgressFailure`.
+ * guessing. That sentence is written in ONE place — apps/api/src/services/
+ * egressProxy.ts — and passed through here unchanged.
  */
 
 import { ApiError, api } from '@/lib/api';
@@ -54,11 +55,57 @@ export class CloudError extends Error {
 // request is actually sent to; a second copy in the webview would be a second
 // place to update and a second thing to disagree about.
 
-const TIMEOUT_MS = 15_000;
+/**
+ * Time budgets, chosen by WHO IS WAITING — not by one constant.
+ *
+ * A blocked network used to cost the user 15s of unexplained "Working…" before
+ * the app said anything (measured on the packaged build: 15.2s), which is the
+ * worst possible answer on a filtered network: long enough to look broken, and
+ * it gave no way to tell a dead proxy from a slow link.
+ *
+ *   interactive — a person is watching a spinner. Answer fast and name the
+ *                 cause; a link that needs longer can be retried knowingly.
+ *   patient     — they pressed "Sign in" again, i.e. chose to wait. A slow but
+ *                 working tunnel (a long VPN handshake over a mobile link) gets
+ *                 the room it needs, without any single attempt ever costing
+ *                 the old 15s.
+ *   background  — nobody is waiting (sync runs on a timer). The long window is
+ *                 free here, and it keeps a slow link from dropping a sync
+ *                 cycle that would have succeeded.
+ *
+ * The diagnosis is identical at every budget: the sidecar's sentence naming the
+ * proxy is passed through untouched. A shorter wait never becomes a vaguer
+ * answer.
+ */
+export const CLOUD_TIMEOUT = {
+  interactive: 5_000,
+  patient: 10_000,
+  background: 15_000,
+} as const;
+
+/** The budget a request uses unless its caller names one. */
+let defaultTimeoutMs: number = CLOUD_TIMEOUT.interactive;
+
+/**
+ * Run `fn` with the background budget — for unattended work, where waiting
+ * costs the user nothing and a dropped sync cycle is a real loss. Scoped and
+ * restored even if `fn` throws; the sign-in path never opts into it.
+ */
+export async function withBackgroundBudget<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = defaultTimeoutMs;
+  defaultTimeoutMs = CLOUD_TIMEOUT.background;
+  try {
+    return await fn();
+  } finally {
+    defaultTimeoutMs = previous;
+  }
+}
 
 interface RequestOptions {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   json?: unknown;
+  /** Overrides the default budget for this one request. */
+  timeoutMs?: number;
   _retriedRefresh?: boolean;
 }
 
@@ -97,41 +144,31 @@ function asResponse(result: EgressResult): Response {
  * this set means the sidecar itself failed, which is a different problem with a
  * different fix.
  */
+/**
+ * The sidecar (apps/api/src/services/egressProxy.ts) decides AND words why a
+ * call could not be delivered. This module keeps no second copy of those
+ * sentences — it kept one, and the two drifted until a SOCKS listener asking
+ * for a password was reported to the user as "restart your proxy client".
+ *
+ * What it does keep is one bit: whether the failure was an egress/transport
+ * one. For those the sidecar's sentence is exactly right and passes through.
+ * For anything else — a 500 from the relay, a validation error — the sidecar's
+ * message is about the backend, not about the user's network, and showing
+ * `SQLITE_CONSTRAINT: UNIQUE failed: users.email` in the sign-in form is both
+ * noise and a small disclosure. Those get one local message of our own.
+ */
 const EGRESS_REASONS: ReadonlySet<string> = new Set([
   'proxy_unreachable',
   'direct_unreachable',
   'timeout',
   'tls_failed',
+  'socks_failed',
   'socks_unsupported',
 ]);
 
-/**
- * Why a cloud call could not be delivered, phrased for the person who has to
- * fix it.
- *
- * The sidecar classifies the transport failure; this turns that into a sentence
- * that names the actual problem. The old generic "check your connection" was
- * actively misleading: the most common cause by far was a proxy that was never
- * consulted, which the user could only fix by *using* it — which the app was
- * not doing.
- */
-export function describeEgressFailure(reason: string, hint: string | undefined): string {
-  const proxy = hint?.startsWith('proxy: ') ? hint.slice('proxy: '.length) : null;
-  switch (reason) {
-    case 'proxy_unreachable':
-      return `Could not reach your proxy at ${proxy ?? 'the system proxy address'}. Turn the tunnel on (or start your proxy client), then try again.`;
-    case 'timeout':
-      return proxy
-        ? `The cloud did not answer through ${proxy} in time. The tunnel may not be routing this app.`
-        : 'The cloud did not answer in time. It is blocked or slow on this network.';
-    case 'tls_failed':
-      return 'The encrypted connection was rejected — this connection is being filtered. Turn on your VPN/tunnel and try again.';
-    case 'socks_unsupported':
-      return 'Your system proxy is a SOCKS listener, which this app cannot route the cloud through. Turn on TUN mode, or set an HTTP proxy.';
-    default:
-      return 'Could not reach the cloud — it is blocked or offline on this network. Turning on a VPN or tunnel usually fixes this.';
-  }
-}
+/** A failure talking to the sidecar, which is on loopback and never blocked. */
+const LOCAL_BACKEND_FAILURE =
+  'The local backend did not respond, so the cloud request was never sent.';
 
 /**
  * One cloud request, delivered by the sidecar through the resolved proxy.
@@ -150,25 +187,16 @@ async function rawFetch(path: string, options: RequestOptions, token: string | n
       method: options.method,
       headers,
       body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
-      timeoutMs: TIMEOUT_MS,
+      timeoutMs: options.timeoutMs ?? defaultTimeoutMs,
     });
     return asResponse(result);
   } catch (err) {
-    // The sidecar reports a delivery failure as `502 <egress reason>`. That
-    // reason is the whole point — it is what tells the user to start their
-    // tunnel instead of debugging their connection — so it must survive.
+    // The sidecar owns the wording; this side owns the decision to show it.
     const apiErr = err instanceof ApiError ? err : null;
-    const code = apiErr?.code ?? '';
-    if (EGRESS_REASONS.has(code)) {
-      throw new CloudError(code, 0, describeEgressFailure(code, apiErr?.hint));
+    if (apiErr && EGRESS_REASONS.has(apiErr.code)) {
+      throw new CloudError(apiErr.code, 0, apiErr.message || 'Could not reach the cloud service.');
     }
-    // Anything else is a failure talking to the sidecar itself, which is on
-    // loopback and never blocked — so the network is not the explanation.
-    throw new CloudError(
-      'network_error',
-      0,
-      'The local backend did not respond, so the cloud request was never sent.',
-    );
+    throw new CloudError('network_error', 0, LOCAL_BACKEND_FAILURE);
   }
 }
 
@@ -248,8 +276,8 @@ async function tryRefresh(): Promise<RefreshOutcome> {
 /* ------------------------------ public auth ------------------------------ */
 
 export const cloudAuth = {
-  async register(email: string, password: string): Promise<CloudAuthResponse> {
-    const auth = (await rawFetch('/api/v1/auth/register', { method: 'POST', json: { email, password, device: deviceDescriptor() } }, null).then(async (r) => {
+  async register(email: string, password: string, timeoutMs?: number): Promise<CloudAuthResponse> {
+    const auth = (await rawFetch('/api/v1/auth/register', { method: 'POST', json: { email, password, device: deviceDescriptor() }, timeoutMs }, null).then(async (r) => {
       if (!r.ok) throw await parseError(r);
       return (await r.json()) as CloudAuthResponse;
     }));
@@ -257,8 +285,8 @@ export const cloudAuth = {
     return auth;
   },
 
-  async login(email: string, password: string): Promise<CloudAuthResponse> {
-    const auth = (await rawFetch('/api/v1/auth/login', { method: 'POST', json: { email, password, device: deviceDescriptor() } }, null).then(async (r) => {
+  async login(email: string, password: string, timeoutMs?: number): Promise<CloudAuthResponse> {
+    const auth = (await rawFetch('/api/v1/auth/login', { method: 'POST', json: { email, password, device: deviceDescriptor() }, timeoutMs }, null).then(async (r) => {
       if (!r.ok) throw await parseError(r);
       return (await r.json()) as CloudAuthResponse;
     }));

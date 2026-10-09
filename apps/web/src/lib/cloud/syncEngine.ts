@@ -23,10 +23,8 @@
  */
 
 import { api, ApiError } from '@/lib/api';
-import { cloudApi, CloudError } from './client';
+import { cloudApi, CloudError, withBackgroundBudget } from './client';
 import { currentSession, markSynced } from './sessionStore';
-import { decryptProfileBlob, encryptProfileBlob, VaultCryptoError } from './profileVaultCrypto';
-import { loadVaultKey } from './vaultKey';
 import type { CloudProfile } from './types';
 
 /** Local (sidecar) settings shape: named sections of flat objects. */
@@ -137,8 +135,17 @@ function nowSec(): number {
 /**
  * Full sync pass. Re-entrant calls are dropped while one runs (single-owner
  * rule); the periodic loop plus manual "Sync now" both funnel through here.
+ *
+ * Runs on the background budget: nobody is watching a spinner here, and a slow
+ * link should not drop a sync cycle that the longer window would have carried.
+ * Sign-in keeps the fast budget — the shorter wait is for the person staring
+ * at the form, not for work that happens to them.
  */
 export async function syncNow(): Promise<SyncResult> {
+  return withBackgroundBudget(runSync);
+}
+
+async function runSync(): Promise<SyncResult> {
   const session = currentSession();
   if (!session) return { ok: false, offline: false, pushed: 0, pulled: 0, error: 'signed-out' };
   if (syncing) return { ok: false, offline: false, pushed: 0, pulled: 0, error: 'already-running' };
@@ -198,22 +205,23 @@ export async function syncNow(): Promise<SyncResult> {
     const cloudProfiles = await cloudApi.profiles();
     pulled += cloudProfiles.profiles.length;
 
-    // ---- E2E encrypted profile backup: ciphertext only ----
-    // Full configs (with credentials) are reconstructed locally, encrypted
-    // in the webview, and pushed as opaque blobs. The vault stays skipped
-    // entirely when this device holds no key (locked) — an honest no-op.
+    // ---- cloud profile backup: ciphertext only, and never through this page ----
+    // The API reads each profile's real config from its file vault, seals it,
+    // and uploads the blob itself. This used to be done here: the webview asked
+    // for the config, encrypted it with the account E2E key, and uploaded it —
+    // which meant RESTORE had to decrypt into this page and post the plaintext
+    // back to the API. Moving the whole path server-side is what lets restore
+    // work without anyone ever seeing a config. The cost is stated in
+    // apps/api/src/services/profileCloudSync.ts: the cloud copy is no longer
+    // end-to-end encrypted against this machine.
     let vaultPushed = 0;
     let vaultSkipped = 0;
-    const { state: vaultState, key } = await loadVaultKey();
-    if (key && vaultState === 'ready') {
-      const userId = session.user.id;
+    {
+      const accessToken = session.accessToken;
       const cloudVaults = await cloudApi.vaults();
       for (const p of localProfiles.profiles) {
-        const envelopeId = `np-local-${p.id}`;
         try {
-          const bundle = await api.get<{ providerId: string; name: string; configText: string }>(`/vpn/profiles/${p.id}/bundle`);
-          const blob = await encryptProfileBlob(key, userId, envelopeId, JSON.stringify({ providerId: bundle.providerId, name: bundle.name, configText: bundle.configText }));
-          await cloudApi.putVault(envelopeId, blob, Date.now());
+          await api.post(`/vpn/profiles/${encodeURIComponent(p.id)}/cloud-backup`, { accessToken });
           vaultPushed++;
         } catch (err) {
           // Local-only problems (unsupported engine, missing credential,
@@ -243,10 +251,17 @@ export async function syncNow(): Promise<SyncResult> {
     lastError = null;
     return { ok: true, offline: false, pushed, pulled, profiles: cloudProfiles.profiles, vaultPushed, vaultSkipped };
   } catch (err) {
-    const msg = err instanceof CloudError ? `cloud: ${err.code}` : err instanceof ApiError ? `local: ${err.code}` : err instanceof Error ? err.message : 'sync failed';
-    lastError = msg;
-    const { offline } = classifySyncError(err);
-    return { ok: false, offline, pushed: 0, pulled: 0, error: msg };
+    // One owner for the wording, and it is `classifySyncError` — the same
+    // owner every other surface uses. This block used to rebuild
+    // `cloud: ${err.code}` here and then call classifySyncError for its
+    // `offline` flag alone, discarding the sentence it had just computed.
+    // That put "Last attempt: cloud: timeout" in front of the user while
+    // sign-in and the Telegram card both said "The cloud did not answer in
+    // time." — the same failure, two different vocabularies, and the sync
+    // one is a code nobody can act on.
+    const { offline, message } = classifySyncError(err);
+    lastError = message;
+    return { ok: false, offline, pushed: 0, pulled: 0, error: message };
   } finally {
     syncing = false;
   }
@@ -271,46 +286,39 @@ export interface RestoreResult {
 }
 
 /**
- * Restore one profile from its encrypted cloud backup: decrypt locally,
- * re-import through the ONE profile-creation path (full validation, vault
- * write, sanitized file), then move the cloud backup to the new profile id.
+ * Restore one profile from its cloud backup.
+ *
+ * The whole operation now runs on the API: it pulls the sealed blob, opens it,
+ * imports it through the one profile-creation path (full validation, vault
+ * write, sanitized file — which is what makes the restored profile actually
+ * connect), re-keys the backup to the new profile id, and retires the old
+ * envelope.
+ *
+ * This function used to decrypt the blob INTO THIS PAGE and post the plaintext
+ * config back to the API. That was the only flow left that showed a user their
+ * own configuration, so it is gone: this sends a bearer token and a profile id,
+ * and receives a profile id and a name.
+ *
  * Never automatic — importing configs on login would surprise the user.
  */
 export async function restoreProfileFromVault(cloudProfileId: string): Promise<RestoreResult> {
   const session = currentSession();
   if (!session) return { ok: false, error: 'signed-out' };
-  const { state, key } = await loadVaultKey();
-  if (state !== 'ready' || !key) return { ok: false, error: 'locked' };
   try {
-    const { vaults } = await cloudApi.vaults();
-    const row = vaults.find((v) => v.profileId === cloudProfileId);
-    if (!row) return { ok: false, error: 'not_found' };
-    const json = await decryptProfileBlob(key, session.user.id, row.profileId, row.ciphertext);
-    const bundle = JSON.parse(json) as { providerId: string; name: string; configText: string };
-    const created = await api.post<{ profile: { id: string; name: string; protocol: string; endpoint: string | null } }>('/vpn/profiles', {
-      providerId: bundle.providerId,
-      name: bundle.name,
-      configText: bundle.configText,
+    const created = await api.post<{ profile: { id: string; name: string; protocol: string } }>('/vpn/profiles/cloud-restore', {
+      accessToken: session.accessToken,
+      cloudProfileId,
     });
-    // Mirror the fresh profile to the cloud under its new id, then retire
-    // the old envelope + blob. New backup first: an interruption can lose
-    // the pointer, never the only copy of the config.
-    const newId = `np-local-${created.profile.id}`;
-    const fresh = await api.get<{ providerId: string; name: string; configText: string }>(`/vpn/profiles/${created.profile.id}/bundle`);
-    await cloudApi.putProfile({
-      id: newId,
-      name: created.profile.name,
-      protocol: created.profile.protocol,
-      endpoint: created.profile.endpoint ?? null,
-      config: '{}',
-      configVersion: 1,
-    });
-    await cloudApi.putVault(newId, await encryptProfileBlob(key, session.user.id, newId, JSON.stringify({ providerId: fresh.providerId, name: fresh.name, configText: fresh.configText })), Date.now());
-    await cloudApi.putProfile({ id: row.profileId, name: created.profile.name, protocol: created.profile.protocol, endpoint: null, config: '{}', configVersion: 1, deleted: true });
-    await cloudApi.deleteVault(row.profileId);
     return { ok: true, profileId: created.profile.id, name: created.profile.name };
   } catch (err) {
-    if (err instanceof VaultCryptoError) return { ok: false, error: 'decrypt_failed' };
+    // The API now reports a blob it cannot open as `legacy_blob_unreadable`:
+    // it was sealed with an account key this machine does not hold (the old
+    // webview-encrypted backups) or the blob is damaged. That is exactly what
+    // `decrypt_failed` has always meant to the Account page, so it is reported
+    // under that name rather than as a raw code the user would have to decode.
+    if (err instanceof ApiError && err.code === 'legacy_blob_unreadable') {
+      return { ok: false, error: 'decrypt_failed' };
+    }
     return { ok: false, error: err instanceof CloudError ? `cloud: ${err.code}` : err instanceof ApiError ? `local: ${err.code}` : 'import_failed' };
   }
 }

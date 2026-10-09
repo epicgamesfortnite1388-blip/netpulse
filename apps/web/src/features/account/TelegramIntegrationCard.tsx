@@ -21,7 +21,8 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { useToast } from '@/components/Toaster';
 import { CloudError, cloudApi, type NetpulseSubscription } from '@/lib/cloud/client';
-import { useCloudSession } from '@/lib/cloud/useCloudSession';
+import { useSessionStore } from '@/lib/cloud/sessionStore';
+import { SubscriptionCard } from './SubscriptionCard';
 
 interface LinkStatus {
   connected: boolean;
@@ -34,7 +35,7 @@ interface LinkStatus {
 const IDLE_STATUS: LinkStatus = { connected: false, telegramUserId: null, linkedAt: null, lastSyncedAt: null, lastSyncStatus: null };
 
 export function TelegramIntegrationCard() {
-  const { session } = useCloudSession();
+  const session = useSessionStore((s) => s.session);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<LinkStatus>(IDLE_STATUS);
@@ -104,8 +105,13 @@ export function TelegramIntegrationCard() {
     try {
       const res = await cloudApi.netpulse.link();
       setPendingCode(res.token);
+      // The worker already minted this code FOR this account; asking the user
+      // to go and fetch it from Telegram made them copy a value the app was
+      // holding. Pre-fill it so confirming is one click, and show it below so
+      // they can still send it to the bot by hand.
+      setConfirmCode(res.token);
       window.open(res.deepLink, '_blank');
-      toast('ok', 'Telegram opened - confirm there, or paste the code below');
+      toast('ok', 'Telegram opened - confirm the link there, then press Confirm');
     } catch (err) {
       toast('error', err instanceof CloudError ? err.message : 'Could not start linking');
     } finally {
@@ -137,6 +143,7 @@ export function TelegramIntegrationCard() {
       setStatus(IDLE_STATUS);
       setSubs(null);
       setPendingCode('');
+      setConfirmCode('');
     } catch (err) {
       toast('error', err instanceof CloudError ? err.message : 'Could not unlink');
     } finally {
@@ -178,20 +185,16 @@ export function TelegramIntegrationCard() {
             {subs && subs.length > 0 && (
               <div className="space-y-2">
                 {subs.map((s) => (
-                  <div key={s.id} className="rounded border border-line p-3">
-                    <p className="font-medium">{s.plan}</p>
-                    <p className="text-muted text-sm">Status: {s.status}</p>
-                    <p className="text-muted text-sm">
-                      Expires: {s.expiration_time ? new Date(s.expiration_time).toLocaleDateString() : 'never'}
-                    </p>
-                    <p className="text-muted text-sm">
-                      Traffic: {s.used_gb.toFixed(2)} / {s.total_gb.toFixed(0)} GB
-                    </p>
-                  </div>
+                  <SubscriptionCard key={s.id} sub={s} />
                 ))}
               </div>
             )}
-            {subs && subs.length === 0 && <p className="text-muted">No subscriptions mirror yet.</p>}
+            {subs && subs.length === 0 && (
+              <p className="text-muted">
+                No subscriptions mirrored yet. The app shows what the cloud holds for this account; purchases and renewals are made in
+                Telegram.
+              </p>
+            )}
             <div>
               <Button onClick={sync} disabled={syncing}>
                 <RefreshCw size={14} /> {syncing ? 'Syncing...' : 'Refresh Subscriptions'}
@@ -215,16 +218,23 @@ export function TelegramIntegrationCard() {
                   </Button>
                 </div>
                 {pendingCode && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={confirmCode}
-                      onChange={(e) => setConfirmCode(e.target.value)}
-                      placeholder="Paste the code from the bot"
-                      className="flex-1 rounded border border-line bg-transparent px-2 py-1 text-sm"
-                    />
-                    <Button onClick={confirmLink} disabled={!confirmCode.trim() || busy}>
-                      Confirm
-                    </Button>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-muted">
+                      Confirm the link in Telegram, then press Confirm. If Telegram did not show you a code, send this one to the bot:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="select-all rounded border border-line px-2 py-1 font-mono text-xs">{pendingCode}</code>
+                      <input
+                        value={confirmCode}
+                        onChange={(e) => setConfirmCode(e.target.value)}
+                        placeholder="Link code"
+                        aria-label="Link code"
+                        className="flex-1 rounded border border-line bg-transparent px-2 py-1 text-sm"
+                      />
+                      <Button onClick={confirmLink} disabled={!confirmCode.trim() || busy}>
+                        Confirm
+                      </Button>
+                    </div>
                   </div>
                 )}
               </>

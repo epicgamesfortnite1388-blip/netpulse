@@ -12,6 +12,12 @@ export interface CloudUser {
   email: string;
   createdAt: number;
   lastLoginAt: number | null;
+  /**
+   * Returned by the account/register/login DTOs once the admin plan of record
+   * exists in the Worker. Optional so sessions persisted before 0004 and the
+   * older test fixtures stay valid.
+   */
+  role?: 'admin' | 'normal';
 }
 
 export interface CloudSession {

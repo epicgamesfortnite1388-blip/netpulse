@@ -23,6 +23,8 @@ import { NodeTestScheduler } from './services/nodeTestScheduler';
 import { GatewayMemoryService } from './services/gatewayMemory';
 import { VpnHistoryService } from './services/vpnHistory';
 import { NodeDiscoveryService } from './services/nodeDiscovery';
+import { nodeLabel } from './services/nodeView';
+import { maskSourceUrl } from './util/redact';
 import { createRepositories } from './db/repositories';
 import { registerHealthRoutes } from './routes/health';
 import { registerErrorHandler } from './plugins/errorHandler';
@@ -77,6 +79,7 @@ import { VpnSelfTestService } from './services/vpnSelfTestService';
 import { SelectionService } from './services/selectionService';
 import { NodesService } from './services/nodesService';
 import { NodeSecretVault } from './services/nodeSecretVault';
+import { ProfileCloudVault } from './services/profileCloudVault';
 import { ProxyTunnelService, fetchThroughHttpProxy } from './services/proxyTunnel';
 import { getSystemProxy, setSystemProxy } from './services/systemProxy';
 import { KillSwitchService } from './services/killSwitch';
@@ -388,12 +391,16 @@ export async function buildApp(opts: BuildOptions = {}) {
         const rows = repos.publicNodes.list({ minScore: 0, limit: 200 }).rows.filter((n) => n.lat != null && n.lon != null);
         return rows.slice(0, 12).map((n) => ({
           id: n.id,
-          label: n.remark ? `${n.remark.slice(0, 40)} · ${n.country ?? 'Unknown'}` : `Node ${n.host}`,
+          // The name and the source string both reach the client, so neither may
+          // carry the endpoint or the subscription URL — same two rules the
+          // node routes follow. `nodeLabel` filters a remark that reads like
+          // an address; `maskSourceUrl` keeps only the registrable domain.
+          label: `${nodeLabel(n).slice(0, 40)} · ${n.country ?? 'Unknown'}`,
           host: n.host,
           port: n.port,
-          protocol: n.transport === 'ws' ? 'tcp' : 'tcp',
+          protocol: 'tcp',
           region: n.city ? `${n.city}, ${n.country ?? ''}`.trim().replace(/,\s*$/, '') : n.country,
-          source: n.sourceUrls?.[0] ? `Source ${n.sourceUrls[0].slice(0, 60)}` : 'Public node source',
+          source: n.sourceUrls?.[0] ? `Source ${maskSourceUrl(n.sourceUrls[0])}` : 'Public node source',
         }));
       } catch {
         return [];
@@ -401,6 +408,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     },
   });
   const nodeVault = new NodeSecretVault(path.join(config.dataDir, 'secrets', 'vault'));
+  const profileCloudVault = new ProfileCloudVault(path.join(config.dataDir, 'secrets', 'vault'));
 
   const nodesService = new NodesService({
     nodes: repos.publicNodes,
@@ -556,6 +564,9 @@ export async function buildApp(opts: BuildOptions = {}) {
     gatewayMemory,
     discovery: nodeDiscovery,
     vpnHistory,
+    // Drop watchdog — routes acknowledge it on deliberate disconnects and
+    // mode handovers so it only ever reconnects a real, unattended drop.
+    watchdog: vpnWatchdog,
     updateHistory,
     elevationBroker,
     map,
@@ -564,6 +575,8 @@ export async function buildApp(opts: BuildOptions = {}) {
     // Encrypted at-rest vault for node credentials — the engine-intake routes
     // rebuild a node's share link from it when promoting a node into a profile.
     nodeVault,
+    // Sealer for cloud profile backups. Built once because it owns a key file.
+    profileCloudVault,
     sourceScheduler,
   };
   await vpn.initAll();

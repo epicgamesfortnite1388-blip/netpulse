@@ -14,16 +14,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { CloudOff, Copy, Download, KeyRound, LogOut, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { CloudOff, Copy, Download, LogOut, RefreshCw, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { useToast } from '@/components/Toaster';
-import { CloudError, cloudApi } from '@/lib/cloud/client';
+import { CloudError, cloudApi, CLOUD_TIMEOUT } from '@/lib/cloud/client';
 import { TelegramIntegrationCard } from './TelegramIntegrationCard';
 import { pendingCount, lastSyncError, restoreProfileFromVault, syncNow } from '@/lib/cloud/syncEngine';
+import { useSessionStore } from '@/lib/cloud/sessionStore';
 import { useCloudSession } from '@/lib/cloud/useCloudSession';
 import type { CloudDevice, CloudSession } from '@/lib/cloud/types';
 
@@ -43,6 +44,13 @@ function WelcomeGate() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /**
+   * How many times this form has been submitted. The first press answers fast
+   * and names the cause; a press after that is the user choosing to wait, so
+   * it gets the longer window a slow-but-working tunnel needs. Nothing is
+   * retried automatically — the wait is theirs to spend.
+   */
+  const [attempts, setAttempts] = useState(0);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,9 +59,11 @@ function WelcomeGate() {
       setError('Passwords do not match');
       return;
     }
+    const timeoutMs = attempts === 0 ? CLOUD_TIMEOUT.interactive : CLOUD_TIMEOUT.patient;
+    setAttempts((n) => n + 1);
     try {
-      if (mode === 'signin') await login(email.trim(), password);
-      else await register(email.trim(), password);
+      if (mode === 'signin') await login(email.trim(), password, timeoutMs);
+      else await register(email.trim(), password, timeoutMs);
       toast('ok', mode === 'signin' ? 'Signed in' : 'Account created');
     } catch (err) {
       // Never "check your connection": by far the most common cause is that the
@@ -124,7 +134,17 @@ function WelcomeGate() {
             <Button type="submit" disabled={busy}>
               {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setMode(mode === 'signin' ? 'register' : 'signin')}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMode(mode === 'signin' ? 'register' : 'signin');
+                // The banner describes one attempt at one mode. Carrying it
+                // across the toggle showed "The cloud did not answer in time"
+                // on a registration form that had never been submitted.
+                setError(null);
+              }}
+            >
               {mode === 'signin' ? 'Need an account? Create one' : 'Already have an account? Sign in'}
             </Button>
           </form>
@@ -177,12 +197,10 @@ interface VaultRow {
 }
 
 function EncryptedBackupCard() {
-  const { session, vault, unlockVault, refreshVault } = useCloudSession();
+  const session = useSessionStore((s) => s.session);
   const toast = useToast();
   const [rows, setRows] = useState<VaultRow[] | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
-  const [unlockPw, setUnlockPw] = useState('');
-  const [unlocking, setUnlocking] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -198,92 +216,72 @@ function EncryptedBackupCard() {
   }, []);
 
   useEffect(() => {
-    if (session && vault === 'ready') void load();
-  }, [session, vault, load]);
+    // No key is required to read this list: it is names and timestamps from
+    // the cloud, and the app seals a backup itself. It used to be gated on a
+    // browser-derived key that the sync path stopped consulting when the whole
+    // seal/restore moved server-side — see the note in the card body.
+    if (session) void load();
+  }, [session, load]);
 
   if (!session) return null;
-
-  const unlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUnlocking(true);
-    try {
-      await unlockVault(unlockPw);
-      toast('ok', 'Backup unlocked', 'Encrypted profile sync is active on this device.');
-      setUnlockPw('');
-    } catch {
-      toast('error', 'Unlock failed', 'Check the password and your connection.');
-    } finally {
-      setUnlocking(false);
-      void refreshVault();
-    }
-  };
 
   const restore = async (profileId: string) => {
     setRestoring(profileId);
     try {
       const r = await restoreProfileFromVault(profileId);
       if (r.ok) toast('ok', `Restored "${r.name}"`, 'Imported locally; the cloud backup moved to its new id.');
-      else if (r.error === 'decrypt_failed') toast('error', 'Restore failed', 'The backup did not decrypt — wrong key or corrupted blob.');
+      else if (r.error === 'decrypt_failed')
+        toast(
+          'error',
+          'Restore failed',
+          'The backup could not be opened — it is damaged, or it was written by an older version of this app that sealed it differently.',
+        );
       else toast('error', 'Restore failed', r.error);
     } finally {
       setRestoring(null);
     }
   };
 
-  const summary = vault === 'ready' ? `${rows?.length ?? '…'} encrypted backup(s)` : vault === 'locked' ? 'locked on this device' : 'sign in to use';
+  const summary = rows === null ? 'backups not loaded' : `${rows.length} backup(s)`;
 
   return (
     <Card fold={{ id: 'account-e2e', defaultOpen: false, summary }}>
-      <CardHeader title="Encrypted profile backup" icon={<ShieldCheck size={16} />} />
+      <CardHeader title="Profile backup" icon={<ShieldCheck size={16} />} />
       <CardBody>
         <div className="flex flex-col gap-2 text-sm">
-          {vault === 'ready' ? (
-            <>
-              <p>
-                Full configs — including credentials — are encrypted in this app with a key derived from your account password before upload. The
-                cloud stores ciphertext only; it can back them up but never read them.
-              </p>
-              {rows === null && <p className="text-xs text-muted">Backups load on the next sync.</p>}
-              {rows?.length === 0 && <p className="text-xs text-muted">No backups yet — run “Sync now”.</p>}
-              {rows !== null && rows.length > 0 && (
-                <ul className="flex flex-col gap-1">
-                  {rows.map((r) => (
-                    <li key={r.profileId} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5">
-                      <span className="truncate">
-                        {names[r.profileId] ?? r.profileId} <span className="text-xs text-muted">· {fmtTime(r.updatedAt)}</span>
-                      </span>
-                      <Button variant="ghost" onClick={() => void restore(r.profileId)} disabled={restoring === r.profileId}>
-                        <Download size={14} /> {restoring === r.profileId ? 'Restoring…' : 'Restore'}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : vault === 'locked' ? (
-            <>
-              <p>
-                This device syncs settings and profile names, but holds no key for encrypted config backups. Enter your account password once to
-                unlock — the key stays on this device.
-              </p>
-              <form className="flex max-w-sm flex-col gap-3" onSubmit={unlock}>
-                <Field label="Account password">
-                  <input
-                    type="password"
-                    required
-                    autoComplete="current-password"
-                    value={unlockPw}
-                    onChange={(e) => setUnlockPw(e.target.value)}
-                    className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Button type="submit" disabled={unlocking || !unlockPw}>
-                  <KeyRound size={14} /> {unlocking ? 'Unlocking…' : 'Unlock'}
-                </Button>
-              </form>
-            </>
-          ) : (
-            <p className="text-xs text-muted">Encrypted backup activates when you sign in.</p>
+          <p>
+            Full configs — including credentials — are sealed before upload with a key this app keeps <em>on your own machine</em>, next to the
+            data it protects. The cloud only ever receives ciphertext, so whoever runs that service — or anyone who steals its database — cannot
+            read what is in it.
+          </p>
+          <p className="text-xs text-muted">
+            <span className="font-medium text-text">What this does not protect against:</span> someone who can read this app&apos;s data
+            directory. The key sits beside the ciphertext, so anyone with access to this machine can open the backups too. This is a change from
+            earlier versions, where the browser derived a key and the cloud copy was unreadable even from here — that version could not restore a
+            config without decrypting it into the page first. Sealing now happens in the app instead, which is what lets restore import a config
+            without anyone seeing it, and the price is that <span className="font-medium text-text">sync is no longer end-to-end encrypted against your own
+            machine</span>.
+          </p>
+          <p className="text-xs text-muted">
+            <strong>Where the unlock step went:</strong> it is gone, not merely switched off. Sealing and restoring happen inside the app now, so there
+            is no in-browser key to enter — the old unlock field and button were removed along with the design they belonged to, and nothing on this
+            card asks for a key because nothing here needs one.
+          </p>
+          {rows === null && <p className="text-xs text-muted">Backups load on the next sync.</p>}
+          {rows?.length === 0 && <p className="text-xs text-muted">No backups yet — run “Sync now”.</p>}
+          {rows !== null && rows.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {rows.map((r) => (
+                <li key={r.profileId} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5">
+                  <span className="truncate">
+                    {names[r.profileId] ?? r.profileId} <span className="text-xs text-muted">· {fmtTime(r.updatedAt)}</span>
+                  </span>
+                  <Button variant="ghost" onClick={() => void restore(r.profileId)} disabled={restoring === r.profileId}>
+                    <Download size={14} /> {restoring === r.profileId ? 'Restoring…' : 'Restore'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </CardBody>
@@ -292,11 +290,19 @@ function EncryptedBackupCard() {
 }
 
 function AccountDashboard() {
-  const { session, signOut } = useCloudSession();
+  const session = useSessionStore((s) => s.session);
+  const { signOut } = useCloudSession();
   const toast = useToast();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<CloudSession[] | null>(null);
   const [devices, setDevices] = useState<CloudDevice[] | null>(null);
+  /**
+   * `null` used to mean both "still loading" and "the load failed", so a
+   * collapsed card showed `… known` forever and read as a spinner that had
+   * hung. The body already said "unavailable" — only the summary lied. Keep
+   * the two apart so the collapsed line can admit the failure.
+   */
+  const [rosterFailed, setRosterFailed] = useState(false);
   const [syncState, setSyncState] = useState<{ running: boolean; error: string | null; pending: number }>({ running: false, error: null, pending: 0 });
   const [pwOpen, setPwOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
@@ -307,9 +313,11 @@ function AccountDashboard() {
       const [s, d] = await Promise.all([cloudApi.sessions(), cloudApi.devices()]);
       setSessions(s.sessions);
       setDevices(d.devices);
+      setRosterFailed(false);
     } catch {
       setSessions(null);
       setDevices(null);
+      setRosterFailed(true);
     }
   }, []);
 
@@ -321,6 +329,9 @@ function AccountDashboard() {
     setSyncState((s) => ({ ...s, running: true }));
     const result = await syncNow();
     setSyncState({ running: false, error: result.ok ? null : (result.error ?? 'sync failed'), pending: pendingCount() });
+    // No refresh call: `syncNow` -> `markSynced` writes lastSyncAt into the one
+    // session store this page already subscribes to, so the stamp below is
+    // already on screen by the time this resolves.
     if (result.ok) toast('ok', `Synced — ${result.pushed} pushed, ${result.pulled} pulled`);
     else toast('error', 'Sync failed', result.error);
   };
@@ -412,7 +423,7 @@ function AccountDashboard() {
         </CardBody>
       </Card>
 
-      <Card fold={{ id: 'account-sessions', defaultOpen: true, summary: `${sessions?.length ?? '…'} active` }}>
+      <Card fold={{ id: 'account-sessions', defaultOpen: true, summary: rosterFailed ? 'unavailable' : `${sessions?.length ?? '…'} active` }}>
         <CardHeader title="Sessions" />
         <CardBody>
           {sessions === null ? (
@@ -425,7 +436,7 @@ function AccountDashboard() {
         </CardBody>
       </Card>
 
-      <Card fold={{ id: 'account-devices', defaultOpen: false, summary: `${devices?.length ?? '…'} known` }}>
+      <Card fold={{ id: 'account-devices', defaultOpen: false, summary: rosterFailed ? 'unavailable' : `${devices?.length ?? '…'} known` }}>
         <CardHeader title="Devices" />
         <CardBody>
           {devices === null ? (
@@ -462,8 +473,8 @@ function AccountDashboard() {
                 actually failed, which is why the gate only reached it now. */}
             {lastSyncError() && !syncState.running && <p className="text-xs text-warn">Last attempt: {lastSyncError()}</p>}
             <p className="text-xs text-muted">
-              Synced to the cloud: settings, favorites, profile <em>names</em>, preferences. Full configs leave only as end-to-end encrypted blobs (
-              see below) — they are unreadable to the cloud.
+              Synced to the cloud: settings, favorites, profile <em>names</em>, preferences. Full configs leave only as sealed blobs (see below) —
+              unreadable to the cloud, though the sealing key lives on this machine, not in your browser.
             </p>
             <div className="flex gap-2">
               <Button onClick={doSync} disabled={syncState.running}>
@@ -510,7 +521,8 @@ function AccountDashboard() {
 }
 
 export default function AccountPage() {
-  const { session, ready, init } = useCloudSession();
+  const session = useSessionStore((s) => s.session);
+  const { ready, init } = useCloudSession();
 
   useEffect(() => {
     init();
