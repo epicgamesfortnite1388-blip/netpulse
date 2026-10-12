@@ -58,13 +58,23 @@ async function signed(
       'x-np-timestamp': ts,
       'x-np-nonce': nonce,
       'x-np-request-id': 'test-req',
-      'x-np-signature': opts?.tamper ? `f${sig.slice(1)}` : sig,
+      'x-np-signature': opts?.tamper ? tamperHex(sig) : sig,
     },
     ...(bodyText ? { body: bodyText } : {}),
   });
 }
 
 const errOf = async (res: Response): Promise<string> => ((await res.json()) as { error?: string }).error ?? '';
+
+/**
+ * Flip the final hex char so the tampered signature ALWAYS differs
+ * from the original. Prefixing 'f' is a no-op on the 1/16 of
+ * signatures that already start with 'f', which would let a
+ * "tampered" call through as valid.
+ */
+function tamperHex(hex: string): string {
+  return hex.slice(0, -1) + (hex.endsWith('f') ? '0' : 'f');
+}
 
 /** The session row `register` just created — its id is minted by the worker, not by us. */
 async function sessionIdOf(userId: string): Promise<string> {

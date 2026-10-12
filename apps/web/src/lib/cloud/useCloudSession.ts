@@ -20,6 +20,7 @@ import { create } from 'zustand';
 
 import { cloudAuth, CloudError } from './client';
 import { initSession } from './sessionStore';
+import { primeSecureStore } from './secureStore';
 import { ensureVaultKeyForAccount, loadVaultKey, type VaultKeyState } from './vaultKey';
 
 interface CloudSessionStore {
@@ -29,7 +30,7 @@ interface CloudSessionStore {
   busy: boolean;
   /** E2E backup key availability on this device (drives the Account UI). */
   vault: VaultKeyState;
-  init: () => void;
+  init: () => Promise<void>;
   /** `timeoutMs` lets a retry wait longer than the first, fast attempt. */
   login: (email: string, password: string, timeoutMs?: number) => Promise<void>;
   register: (email: string, password: string, timeoutMs?: number) => Promise<void>;
@@ -42,7 +43,11 @@ export const useCloudSession = create<CloudSessionStore>((set, get) => ({
   ready: false,
   busy: false,
   vault: 'signed-out',
-  init: () => {
+  init: async () => {
+    // Decrypt persisted values (DPAPI on desktop) BEFORE the session
+    // store hydrates — initSession reads through the secure store,
+    // which serves decrypted values from its memory map.
+    await primeSecureStore();
     // Publishing the session is initSession's job; this store only has to say
     // that reading is done, which is what un-gates the Account page.
     initSession();

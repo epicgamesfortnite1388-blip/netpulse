@@ -163,10 +163,20 @@ fn validate_op(op: &PendingOp, app_data_dir: &std::path::Path) -> Result<(), Str
         return Err("invalid nonce".into());
     }
 
-    // exe: exact, canonical allow-list match only.
+    // exe: exact, canonical allow-list match only. `canonicalize`
+    // returns the `\\?\` verbatim form on Windows (documented in
+    // os_open.rs), so the allow-list entries are canonicalized too —
+    // otherwise a legitimate WireGuard install never matches and the
+    // gate always denies.
     let exe_canonical = std::fs::canonicalize(&op.exe).map_err(|_| format!("executable not found: {}", op.exe))?;
     let exe_str = exe_canonical.to_string_lossy();
-    if !ALLOWED_WIREGUARD_EXES.iter().any(|a| exe_str.eq_ignore_ascii_case(a)) {
+    let allowed = ALLOWED_WIREGUARD_EXES.iter().any(|a| match std::fs::canonicalize(a) {
+        Ok(resolved) => exe_str.eq_ignore_ascii_case(&resolved.to_string_lossy()),
+        // Allow-list target not present on this machine (WireGuard not
+        // installed) — fall back to the bare string comparison.
+        Err(_) => exe_str.eq_ignore_ascii_case(a),
+    });
+    if !allowed {
         return Err(format!("executable \"{}\" is not on the WireGuard allow-list", op.exe));
     }
 

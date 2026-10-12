@@ -41,6 +41,16 @@ async function errorCode(res: Response): Promise<string> {
   return body.error?.code ?? '';
 }
 
+/**
+ * Flip the final hex char so the tampered signature ALWAYS differs from
+ * the original. Prefixing 'f' (the old approach) is a no-op on the 1/16
+ * of signatures that already start with 'f', which made the tamper test
+ * intermittently pass the request instead of rejecting it.
+ */
+function tamperHex(hex: string): string {
+  return hex.slice(0, -1) + (hex.endsWith('f') ? '0' : 'f');
+}
+
 /** Sign + POST to the machine inbox exactly like the bot's drainer would. */
 async function signedInbox(
   path: string,
@@ -58,7 +68,7 @@ async function signedInbox(
       'x-np-timestamp': ts,
       'x-np-nonce': nonce,
       'x-np-request-id': 'test-req',
-      'x-np-signature': opts?.tamper ? `f${sig.slice(1)}` : sig,
+      'x-np-signature': opts?.tamper ? tamperHex(sig) : sig,
     },
     body: bodyText,
   });

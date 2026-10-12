@@ -29,6 +29,8 @@
     "desktop:sign": "node scripts/sign-release.mjs",
     "release:feed": "node scripts/update-feed.mjs",
     "e2e": "node scripts/e2e-desktop.mjs",
+    "e2e:telegram": "node scripts/e2e-telegram-vpn.mjs",
+    "e2e:telegram:cloud": "node scripts/e2e-telegram-vpn.mjs --skip-vpn",
     "test:release": "node scripts/release-distribution.test.mjs",
     "test:signing": "node scripts/signature-trust.test.mjs",
     "test:feed": "node scripts/update-feed.test.mjs",

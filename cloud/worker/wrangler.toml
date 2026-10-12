@@ -19,3 +19,19 @@ migrations_dir = "migrations"
 enabled = true
 # No [limits] block: the CPU-limits setting requires a paid plan; Workers'
 # default per-request CPU cap applies on Free.
+
+# --- staging environment -----------------------------------------------------
+# Deploy with: npx wrangler deploy --env staging
+# Same D1 database is REUSED (staging is an isolated Worker code/version, not an
+# isolated dataset) — for a fully separate D1 staging DB you would need a new
+# database_id here. Secrets for staging live in environment variables managed
+# by `npx wrangler secret put --env staging NAME`.
+[env.staging]
+name = "netpulse-cloud-staging"
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "netpulse-cloud"
+database_id = "31f2435b-3c23-42ad-b5b8-3b7f815d17dc"
+migrations_dir = "migrations"
+[env.staging.observability]
+enabled = true

@@ -68,6 +68,15 @@ export function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Pro
   return invoke<T>(cmd, args);
 }
 
+/**
+ * True when Tauri IPC is reachable (the packaged desktop
+ * app), without issuing a command — lets modules branch on
+ * the runtime instead of probing window globals themselves.
+ */
+export function hasTauriIpc(): boolean {
+  return resolveInvokeFn() !== null;
+}
+
 let current: AppTransport | null = null;
 let initPromise: Promise<AppTransport> | null = null;
 let sidecarListenerAttached = false;

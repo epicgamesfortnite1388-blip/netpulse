@@ -26,6 +26,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod diagnostics;
+mod dpapi;
 mod elevation;
 mod logging;
 mod os_open;
@@ -236,7 +237,9 @@ fn main() {
             elevation::relaunch_as_admin,
             elevation::vpn_elevation_bridge,
             updater_feed::feed_check,
-            updater_feed::feed_install
+            updater_feed::feed_install,
+            dpapi::secret_protect,
+            dpapi::secret_unprotect
         ])
         .setup(|app| {
             let handle = app.handle().clone();

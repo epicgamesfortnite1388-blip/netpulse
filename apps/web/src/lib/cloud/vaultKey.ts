@@ -11,6 +11,7 @@
 import { cloudApi } from './client';
 import { currentSession } from './sessionStore';
 import { deriveRawKey, importRawKey, randomSaltB64 } from './profileVaultCrypto';
+import { secureGet, secureRemove, secureSet } from './secureStore';
 
 const KEY_PREFIX = 'np.cloud.e2eKey.';
 const SALT_PREF = 'e2e.salt';
@@ -18,27 +19,16 @@ const SALT_PREF = 'e2e.salt';
 export type VaultKeyState = 'ready' | 'locked' | 'signed-out';
 
 function cachedRaw(userId: string): string | null {
-  try {
-    return localStorage.getItem(KEY_PREFIX + userId);
-  } catch {
-    return null;
-  }
+  // DPAPI-protected on desktop (secureStore); plaintext in web mode.
+  return secureGet(KEY_PREFIX + userId);
 }
 
 function cacheRaw(userId: string, rawB64: string): void {
-  try {
-    localStorage.setItem(KEY_PREFIX + userId, rawB64);
-  } catch {
-    // storage unavailable — vault stays per-session; sync reports locked
-  }
+  secureSet(KEY_PREFIX + userId, rawB64);
 }
 
 export function clearVaultKey(userId: string): void {
-  try {
-    localStorage.removeItem(KEY_PREFIX + userId);
-  } catch {
-    // ignore
-  }
+  secureRemove(KEY_PREFIX + userId);
 }
 
 /**

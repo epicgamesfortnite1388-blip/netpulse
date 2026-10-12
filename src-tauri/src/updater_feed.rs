@@ -173,6 +173,11 @@ pub async fn feed_install(app: AppHandle) -> Result<(), String> {
             if !wait_until_writable(&p, FILE_FREE_TIMEOUT) {
                 // Refuse honestly AND leave the app healthy: bring the sidecar
                 // back up so a refused update never leaves a broken install.
+                // allow_respawn() FIRST — spawn_sidecar() is a no-op while
+                // the stop flag from stop_sidecar() above is still set
+                // (sidecar.rs), so without this the "recovery" spawn does
+                // nothing and the backend stays dead for the session.
+                crate::sidecar::allow_respawn(&app);
                 let _ = crate::sidecar::spawn_sidecar(&app);
                 return Err(format!(
                     "update aborted: {} is still locked by another process",

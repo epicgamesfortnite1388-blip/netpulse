@@ -2,7 +2,7 @@
  * NetPulse cloud — crypto primitives.
  *
  * Workers has no node:crypto; everything here uses WebCrypto.
- * Passwords: PBKDF2-SHA256, 210k iterations (OWASP-aligned for SHA-256),
+ * Passwords: PBKDF2-SHA256, 100k iterations (the Workers platform cap for PBKDF2; WebCrypto refuses iteration counts above 100000),
  * 16-byte salt, constant-time digest comparison. Session/reset tokens:
  * 32 random bytes, base64url — only the SHA-256 hash is stored, so a DB
  * leak cannot mint a valid token. All hashes carry their parameters in

@@ -24,6 +24,7 @@
 
 import { create } from 'zustand';
 
+import { secureGet, secureRemove, secureSet } from './secureStore';
 import type { CloudAuthResponse, CloudSessionState, CloudUser } from './types';
 
 const ACCESS_KEY = 'np.cloud.access';
@@ -82,9 +83,13 @@ export function deviceId(): string {
 }
 
 function loadFromStorage(): CloudSessionState | null {
-  const refreshToken = safeGet(localStorage, REFRESH_KEY);
-  const userJson = safeGet(localStorage, USER_KEY);
-  const sessionId = safeGet(localStorage, SESSION_ID_KEY);
+  // Refresh token, user record and session id are read through
+  // the secure store: on desktop they are DPAPI-protected blobs
+  // decrypted at prime time; in web mode this is a plain
+  // localStorage read, unchanged.
+  const refreshToken = secureGet(REFRESH_KEY);
+  const userJson = secureGet(USER_KEY);
+  const sessionId = secureGet(SESSION_ID_KEY);
   if (!refreshToken || !userJson || !sessionId) return null;
   try {
     const user = JSON.parse(userJson) as CloudUser;
@@ -100,7 +105,7 @@ function loadFromStorage(): CloudSessionState | null {
       refreshToken,
       sessionId,
       accessExpiresAt: accessToken ? Date.now() + ACCESS_TTL_MS : 0,
-      lastSyncAt: Number(safeGet(localStorage, LAST_SYNC_KEY) ?? 0) || null,
+      lastSyncAt: Number(secureGet(LAST_SYNC_KEY) ?? 0) || null,
     };
   } catch {
     return null;
@@ -115,10 +120,10 @@ export function initSession(): void {
 
 function persist(state: CloudSessionState): void {
   safeSet(sessionStorage, ACCESS_KEY, state.accessToken);
-  safeSet(localStorage, REFRESH_KEY, state.refreshToken);
-  safeSet(localStorage, USER_KEY, JSON.stringify(state.user));
-  safeSet(localStorage, SESSION_ID_KEY, state.sessionId);
-  if (state.lastSyncAt) safeSet(localStorage, LAST_SYNC_KEY, String(state.lastSyncAt));
+  secureSet(REFRESH_KEY, state.refreshToken);
+  secureSet(USER_KEY, JSON.stringify(state.user));
+  secureSet(SESSION_ID_KEY, state.sessionId);
+  if (state.lastSyncAt) secureSet(LAST_SYNC_KEY, String(state.lastSyncAt));
 }
 
 /** Current session or null when signed out. */
@@ -157,8 +162,7 @@ export function adoptRefresh(newAccessToken: string, newRefreshToken: string, se
   useSessionStore.setState({ session: next, hydrated: true });
 }
 
-/**
- * Record a completed sync.
+/** Record a completed sync.
  *
  * This is the one write that has to reach React: the account page renders
  * `lastSyncAt`, so the stamp goes into the store itself rather than storage
@@ -168,16 +172,16 @@ export function markSynced(at: number): void {
   const s = currentSession();
   if (!s) return;
   useSessionStore.setState({ session: { ...s, lastSyncAt: at }, hydrated: true });
-  safeSet(localStorage, LAST_SYNC_KEY, String(at));
+  secureSet(LAST_SYNC_KEY, String(at));
 }
 
 /** Sign out locally; `keepDevice` preserves the anonymous device id. */
 export function clearSession(): void {
   safeRemove(sessionStorage, ACCESS_KEY);
-  safeRemove(localStorage, REFRESH_KEY);
-  safeRemove(localStorage, USER_KEY);
-  safeRemove(localStorage, SESSION_ID_KEY);
-  safeRemove(localStorage, LAST_SYNC_KEY);
+  secureRemove(REFRESH_KEY);
+  secureRemove(USER_KEY);
+  secureRemove(SESSION_ID_KEY);
+  secureRemove(LAST_SYNC_KEY);
   // `hydrated: false` drops the memo: the next read comes from storage, which
   // is how a sign-out followed by a restart (or by storage being rewritten
   // underneath us) resolves to whatever is actually persisted.
