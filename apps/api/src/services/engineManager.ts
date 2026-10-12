@@ -607,17 +607,22 @@ export async function installEngine(engine: EngineId, requestedVersion?: string)
     const digestAssetName = conf.digestAsset(assetBase);
     if (digestAssetName) {
       const digestUrl = release.assets.find((a) => a.name === digestAssetName)?.browser_download_url;
-      if (digestUrl) {
-        const digestFile = path.join(tmp, digestAssetName);
-        await download(digestUrl, digestFile);
-        const published = fs.readFileSync(digestFile, 'utf8');
-        const actual = await sha256File(assetFile);
-        const m = published.match(new RegExp(actual.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')));
-        if (m) {
-          checksumVerified = true;
-        } else {
-          return fail(`SHA256 mismatch for ${path.basename(assetFile)} — the download did not match the release digest and was discarded`);
-        }
+      if (!digestUrl) {
+        // The project publishes a sidecar for every asset; one that is
+        // missing means the release metadata is not what this manager
+        // expects — installing anyway would be an unverified binary,
+        // which the whole pipeline exists to prevent.
+        return fail(`release ${release.tag_name} publishes no digest sidecar "${digestAssetName}" for ${assetBase} — refusing to install unverified`);
+      }
+      const digestFile = path.join(tmp, digestAssetName);
+      await download(digestUrl, digestFile);
+      const published = fs.readFileSync(digestFile, 'utf8');
+      const actual = await sha256File(assetFile);
+      const m = published.match(new RegExp(actual.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')));
+      if (m) {
+        checksumVerified = true;
+      } else {
+        return fail(`SHA256 mismatch for ${path.basename(assetFile)} — the download did not match the release digest and was discarded`);
       }
     }
 

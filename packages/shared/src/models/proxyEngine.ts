@@ -125,5 +125,13 @@ export function engineVersionIsCurrent(installedLine: string | null, latestTag: 
   // "v1.14.0" → "1.14.0"; "app/v2.12.3" → "2.12.3"
   const want = latestTag.replace(/^[^0-9]*/i, '');
   if (want.length === 0) return null;
-  return installedLine.includes(want);
+  // Match the version as a WHOLE token. A bare substring would call an
+  // 11.4.0 install "current" for a v1.4.0 tag (the tag's digits appear
+  // inside the longer number), hiding a real update — so the version
+  // must be bounded by anything other than a digit or dot on both
+  // sides. Deliberately conservative: null (unknown) unless that
+  // number literally appears in the installed version line — never a
+  // guess.
+  const escaped = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^\\d.])${escaped}(?![\\d.])`).test(installedLine);
 }
