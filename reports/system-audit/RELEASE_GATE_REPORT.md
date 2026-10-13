@@ -20,53 +20,55 @@ DECISION OWNER: this audit (evidence below)
 | Desktop (Tauri/NSIS) build | PASS (verified 2026-10-12) | row 10 |
 | Security review (auth, crypto, install pipeline, secrets) | PASS — no open P0/P1 findings | SYSTEM_AUDIT_REPORT.md §8 |
 | Secret scan | PASS — no high-confidence patterns in source | audit session |
-| **Production deploy** | **BLOCKED** — Cloudflare auth token expired | row 11/12 |
-| Live VPN/TUN verification | **NOT VERIFIED** — needs Windows admin + authorized nodes | row 13 |
-| Live bot/payment/entitlement flows | **NOT VERIFIED** — external Abystral service | row 14 |
+| **Production deploy** | **PASS** — deployed 2026-10-13, verified live | row 16 |
+| Production D1 migrations | **PASS** — 4/4 applied (0004 this session, after backup) | row 15 |
+| Production auth/isolation smoke | **PASS** — register/login/revoke/isolation/inbox all verified live | row 17 |
+| Live VPN/TUN verification | **NOT VERIFIED** — needs Windows admin + authorized nodes | row 18 |
+| Live bot/payment/entitlement flows | **NOT VERIFIED** — external Abystral service | row 19 |
 
 ## Decisions
 
 - **Internal development: GO.** Every local gate is green.
-- **Controlled Alpha (internal testers): CONDITIONAL GO.** Scope condition: testers must not depend on live purchases, live entitlement changes, or production-deployed cloud state until Phase 2 (deploy) and Phase 3 (bot sandbox) complete. No mandatory security gate is waived — the condition restricts scope, it does not excuse verification.
-- **Release candidate / general production: NO-GO.** Mandatory criteria unmet: production deploy not executed; live purchase→entitlement chain, live VPN tunnel, and TUN adapter creation unverified. None of these are failures — they are unrun checks, and per the mission's rules they cannot be called passes.
+- **Controlled Alpha (internal testers): CONDITIONAL GO.** Phase 2 is complete (production deploy + live verification), so testers may now use the production-deployed cloud. Remaining scope condition: testers must not depend on live purchases, live entitlement changes, or live VPN connectivity until Phase 3 (bot sandbox) and Phase 4 (live tunnel) complete. No mandatory security gate is waived — the condition restricts scope, it does not excuse verification.
+- **Release candidate / general production: NO-GO.** Mandatory criteria unmet: live purchase-to-entitlement chain, live VPN tunnel, and TUN adapter creation unverified. None of these are failures — they are unrun checks, and per the mission's rules they cannot be called passes.
 
 ## Phase 2 execution record (2026-10-13)
 
+**Verdict: COMPLETE.** All steps executed against Cloudflare account `7380a67667052f3a7a3b11301ce7a77b` after the OAuth token was refreshed to include that account (the earlier account-boundary block is logged below for the record).
+
 | Step | Result | Evidence |
 |---|---|---|
-| `wrangler login` (OAuth) | PASS — authenticated as `radinshurideh@gmail.com` | wrangler whoami |
-| Authenticated account | `4ca19fcad2d9fb155873fc9e0eb481e6` | wrangler whoami |
-| Configured target account | `7380a67667052f3a7a3b11301ce7a77b` (worker `netpulse-cloud`, D1 `31f2435b-3c23-42ad-b5b8-3b7f815d17dc`) | `cloud/worker/wrangler.toml` |
-| `wrangler d1 migrations list … --remote` | **FAIL (7403)** — "not valid or is not authorized to access this service" | command output |
-| `wrangler d1 list` | **FAIL (10000)** — "account_id … does not match any of your authenticated accounts" | command output |
-| Remote D1 backup | **BLOCKED** — requires access to account `7380a…` | — |
-| Remote migrations apply | **BLOCKED** — same | — |
-| Worker deploy | **BLOCKED** — same | — |
-| Secret presence check (`wrangler secret list`) | **BLOCKED** — same | — |
-| HTTP smoke tests | **BLOCKED** — no deployment performed | — |
+| OAuth login (identity holds membership in both accounts) | PASS | `wrangler whoami` lists `4ca19fcad2d9fb155873fc9e0eb481e6` AND `7380a67667052f3a7a3b11301ce7a77b` |
+| D1 visibility | PASS | `wrangler d1 list` shows `netpulse-cloud` = `31f2435b-3c23-42ad-b5b8-3b7f815d17dc` |
+| Secret presence | PASS (5 configured) | AUTH_SECRET, NETPULSE_SERVICE_SECRET, OPS_TOKEN, RESET_PEPPER, TELEGRAM_BOT_BASE_URL present. EXPECTED_ORIGIN not set — it is an optional var (reset-origin guard is inert until configured), not a deploy blocker |
+| Remote D1 backup (pre-migration) | PASS | 261,852 bytes at `C:\Users\RADIN\AppData\Local\Temp\netpulse-phase2\netpulse-cloud-backup-2026-10-13.sql` (outside the repo) |
+| Migrations | PASS | 0001–0003 already applied; 0004_admin_plans.sql applied (7 commands, 1.46ms). Verified remotely: `users.role` column exists, `plans` table seeded with `plan_pro`/Pro, `d1_migrations` lists 4/4 |
+| Worker deploy (production, top-level env) | PASS | `netpulse-cloud` at https://netpulse-cloud.shuridehradin.workers.dev — version `d76fb01a-f775-4ba0-966e-96470f8dbdbd`, 100% traffic, D1 binding `env.DB (netpulse-cloud)` attached |
+| Health smoke | PASS | GET /api/v1/health → 200 `{"ok":true,"service":"netpulse-cloud","mail":false}` (D1 probe ok; mail honestly reported unconfigured) |
+| Auth flows (live, test accounts) | PASS | register → 200 (user, role=normal, tokens, session); login → 200; wrong password → 401; no token → 401; admin route as normal user → 403 `admin_required`; sessions list → 200; logout → 200 and the old token → 401 (revocation works in production) |
+| Cross-account isolation (live) | PASS | User B's vault-delete of user A's `profileId` → `{"ok":true,"removed":false}`; A's entry intact and readable by A only; B's own vault empty |
+| Bot signed inbox fail-closed (live) | PASS | POST /api/internal/netpulse/v1/events → 401 for missing signature, fake signature, and empty body |
+| Test-account cleanup | PASS | both phase2-* test accounts hard-deleted (DELETE /api/v1/account → 200; login afterwards → 401) |
 
-**Phase 2 verdict: BLOCKED at the authorization boundary.** The authenticated identity belongs to account `4ca19…`, which has no access to the configured account `7380a…` that owns the production worker and D1 database. Deploying into `4ca19…` was correctly refused: it would create a new, non-production worker with no production database — not the intended target.
+Notes:
+- Multi-account environments require `CLOUDFLARE_ACCOUNT_ID=7380a67667052f3a7a3b11301ce7a77b` (or matching config account) for `d1` subcommands; plain `wrangler deploy` targets the top-level (production) environment and warns about the additional `[env.staging]` — the warning is expected and the production environment was the deployed target.
+- PowerShell 5.1 drops empty-string arguments to native executables, so `--env ""` fails to parse; plain `wrangler deploy` is the correct production invocation here.
+- Staging environment was NOT deployed (see T2.4): staging reuses the production D1 by current design, and the separate-DB decision is still pending the operator.
 
-**To unblock (exactly one of):**
-1. Authenticate an identity that belongs to Cloudflare account `7380a67667052f3a7a3b11301ce7a77b` (`wrangler login` with that account's credentials), or
-2. Set `CLOUDFLARE_API_TOKEN` to an API token created **in account `7380a…`** with `Workers:Write`, `D1:Write`, `Account Settings:Read` (for `secret list`), then rerun:
-   - `npx wrangler d1 export netpulse-cloud --remote --file <secure-path-outside-repo>` (backup)
-   - `npx wrangler d1 migrations list netpulse-cloud --remote` (pending list — expect 0001–0004 if never applied)
-   - `npm run db:migrate:remote -w @netpulse/cloud-worker`
-   - `npx wrangler deploy --env ""` (explicit production target; the config now defines multiple environments)
-   - `npx wrangler secret list` (verify AUTH_SECRET, RESET_PEPPER, NETPULSE_SERVICE_SECRET, TELEGRAM_BOT_BASE_URL, EXPECTED_ORIGIN presence — names only)
+**Earlier blocked attempt (2026-10-13, superseded):** the first OAuth login authenticated as `radinshurideh@gmail.com` whose token only covered account `4ca19fcad2d9fb155873fc9e0eb481e6`; all D1/Worker calls to `7380a…` failed (7403/10000). A fresh `wrangler login` after the account membership was in place resolved it. No remote state was modified during the blocked window.
 
-**Migration safety review (completed offline):** all 4 migrations are additive — CREATE TABLE/INDEX only, one `ALTER TABLE users ADD COLUMN role … DEFAULT 'normal'`, and an idempotent `INSERT OR IGNORE` seed row. No DROP, DELETE, UPDATE, column drop, or type change anywhere. Safe to apply once access exists.
+**Migration safety review:** all 4 migrations are additive — CREATE TABLE/INDEX only, one `ALTER TABLE users ADD COLUMN role … DEFAULT 'normal'`, and an idempotent `INSERT OR IGNORE` seed row. No DROP, DELETE, UPDATE, column drop, or type change anywhere. Applied only after the pre-migration backup above.
 
 ## What would change the decision
 
-- To CONDITIONAL GO → GO (Alpha): complete roadmap T2.1–T2.3 (deploy + production health) and T5.2 (staging isolation tests).
-- To RC: additionally T3.2/T3.3 (bot sandbox link + idempotency) and T4.2/T4.3 (live WireGuard + TUN with cleanup verification).
-- Any confirmed premium bypass, cross-account exposure, forged-entitlement grant, or falsely-reported VPN connection is an automatic NO-GO regardless of test counts. None was found; the isolation and entitlement paths are unit-tested, but their live halves remain unverified.
+- To CONDITIONAL GO → GO (Alpha): complete T3.2/T3.3 (bot sandbox link + idempotency) and T5.2-style isolation tests against the staging deployment (the production isolation half was verified live this session).
+- To RC: additionally T4.2/T4.3 (live WireGuard + TUN with cleanup verification).
+- Any confirmed premium bypass, cross-account exposure, forged-entitlement grant, or falsely-reported VPN connection is an automatic NO-GO regardless of test counts. None was found; the live isolation half was verified this session, the entitlement half remains unverified (Phase 3).
 
 ## Known accepted risks (disclosed, not waived)
 
 1. Client-side secret extraction from a running session is possible (DPAPI protects at rest only).
 2. Cloud profile backups are sealed by the API, not end-to-end against the machine (documented trade-off in `syncEngine.ts`).
 3. Fixed-window rate limiter read-back is non-atomic under concurrency (acceptable at this traffic level; documented in `auth.ts`).
-4. Staging environment reuses the production D1 database by current design (`wrangler.toml` `[env.staging]`) — isolation decision pending (T2.4).
+4. Staging environment reuses the production D1 database by current design (`wrangler.toml` `[env.staging]`) — isolation decision pending (T2.4); staging code was not deployed this session.
+5. Password-reset email delivery is unconfigured in production (RESEND_API_KEY / MAIL_FROM / EXPECTED_ORIGIN unset): the reset flow fails closed and reports `mail_unconfigured` honestly — no token is delivered anywhere until mail is configured.

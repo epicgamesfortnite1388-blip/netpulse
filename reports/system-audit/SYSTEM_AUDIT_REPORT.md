@@ -5,7 +5,7 @@ AUDIT DATE: 2026-10-13
 GIT COMMIT: 7c2a9d9f8ffd591d515f5ed9f1a445a68d3631fa (plus uncommitted test/hygiene fix)
 WORKING TREE: clean except untracked `.staging-dist/` (now gitignored)
 
-AUDIT STATUS: COMPLETE (local verification); production deploy BLOCKED at the Cloudflare account-authorization boundary; live integration checks blocked by absent external services
+AUDIT STATUS: COMPLETE (local verification + production deploy and live cloud verification, 2026-10-13); live integration checks blocked by absent external services
 
 BASELINE (2026-10-13, before this session's repairs):
 - Tests: API 1007/1007 · web 349/349 · shared 58/58 · cloud-worker 91/91 · Rust 149 passed/0 failed/2 ignored
@@ -31,8 +31,8 @@ CONFIRMED BUGS FOUND: 4 (this session) + 5 (earlier 2026-10-12 session, all fixe
 CONFIRMED BUGS FIXED: 9
 REGRESSION TESTS ADDED: 53 (engineFundamentals.test.ts) + 5 (secureStore.test.ts, prior session)
 REGRESSION TESTS PASSED: all (see TEST_RESULTS.md)
-REMAINING RELEASE BLOCKERS: production deploy not executed (account authorization boundary, 2026-10-13); live bot/payment/TUN/VPN flows unverified
-ENVIRONMENTAL BLOCKERS: Cloudflare account boundary (logged in as radinshurideh@gmail.com / account 4ca19fcad2d9fb155873fc9e0eb481e6; production worker and D1 live in account 7380a67667052f3a7a3b11301ce7a77b, not accessible to this identity); no Windows admin elevation for live TUN; Abystral bot service external; no CI workflows exist
+REMAINING RELEASE BLOCKERS: live bot/payment/TUN/VPN flows unverified (Phases 3-4); production deploy and D1 migrations COMPLETE
+ENVIRONMENTAL BLOCKERS: no Windows admin elevation for live TUN; Abystral bot service external; no CI workflows exist; production mail delivery unconfigured (RESEND_API_KEY/MAIL_FROM/EXPECTED_ORIGIN unset - reset email fails closed, reported honestly)
 EST REMAINING: 16–26 engineering days (see REMAINING_ROADMAP.md)
 
 ---
@@ -53,7 +53,7 @@ What is NOT verified: anything requiring the live external world — the Abystra
 | Sidecar API | `apps/api/` | Node + Hono + SQLite | 156 local routes: VPN, nodes, profiles, diagnostics, proxy cores, TUN gateway | `npm run build -w @netpulse/api` | vitest 1007/1007 | VERIFIED locally |
 | Web app | `apps/web/` | React 19 + TS + Vite | All UI (20 feature domains) | `npm run build -w @netpulse/web` | vitest 349/349 | VERIFIED locally |
 | Shared models | `packages/shared/` | TS + zod | Engine tables, node schemas, tunnel/gateway models | tsc | vitest 58/58 | VERIFIED locally |
-| Cloud worker | `cloud/worker/` | Cloudflare Worker + D1 | Accounts, sessions, reset mail, Telegram integration, ops page | `wrangler deploy` (BLOCKED) | vitest-pool-workers 91/91 | Local VERIFIED; deploy BLOCKED |
+| Cloud worker | `cloud/worker/` | Cloudflare Worker + D1 | Accounts, sessions, reset mail, Telegram integration, ops page | `wrangler deploy` | vitest-pool-workers 91/91 | DEPLOYED 2026-10-13 (version d76fb01a, 100% traffic); live-verified |
 | Desktop backend bundle | `scripts/prepare-desktop.mjs` | esbuild + Node SEA | Portable sidecar embedded in the EXE | `npm run build:desktop-backend` | — | VERIFIED (exit 0) |
 | Telegram bot | external (Abystral) | — | Purchases, payments, entitlements | — | — | NOT IN REPO; integration verified via signed-channel tests only |
 | CI | `.github/` | — | — | — | — | **NOT PRESENT** (roadmap item) |
@@ -127,7 +127,7 @@ See REPAIR_LOG.md. All four this-session defects fixed with regression coverage;
 
 ## 12. Remaining issues (not defects — unverified surfaces)
 
-- Production deploy not executed (Cloudflare account authorization boundary) - BLOCKED
+- Production deploy: EXECUTED 2026-10-13 (backup, migration 0004, deploy version d76fb01a, live smoke suite all PASS - see RELEASE_GATE_REPORT.md)
 - Live Abystral bot, payment, and entitlement flows — NOT VERIFIED (external)
 - Live VPN node dial, TUN adapter creation, system-proxy handoff — NOT VERIFIED (need Windows admin + authorized nodes)
 - Clean install / upgrade / uninstall of the NSIS package — NOT VERIFIED
@@ -135,7 +135,7 @@ See REPAIR_LOG.md. All four this-session defects fixed with regression coverage;
 
 ## 13. Environmental limitations
 
-Cloudflare OAuth login succeeded (radinshurideh@gmail.com) but that identity belongs to account 4ca19fcad2d9fb155873fc9e0eb481e6, while wrangler.toml targets account 7380a67667052f3a7a3b11301ce7a77b (owner of worker netpulse-cloud and D1 31f2435b-3c23-42ad-b5b8-3b7f815d17dc). D1 and Worker API calls fail with 7403/10000. Deploying into the authenticated personal account was deliberately refused: it would create a new, non-production worker with no production database. No elevation to Administrator in this environment (TUN/wintun creation unexercisable). Abystral bot, payment provider, and production D1 are external and inaccessible from this environment. All of these are recorded as BLOCKED/NOT VERIFIED, never as failures.
+Production deploy executed 2026-10-13: OAuth token refreshed to include account 7380a67667052f3a7a3b11301ce7a77b; remote D1 backed up (261,852 bytes, outside the repo); migration 0004_admin_plans.sql applied after backup; worker deployed to https://netpulse-cloud.shuridehradin.workers.dev (version d76fb01a-f775-4ba0-966e-96470f8dbdbd, 100% traffic); live verification passed (health 200 with honest mail:false; register/login/wrong-password/no-token/admin-gating/logout-revocation; cross-account vault isolation; bot inbox 401 on missing/fake/empty signature; test accounts hard-deleted). No elevation to Administrator in this environment (TUN/wintun creation unexercisable). Abystral bot and payment provider are external and inaccessible from this environment. All of these are recorded as BLOCKED/NOT VERIFIED, never as failures.
 
 ## 14. Maturity scores (scale: 0/25/50/75/90/100)
 

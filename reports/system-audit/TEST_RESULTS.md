@@ -16,13 +16,13 @@ Environment: Windows 11 build 26200 · Node v24.18.0 · npm 12.0.2 · vitest 3.2
 | 8 | `npm run build -w @netpulse/web` | apps/web | PASSED | 0 | — | — | — | 34.36s | production build; main chunk 3,174.16 kB / 917.52 kB gzip (>900 kB warning — P3, roadmap T6.3) |
 | 9 | `cargo check --manifest-path src-tauri/Cargo.toml` | src-tauri | PASSED | 0 | — | — | — | 9.94s | |
 | 10 | `npm run desktop:build` (release:version → build:desktop-backend → tauri build) | desktop | PASSED | 0 | — | — | — | — | verified 2026-10-12 at v1.1.1; NSIS bundle target |
-| 11 | `npx wrangler login` (interactive OAuth) | cloud/worker | PASS (auth) | 0 | — | — | — | — | authenticated as `radinshurideh@gmail.com` (account `4ca19fcad2d9fb155873fc9e0eb481e6`) |
-| 12 | `npx wrangler whoami` | cloud/worker | PASS (auth) / FAIL (account match) | 0 | — | — | — | — | logged in, but config account `7380a67667052f3a7a3b11301ce7a77b` "does not match any of your authenticated accounts" |
-| 13 | `npx wrangler d1 list` | cloud/worker | **FAIL (10000)** | 1 | — | — | — | — | authentication error — configured account not accessible to the authenticated identity |
-| 14 | `npx wrangler d1 migrations list netpulse-cloud --remote` | cloud/worker | **FAIL (7403)** | 1 | — | — | — | — | "The given account is not valid or is not authorized to access this service" |
-| 15 | Migration safety review (offline, 0001–0004) | cloud/worker/migrations | **PASS** | — | — | — | — | — | all additive; no DROP/DELETE/UPDATE; idempotent seed; safe order |
-| 16 | `npx wrangler deploy` | cloud/worker | **BLOCKED** | — | — | — | — | — | not attempted: target account inaccessible; deploying into the personal account would create a wrong, non-production worker |
-| 17 | Remote D1 backup / secret presence check / HTTP smoke | cloud/worker | **BLOCKED** | — | — | — | — | — | same account-authorization boundary |
+| 11 | `npx wrangler login` (OAuth, refreshed) | cloud/worker | PASS | 0 | — | — | — | — | token now covers both accounts: `4ca19fcad2d9fb155873fc9e0eb481e6` and `7380a67667052f3a7a3b11301ce7a77b` |
+| 12 | `npx wrangler whoami` | cloud/worker | PASS | 0 | — | — | — | — | lists both accounts |
+| 13 | `npx wrangler d1 list` | cloud/worker | PASS | 0 | — | — | — | — | `netpulse-cloud` = `31f2435b-3c23-42ad-b5b8-3b7f815d17dc` visible |
+| 14 | `npx wrangler d1 migrations list netpulse-cloud --remote` | cloud/worker | PASS | 0 | — | — | — | — | with `CLOUDFLARE_ACCOUNT_ID` set: 0004_admin_plans.sql was pending (0001–0003 already applied) |
+| 15 | Remote D1 backup + migration apply | cloud/worker | PASS | 0 | — | — | — | 1.46s | backup 261,852 bytes to `C:\Users\RADIN\AppData\Local\Temp\netpulse-phase2\` (outside repo); 0004 applied (7 commands); verified `users.role`, `plans`/`plan_pro` seed, `d1_migrations` 4/4 |
+| 16 | `npx wrangler deploy` (production, top-level env) | cloud/worker | PASS | 0 | — | — | — | ~11s | `netpulse-cloud` @ https://netpulse-cloud.shuridehradin.workers.dev — version `d76fb01a-f775-4ba0-966e-96470f8dbdbd`, 100% traffic, D1 binding attached |
+| 17 | Live production verification suite | cloud/worker | PASS | 0 | 9 | 0 | 0 | — | health 200 (`mail:false` honest); register/login 200; wrong-password 401; no-token 401; admin-as-normal 403; logout revokes token (old token 401); cross-account vault isolation (B's delete of A's profile → `removed:false`, A's data intact); bot inbox 401 on missing/fake/empty signature; both test accounts hard-deleted afterwards |
 | 18 | Live VPN / TUN / system-proxy verification | desktop | **NOT VERIFIED** | — | — | — | — | — | requires Windows Administrator + authorized nodes |
 | 19 | Abystral bot, payment, live entitlement flows | external | **NOT VERIFIED** | — | — | — | — | — | external service, not in repo |
 
@@ -36,17 +36,16 @@ Environment: Windows 11 build 26200 · Node v24.18.0 · npm 12.0.2 · vitest 3.2
 
 - Rows 1–10 post-fix (run after repairs 7c2a9d9 and the worker-test await fix).
 - Row 10 is a carry-over measurement from 2026-10-12 (no source affecting the desktop bundle changed since except dpapi.rs/main.rs, re-verified by rows 9 and 5).
-- Rows 11–17 are the 2026-10-13 Phase 2 remote-execution attempt (see below).
+- Rows 11–17 are the 2026-10-13 Phase 2 remote execution and live production verification.
 
 ## Phase 2 remote execution summary (2026-10-13)
 
-- Completed independently: preflight (clean tree at d1a54e2), OAuth login, offline migration review, local regression (typecheck + worker 91/91 re-run).
-- Blocked at the account-authorization boundary: the authenticated identity (`radinshurideh@gmail.com` / account `4ca19fcad2d9fb155873fc9e0eb481e6`) has no access to Cloudflare account `7380a67667052f3a7a3b11301ce7a77b`, which owns worker `netpulse-cloud` and D1 `31f2435b-3c23-42ad-b5b8-3b7f815d17dc`.
-- No remote state was modified: no backup, no migration apply, no secret read/write, no deploy. The wrong-account deploy was deliberately refused.
-- Unblock: authenticate an identity belonging to account `7380a…`, or set `CLOUDFLARE_API_TOKEN` to a token created in that account (Workers:Write, D1:Write, Account Settings:Read), then rerun the row 13–17 commands.
+- **COMPLETE.** Authenticated (OAuth token refreshed to include the target account), backed up remote D1 (261,852 bytes, outside the repo), applied the one pending migration (0004_admin_plans.sql) after the backup, deployed the worker to production (version `d76fb01a-f775-4ba0-966e-96470f8dbdbd`, 100% traffic), and verified the live service: health, registration, login, wrong-password rejection, unauthenticated rejection, admin gating, session listing, logout revocation, cross-account vault isolation, and bot-inbox signature fail-closed — all against the production origin.
+- Test accounts (`phase2-a-982180@example.com`, `phase2-b-116537@example.com`) were hard-deleted after verification; login for both returns 401.
+- Configuration gaps disclosed (not deploy blockers): RESEND_API_KEY, MAIL_FROM, and EXPECTED_ORIGIN are not set in production, so password-reset email delivery fails closed and reports `mail_unconfigured`; EXPECTED_ORIGIN is an optional reset-origin guard. Staging environment was not deployed (T2.4 decision pending).
 
 ## Mocked vs real
 
-- Worker tests run against miniflare's in-memory D1 — a faithful local substitute for D1 semantics, **not** a production database test.
+- Worker tests run against miniflare's in-memory D1 — a faithful local substitute for D1 semantics, **not** a production database test. The production D1 itself was exercised directly in rows 14–17.
 - Engine install tests exercise the real download pipeline guards offline (pin-layer verdicts, extraction, self-checks); live GitHub downloads are exercised only by the pinned-digest test that fetches the real release metadata.
 - No end-to-end test in this repo exercises a real VPN node, the real Telegram bot, or real payments. Those are NOT VERIFIED, per the mission's honesty rules.
