@@ -441,7 +441,8 @@ describe('security abuse', () => {
     const aList = (await aGet.json()) as { vaults: Array<{ profileId: string; ciphertext: string }> };
     expect(aList.vaults).toHaveLength(1);
     expect(aList.vaults[0].ciphertext).toBe(cipher);
-    expect(((await authFetch(b.token, '/api/v1/profile-vaults')).json() as Promise<{ vaults: unknown[] }>).then((j) => j.vaults)).resolves.toHaveLength(0);
+    const bList = (await (await authFetch(b.token, '/api/v1/profile-vaults')).json()) as { vaults: unknown[] };
+    expect(bList.vaults).toHaveLength(0);
     // Upsert replaces, keyed per user (B writing the same profileId sees only their own)
     expect((await authFetch(a.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-x1', ciphertext: 'v1.BBBBBBBBBBBBBBBBBBBBBB.BBBBnewerBlob==', updatedAt: 222 }) })).status).toBe(200);
     expect((await authFetch(b.token, '/api/v1/profile-vaults', { method: 'PUT', body: JSON.stringify({ profileId: 'np-local-x1', ciphertext: cipher, updatedAt: 222 }) })).status).toBe(200);
