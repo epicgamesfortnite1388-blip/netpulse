@@ -21,16 +21,24 @@ All estimates are engineering ranges, not commitments. "External wait" is time b
 Phase EST: 0 remaining (1.75–3.5 days were budgeted; all consumed and closed 2026-10-13). **Critical path advanced to Phase 3/4.**
 
 ## Phase 3 — Live Integration Verification (Abystral bot, payments)
-**Objective:** verify the purchase→entitlement chain against the bot's sandbox.
+**Objective:** verify the purchase→entitlement chain against the bot.
+
+**Mission 3 closeout (2026-10-13, session 2):** the signed-channel contract is now verified LIVE against production (adversarial inbox 10/10; e2e harness stages 0–3 against the real worker and the real bot; Worker 6/6 and Bot 7/7 smokes). The purchase→entitlement chain itself remains BLOCKED at stage 4 — `/link/confirm` is bot-authority-gated and needs a staging bot or a real Telegram test user. Phase 6 (purchase-request surface) is implemented and unit-green in the Abystral working tree but NOT deployed to the production bot (live routes 404 — expected).
 
 | ID | Task | Current state | Priority | Dependencies | EST | Risk | Acceptance criteria | Blocker |
 |---|---|---|---|---|---|---|---|---|
-| T3.1 | Obtain Abystral bot sandbox base URL + shared NETPULSE_SERVICE_SECRET for a staging deployment | NOT AVAILABLE | P1 | external team | 0 (external wait) | — | staging worker reaches bot `/link/request` | external |
-| T3.2 | End-to-end link flow: start → deep link → claim → entitlement pull → mirror rows | implemented, locally tested only | P1 | T3.1 | 1–2 days | Medium | link row `active`; entitlement rows mirror bot view; revoke event removes them | T3.1 |
-| T3.3 | Purchase-event idempotency and replay against real event deliveries (duplicate event_id, out-of-order config_updated_at) | unit-tested; production inbox verified fail-closed (401 on missing/fake/empty signature) | P1 | T3.1 | 1–2 days | Medium | 100% duplicate deliveries no-op; no double-apply | T3.1 |
+| T3.1 | Obtain Abystral bot sandbox base URL + a staging deployment for the shared NETPULSE_SERVICE_SECRET | PARTIAL — the shared secret is configured on production and available locally (gitignored `.netpulse-secret.local`), and the production signed wall is verified live (10/10 adversarial probes). What is NOT available: a STAGING bot deployment whose Telegram identity verification can be stubbed | P1 | external team | 0 (external wait) | — | staging worker reaches bot `/link/request` AND `/link/confirm` binds a test identity | external |
+| T3.2 | End-to-end link flow: start → deep link → claim → entitlement pull → mirror rows | **stages 0–3 verified live 2026-10-13** (register, empty-entitlement precondition, worker-signed link/request reached the real bot and minted a one-time code + deep link); stage 4+ blocked | P1 | T3.1 | 1–2 days | Medium | link row `active`; entitlement rows mirror bot view; revoke event removes them | T3.1 |
+| T3.3 | Purchase-event idempotency and replay against real event deliveries | **event-id dedup verified live** (first delivery parked `no_link`, duplicate eventId → `duplicate:true` no-op); stale/future timestamps, malformed JSON, oversized payloads, unknown types/versions all verified live (10/10). Purchase-request idempotency is unit-green (10/10) but NOT live-probed — Phase 6 is not deployed (404) | P1 | T3.1 (for the purchase-request half) | 1–2 days | Medium | 100% duplicate deliveries no-op; no double-apply | T3.1 |
 | T3.4 | Renewal/expiry/refund lifecycle against sandbox subscriptions | implemented, locally tested only | P2 | T3.1 | 1–2 days | Medium | each lifecycle event converges the mirror | T3.1 |
 
 Phase EST: 3–6 days + external wait. Parallelizable with Phase 4.
+
+### The three remaining purchase-flow limitations (Mission 3)
+
+- **L1 — Purchase-to-entitlement is bot-authority-gated** (e2e stage 4): needs a staging bot with stubbed Telegram identity verification, or a real Telegram test user. Evidence to unblock: staging bot deployment; rerun the e2e harness to completion (stages 4–7).
+- **L2 — No payment provider sandbox**: TONAPI is mainnet-only; a real purchase moves real money. Evidence to unblock: TONAPI testnet/sandbox endpoint + funded test wallet; execute a $0-value purchase end-to-end.
+- **L3 — Bank-card and C2C payments require human administrator approval**: cannot be automated or simulated in production. Evidence to unblock: staging admin approval queue + an authorized administrator; observe a card/C2C approval through the queue.
 
 ## Phase 4 — Live VPN, TUN, and Connection Verification
 **Objective:** prove the tunnel on a real Windows machine with administrator rights and authorized nodes.

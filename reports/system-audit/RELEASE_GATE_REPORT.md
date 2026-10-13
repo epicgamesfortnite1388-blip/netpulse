@@ -59,6 +59,52 @@ Notes:
 
 **Migration safety review:** all 4 migrations are additive — CREATE TABLE/INDEX only, one `ALTER TABLE users ADD COLUMN role … DEFAULT 'normal'`, and an idempotent `INSERT OR IGNORE` seed row. No DROP, DELETE, UPDATE, column drop, or type change anywhere. Applied only after the pre-migration backup above.
 
+## Mission 3 closeout — integration audit (2026-10-13, session 2)
+
+**Repos:** Vpn_app `main @ 8ff3f75` (clean tree before the report edits in this commit); Abystral `main @ 5343e1b` + 48 uncommitted Phase 6 files (reviewed, NOT committed here — the Phase 6 work remains the owner's uncommitted WIP in the Abystral repo).
+
+### Gate results (Mission 3 additions)
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Bot netpulse unit tests (3 files, individual) | **PASS** — 16/16, 14/14, 13/13 (the no-charge guard), exit 0 each | TEST_RESULTS.md rows 20–22 |
+| Bot full unit suite | **PASS with 1 pre-existing defect** — 3328/3329, exit 1; the failure is a stale hardcoded date in a baseline test, byte-identical logic at `5343e1b` (not a Phase 6 regression, not a security gap) | row 23 |
+| Bot stress suites | **PASS** — 3/3, exit 0 | row 24 |
+| Bot typecheck (Phase 6 tree) | **PASS** — `tsc --noEmit` exit 0 | row 25 |
+| End-to-end harness | **SKIP (exit 2)** — stages 0–3 executed 8/8 PASS against production; stage 4 intentionally skipped (bot-authority refusal, by design); stages 5–8 not run; NOT a successful purchase | TEST_RESULTS.md § e2e harness |
+| Live adversarial inbox (production) | **PASS** — 10/10 signed probes; bot Phase-6 routes 404 (not deployed — expected) | TEST_RESULTS.md § adversarial |
+| Live Worker smoke (production) | **PASS** — 6/6, throwaway account deleted, D1 left clean | TEST_RESULTS.md § smokes |
+| Live Bot smoke (production) | **PASS** — 7/7 | TEST_RESULTS.md § smokes |
+| NetPulse Worker regression | **PASS** — 91/91, exit 0; typecheck exit 0 | rows 26–27 |
+| Phase 6 purchase-request code review | **PASS** — intent-only surface, three anti-double-charge layers, fail-closed HMAC, no path implies payment success before provider verification | below |
+| Purchase-to-entitlement flow | **BLOCKED** — stage 4 needs a bot-side staging environment or a real Telegram test user | limitation L1 |
+| Live VPN/TUN | **NOT VERIFIED** — needs Windows Administrator + authorized nodes (Phase 4) | row 18 |
+
+### Phase 6 purchase-request review (static inspection of the uncommitted Abystral WIP)
+
+- **Migration 0063** — scoped one-row flip (`solo_1ip` `config_access` 0→1, guarded by `AND config_access = 0`) plus `netpulse_purchase_requests`, an intent-only table: `token_hash` (SHA-256, raw token never stored), `UNIQUE(idempotency_key)`, price snapshots (cents + nanoton), status machine `pending|redeemed|expired|cancelled|failed`. No money column, no debit path.
+- **Routes** — `GET /plans` (read-only catalog), `POST /purchase-request` (mint intent + `nppurq_` deep link), `GET /purchase-request/{id}` (status), `POST /purchase-request/{id}/cancel` (guard-shaped: a redeemed request can never be cancelled). All behind the signed service wall; all failures are stable codes with no data leakage.
+- **Service (`netpulse.ts`)** — replay-first idempotency (a retried POST returns the ORIGINAL row with `duplicate:true` and no second token), per-account issuance cap, plan existence/active validation, price snapshotted at request time. The class never imports `WalletRepository` and never calls `beginPurchaseAtomically`.
+- **Auth (`netpulse-auth.ts`)** — fail-closed (503 `service_auth_not_configured` when the secret is unset), ±5-minute timestamp window, single-use KV nonce (15-min TTL, burned only after every other check passes), constant-time signature compare, canonical string binds version·ts·nonce·method·path+query·SHA-256(body).
+- **Identity binding** — redemption hashes the FULL `nppurq_` payload (the prefix is part of the match, so an identity-link token can never be presented as a purchase token), a guarded UPDATE binds `user_id`, and all failure replies are identical (no oracle).
+- **Money path** — the debit happens ONLY in the unchanged Telegram buy flow, keyed `buy:${planCode}:${requestId}` (the request ID), whose UNIQUE index is the outermost anti-double-charge layer. **No code path implies payment success before provider verification** — the request stays `pending` until the bot's buy flow completes.
+- **Production routes return 404** — CONFIRMED expected: the deployed bot bundle has the signed wall (401 to unsigned requests) but not the Phase 6 routes. Phase 6 is not deployed; this closeout does not deploy it.
+
+### Updated release gates
+
+- **Backend/service integration: PASS** — live smoke (Worker 6/6, Bot 7/7) + adversarial inbox (10/10) + Worker regression (91/91) against production, plus the bot unit/stress/typecheck evidence above.
+- **Purchase-to-entitlement flow: BLOCKED** — the e2e harness proved stages 0–3 against production, but stage 4 (link/confirm) is bot-authority-gated: it needs a staging bot with stubbed Telegram identity verification, or a real Telegram test user. No staging bot or test user is available (external dependency).
+- **VPN/TUN: NOT VERIFIED** — Phase 4 (Windows Administrator + authorized nodes) has not run.
+- **Release candidate: NO-GO** — mandatory purchase-flow and VPN gates remain unresolved. Neither is a test failure; both are unrun checks and cannot be called passes.
+
+### The three remaining purchase-flow limitations and the exact evidence to unblock each
+
+- **L1 — Purchase-to-entitlement is bot-authority-gated.** The e2e harness's stage 4 requires a REAL Telegram user to tap the bot screen (or a staging bot whose Telegram identity verification is stubbed). *Evidence required:* a staging bot worker (with `TELEGRAM_BOT_BASE_URL` pointed at it) or an authorized Telegram test user; then rerun `node scripts/e2e-telegram-vpn.mjs` to completion (stages 4–7) — a live link claim, a delivered `subscription.activated` event, the mirrored entitlement, and the sidecar egress read.
+- **L2 — No payment provider sandbox.** TONAPI is mainnet-only in the current integration; executing a real purchase moves real money. *Evidence required:* a TONAPI testnet/sandbox endpoint with a funded test wallet (or a provider sandbox), then a $0-value purchase executed end-to-end through the bot's buy flow.
+- **L3 — Bank-card and C2C payments require human administrator approval.** They cannot be automated or simulated in production. *Evidence required:* a staging environment with the admin approval queue and an authorized administrator, observing a card/C2C approval through the queue.
+
+**No production deployment, no production D1 mutation, and no real payment occurred during this mission.** The only production writes were: one throwaway e2e account (harness design, documented above) and one throwaway smoke account (hard-deleted, verified gone).
+
 ## What would change the decision
 
 - To CONDITIONAL GO → GO (Alpha): complete T3.2/T3.3 (bot sandbox link + idempotency) and T5.2-style isolation tests against the staging deployment (the production isolation half was verified live this session).

@@ -49,3 +49,54 @@ Environment: Windows 11 build 26200 · Node v24.18.0 · npm 12.0.2 · vitest 3.2
 - Worker tests run against miniflare's in-memory D1 — a faithful local substitute for D1 semantics, **not** a production database test. The production D1 itself was exercised directly in rows 14–17.
 - Engine install tests exercise the real download pipeline guards offline (pin-layer verdicts, extraction, self-checks); live GitHub downloads are exercised only by the pinned-digest test that fetches the real release metadata.
 - No end-to-end test in this repo exercises a real VPN node, the real Telegram bot, or real payments. Those are NOT VERIFIED, per the mission's honesty rules.
+
+## Mission 3 closeout — bot tests, e2e harness, live smokes, Worker regression (2026-10-13, session 2)
+
+Repos at closeout: **Vpn_app** `main @ 8ff3f75`, working tree clean before this report edit. **Abystral** `main @ 5343e1b` + 48 uncommitted Phase 6 files (migrations 0062/0063, purchase-request handlers/services/tests) — untouched by this session; that work remains the owner's uncommitted WIP and is reviewed, not committed, here.
+
+### Bot tests (Abystral `workers/src/telegram` — Node v24.18.0, vitest 3.2.7)
+
+| # | Command | Target | Exit | Passed | Failed | Notes |
+|---|---|---|---|---|---|---|
+| 20 | `npx vitest run tests/netpulse-service.test.ts` | netpulse-service | 0 | 16 | 0 | catalog, purchase-request mint/redeem, idempotency-key derivation |
+| 21 | `npx vitest run tests/netpulse-repository.test.ts` | netpulse-repository | 0 | 14 | 0 | purchase-request CRUD, guarded redemption, expiry sweeps |
+| 22 | `npx vitest run tests/netpulse-no-charge.test.ts` | netpulse-no-charge | 0 | 13 | 0 | **the 13/13 no-charge guard** — no NetPulse path debits a wallet, creates a subscription, or touches the panel |
+| 23 | `npm test` (= `test:unit && test:stress`) | full unit suite | 1 | 3328 | 1 | 157/158 files, 198.62s; the single failure is a PRE-EXISTING stale-date test defect (below); the stress stage was not reached because the unit stage exited 1 |
+| 24 | `npm run test:stress` | stress suites | 0 | 3 | 0 | buy-flow / stress-flow / user-api-load-stress, 12.21s |
+| 25 | `npm run typecheck` (`tsc --noEmit`) | Abystral telegram | 0 | — | — | the Phase 6 working tree compiles clean |
+
+**The single unit failure — investigated; NOT a Phase 6 regression, NOT a security gap.** `tests/admin-api.test.ts:707` ("subscription.extend … extends to an exact end date") expects 200, got 400. Root cause: the describe-block fixture anchors the subscription expiry at `now + 9 days` (≈ 2026-10-22 08:00 UTC) while the test hardcodes `to_date: '2026-10-15'` — a date the wall clock passed around 2026-10-06. The production guard (executor in `admin-api.ts`: "`to_date` must be after the current expiry") correctly rejects it. Evidence it is pre-existing: `admin-api.test.ts` is unmodified, and `git diff HEAD -- src/handlers/admin-api.ts` contains no extend/to_date/renew hunks — the logic is byte-identical at baseline `5343e1b`. Fix (test-only, owner's): derive the test's `to_date` from the anchored fixture (e.g. fixture expiry + 2 days). Not repaired in this session: the file is baseline code in the Abystral repo, and this closeout commits to the NetPulse repo only.
+
+### End-to-end harness (`scripts/e2e-telegram-vpn.mjs`)
+
+- Command: `node scripts/e2e-telegram-vpn.mjs --keep` with `NP_SERVICE_SECRET_FILE` pointing at the gitignored `Abystral/workers/src/telegram/.netpulse-secret.local` (the shared 64-char service secret, present locally, never printed).
+- **Exit 2 = SKIP (an honest skip is not a pass). 8/8 executed checks passed, 1 environment skip, 0 failures.**
+- Stage-by-stage (stages run against PRODUCTION services — `netpulse-cloud` and the real `abystralbot`; the harness mocks only the Bot API transport and the VPN proof node):
+  - preflight **PASS** — secret loaded; sidecar = `src-tauri/backend` (the packaged sidecar: `netpulse-backend.js` + `node.exe` + `drizzle/`); cloud health 200.
+  - staged 0 **PASS** — inbox rejects an unsigned delivery (401 `missing_signature_headers`) and a forged signature (401 `invalid_signature`) — fail-closed.
+  - staged 1 **PASS** — registered throwaway `e2e-tgvp+…@example.com` (201, `usr__deeJTpZCNW2i8GU`); wrong password 401 `invalid_credentials`; valid login 200.
+  - staged 2 **PASS** — `GET /subscriptions` 200 with **0 entitlements before any purchase**.
+  - staged 3 **PASS** — the worker's signed outbound reached the REAL production bot and returned a one-time code (`nplink_a2cafe…`) + deep link `https://t.me/abystralbot?start=nplink_…`.
+  - staged 4 **SKIP — bot-authority refusal (400 `invalid_or_expired`)**, by design: `/link/confirm` succeeds only when a REAL Telegram user taps the bot screen; no Telegram user exists in this environment. The harness's own `botAuthorityRefusal` branch records this as an environment skip, and its NB(deploy coupling) comment documents it as the expected outcome. This is a test-stage skip, **not** a successful end-to-end purchase — no purchase event was delivered and no entitlement was created.
+  - staged 5–8 **NOT RUN** — unreachable without an active link; the sidecar/VPN leg never started.
+- Safety properties held: no money moved, no real entitlement created, no customer record mutated. Footprint: one throwaway cloud account (`usr__deeJTpZCNW2i8GU`, no data, no entitlements) remains in production D1 by the harness's documented design ("nothing is deleted on the worker"); the bot-side link code expired after its 15-minute TTL.
+- Evidence: `%TEMP%\netpulse-tgvpn-e2e\evidence\telegram-vpn-e2e.json`.
+
+### Live adversarial inbox probes (production `netpulse-cloud`, signed with the real service secret)
+
+**10/10 PASS** (probe script `%TEMP%\netpulse-phase3\adversarial.mjs`): stale timestamp → 401 `timestamp_out_of_window`; future timestamp → 401 `timestamp_out_of_window`; malformed JSON → 400 `invalid_json`; GET /events → 405 `method_not_allowed`; oversized payload → 413 `payload_too_large`; missing eventId → 400 `missing_required_fields`; unknown event type → 422 `unknown_event_type:…`; unsupported version → 422 `unsupported_event_version:…`; first delivery for an unknown account → 200, parked `no_link`; duplicate eventId → 200 `duplicate:true` (dedup no-op).
+Bot signed-API probes: `GET /plans` and `POST /purchase-request` → **404 `not_found`** — Phase 6 is NOT deployed to the production bot: the signed wall answers 401 to unsigned requests (it is live), then the router 404s because the Phase 6 routes are absent from the deployed bundle. Expected deployment state, not a defect.
+
+### Live production smokes
+
+- **Worker 6/6 PASS** (production `netpulse-cloud`): health 200 `ok:true`; register 201 (throwaway `m3-smoke+…@example.com`); login 200; wrong password 401; no-token 401; inbox unsigned 401 `missing_signature_headers`. Cleanup: account hard-deleted (200) and post-delete login 401 — production D1 left clean.
+- **Bot 7/7 PASS** (production `abystral-telegram`): `/health` 200 `status:ok`; public netpulse `/health` 200 (contract `netpulse-integration`, eventVersion 1, 12 event types); `/plans` unsigned 401 `missing_signature_headers`; webhook with no secret-token 401; webhook with wrong secret-token 401; `/webhook-info` unauthenticated 401; `/plans` signed 404 `not_found` (Phase-6 deployment-status probe).
+
+### NetPulse Worker regression (Vpn_app `cloud/worker`)
+
+| # | Command | Exit | Passed | Failed | Notes |
+|---|---|---|---|---|---|
+| 26 | `npm run test -w @netpulse/cloud-worker` | 0 | 91 | 0 | 4 files, 32.84s, miniflare D1 (local substitute, not production D1) |
+| 27 | `npm run typecheck -w @netpulse/cloud-worker` | 0 | — | — | `tsc --noEmit` clean |
+
+The 91 re-verify: missing/invalid signatures rejected; stale/future timestamps rejected (±5-min window); event payloads and event types validated; duplicate event IDs idempotent; unknown linked identities parked `no_link`; account authorization and cross-account isolation; service-auth failures fail closed (`service_auth_not_configured` 503). The no-charge guard (row 22, 13/13) proves NetPulse cannot autonomously initiate charges through the tested paths. What the tests do NOT prove: a real provider callback, a real TON deposit, or a real card/C2C approval — those need a payment sandbox that does not exist (limitation L2, REMAINING_ROADMAP.md).

@@ -45,6 +45,14 @@ All changes are in `Vpn_app`. Commits: `7c2a9d9` (engine hardening), `578b6d7` (
 - **R9 (P2, reliability):** updater's locked-file recovery called `spawn_sidecar()` while the stop flag was still set, so the "recovery" spawn was a no-op and the backend stayed dead for the session → `allow_respawn()` first (`src-tauri/src/updater_feed.rs`).
 - **Audit correction:** the 2026-10-12 audit's finding C2 ("no session revocation") was incorrect — the worker keeps stateful sessions in D1 with `revoked_at` enforcement, logout, per-session and global revoke routes (verified in `cloud/worker/src/auth.ts` and `index.ts`).
 
+## Mission 3 closeout (2026-10-13, session 2)
+
+**No production code was changed in either repository in this session.** The Vpn_app tree is untouched except for these report files; the Abystral Phase 6 working tree (48 files) is the owner's uncommitted WIP and was neither modified nor committed.
+
+- **R10 — pre-existing test defect (Abystral, documented, NOT fixed here):** `workers/src/telegram/tests/admin-api.test.ts:707` ("subscription.extend … extends to an exact end date") fails with 400 instead of 200. The fixture anchors the subscription expiry at `now + 9 days` (≈ 2026-10-22 UTC) while the test hardcodes `to_date: '2026-10-15'` — a date the wall clock passed around 2026-10-06. The production guard correctly rejects a `to_date` at/before the current expiry, and the logic is byte-identical at baseline `5343e1b` (no extend/to_date hunks in the Phase 6 diff), so this is a stale test constant, not a regression and not a security gap. Full suite impact: 3328/3329 pass. Fix (test-only, for the Abystral owner): derive the test's `to_date` from the anchored fixture (e.g. fixture expiry + 2 days) instead of a hardcoded date.
+- **Temp probe patch (not repo code):** the session's live adversarial probe (`%TEMP%\netpulse-phase3\adversarial.mjs`) initially crashed on this host's transient DNS (`ENOENT`) because its curl-fallback pattern did not cover it; the pattern was extended to include `ENOENT|ENOTFOUND|EAI_AGAIN`. The file lives in the temp directory, outside both repositories.
+- **No test was deleted, weakened, or re-scoped in either repo.** No security assertion was relaxed.
+
 ## Change review
 
 - Diff is additive: 3 files in 7c2a9d9 (+583/−12), 20 files in 578b6d7 (+2029/−38), plus the R3/R4 fixes. No formatting-only churn, no unrelated rewrites.

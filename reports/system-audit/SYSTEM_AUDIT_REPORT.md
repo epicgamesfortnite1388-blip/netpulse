@@ -151,3 +151,26 @@ Architecture 85 · Core desktop 85 · Account system 80 · Telegram integration 
 ## 16. Evidence and reproduction
 
 All commands and outputs: TEST_RESULTS.md. Every repair: REPAIR_LOG.md with file/line references. Reproduce: `npm test --workspaces --if-present`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run build -w @netpulse/web`, `npx eslint packages/shared/src apps/api/src apps/web/src`.
+
+## 17. Mission 3 closeout — integration audit (2026-10-13, session 2)
+
+**Scope:** verify the Abystral bot / payment / entitlement-integrity chain end-to-end, or precisely identify every remaining blocker. Both repositories preserved: Vpn_app `main @ 8ff3f75` (clean); Abystral `main @ 5343e1b` + 48 uncommitted Phase 6 files (reviewed, not committed — the Phase 6 work remains the owner's WIP in its own repository).
+
+**Executed and verified (all evidence in TEST_RESULTS.md rows 20–27):**
+
+- Bot netpulse tests, run individually then in the project's normal test command: `netpulse-service` 16/16, `netpulse-repository` 14/14, `netpulse-no-charge` **13/13** (the no-charge guard), full unit suite 3328/3329 (one pre-existing stale-date test defect — `admin-api.test.ts:707`, logic byte-identical at baseline, documented for the Abystral owner), stress 3/3, `tsc --noEmit` clean.
+- End-to-end harness (`scripts/e2e-telegram-vpn.mjs`): **stages 0–3 executed 8/8 PASS against production** (fail-closed inbox, throwaway account register/login, empty-entitlement precondition, worker-signed link/request reached the real bot). **Stage 4 intentionally skipped** — `/link/confirm` is bot-authority-gated (400 `invalid_or_expired`): it succeeds only when a REAL Telegram user taps the bot screen. The harness's implementation and its NB(deploy coupling) comment confirm this skip is expected. Stages 5–8 not run. Verdict SKIP (exit 2) — a test-stage skip, NOT a successful purchase; no money moved, no entitlement created, no customer record mutated.
+- Live adversarial inbox (production, signed): **10/10 PASS** — timestamp window (stale + future), malformed JSON, method guard, oversized payload, schema validation (eventId/eventType/version), event-id idempotency (first delivery parked `no_link`, duplicate `duplicate:true`).
+- Live smokes: **Worker 6/6** (health/register/login/wrong-password/no-token/inbox-unsigned, throwaway account hard-deleted, D1 left clean) and **Bot 7/7** (liveness, public contract metadata, signed wall, webhook secret guard ×2, admin gate, Phase-6 route absence).
+- NetPulse Worker regression: **91/91** + typecheck clean — signatures, timestamp window, event validation, idempotency, unknown-identity parking, account isolation, fail-closed service auth all hold.
+- Phase 6 purchase-request review (static): intent-only surface; replay-first idempotency with a UNIQUE `idempotency_key`; per-account issuance cap; price snapshot; fail-closed HMAC auth with single-use KV nonces and constant-time compare; redemption hashes the full `nppurq_` payload and binds `user_id` via a guarded UPDATE; the debit exists ONLY in the unchanged Telegram buy flow keyed `buy:${planCode}:${requestId}` — **no code path implies payment success before provider verification**. Production routes return 404 — **confirmed expected: Phase 6 is not deployed**.
+
+**Remaining purchase-flow limitations (with the exact evidence to unblock each):**
+
+1. **L1 — Purchase-to-entitlement is bot-authority-gated** (e2e stage 4). Unblock: a staging bot with stubbed Telegram identity verification, or an authorized Telegram test user; rerun the e2e harness to completion (stages 4–7).
+2. **L2 — No payment provider sandbox** (TONAPI mainnet-only). Unblock: a TONAPI testnet/sandbox endpoint with a funded test wallet; execute a $0-value purchase end-to-end.
+3. **L3 — Bank-card and C2C payments require human administrator approval.** Unblock: a staging admin approval queue plus an authorized administrator; observe a card/C2C approval through the queue.
+
+**Updated gates:** Backend/service integration **PASS** · Purchase-to-entitlement flow **BLOCKED** (L1) · VPN/TUN **NOT VERIFIED** (Phase 4) · Release candidate **NO-GO**. The absence of a payment sandbox is an infrastructure limitation, not a software test failure — it still prevents release approval.
+
+**Production footprint this session:** one throwaway e2e account (`usr__deeJTpZCNW2i8GU`, harness design — no data, no entitlements) and one throwaway smoke account (hard-deleted, verified gone). No production deploy, no production D1 mutation, no real payment.
