@@ -13,12 +13,12 @@ All estimates are engineering ranges, not commitments. "External wait" is time b
 
 | ID | Task | Current state | Priority | Dependencies | EST | Risk | Acceptance criteria | Blocker |
 |---|---|---|---|---|---|---|---|---|
-| T2.1 | Re-authenticate wrangler (`wrangler login` interactively or a scoped `CLOUDFLARE_API_TOKEN`: Workers:Write, D1:Write) | BLOCKED | P1 | operator action | 0.25–0.5 day | Low | `npx wrangler whoami` shows the account | expired token |
+| T2.1 | Re-authenticate wrangler | **PARTIAL** — OAuth login succeeded (2026-10-13) as `radinshurideh@gmail.com` (account `4ca19fcad2d9fb155873fc9e0eb481e6`), but the configured account `7380a67667052f3a7a3b11301ce7a77b` is not among the authenticated user's accounts → all D1/Worker API calls fail (7403/10000). Remaining: authenticate an identity that belongs to account `7380a…`, or set `CLOUDFLARE_API_TOKEN` created **in that account** (Workers:Write, D1:Write, Account Settings:Read) | P1 | operator action | 0.25–0.5 day | Low | `npx wrangler whoami` shows account `7380a…`; `wrangler d1 list` returns the `netpulse-cloud` database | account authorization boundary |
 | T2.2 | Apply D1 migrations to production (`npm run db:migrate:remote -w @netpulse/cloud-worker`) | NOT RUN | P1 | T2.1 | 0.5–1 day | Medium (production DB) | migrations apply clean; `wrangler d1 migrations list` shows all applied | T2.1 |
 | T2.3 | Deploy the worker (`npx wrangler deploy --env ""`) and smoke `/api/v1/meta/health`-equivalent worker routes | NOT RUN | P1 | T2.2 | 0.5–1 day | Medium | deploy succeeds; health route 200 on production origin | T2.2 |
 | T2.4 | Verify staging env behaves (same D1 by design — confirm that is intended, or provision a separate D1 for true isolation) | design decision | P2 | T2.1 | 0.5–1 day | Low | documented decision; staging data isolation confirmed or accepted | T2.1 |
 
-Phase EST: 1.75–3.5 days (mostly external wait on T2.1). **Critical path to any production release.**
+Phase EST: 1.75–3.5 days (mostly external wait on T2.1). **Critical path to any production release.** Phase 2 attempt log (2026-10-13): login OK, remote access blocked at the account boundary — see TEST_RESULTS.md rows 11–17 and RELEASE_GATE_REPORT.md "Phase 2 execution record".
 
 ## Phase 3 — Live Integration Verification (Abystral bot, payments)
 **Objective:** verify the purchase→entitlement chain against the bot's sandbox.

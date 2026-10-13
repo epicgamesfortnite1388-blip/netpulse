@@ -5,7 +5,7 @@ AUDIT DATE: 2026-10-13
 GIT COMMIT: 7c2a9d9f8ffd591d515f5ed9f1a445a68d3631fa (plus uncommitted test/hygiene fix)
 WORKING TREE: clean except untracked `.staging-dist/` (now gitignored)
 
-AUDIT STATUS: COMPLETE (local verification); production/live integration checks BLOCKED by expired Cloudflare auth and absent external services
+AUDIT STATUS: COMPLETE (local verification); production deploy BLOCKED at the Cloudflare account-authorization boundary; live integration checks blocked by absent external services
 
 BASELINE (2026-10-13, before this session's repairs):
 - Tests: API 1007/1007 · web 349/349 · shared 58/58 · cloud-worker 91/91 · Rust 149 passed/0 failed/2 ignored
@@ -31,8 +31,8 @@ CONFIRMED BUGS FOUND: 4 (this session) + 5 (earlier 2026-10-12 session, all fixe
 CONFIRMED BUGS FIXED: 9
 REGRESSION TESTS ADDED: 53 (engineFundamentals.test.ts) + 5 (secureStore.test.ts, prior session)
 REGRESSION TESTS PASSED: all (see TEST_RESULTS.md)
-REMAINING RELEASE BLOCKERS: production deploy not executed (auth expired); live bot/payment/TUN/VPN flows unverified
-ENVIRONMENTAL BLOCKERS: Cloudflare auth token expired; no Windows admin elevation for live TUN; Abystral bot service external; no CI workflows exist
+REMAINING RELEASE BLOCKERS: production deploy not executed (account authorization boundary, 2026-10-13); live bot/payment/TUN/VPN flows unverified
+ENVIRONMENTAL BLOCKERS: Cloudflare account boundary (logged in as radinshurideh@gmail.com / account 4ca19fcad2d9fb155873fc9e0eb481e6; production worker and D1 live in account 7380a67667052f3a7a3b11301ce7a77b, not accessible to this identity); no Windows admin elevation for live TUN; Abystral bot service external; no CI workflows exist
 EST REMAINING: 16–26 engineering days (see REMAINING_ROADMAP.md)
 
 ---
@@ -127,7 +127,7 @@ See REPAIR_LOG.md. All four this-session defects fixed with regression coverage;
 
 ## 12. Remaining issues (not defects — unverified surfaces)
 
-- Production deploy not executed (expired Cloudflare auth) — BLOCKED
+- Production deploy not executed (Cloudflare account authorization boundary) - BLOCKED
 - Live Abystral bot, payment, and entitlement flows — NOT VERIFIED (external)
 - Live VPN node dial, TUN adapter creation, system-proxy handoff — NOT VERIFIED (need Windows admin + authorized nodes)
 - Clean install / upgrade / uninstall of the NSIS package — NOT VERIFIED
@@ -135,7 +135,7 @@ See REPAIR_LOG.md. All four this-session defects fixed with regression coverage;
 
 ## 13. Environmental limitations
 
-Cloudflare API token expired and the shell is non-interactive (`wrangler login` requires a browser). No elevation to Administrator in this environment (TUN/wintun creation unexercisable). Abystral bot, payment provider, and production D1 are external and inaccessible from this environment. All of these are recorded as BLOCKED/NOT VERIFIED, never as failures.
+Cloudflare OAuth login succeeded (radinshurideh@gmail.com) but that identity belongs to account 4ca19fcad2d9fb155873fc9e0eb481e6, while wrangler.toml targets account 7380a67667052f3a7a3b11301ce7a77b (owner of worker netpulse-cloud and D1 31f2435b-3c23-42ad-b5b8-3b7f815d17dc). D1 and Worker API calls fail with 7403/10000. Deploying into the authenticated personal account was deliberately refused: it would create a new, non-production worker with no production database. No elevation to Administrator in this environment (TUN/wintun creation unexercisable). Abystral bot, payment provider, and production D1 are external and inaccessible from this environment. All of these are recorded as BLOCKED/NOT VERIFIED, never as failures.
 
 ## 14. Maturity scores (scale: 0/25/50/75/90/100)
 
