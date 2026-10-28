@@ -42,7 +42,10 @@ concurrency:
 jobs:
   gates:
     name: lint, typecheck, tests, rust, feed
-    runs-on: windows-latest
+    # `windows-latest` now resolves to `windows-2025-vs2026`. Node 22's
+    # node-gyp cannot parse the VS 18 install there, so `npm ci` falls
+    # back to a native `better-sqlite3` build and fails before any gate.
+    runs-on: windows-2022
     timeout-minutes: 60
 
     steps:
@@ -133,7 +136,9 @@ jobs:
   # or downloaded, and a failure here must not mask the unit gates above.
   webview-navigation:
     name: navigation backstop (real webview)
-    runs-on: windows-latest
+    # Same VS 18 / node-gyp incompatibility as `gates`; pin the image that
+    # ships the Visual Studio version Node 22 can build against.
+    runs-on: windows-2022
     timeout-minutes: 45
 
     steps:
