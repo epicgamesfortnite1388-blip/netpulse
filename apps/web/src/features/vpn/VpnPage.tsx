@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as RTabs from '@radix-ui/react-tabs';
-import { Cpu, Globe, Route, Shield, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Cpu, Globe, Route, Shield, ShieldCheck, ShieldOff, Wifi } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -10,12 +10,15 @@ import { useToast } from '@/components/Toaster';
 import { api } from '@/lib/api';
 import { usePersistentState } from '@/lib/usePersistentState';
 
+import { AdaptiveRecoveryCard } from './AdaptiveRecoveryCard';
 import { AetherSurface } from './AetherSurface';
 import { CoreSurface } from './CoreSurface';
 import { EngineIntakeCard } from './EngineIntakeCard';
 import { OverviewSurface } from './OverviewSurface';
+import { ProvisionedRepairCard } from './ProvisionedRepairCard';
 import { ProviderSurface } from './ProviderSurface';
 import { TunnelSurface } from './TunnelSurface';
+import { WhitednsSurface } from './WhitednsSurface';
 import { PROXY_CORE_IDS, PROXY_CORE_META, PROVIDER_LABEL, VPN_SURFACES } from './engineMeta';
 import { useAetherEngine, useKillSwitch, useProxyEngines, useVpnProviders, useVpnStatus } from './useVpnData';
 
@@ -190,6 +193,34 @@ export default function VpnPage() {
   const provider = (id: string) => providers.find((p) => p.id === id);
   const installedCores = engines.filter((e) => e.available);
 
+  const nativeClients = () => {
+    const out: RailItem[] = [
+      {
+        id: 'whitedns',
+        label: 'WhiteDNS Soar',
+        icon: Wifi,
+        glyph: 'from-emerald-500/25 to-teal-400/10 text-emerald-300',
+        dot: { tone: 'idle' } as const,
+        state: 'data-plane test',
+      },
+    ];
+    for (const id of ['wireguard', 'openvpn'] as const) {
+      const info = provider(id);
+      const available = info?.available === true;
+      const isConnected = status?.providerId === id && connected;
+      out.push({
+        id,
+        label: id === 'wireguard' ? 'WireGuard' : 'OpenVPN',
+        icon: ShieldCheck,
+        glyph:
+          id === 'wireguard' ? 'from-rose-500/25 to-orange-400/10 text-rose-300' : 'from-amber-500/25 to-yellow-400/10 text-amber-300',
+        dot: { tone: isConnected ? 'ok' : available ? 'idle' : 'warn' } as const,
+        state: isConnected ? 'connected' : available ? 'available' : 'not detected',
+      });
+    }
+    return out;
+  };
+
   const groups: RailGroup[] = [
     {
       heading: 'Dispatch',
@@ -253,19 +284,7 @@ export default function VpnPage() {
     },
     {
       heading: 'Native clients',
-      items: (['wireguard', 'openvpn'] as const).map((id) => {
-        const info = provider(id);
-        const available = info?.available === true;
-        const isConnected = status?.providerId === id && connected;
-        return {
-          id,
-          label: id === 'wireguard' ? 'WireGuard' : 'OpenVPN',
-          icon: ShieldCheck,
-          glyph: id === 'wireguard' ? 'from-rose-500/25 to-orange-400/10 text-rose-300' : 'from-amber-500/25 to-yellow-400/10 text-amber-300',
-          dot: { tone: isConnected ? 'ok' : available ? 'idle' : 'warn' } as const,
-          state: isConnected ? 'connected' : available ? 'available' : 'not detected',
-        };
-      }),
+      items: nativeClients(),
     },
   ];
 
@@ -302,6 +321,19 @@ export default function VpnPage() {
         killSwitchBlocking={killSwitch?.blocking === true}
         blockingReason={killSwitch?.reason}
       />
+
+      {/* Subscription repair sits above the engines, not inside one: a
+          credential the server stopped accepting breaks every core at once, so
+          it belongs to the section rather than to the xray or sing-box tab the
+          user happens to have open. It renders nothing when nothing is failing. */}
+      <ProvisionedRepairCard />
+
+      {/* Adaptive intelligence is a section-level diagnostic too: it explains why
+          one core was preferred over another on THIS network, and it is the only
+          place the local learning data can be inspected and deleted. It reads the
+          node the tunnel is actually on, so the strategy list it shows is the real
+          compatibility answer for that node. */}
+      <AdaptiveRecoveryCard nodeId={tunnel?.nodeId ?? null} />
 
       <RTabs.Root value={surface} onValueChange={(v) => setSurface(v as VpnSurfaceId)} orientation="vertical">
         <div className="grid gap-6 lg:grid-cols-[212px_minmax(0,1fr)] lg:items-start">
@@ -395,6 +427,10 @@ export default function VpnPage() {
 
             <RTabs.Content value="openvpn" className="animate-fade-up focus-visible:outline-none">
               <ProviderSurface providerId="openvpn" />
+            </RTabs.Content>
+
+            <RTabs.Content value="whitedns" className="animate-fade-up focus-visible:outline-none">
+              <WhitednsSurface />
             </RTabs.Content>
           </div>
         </div>

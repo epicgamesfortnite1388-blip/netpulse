@@ -88,7 +88,7 @@ export function Toaster() {
           // The visible text IS the notification, so it must not double as the
           // button's name — "Import profile, button" reads as a duplicate.
           aria-label={`Dismiss notification: ${t.title}`}
-          className="animate-fade-up pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-line-strong bg-elevated px-4 py-3 text-left shadow-overlay transition-opacity hover:opacity-90"
+          className="toast-in pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-line-strong bg-elevated px-4 py-3 text-left shadow-overlay transition-opacity hover:opacity-90"
         >
           <span className="mt-0.5" aria-hidden="true">
             {ICONS[t.tone]}

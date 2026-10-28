@@ -62,6 +62,53 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   );
 }
 
+/**
+ * The Suspense fallback for a lazy route: a progress rail plus the SHAPE of a
+ * page (title, a row of panels, one wide panel).
+ *
+ * This replaces a centred spinner. A spinner says "something is happening" and
+ * nothing else, so the window looked empty for the length of a chunk download
+ * and then snapped to a fully drawn page. A skeleton of the right shape makes
+ * the wait read as the page arriving, and the arrival (the `page-enter`
+ * animation around the real page) completes the movement instead of restarting
+ * it from blank.
+ *
+ * Everything visual is `aria-hidden`; the announcement is the single status
+ * line, so assistive tech hears one "Opening page" rather than a dozen empty
+ * boxes.
+ */
+export function PageSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <span className="sr-only">Opening page</span>
+      <div className="route-progress" aria-hidden="true" />
+      <div aria-hidden="true" className="animate-fade-up space-y-6">
+        <div className="space-y-2.5">
+          <div className="skeleton h-6 w-56" />
+          <div className="skeleton h-3.5 w-80 max-w-full" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-xl border border-line bg-surface/60 p-5 shadow-raised">
+              <div className="skeleton h-3 w-24" />
+              <div className="skeleton mt-3 h-7 w-32" />
+              <div className="skeleton mt-4 h-2.5 w-full" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-line bg-surface/60 p-5 shadow-raised">
+          <div className="skeleton h-3 w-28" />
+          <div className="mt-4 space-y-2.5">
+            <div className="skeleton h-3 w-full" />
+            <div className="skeleton h-3 w-11/12" />
+            <div className="skeleton h-3 w-3/4" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LoadingState({ label = 'Loading' }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2.5 rounded-xl border border-line bg-surface/50 px-6 py-14 text-sm text-muted">

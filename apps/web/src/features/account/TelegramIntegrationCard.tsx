@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { useToast } from '@/components/Toaster';
 import { CloudError, cloudApi, type NetpulseSubscription } from '@/lib/cloud/client';
+import { openExternalUrl } from '@/lib/openExternal';
 import { useSessionStore } from '@/lib/cloud/sessionStore';
 import { SubscriptionCard } from './SubscriptionCard';
 
@@ -40,6 +41,7 @@ export function TelegramIntegrationCard() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<LinkStatus>(IDLE_STATUS);
   const [pendingCode, setPendingCode] = useState('');
+  const [pendingDeepLink, setPendingDeepLink] = useState('');
   const [confirmCode, setConfirmCode] = useState('');
   const [subs, setSubs] = useState<NetpulseSubscription[] | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -49,6 +51,8 @@ export function TelegramIntegrationCard() {
   const load = useCallback(async () => {
     if (!session) return;
     try {
+      // The connection status is the source of truth — load it first and keep
+      // it even if downstream subscription/sync calls fail.
       const link = await cloudApi.netpulse.status();
       setStatus({
         connected: link.connected,
@@ -58,11 +62,19 @@ export function TelegramIntegrationCard() {
         lastSyncStatus: link.last_sync_status,
       });
       if (link.connected) {
-        const listed = await cloudApi.netpulse.subscriptions();
-        setSubs(listed.subscriptions);
-        const sync = await cloudApi.netpulse.syncStatus();
-        setLastSyncAt(sync.lastSyncAt);
-        setSyncError(sync.error);
+        try {
+          const listed = await cloudApi.netpulse.subscriptions();
+          setSubs(listed.subscriptions);
+        } catch {
+          setSubs(null);
+        }
+        try {
+          const sync = await cloudApi.netpulse.syncStatus();
+          setLastSyncAt(sync.lastSyncAt);
+          setSyncError(sync.error);
+        } catch {
+          setSyncError('sync status unavailable');
+        }
       } else {
         setSubs(null);
       }
@@ -105,12 +117,18 @@ export function TelegramIntegrationCard() {
     try {
       const res = await cloudApi.netpulse.link();
       setPendingCode(res.token);
+      setPendingDeepLink(res.deepLink);
       // The worker already minted this code FOR this account; asking the user
       // to go and fetch it from Telegram made them copy a value the app was
       // holding. Pre-fill it so confirming is one click, and show it below so
       // they can still send it to the bot by hand.
       setConfirmCode(res.token);
-      window.open(res.deepLink, '_blank');
+      // Not `window.open`: this runs after an await inside the Tauri webview,
+      // where the popup blocker drops it and an in-app window cannot hand
+      // `t.me` to Telegram. The IPC opens the real browser (see
+      // lib/openExternal.ts), and the link is also rendered below so a
+      // browser-mode popup block is still recoverable with one click.
+      openExternalUrl(res.deepLink);
       toast('ok', 'Telegram opened - confirm the link there, then press Confirm');
     } catch (err) {
       toast('error', err instanceof CloudError ? err.message : 'Could not start linking');
@@ -126,6 +144,7 @@ export function TelegramIntegrationCard() {
       await cloudApi.netpulse.confirm(confirmCode.trim());
       setConfirmCode('');
       setPendingCode('');
+      setPendingDeepLink('');
       toast('ok', 'Telegram linked');
       await load();
     } catch (err) {
@@ -143,6 +162,7 @@ export function TelegramIntegrationCard() {
       setStatus(IDLE_STATUS);
       setSubs(null);
       setPendingCode('');
+      setPendingDeepLink('');
       setConfirmCode('');
     } catch (err) {
       toast('error', err instanceof CloudError ? err.message : 'Could not unlink');
@@ -220,7 +240,15 @@ export function TelegramIntegrationCard() {
                 {pendingCode && (
                   <div className="flex flex-col gap-2">
                     <p className="text-xs text-muted">
-                      Confirm the link in Telegram, then press Confirm. If Telegram did not show you a code, send this one to the bot:
+                      Confirm the link in Telegram, then press Confirm. If Telegram did not open,{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-text"
+                        onClick={() => openExternalUrl(pendingDeepLink)}
+                      >
+                        open the bot
+                      </button>{' '}
+                      and send it this code:
                     </p>
                     <div className="flex items-center gap-2">
                       <code className="select-all rounded border border-line px-2 py-1 font-mono text-xs">{pendingCode}</code>

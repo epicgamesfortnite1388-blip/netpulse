@@ -157,7 +157,7 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
   ];
 
   return (
-    <DisclosureScope name="vpn:overview" className="animate-fade-up">
+    <DisclosureScope name="vpn:overview" className="stagger animate-fade-up">
       <MetricStrip
         className="mb-7"
         items={[

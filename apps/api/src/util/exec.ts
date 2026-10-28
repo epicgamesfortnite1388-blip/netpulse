@@ -15,10 +15,10 @@ export interface ExecResult {
 export function runCommand(
   cmd: string,
   args: string[],
-  options: { timeoutMs: number; onStdoutLine?: (line: string) => void },
+  options: { timeoutMs: number; onStdoutLine?: (line: string) => void; env?: NodeJS.ProcessEnv },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { windowsHide: true, shell: false });
+    const child = spawn(cmd, args, { windowsHide: true, shell: false, env: options.env });
     let stdout = '';
     let stderr = '';
     let timedOut = false;

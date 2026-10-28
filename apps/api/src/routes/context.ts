@@ -34,6 +34,7 @@ import type { RealtimeBus } from '../realtime/bus';
 import type { PlatformNetworkController } from '../providers/platform/types';
 import type { ProviderRegistry } from '../providers/registry';
 import type { ReputationProvider } from '../providers/reputation/types';
+import type { AdaptiveEngine } from '../services/adaptiveEngine';
 import type { DiagnosticsService } from '../services/diagnosticsService';
 import type { DnsService } from '../services/dnsService';
 import type { EndpointService } from '../services/endpointService';
@@ -50,6 +51,7 @@ import type { RouteService } from '../services/routeService';
 import type { ScheduleService } from '../services/scheduleService';
 import type { SettingsService } from '../services/settingsService';
 import type { VpnSelfTestService } from '../services/vpnSelfTestService';
+import type { WhitednsService } from '../services/whitednsService';
 import type { SpeedService } from '../services/speedService';
 import type { StabilityService } from '../services/stabilityService';
 import type { VpnRegistry } from '../vpn/vpnService';
@@ -123,8 +125,11 @@ export interface AppContext {
     schedule: ScheduleService;
     vpnSelfTest: VpnSelfTestService;
     tunnel: ProxyTunnelService;
+    whitedns: WhitednsService;
     killSwitch: KillSwitchService;
     gatewayMemory: GatewayMemoryService;
+    /** Adaptive connectivity: reorders installed+compatible cores from observed outcomes. */
+    adaptive: AdaptiveEngine;
     discovery: NodeDiscoveryService;
     vpnHistory: VpnHistoryService;
     /**

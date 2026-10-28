@@ -2,7 +2,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { egressFetch, EgressError, resetProxyCache } from '../src/services/egressProxy';
+import { currentProxy, egressFetch, EgressError, resetProxyCache } from '../src/services/egressProxy';
 
 /**
  * The behaviour that the whole change exists for: an outbound cloud call must
@@ -106,6 +106,15 @@ describe('egressFetch', () => {
   it('does not touch the proxy when none is configured', async () => {
     delete process.env['NETPULSE_EGRESS_PROXY'];
     resetProxyCache();
+
+    // The claim is about the app's own proxy setting, not about the machine.
+    // A developer running Clash / v2rayN has a system proxy enabled, and
+    // egress is *supposed* to use it — that proxy, not the fixture. Measure
+    // that decision first, so 200 is only required when the call went direct.
+    // (Without this the test failed on any machine with a proxy client up,
+    // because the ambient proxy refuses loopback targets with its own 5xx.)
+    const ambient = await currentProxy();
+
     const res = await egressFetch({
       url: `http://127.0.0.1:${originPort}/api/v1/health`,
       method: 'GET',
@@ -113,13 +122,13 @@ describe('egressFetch', () => {
       timeoutMs: 8000,
     }).catch((e) => e);
 
-    // On a machine with no system proxy this succeeds and never connects;
-    // where one IS set the call is expected to go through it. Either way the
-    // request must complete rather than silently hang.
+    // The fixture listener was never chosen, whether the machine is direct or
+    // proxied. And the call completed — either with a response or a typed
+    // failure — rather than silently hanging.
+    expect(connects).toBe(0);
     expect(res).toBeInstanceOf(Object);
-    if (!(res instanceof EgressError)) {
+    if (ambient === null && !(res instanceof EgressError)) {
       expect(res.status).toBe(200);
-      expect(connects).toBe(0);
     }
   });
 

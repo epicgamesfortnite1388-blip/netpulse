@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
+import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { Field, Input } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -15,7 +16,6 @@ import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { api } from '@/lib/api';
 import { usePersistentId, usePersistentState } from '@/lib/usePersistentState';
 import { useBackgroundTest } from '@/lib/useBackgroundTest';
-import { tauriInvoke } from '@/lib/transport';
 
 import type { DnsBenchmarkRow, DnsLeakResult, DnsQualityLabel } from '@netpulse/shared';
 
@@ -104,33 +104,6 @@ const RANGES = [
 
 function rowIsOk(r: DnsBenchmarkRow): boolean {
   return r.ok > 0 && r.latencyAvgMs != null;
-}
-
-/**
- * External provider links open through the desktop `open_external` IPC
- * (https-only allowlist) when available; plain <a> in web/dev mode.
- */
-function ExternalLink({ source, className, children }: { source: string; className?: string; children: React.ReactNode }) {
-  const openExternal = useCallback((url: string) => {
-    const invoke = tauriInvoke('open_external', { url });
-    if (invoke) {
-      invoke.catch(() => undefined);
-      return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }, []);
-  return (
-    <a
-      href="#"
-      onClick={(e) => {
-        e.preventDefault();
-        openExternal(source);
-      }}
-      className={className}
-    >
-      {children}
-    </a>
-  );
 }
 
 export default function DnsPage() {
@@ -379,7 +352,7 @@ export default function DnsPage() {
                     <CardHeader
                       title={g.name}
                       subtitle={g.description}
-                      actions={                        <ExternalLink source={g.homepage} className="text-micro text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalLink>
+                      actions={                        <ExternalUrlLink href={g.homepage} className="text-micro text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalUrlLink>
                       }
                     />
                     <CardBody className="space-y-1.5">

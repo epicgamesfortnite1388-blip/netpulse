@@ -184,7 +184,11 @@ fn spawn_reveal(canonical: &PathBuf) -> Result<(), String> {
 /// host required. Opened via the OS protocol handler WITHOUT any shell
 /// (no cmd/bash interpreter in the chain), so URL metacharacters can never
 /// reach a command interpreter.
-fn validated_external_url(url: &str) -> Result<tauri::Url, String> {
+///
+/// `pub(crate)` because the navigation backstop (`navigation.rs`) asks this same
+/// question of a URL the webview tried to follow. One validator, one answer: a
+/// link the backstop opens is exactly a link the command would have opened.
+pub(crate) fn validated_external_url(url: &str) -> Result<tauri::Url, String> {
     let parsed = tauri::Url::parse(url).map_err(|e| format!("invalid url: {e}"))?;
     if parsed.scheme() != "https" {
         return Err("only https:// URLs can be opened".into());
@@ -205,12 +209,137 @@ fn validated_external_url(url: &str) -> Result<tauri::Url, String> {
     Ok(parsed)
 }
 
+/// Which exit asked for a handoff.
+///
+/// Recorded per handoff (see `record_handoff`), so the real-webview test can
+/// tell the exits apart from DATA — this layer, that URL, this outcome — instead
+/// of inferring it from log wording, which made every message a contract.
+#[derive(Clone, Copy)]
+pub(crate) enum HandoffSource {
+    /// The `open_external` command: a page that routed the link through the guard
+    /// in `apps/web/src/lib/externalNavigation.ts`.
+    Command,
+    /// The `on_navigation` backstop in `window.rs`.
+    Navigation,
+    /// The `on_new_window` backstop in `window.rs`.
+    NewWindow,
+}
+
+impl HandoffSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            HandoffSource::Command => "command",
+            HandoffSource::Navigation => "navigation",
+            HandoffSource::NewWindow => "new-window",
+        }
+    }
+}
+
+/// The environment variable naming the file handoffs are recorded into.
+///
+/// **Unset in every normal run, on purpose.** A durable journal of the URLs the
+/// app opened is a browsing record, and this product does not keep one; the
+/// variable exists so `tests/navigation_webview.rs` can read a handoff as data
+/// (URL, layer, spawn outcome) rather than matching log phrases. The test points
+/// it at a temp file and deletes it when the run passes.
+const HANDOFF_RECORD_ENV: &str = "NETPULSE_HANDOFF_RECORD";
+
 /// Open an https URL in the user's default browser.
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     let parsed = validated_external_url(&url)?;
+    launch_external(&parsed, HandoffSource::Command)
+}
+
+/// Open a URL that did not arrive through the `open_external` command.
+///
+/// Used by the navigation backstop, which sees the URLs the page never routed
+/// through the JS guard. It re-validates the URL instead of trusting the
+/// caller, so both entry points share one allow-list and one launch path.
+pub(crate) fn open_external_url(url: &tauri::Url, source: HandoffSource) -> Result<(), String> {
+    let parsed = validated_external_url(url.as_str())?;
+    launch_external(&parsed, source)
+}
+
+/// Log and hand an already-validated URL to the platform's browser.
+///
+/// The `opening external link for host …` line is a diagnostic for a human
+/// reading the log. The *evidence* a test can assert on is the record written by
+/// `record_handoff` below — URL, source and outcome as data — so rewording this
+/// message no longer breaks anything.
+fn launch_external(parsed: &tauri::Url, source: HandoffSource) -> Result<(), String> {
     let host = parsed.host_str().unwrap_or("");
     crate::logging::log_info!("opening external link for host {host}");
+
+    let launched = spawn_external(parsed);
+    // Recorded AFTER the attempt, so a row means the OS was really asked, not
+    // that the app intended to ask.
+    record_handoff(parsed, source, launched.is_ok());
+    launched
+}
+
+/// Debug-only seam that replaces the OS launch in tests.
+///
+/// The no-journal guarantee has to be pinned at the `open_external` command
+/// boundary, not only at `record_handoff`: a caller could add a write on the
+/// way in. Exercising the command for real would open a browser, so tests set
+/// this thread-local to a function that records the call and returns success.
+/// It is compiled into test and debug builds only — a release binary has no
+/// seam and always reaches the platform handler.
+#[cfg(any(test, debug_assertions))]
+type ExternalLaunch = fn(&tauri::Url) -> Result<(), String>;
+
+#[cfg(any(test, debug_assertions))]
+thread_local! {
+    static EXTERNAL_LAUNCH_SEAM: std::cell::Cell<Option<ExternalLaunch>> =
+        const { std::cell::Cell::new(None) };
+}
+
+// Counts calls the seam short-circuited, so a test can prove the command
+// actually reached the launch point instead of being skipped upstream.
+#[cfg(test)]
+thread_local! {
+    static EXTERNAL_LAUNCHES_SKIPPED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn skip_external_launch(_: &tauri::Url) -> Result<(), String> {
+    EXTERNAL_LAUNCHES_SKIPPED.with(|count| count.set(count.get() + 1));
+    Ok(())
+}
+
+/// Installs the launch seam for as long as this guard lives. Restores the real
+/// launch even if the test panics, so a neighbouring case cannot inherit it.
+#[cfg(test)]
+pub(crate) struct ExternalLaunchSeam;
+
+#[cfg(test)]
+impl ExternalLaunchSeam {
+    pub(crate) fn disabled() -> Self {
+        EXTERNAL_LAUNCHES_SKIPPED.with(|count| count.set(0));
+        EXTERNAL_LAUNCH_SEAM.with(|launch| launch.set(Some(skip_external_launch)));
+        Self
+    }
+
+    pub(crate) fn skipped() -> usize {
+        EXTERNAL_LAUNCHES_SKIPPED.with(std::cell::Cell::get)
+    }
+}
+
+#[cfg(test)]
+impl Drop for ExternalLaunchSeam {
+    fn drop(&mut self) {
+        EXTERNAL_LAUNCH_SEAM.with(|launch| launch.set(None));
+    }
+}
+
+/// Hand the validated URL to the platform's protocol handler — no shell in the
+/// chain, so URL metacharacters can never reach a command interpreter.
+fn spawn_external(parsed: &tauri::Url) -> Result<(), String> {
+    #[cfg(any(test, debug_assertions))]
+    if let Some(launch) = EXTERNAL_LAUNCH_SEAM.with(std::cell::Cell::get) {
+        return launch(parsed);
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -244,6 +373,52 @@ pub fn open_external(url: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Append one JSON object per handoff to the file named by the environment, when
+/// one is set. One object per line, so a reader can consume it while the app is
+/// still running:
+///
+/// ```text
+/// {"at":1793051965259,"url":"https://example.com/","host":"example.com","source":"command","ok":true}
+/// ```
+///
+/// A missing configuration or an unwritable file must never fail a handoff: this
+/// is evidence for a test, not user-visible behaviour.
+fn record_handoff(parsed: &tauri::Url, source: HandoffSource, ok: bool) {
+    let Some(path) = std::env::var_os(HANDOFF_RECORD_ENV) else {
+        return;
+    };
+    if path.is_empty() {
+        return;
+    }
+
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let mut line = serde_json::json!({
+        "at": at,
+        "url": parsed.as_str(),
+        "host": parsed.host_str().unwrap_or(""),
+        "source": source.as_str(),
+        "ok": ok,
+    })
+    .to_string();
+    line.push('\n');
+
+    use std::io::Write;
+    let written = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(line.as_bytes()));
+    if let Err(e) = written {
+        crate::logging::log_warn!(
+            "handoff record not written to {}: {e}",
+            path.to_string_lossy()
+        );
+    }
 }
 
 #[cfg(test)]

@@ -192,7 +192,12 @@ pub(crate) mod tests {
     }
 
     /// Runs `body` with APPDATA set to `value`, restoring the real one after.
-    fn with_appdata(value: Option<&str>, body: impl FnOnce()) {
+    ///
+    /// `pub(crate)` because `os_open`'s handoff-record tests need a scratch
+    /// profile too, and the environment is process-wide: the value they point
+    /// APPDATA at is what decides whether a fallback write would land somewhere
+    /// real, so those cases must hold this same lock while they run.
+    pub(crate) fn with_appdata(value: Option<&str>, body: impl FnOnce()) {
         let _guard = env_guard();
         let previous = std::env::var_os("APPDATA");
         // SAFETY of the intent: single-threaded here because of env_guard.

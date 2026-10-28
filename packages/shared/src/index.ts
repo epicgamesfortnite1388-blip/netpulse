@@ -27,5 +27,8 @@ export * from './schemas/settings';
 export * from './schemas/vpnTunnel';
 export * from './schemas/engines';
 export * from './schemas/tests';
+export * from './schemas/whitedns';
 export * from './score/engine';
+export * from './adaptive';
 export * from './net/stats';
+export * from './cloud/provisionConfig';

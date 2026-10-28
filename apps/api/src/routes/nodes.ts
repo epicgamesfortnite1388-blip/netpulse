@@ -316,40 +316,33 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const results: Record<string, { success: boolean; latencyMs?: number; error?: string }> = {};
 
-    // Bounded parallelism: sequential testing of 100 nodes would hold this
-    // request open for minutes; unbounded Promise.all would saturate sockets.
-    // 8 workers keep completion times reasonable without overwhelming the OS.
-    const CONCURRENCY = 8;
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < nodeIds.length) {
-        const nodeId = nodeIds[cursor++] ?? '';
-        if (!nodeId) break;
-        try {
-          const result = await nodesService.testNode(nodeId, type);
-          let error = result.error || undefined;
-          if (error) {
-            // Same rule as the single-test route: a probe error may quote the
-            // node's address, so it is masked against that node's row.
-            const row = ctx.repos.publicNodes.get(nodeId);
-            const s = row ? scrubberFromRows([row]) : null;
-            if (s && s.size > 0) error = s.mask(error);
-          }
-          results[nodeId] = {
-            success: result.status === 'done',
-            latencyMs: result.latencyMs || undefined,
-            error,
-          };
-        } catch (err) {
-          let message = err instanceof Error ? err.message : String(err);
-          const row = ctx.repos.publicNodes.get(nodeId);
-          const s = row ? scrubberFromRows([row]) : null;
-          if (s && s.size > 0) message = s.mask(message);
-          results[nodeId] = { success: false, error: message };
-        }
-      }
+    // Testing goes through the service's bulk path: `proxy` runs several nodes
+    // through ONE shared core instead of one process per node, tcp/tls/icmp
+    // keep bounded concurrency (they spawn nothing). The response shape and
+    // the masking rules are unchanged.
+    const outcomes = await nodesService.testNodes(nodeIds, type);
+    const mask = (nodeId: string, text: string): string => {
+      // Same rule as the single-test route: a probe error may quote the
+      // node's address, so it is masked against that node's row.
+      const row = ctx.repos.publicNodes.get(nodeId);
+      const s = row ? scrubberFromRows([row]) : null;
+      return s && s.size > 0 ? s.mask(text) : text;
     };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, nodeIds.length) }, worker));
+
+    outcomes.forEach((outcome, i) => {
+      const nodeId = nodeIds[i] ?? '';
+      if (!outcome) return;
+      if (!outcome.result) {
+        results[nodeId] = { success: false, error: mask(nodeId, outcome.error ?? 'test failed') };
+        return;
+      }
+      const error = outcome.result.error || undefined;
+      results[nodeId] = {
+        success: outcome.result.status === 'done',
+        latencyMs: outcome.result.latencyMs || undefined,
+        error: error ? mask(nodeId, error) : undefined,
+      };
+    });
 
     return { results };
   });
@@ -767,29 +760,26 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
       };
 
       try {
-        let cursor = 0;
-        const worker = async (): Promise<void> => {
-          while (!cancelled) {
-            const nodeId = targets[cursor++];
-            if (!nodeId) break;
-            try {
-              const result = await nodesService.testNode(nodeId, testType);
-              tested++;
-              if (result.status === 'done') {
-                healthy++;
-              } else if (result.status === 'error' || result.status === 'failed') {
-                failed++;
-              } else {
-                degraded++;
-              }
-            } catch {
-              tested++;
+        // `deep-test` (proxy) is where batching matters: testNodes puts several
+        // nodes in one core, so a scan does not pay a full start per node. The
+        // other kinds are cheap socket probes and keep the worker pool. Both
+        // honour cancellation and report progress per settled node.
+        await nodesService.testNodes(targets, testType, {
+          concurrency,
+          shouldStop: () => cancelled,
+          onResult: (outcome) => {
+            tested++;
+            const status = outcome.result?.status;
+            if (status === 'done') {
+              healthy++;
+            } else if (outcome.error || status === 'error' || status === 'failed') {
               failed++;
+            } else {
+              degraded++;
             }
             if (tested % Math.max(1, Math.floor(total / 20)) === 0 || tested === total) publishProgress();
-          }
-        };
-        await Promise.all(Array.from({ length: Math.min(concurrency, total) }, worker));
+          },
+        });
 
         if (cancelled) {
           ctx.repos.scanJobs.finish(jobId, 'cancelled');

@@ -1,4 +1,4 @@
-//! Main-window presentation: restore, size to the monitor, centre, focus.
+//! The main window: created here, then restored, sized, centred and focused.
 //!
 //! Split out of `main.rs` because this is the one part of startup that is
 //! Windows-specific *and* stateful in a way the rest of the file is not. It
@@ -9,11 +9,22 @@
 //! share `main.rs`, and keeping it there meant reading 700 lines to answer
 //! "why is the window the wrong size?".
 //!
-//! This module owns *only* presentation. It decides where the window goes and
-//! how big it is; it never decides what the app does.
+//! **The window is built in Rust, not in `tauri.conf.json`.** A config-declared
+//! window cannot carry `on_navigation` / `on_new_window` — those are builder
+//! callbacks — and without them the webview's navigation policy exists only in
+//! JavaScript, i.e. only for as long as a page that installs it is running.
+//! Creating the window here is what puts the backstop in front of the first
+//! navigation, before any bundle has loaded. `tauri.conf.json` therefore has no
+//! `app.windows` entry, and the label here (`main`) is the one capabilities,
+//! the tray and the single-instance plugin look up.
+//!
+//! This module owns presentation and the window's creation; the policy itself
+//! lives in `navigation.rs`.
 
 use crate::logging::{log_error, log_info, log_warn};
-use tauri::{AppHandle, Manager};
+use crate::navigation::{classify, Navigation};
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Never smaller than this: 240px sidebar + an `lg`-width content column.
 const MIN_W: u32 = 1120;
@@ -21,6 +32,121 @@ const MIN_H: u32 = 680;
 /// Enough of the screen to read comfortably without maximising, while still
 /// leaving the desktop visible around the window.
 const FRACTION: f64 = 0.86;
+
+/// Build the main window and install the navigation backstop.
+///
+/// Both callbacks are registered on the builder, so they exist before the first
+/// byte of the page is parsed. Everything the app legitimately loads is the
+/// bundled-asset document (or, in a debug build, the dev server); anything else
+/// is either handed to the OS browser or refused — see `navigation::classify`.
+///
+/// A second webview is never created: `on_new_window` always answers `Deny`,
+/// because Tauri would render it without browser chrome and without a protocol
+/// handler for the destination (`t.me` included) — a blank in-app window the
+/// user cannot get out of.
+///
+/// The dev origin is read from the same config `tauri dev` uses, and only in a
+/// debug build. A release build has no dev server, so it has no such origin to
+/// allow.
+///
+/// The log lines in both callbacks are diagnostics for a human reading the log.
+/// What `tests/navigation_webview.rs` asserts through a real WebDriver session is
+/// the *data* `os_open` records per handoff — URL, source and spawn outcome (see
+/// `HandoffSource` / `record_handoff`) — so rewording a message cannot break that
+/// test. The record exists because the alternative evidence for a handoff is a
+/// browser window nobody can drive.
+pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let dev_origin = if cfg!(debug_assertions) {
+        app.config().build.dev_url.clone()
+    } else {
+        None
+    };
+    let nav_dev = dev_origin.clone();
+    let window_dev = dev_origin;
+
+    // The label `main` is what capabilities, the tray and the single-instance
+    // plugin look up; it used to be declared alongside these options in
+    // `tauri.conf.json`.
+    let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("NetPulse")
+        // A first-paint size the presentation pass corrects to the monitor;
+        // 1280x800 is only what the window exists at for that first frame.
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(980.0, 620.0)
+        .center()
+        .visible(true)
+        .focused(true)
+        // Matches `backgroundColor` in the old config: no white flash between
+        // the window appearing and the first frame of the dark UI.
+        .background_color(tauri::window::Color(0x0b, 0x0f, 0x17, 0xff))
+        .on_navigation(move |url| match classify(url, nav_dev.as_ref()) {
+            Navigation::InApp => true,
+            Navigation::External(target) => {
+                log_info!(
+                    "navigation backstop: handing {} to the OS browser",
+                    target.host_str().unwrap_or("")
+                );
+                if let Err(e) = crate::os_open::open_external_url(
+                    &target,
+                    crate::os_open::HandoffSource::Navigation,
+                ) {
+                    log_warn!("navigation backstop: could not open the URL: {e}");
+                }
+                false
+            }
+            Navigation::Refused => {
+                log_warn!(
+                    "navigation backstop: refused {}://{} (the app never loads it and never opens it)",
+                    url.scheme(),
+                    url.host_str().unwrap_or("")
+                );
+                false
+            }
+        })
+        // The creation-time URL is `about:blank`: WebView2 starts an empty
+        // document and only then asks for the app. Logging each finished load
+        // is what makes "which document is actually in the window" answerable
+        // from the log instead of by looking at the screen.
+        .on_page_load(|_window, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                log_info!("main window loaded {}", payload.url());
+            }
+        })
+        .on_new_window(move |url, _features| {
+            // Every new window is refused, including an in-app URL: the app is
+            // one document. An external https link still reaches the browser.
+            match classify(&url, window_dev.as_ref()) {
+                Navigation::External(target) => {
+                    log_info!(
+                        "new-window backstop: opening {} externally instead",
+                        target.host_str().unwrap_or("")
+                    );
+                    if let Err(e) = crate::os_open::open_external_url(
+                        &target,
+                        crate::os_open::HandoffSource::NewWindow,
+                    ) {
+                        log_warn!("new-window backstop: could not open the URL: {e}");
+                    }
+                }
+                Navigation::InApp => log_warn!("new-window backstop: refused an in-app window"),
+                Navigation::Refused => log_warn!(
+                    "new-window backstop: refused {}://{}",
+                    url.scheme(),
+                    url.host_str().unwrap_or("")
+                ),
+            }
+            NewWindowResponse::Deny
+        })
+        .build()?;
+
+    // At this point the webview holds `about:blank`; the app document is
+    // requested after creation and reported by `on_page_load` above. The
+    // allow-list in `navigation.rs` is written from the documented origins, so
+    // that load line is also how a future Tauri release choosing a different
+    // origin would show up — instead of as a window that refuses to reload.
+    log_info!("main window created in Rust");
+    Ok(win)
+}
 
 /// Show, size and focus the main window once the app is actually running.
 ///

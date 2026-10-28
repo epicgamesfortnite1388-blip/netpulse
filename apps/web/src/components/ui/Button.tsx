@@ -38,7 +38,11 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center justify-center rounded-lg font-medium transition-all duration-150 focus-visible:outline-2 focus-visible:outline-accent/60 disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      // `active:scale` is the whole of the press feedback: 3% is enough to feel
+      // the button give under the cursor without the row shifting. Colour,
+      // border and shadow animate; the transform is instantaneous in, eased out
+      // — a springy press-release on a 32px-high button reads as a wobble.
+      className={`inline-flex items-center justify-center rounded-lg font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-accent/60 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 motion-reduce:transform-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       disabled={disabled || loading}
       {...rest}
     >

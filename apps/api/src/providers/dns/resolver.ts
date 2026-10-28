@@ -47,6 +47,8 @@ export interface DnsQueryOptions {
   port?: number;
   /** attach EDNS0 with the DO bit */
   dnssec?: boolean;
+  /** HTTP CONNECT proxy for TCP DNS (e.g. http://127.0.0.1:10808) */
+  proxy?: string;
 }
 
 export interface DnsQueryResult {
@@ -106,6 +108,136 @@ export function udpQuery(server: string, name: string, qtype: number, opts: DnsQ
 
     socket.send(msg, port, server, (err) => {
       if (err) finish(err.message);
+    });
+  });
+}
+
+/**
+ * Single TCP DNS query against a literal server IP (RFC 1035 §4.2.2).
+ *
+ * This is not a port-open probe: it writes a length-prefixed query and
+ * requires a decodable response with the matching transaction id. TCP/53 is
+ * the path Soar uses when UDP is intercepted, so an open socket alone proves
+ * nothing.
+ */
+export async function tcpQuery(server: string, name: string, qtype: number, opts: DnsQueryOptions = {}): Promise<DnsQueryResult> {
+  const timeoutMs = opts.timeoutMs ?? 2_000;
+  const port = opts.port ?? 53;
+  const klass = opts.klass ?? DnsClass.IN;
+  const id = (Math.random() * 0xffff) | 0;
+
+  let msg: Buffer;
+  try {
+    msg = encodeDnsQuery(id, name, qtype, { klass, edns: opts.dnssec, dnssecOk: opts.dnssec });
+  } catch (err) {
+    return { response: null, ms: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const start = process.hrtime.bigint();
+  let socket: net.Socket;
+  try {
+    socket = await connectTcp(server, port, opts.proxy, timeoutMs);
+  } catch (err) {
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    return { response: null, ms: Math.round(ms * 100) / 100, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  return new Promise((resolve) => {
+    let buf = Buffer.alloc(0);
+    let done = false;
+    let timer: NodeJS.Timeout | null = null;
+
+    const finish = (error?: string, response?: DnsResponse) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      socket.destroy();
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      resolve({ response: response ?? null, ms: Math.round(ms * 100) / 100, error });
+    };
+
+    timer = setTimeout(() => finish('timeout'), timeoutMs);
+    socket.setNoDelay(true);
+    const prefix = Buffer.alloc(2);
+    prefix.writeUInt16BE(msg.length, 0);
+    socket.write(Buffer.concat([prefix, msg]));
+    socket.on('data', (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length < 2) return;
+      const len = buf.readUInt16BE(0);
+      if (buf.length < 2 + len) return;
+      try {
+        const response = decodeDnsResponse(buf.subarray(2, 2 + len));
+        if (response.id !== id) {
+          finish('mismatched transaction id');
+          return;
+        }
+        finish(undefined, response);
+      } catch (err) {
+        finish(err instanceof Error ? err.message : 'malformed response');
+      }
+    });
+    socket.once('error', (err) => finish(err.message));
+    socket.once('close', () => {
+      if (!done) finish('connection closed before a response');
+    });
+  });
+}
+
+/**
+ * Open a TCP connection, optionally through a local HTTP CONNECT proxy.
+ *
+ * A DNS tunnel on a host with an active TUN can still use TCP/53 through the
+ * user's proxy without touching the TUN or the system route. Only `http://`
+ * proxies are accepted; no credentials are read from or written to logs.
+ */
+async function connectTcp(server: string, port: number, proxy: string | undefined, timeoutMs: number): Promise<net.Socket> {
+  if (!proxy) {
+    const socket = net.connect({ host: server, port });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { socket.destroy(); reject(new Error('connect timeout')); }, timeoutMs);
+      socket.once('connect', () => { clearTimeout(timer); resolve(); });
+      socket.once('error', (err) => { clearTimeout(timer); reject(err); });
+    });
+    return socket;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(proxy);
+  } catch {
+    throw new Error('proxy must be an http://host:port URL');
+  }
+  if (url.protocol !== 'http:') throw new Error('proxy must use http:// (HTTP CONNECT)');
+  if (url.username || url.password) throw new Error('proxy credentials are not supported');
+  const proxyPort = Number(url.port || 80);
+  if (!url.hostname || !Number.isInteger(proxyPort) || proxyPort <= 0 || proxyPort > 65535) {
+    throw new Error('proxy must be an http://host:port URL');
+  }
+
+  const socket = net.connect({ host: url.hostname, port: proxyPort });
+  return new Promise<net.Socket>((resolve, reject) => {
+    let buf = '';
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error('proxy connect timeout')); }, timeoutMs);
+    const fail = (err: Error) => { clearTimeout(timer); socket.destroy(); reject(err); };
+    const onData = (chunk: Buffer) => {
+      buf += chunk.toString('latin1');
+      const end = buf.indexOf('\r\n\r\n');
+      if (end < 0) return;
+      socket.removeListener('data', onData);
+      clearTimeout(timer);
+      const status = buf.slice(0, end).split('\r\n')[0] ?? '';
+      if (!/^HTTP\/1\.[01] 200\b/.test(status)) {
+        fail(new Error(`proxy CONNECT failed: ${status.slice(0, 80)}`));
+        return;
+      }
+      socket.removeListener('error', fail);
+      resolve(socket);
+    };
+    socket.on('data', onData);
+    socket.once('error', fail);
+    socket.once('connect', () => {
+      socket.write(`CONNECT ${server}:${port} HTTP/1.1\r\nHost: ${server}:${port}\r\nProxy-Connection: Keep-Alive\r\n\r\n`);
     });
   });
 }

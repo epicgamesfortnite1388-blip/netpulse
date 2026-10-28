@@ -14,6 +14,8 @@ export const QuickConnectSchema = z.object({
   maxMemoryAttempts: z.number().int().min(0).max(12).optional(),
   /** TUN mode: capture all system traffic through a sing-box TUN gateway */
   tun: z.boolean().optional(),
+  /** Opaque client-generated id used only to stream this run's live activity. */
+  activityId: z.string().uuid().optional(),
 });
 
 export type QuickConnectRequest = z.infer<typeof QuickConnectSchema>;

@@ -8,6 +8,17 @@ compatibility_flags = ["nodejs_compat_v2"]
 
 account_id = "7380a67667052f3a7a3b11301ce7a77b"
 
+# Password-reset link origin. `/reset` is served by this Worker itself (there is
+# no separate web deployment — the desktop bundle runs the SPA from
+# `tauri.localhost`), so the origin must be the Worker's own public URL. A var,
+# not a secret: it is public, reviewable, and versioned with the code.
+# The top-level environment is the LIVE production Worker (`netpulse-cloud`) —
+# the URL apps/api/src/services/egressProxy.ts and the desktop release call.
+# `env.production` deploys a DIFFERENT Worker (`netpulse-cloud-production`), so
+# it needs its own URL; staging likewise. Never copy one value across.
+[vars]
+EXPECTED_ORIGIN = "https://netpulse-cloud.shuridehradin.workers.dev"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "netpulse-cloud"
@@ -20,14 +31,32 @@ enabled = true
 # No [limits] block: the CPU-limits setting requires a paid plan; Workers'
 # default per-request CPU cap applies on Free.
 
+# Each environment's EXPECTED_ORIGIN lives in that environment's own [vars]
+# block above/below — a named environment does not inherit top-level vars, and
+# a top-level `[vars]` table is NOT `[env.production.vars]` however it is
+# positioned in the file. (The previous layout put both values in a top-level
+# table, so the production Worker ran with no EXPECTED_ORIGIN and no
+# MAIL_FROM at all — see the incident record.)
+
 # --- staging environment -----------------------------------------------------
 # Deploy with: npx wrangler deploy --env staging
 # Same D1 database is REUSED (staging is an isolated Worker code/version, not an
 # isolated dataset) — for a fully separate D1 staging DB you would need a new
 # database_id here. Secrets for staging live in environment variables managed
 # by `npx wrangler secret put --env staging NAME`.
+
+[env.production]
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "netpulse-cloud"
+database_id = "31f2435b-3c23-42ad-b5b8-3b7f815d17dc"
+migrations_dir = "migrations"
+[env.production.observability]
+enabled = true
+[env.production.vars]
+EXPECTED_ORIGIN = "https://netpulse-cloud-production.shuridehradin.workers.dev"
+
 [env.staging]
-name = "netpulse-cloud-staging"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "netpulse-cloud"
@@ -35,3 +64,5 @@ database_id = "31f2435b-3c23-42ad-b5b8-3b7f815d17dc"
 migrations_dir = "migrations"
 [env.staging.observability]
 enabled = true
+[env.staging.vars]
+EXPECTED_ORIGIN = "https://netpulse-cloud-staging.shuridehradin.workers.dev"

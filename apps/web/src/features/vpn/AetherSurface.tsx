@@ -389,7 +389,7 @@ export function AetherSurface() {
   ];
 
   return (
-    <DisclosureScope name="vpn:aether" className="animate-fade-up">
+    <DisclosureScope name="vpn:aether" className="stagger animate-fade-up">
       {/* ================================ stage ================================ */}
       <section className="aether-stage mb-7">
         <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] lg:items-center lg:gap-8">

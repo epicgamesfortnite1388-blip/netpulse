@@ -12,6 +12,7 @@ import { PrivilegeGate } from './AdminAccessPanel';
 import { TUN_TONE_CLASS, killSwitchClaim, tunClaim, tunRemedy, watchdogClaim } from './tunStatus';
 import { tunnelReconnectMessage, tunnelStartMessage } from '@/features/nodes/nodeActionPolicy';
 import { useKillSwitch } from './useVpnData';
+import { QuickConnectActivity } from './QuickConnectActivity';
 
 import { readPersistedState } from '@/lib/usePersistentState';
 
@@ -85,6 +86,7 @@ export function ProxyTunnelCard() {
    * disabled button is the normal guard; this closes the pre-render gap.
    */
   const quickInFlight = useRef(false);
+  const [activityId, setActivityId] = useState<string | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ['tunnel', 'status'],
@@ -136,7 +138,9 @@ export function ProxyTunnelCard() {
         // inside quick connect searches. Read at click time so the choice made
         // a moment ago in the sibling card is the one that applies.
         const profile = readPersistedState<ScanProfileId>('vpn.scanProfile', 'balanced');
-        return await api.post<{ tunnel: ProxyTunnelStatus; quick: QuickConnectResult }>('/vpn/tunnel/quick', { systemProxy: true, tun, profile });
+        const id = globalThis.crypto.randomUUID();
+        setActivityId(id);
+        return await api.post<{ tunnel: ProxyTunnelStatus; quick: QuickConnectResult }>('/vpn/tunnel/quick', { systemProxy: true, tun, profile, activityId: id });
       } finally {
         quickInFlight.current = false;
       }
@@ -210,6 +214,9 @@ export function ProxyTunnelCard() {
         actions={<Badge tone={STATE_TONE[tunnel?.state ?? 'idle']}>{tunnel?.state ?? 'idle'}</Badge>}
       />
       <CardBody>
+        <div className="mb-4">
+          <QuickConnectActivity activityId={activityId} busy={quick.isPending} />
+        </div>
         {tunnel && tunnel.state !== 'idle' && (
           <div className="mb-4 flex flex-wrap gap-x-8 gap-y-2 rounded-lg bg-surface-2/70 px-3 py-2.5 text-sm text-muted">
             <span>

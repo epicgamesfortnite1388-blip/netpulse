@@ -15,6 +15,7 @@ import {
   HistoryPushSchema,
   LoginSchema,
   PreferenceSchema,
+  ProvisionRequestSchema,
   RefreshSchema,
   RegisterSchema,
   ResetSchema,
@@ -50,11 +51,16 @@ import {
   unlinkNetpulse,
   getSyncStatus,
   listEntitlements,
+  parseEntitlementExpiry,
   syncNetpulseEntitlements,
   handleNetpulseInbox,
 } from './netpulse-integration';
 import { opsPageHtml, handleNetpulseOpsApi } from './ops-page';
+import { handleOpsVpnRotate } from './ops-vpn';
 import { handleNetpulseSessionApi } from './netpulse-sessions';
+import { timingSafeEqualHex } from './np-auth';
+import { generateVpnConfig } from './vpn-config';
+import { ensureVpnCredential, isPerUserProtocol, listActiveVpnUsers, vpnUsername } from './vpn-users';
 
 // Desktop app and Worker are same-origin; CORS is only needed for browser-based
 // attacks that misuse a stolen bearer token. For the authenticated API (bearer
@@ -234,6 +240,25 @@ export default {
         return json(dbOk ? 200 : 503, { ok: dbOk, service: 'netpulse-cloud', time: Date.now(), mail: mailConfigured(env) });
       }
 
+      // -------- VPN host reconciliation (machine surface) --------
+      // The VPS pulls the set of identities it may authenticate; it never holds
+      // a database credential and nothing has to be pushed inbound to it.
+      // Bearer token, constant-time compared; fail-closed when unconfigured.
+      if (path === '/api/v1/internal/vpn-users' && req.method === 'GET') {
+        const expected = env.VPS_SYNC_SECRET;
+        if (!expected) return fail(503, 'sync_not_configured', 'VPN host sync is not configured');
+        const header = req.headers.get('authorization') ?? '';
+        const presented = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+        const [gotHash, wantHash] = await Promise.all([sha256Hex(presented), sha256Hex(expected)]);
+        if (!timingSafeEqualHex(gotHash, wantHash)) return fail(401, 'unauthorized', 'Invalid sync token');
+        const users = await listActiveVpnUsers(env.DB);
+        const version = (await sha256Hex(JSON.stringify(users))).slice(0, 16);
+        return new Response(JSON.stringify({ ok: true, version, users }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        });
+      }
+
       // -------- operator status page (public shell; data is token-gated) --------
       if (path === '/ops' && (req.method === 'GET' || req.method === 'HEAD')) {
         return new Response(opsPageHtml(), {
@@ -252,6 +277,10 @@ export default {
       // Token-gated ops snapshot (null outside its path -> falls through).
       const opsApiResponse = await handleNetpulseOpsApi(req, env);
       if (opsApiResponse) return opsApiResponse;
+
+      // Token-gated credential rotation — the "this config leaked" action.
+      const opsVpnResponse = await handleOpsVpnRotate(req, env);
+      if (opsVpnResponse) return opsVpnResponse;
 
       // -------- lazy housekeeping (cheap; runs on state-changing calls) --------
       if (req.method !== 'GET' && Math.random() < 0.02) await sweepExpired(env.DB);
@@ -363,7 +392,16 @@ export default {
       if (path === '/api/v1/auth/forgot-password' && req.method === 'POST') {
         const body = ForgotSchema.parse(await readJson(req));
         const limit = await rateLimit(env.DB, `forgot:${ip}`, 5, 3600_000);
-        if (!limit.ok) return fail(429, 'rate_limited', 'Too many reset requests — try later');
+        // The wait is part of the answer, not something the client can derive:
+        // the window starts at the first request, so only the server knows how
+        // much of it is left. Same shape as login throttling.
+        if (!limit.ok) {
+          return json(
+            429,
+            { ...errorBody('rate_limited', 'Too many reset requests — try later'), retryAfterSec: limit.retryAfterSec },
+            { 'Retry-After': String(limit.retryAfterSec) },
+          );
+        }
         const normalized = normalizeEmail(body.email);
         const user = await env.DB.prepare(`SELECT id FROM users WHERE normalized_email = ?`).bind(normalized).first<{ id: string }>();
         if (user) {
@@ -379,8 +417,9 @@ export default {
           // `token:<raw>` here).
           let delivery = 'mail_unconfigured';
           if (mailConfigured(env)) {
+            const intendedOrigin = env.EXPECTED_ORIGIN ?? new URL(req.url).origin;
             try {
-              const r = await sendResetEmail(env, normalized, token, new URL(req.url).origin);
+              const r = await sendResetEmail(env, normalized, token, intendedOrigin);
               delivery = r.reason;
             } catch {
               delivery = 'mail_failed:exception';
@@ -674,6 +713,118 @@ export default {
         return json(200, { ok: true, updatedAt: t });
       }
 
+      // -------- provisioning: build client configs for an active plan --------
+      if (path === '/api/v1/provision' && req.method === 'POST') {
+        const body = ProvisionRequestSchema.parse(await readJson(req));
+        const t = Date.now();
+        const entitlements = await listEntitlements(env.DB, userId);
+        let target: Record<string, unknown> | null = entitlements[0] ?? null;
+        if (body.subscriptionId) {
+          target = entitlements.find((e) => e.id === body.subscriptionId) ?? null;
+        }
+        if (!target) {
+          return fail(404, 'no_active_entitlement', 'No active subscription entitlement to provision');
+        }
+        if (target.status !== 'active') {
+          return fail(403, 'entitlement_not_active', `Subscription is ${target.status}, cannot provision`);
+        }
+        // `expires_at` is TEXT and the bot writes a datetime string in normal
+        // operation, so `Number(...)` was `NaN` here and the expiry gate never
+        // fired for real data. Parse the shapes the bot actually writes and
+        // fail closed when the end date is present but unreadable: provisioning
+        // a paid protocol on an unverifiable end date is worse than denying it.
+        if (target.expiration_time !== null && target.expiration_time !== undefined && String(target.expiration_time).trim() !== '') {
+          const endsAt = parseEntitlementExpiry(target.expiration_time);
+          if (endsAt === null) {
+            await audit(env.DB, 'vpn.provision.denied', userId, ip, `plan:${target.plan} reason:expiry_unreadable`);
+            return fail(403, 'entitlement_expiry_unreadable', 'Subscription end date could not be read');
+          }
+          if (endsAt <= t) {
+            await audit(env.DB, 'vpn.provision.denied', userId, ip, `plan:${target.plan} reason:expired`);
+            return fail(403, 'entitlement_expired', 'Subscription has expired');
+          }
+        }
+
+        const planRow = await env.DB
+          .prepare(`SELECT code, name, default_profiles, default_nodes FROM plans WHERE code = ?`)
+          .bind(target.plan)
+          .first<{ code: string; name: string; default_profiles: string; default_nodes: string }>();
+        if (!planRow) {
+          return fail(404, 'plan_not_found', `Plan ${target.plan} is not defined`);
+        }
+        let profiles: string[] = [];
+        try {
+          profiles = JSON.parse(planRow.default_profiles ?? '[]');
+          if (!Array.isArray(profiles) || profiles.some((p) => typeof p !== 'string')) throw new Error('bad profiles');
+        } catch {
+          return fail(500, 'bad_plan_profiles', 'Plan profiles are malformed');
+        }
+
+        const result: { ok: boolean; provisioned: Array<{ id: string; name: string; protocol: string; endpoint: string | null; config: string }>; skipped: Array<{ protocol: string; reason: string }>; errors: Array<{ protocol: string; reason: string }> } = {
+          ok: true,
+          provisioned: [],
+          skipped: [],
+          errors: [],
+        };
+
+        for (const protocol of profiles) {
+          // Each entitled user gets their OWN identity; the VPS reconciler only
+          // publishes identities that belong to an active, unexpired plan.
+          if (!isPerUserProtocol(protocol)) {
+            // A protocol whose server side is one shared password cannot be
+            // revoked without breaking every other user of it, so no config is
+            // issued for it at all. Silently handing out the shared credential
+            // is exactly the hole this endpoint no longer has.
+            result.skipped.push({ protocol, reason: 'no_per_user_identity' });
+            continue;
+          }
+          let credential: string;
+          try {
+            credential = await ensureVpnCredential(env.DB, userId, protocol);
+            // Hysteria userpass mode authenticates with `user:password`; the
+            // app passes the profile's `password` straight through as the
+            // client's `auth` string (proxyCores buildHysteria2ClientConfig).
+            if (protocol === 'hysteria2') credential = `${await vpnUsername(userId)}:${credential}`;
+          } catch (err) {
+            result.errors.push({ protocol, reason: err instanceof Error ? err.message : 'credential_failed' });
+            result.ok = false;
+            continue;
+          }
+          const gen = generateVpnConfig(protocol, env, credential);
+          if (!gen.ok) {
+            result.skipped.push({ protocol, reason: (gen.reason ?? 'unsupported') as string });
+            continue;
+          }
+          const profileId = `vpn_${newId('vp')}`;
+          const name = gen.name ?? protocol;
+          const configJson = JSON.stringify(gen.config);
+          try {
+            // Re-provisioning the same plan must refresh the existing profile,
+            // not fail on the partial unique index (user_id, name). Conflict on
+            // that index and return the surviving row id (a retry keeps it).
+            const row = await env.DB
+              .prepare(
+                `INSERT INTO vpn_profiles (id, user_id, name, protocol, endpoint, config, config_version, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                 ON CONFLICT(user_id, name) WHERE deleted_at IS NULL DO UPDATE SET
+                   protocol = excluded.protocol, endpoint = excluded.endpoint,
+                   config = excluded.config, config_version = vpn_profiles.config_version + 1,
+                   updated_at = excluded.updated_at, deleted_at = NULL
+                 RETURNING id`,
+              )
+              .bind(profileId, userId, name, protocol, gen.endpoint ?? null, configJson, t, t)
+              .first<{ id: string }>();
+            const savedId = row?.id ?? profileId;
+            result.provisioned.push({ id: savedId, name, protocol, endpoint: gen.endpoint ?? null, config: configJson });
+          } catch (err) {
+            result.errors.push({ protocol, reason: err instanceof Error ? err.message : 'provision_failed' });
+            result.ok = false;
+          }
+        }
+        await audit(env.DB, 'vpn.provision', userId, ip, `plan:${planRow.code} provisioned:${result.provisioned.length} skipped:${result.skipped.length} errors:${result.errors.length}`);
+        return json(200, result);
+      }
+
       // -------- profile vaults (E2E ciphertext only; keys never reach here) --------
       if (path === '/api/v1/profile-vaults' && req.method === 'PUT') {
         const body = VaultPutSchema.parse(await readJson(req));
@@ -793,11 +944,15 @@ export default {
         return json(200, status);
       }
 
-      if (path === '/api/v1/integrations/telegram/sync' && req.method === 'POST')
-        {
+      if (path === '/api/v1/integrations/telegram/sync' && req.method === 'POST') {
         const result = await syncNetpulseEntitlements(env.DB, env, userId, ip);
         if (!result.ok) return fail(result.status, result.code, 'Entitlement sync failed');
-        return json(200, { ok: true, subscriptions: result.entitlements });
+        // Answer with the SAME safe-model projection as GET /subscriptions, not
+        // the puller's internal `NetpulseEntitlement[]` (camelCase, keyed by
+        // `subscriptionId`). The client renders both paths into one card type;
+        // returning the internal shape made every card read "Unnamed plan /
+        // Unknown / no traffic" the moment the user pressed Refresh.
+        return json(200, { ok: true, subscriptions: await listEntitlements(env.DB, userId) });
       }
 
       // -------- subscriptions (mirrored entitlements) --------

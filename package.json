@@ -16,6 +16,7 @@
     "dev:web": "npm run dev -w @netpulse/web",
     "build": "npm run build -w @netpulse/api && npm run build -w @netpulse/web",
     "test": "npm run test --workspaces --if-present",
+    "test:all": "node scripts/test-all.mjs",
     "lint": "eslint packages/shared/src apps/api/src apps/web/src",
     "format": "prettier --write \"packages/**/src/**/*.{ts,tsx,css}\" \"apps/**/src/**/*.{ts,tsx,css}\"",
     "db:generate": "npm run db:generate -w @netpulse/api",
@@ -31,6 +32,8 @@
     "e2e": "node scripts/e2e-desktop.mjs",
     "e2e:telegram": "node scripts/e2e-telegram-vpn.mjs",
     "e2e:telegram:cloud": "node scripts/e2e-telegram-vpn.mjs --skip-vpn",
+    "e2e:telegram:link:staging": "node scripts/e2e-telegram-link-staging.mjs",
+    "e2e:navigation": "node scripts/verify-navigation-webview.mjs",
     "test:release": "node scripts/release-distribution.test.mjs",
     "test:signing": "node scripts/signature-trust.test.mjs",
     "test:feed": "node scripts/update-feed.test.mjs",
@@ -39,7 +42,14 @@
     "proof:vpn:soak": "node scripts/vpn-live-proof.mjs --soak",
     "audit:ci": "bash scripts/audit-ci.sh",
     "audit:tabs": "node scripts/audit-tab-persistence.mjs",
-    "stress:nodes": "tsx scripts/stress-nodes.mjs"
+    "stress:nodes": "tsx scripts/stress-nodes.mjs",
+    "bench:engine": "tsx scripts/bench-engine-start.ts",
+    "bench:bulk-probe": "tsx scripts/bench-bulk-probe.ts",
+    "field:iran": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/field-iran-isp.ps1",
+    "field:iran:control": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/field-iran-isp.ps1 -Arm control",
+    "field:iran:plan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/field-iran-isp.ps1 -Plan",
+    "field:iran:recover": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/field-iran-isp.ps1 -Recover",
+    "field:compare": "node scripts/compare-field-vantages.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

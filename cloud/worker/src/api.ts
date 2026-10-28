@@ -163,3 +163,28 @@ export type AdminUser = z.infer<typeof AdminAccountSchema>;
 export const errorBody = (code: string, message: string): { error: { code: string; message: string } } => ({
   error: { code, message },
 });
+
+/** Request: provision client configs for every VPN method the active plan
+ *  entitles. Body may name a specific subscription id; otherwise the most
+ *  recent active entitlement is used. */
+export const ProvisionRequestSchema = z.object({
+  subscriptionId: z.string().trim().min(1).max(80).optional(),
+});
+
+export const ProvisionProfileSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  protocol: z.string(),
+  endpoint: z.string().nullable(),
+  config: z.string(),
+});
+
+export const ProvisionResponseSchema = z.object({
+  ok: z.boolean().default(true),
+  provisioned: z.array(ProvisionProfileSchema),
+  skipped: z.array(z.object({ protocol: z.string(), reason: z.string() })),
+  errors: z.array(z.object({ protocol: z.string(), reason: z.string() })),
+});
+
+export type ProvisionRequest = z.infer<typeof ProvisionRequestSchema>;
+export type ProvisionResponse = z.infer<typeof ProvisionResponseSchema>;

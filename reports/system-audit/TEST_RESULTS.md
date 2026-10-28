@@ -100,3 +100,49 @@ Bot signed-API probes: `GET /plans` and `POST /purchase-request` → **404 `not_
 | 27 | `npm run typecheck -w @netpulse/cloud-worker` | 0 | — | — | `tsc --noEmit` clean |
 
 The 91 re-verify: missing/invalid signatures rejected; stale/future timestamps rejected (±5-min window); event payloads and event types validated; duplicate event IDs idempotent; unknown linked identities parked `no_link`; account authorization and cross-account isolation; service-auth failures fail closed (`service_auth_not_configured` 503). The no-charge guard (row 22, 13/13) proves NetPulse cannot autonomously initiate charges through the tested paths. What the tests do NOT prove: a real provider callback, a real TON deposit, or a real card/C2C approval — those need a payment sandbox that does not exist (limitation L2, REMAINING_ROADMAP.md).
+
+## 2026-10-24 — bundle split, dependency audit, full gate re-run
+
+Environment: Windows 11 · Node v24.18.0 · npm 12 · vitest 3.2.7 · Vite 7.3.7 · tsc 5.9 · eslint.
+
+| # | Command | Target | Exit | Result | Notes |
+|---|---|---|---|---|---|
+| 28 | `npm run build -w @netpulse/web` | apps/web | 0 | PASSED | final entry chunk (after dependency update) **548,802 B / 169.8 kB gzip** (was 3,184,410 B / 920.1 kB). 22 lazy route chunks + shared vendor chunks. Only remaining over-limit warning is the 3D map route (1,265,870 B / 368.8 kB gzip), loaded on demand |
+| 29 | Production bundle in a browser (`127.0.0.1:8787`, API-served `dist`) | apps/web | — | PASSED | initial `index-*.js` then `VpnPage-*.js` on navigation; VPN page rendered live API state; no console errors. Dev server (`vite --host 127.0.0.1`) also loaded `/` and `/vpn` through the lazy boundary |
+| 30 | `npm run test:all` | 4 workspaces | 0 | PASSED | **1,527 tests, 0 failed**: api 1,013 · web 356 · shared 66 · cloud-worker 92. Parallel run, 114 s (api) |
+| 31 | Typechecks (api, web, shared, cloud-worker) | all | 0 | PASSED | `tsc --noEmit` clean in all four projects after the dependency update |
+| 32 | `npm run lint` | TS sources | 0 | PASSED | eslint clean |
+| 33 | `npm audit` / `npm audit fix` | repo | 0 | PARTIAL | production tree now **0 vulnerabilities** (fastify 5.12.7, zod 4.6.7, ip-address 10.7.4, fast-uri 3.1.9/4.2.3, source-map-js 1.2.2, vite 7.3.7). 14 dev-only advisories remain (vitest 3→5, `@cloudflare/vitest-pool-workers` 0.9→0.23, wrangler/miniflare chain) and require major upgrades — not forced |
+
+### Test-harness and flake repairs
+
+- `scripts/test-all.mjs` parsed only the `Tests N passed` summary line, so every workspace reported “0 tests” and the totals were meaningless. It now reads the parenthesised total and the failed half of the same line.
+- `apps/api/test/egressThroughProxy.test.ts` “does not touch the proxy when none is configured” failed (`503` instead of `200`) on this machine because a system proxy (`127.0.0.1:10809`) is enabled and refuses loopback targets. The test now measures `currentProxy()` first: the fixture listener must never be used (`connects === 0`) whether the machine is direct or proxied, and `200` is only required on a direct machine. The failure was environmental, not an egress defect — the production path correctly uses the system proxy.
+
+### What this does not prove
+
+Rows 18–19 remain **NOT VERIFIED** (live VPN/TUN with administrator rights, Abystral bot + payments); the dependency upgrades were not exercised against a deployed Worker.
+
+## 2026-10-24 — dev toolchain upgrade (Vitest 5 + Cloudflare Vitest plugin)
+
+Environment: Windows 11 · Node v24.18.0 · npm 12 · **vitest 5.0.5** · @cloudflare/vitest-plugin 1.4.7 · wrangler 4.152.0 · Vite 7.3.7.
+
+| # | Command | Target | Exit | Result | Notes |
+|---|---|---|---|---|---|
+| 34 | `npm install` / `npm ci --dry-run` | repo | 0 | PASSED | vitest 3.2.7→**5.0.5** in all four workspaces; `@cloudflare/vitest-pool-workers` 0.9.14→`@cloudflare/vitest-plugin` 1.4.7 (upstream rename); wrangler 4.136.1→4.152.0. Lockfile re-resolved; `npm ci --dry-run` resolves cleanly |
+| 35 | `npm run test -w @netpulse/cloud-worker` | cloud/worker | 0 | PASSED | 92/92 in 7.0 s. Required two migration changes, below |
+| 36 | suite runs (api, web, shared) | 3 workspaces | 0 | PASSED | api 1,013 · web 356 · shared 66 — vitest 5 with `maxWorkers: 1` preserving the API's single-worker socket/SQLite discipline. No v5-specific breakage: the only config work was the v4 pool/plugin migration above |
+| 37 | `npm run test:all` | 4 workspaces | 0 | PASSED | **1,527 tests, 0 failed** after the upgrade |
+| 38 | Typechecks (4 projects) + `npm run lint` | all | 0 | PASSED | `tsc --noEmit` clean; eslint clean |
+| 39 | `npm run build -w @netpulse/web` | apps/web | 0 | PASSED | entry chunk 548,802 B / 169.8 kB gzip unchanged; only the lazy 3D-map chunk warning |
+| 40 | `npm audit` / `npm audit --omit=dev` | repo | 0 | prod clean | production **0 vulnerabilities**; 9 dev-only advisories remain (plugin, miniflare, undici, nested zod, wrangler, drizzle-kit esbuild chain). `npm audit`'s only "fixes" are downgrades (plugin 0.0.0, wrangler 4.35.0, drizzle-kit 0.18.1), so they are disclosed rather than applied |
+
+### Migration notes (why the worker tests changed)
+
+- **Config API moved.** `defineWorkersConfig` and its `poolOptions.workers` no longer exist; `cloud/worker/vitest.config.ts` now registers `cloudflareTest()` from `@cloudflare/vitest-plugin` as a Vite plugin, with the same wrangler path, local D1 and test bindings. `test/defineConfig.ts` (a CJS/ESM interop shim) was deleted.
+- **Test typing moved.** The plugin types `cloudflare:test.env` as `Cloudflare.Env`, not the removed `ProvidedEnv`. `test/env.d.ts` now extends `Cloudflare.Env`, and the tsconfig includes `worker-configuration.d.ts` plus `@cloudflare/vitest-plugin/types`.
+- **Isolation scope changed, deliberately restored.** The new integration isolates storage per test *file*; the old release rolled state back after every test, and these suites depend on that (registration is 5/hour/IP, login 20/15 min, and several tests exhaust a limiter on purpose). The first post-upgrade run failed 42/92 with 429/409. `test/applyMigrations.ts` now resets all tables and re-seeds the migration's `plan_pro` row in `beforeEach`; the suites are back to 92/92. Every file's `beforeAll` only deletes state and seeds inside test bodies, so the reset is safe.
+
+### What this does not prove
+
+Rows 18–19 remain **NOT VERIFIED** (live VPN/TUN with administrator rights, Abystral bot + payments). The wrangler upgrade was not exercised against a deployed Worker; `cargo audit` was not run.

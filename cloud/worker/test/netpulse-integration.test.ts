@@ -169,6 +169,29 @@ describe('netpulse inbox - service auth', () => {
     expect(await errorCode(res)).toBe('invalid_signature');
   });
 
+  it('rejects a well-formed signature made with a different secret', async () => {
+    // Right length, right canonical string, wrong key: proves the SECRET is
+    // bound, not merely that a mutated hex string is detected.
+    const path = `${INBOX}/events`;
+    const bodyText = JSON.stringify({ eventId: `e-wrongkey-${Math.random()}`, eventType: 'subscription.activated', version: 1, payload: {} });
+    const ts = String(Date.now());
+    const nonce = `wk${Math.random().toString(16).slice(2)}`;
+    const sig = await hmacHexForTest('a-different-service-secret', canonicalString(ts, nonce, 'POST', path, await sha256Hex(bodyText)));
+    const res = await SELF.fetch(`https://worker.test${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-np-timestamp': ts,
+        'x-np-nonce': nonce,
+        'x-np-request-id': 'test-wrongkey',
+        'x-np-signature': sig,
+      },
+      body: bodyText,
+    });
+    expect(res.status).toBe(401);
+    expect(await errorCode(res)).toBe('invalid_signature');
+  });
+
   it('rejects replayed requests (single-use nonce) even when signed', async () => {
     const body = { eventId: `e-replay-${Math.random()}`, eventType: 'subscription.activated', netpulseAccountId: 'npa_x', payload: {} };
     const first = await signedInbox(`${INBOX}/events`, body, { nonce: 'replaymenonce42' });
@@ -288,9 +311,19 @@ describe('netpulse linking flow (session-authed, bot mocked)', () => {
     // Pull-sync: replaces the mirror with the bot's authoritative view.
     const sync = await authed('/api/v1/integrations/telegram/sync', token, { method: 'POST' });
     expect(sync.status).toBe(200);
-    const synced = (await sync.json()) as { ok: boolean; subscriptions: unknown[] };
+    const synced = (await sync.json()) as { ok: boolean; subscriptions: Array<Record<string, unknown>> };
     expect(synced.ok).toBe(true);
     expect(synced.subscriptions).toHaveLength(2);
+    // The sync answer must be the SAME safe-model projection as the list
+    // endpoint the account page loads on mount. The previous answer was the
+    // puller's internal camelCase shape (subscriptionId/totalGb/…), so every
+    // subscription card rendered "Unnamed plan / Unknown" after a Refresh.
+    const first = synced.subscriptions[0]!;
+    expect(first).toMatchObject({ id: expect.any(String), plan: 'pro', status: expect.any(String) });
+    expect(first).toHaveProperty('expiration_time');
+    expect(first).toHaveProperty('total_gb');
+    expect(first).not.toHaveProperty('subscriptionId');
+    expect(first).not.toHaveProperty('totalGb');
 
     const subs = await authed('/api/v1/subscriptions', token);
     const list = ((await subs.json()) as { subscriptions: Array<{ id: string }> }).subscriptions;
@@ -304,6 +337,40 @@ describe('netpulse linking flow (session-authed, bot mocked)', () => {
     expect(after.connected).toBe(false);
     const remaining = await env.DB.prepare(`SELECT COUNT(*) AS n FROM np_entitlements`).first<{ n: number }>();
     expect(remaining?.n).toBe(0);
+  });
+
+  it('a bot-side link revocation releases the local link so the user can reconnect', async () => {
+    mockBot();
+    const { token, userId } = await register(`np-revoke-${Math.random()}@example.com`);
+    const start = await authed('/api/v1/account/telegram/link', token, { method: 'POST', body: '{}' });
+    const started = (await start.json()) as { token: string };
+    expect((await authed('/api/v1/account/telegram/link/confirm', token, { method: 'POST', body: JSON.stringify({ code: started.token }) })).status).toBe(200);
+
+    const linkRow = await env.DB
+      .prepare(`SELECT netpulse_account_id FROM np_links WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`)
+      .bind(userId)
+      .first<{ netpulse_account_id: string }>();
+    const accountId = linkRow?.netpulse_account_id ?? 'npa_missing';
+
+    // The user unlinks in Telegram: the bot pushes link.revoked on the signed
+    // channel. The mirror must follow, or the app keeps claiming "linked" and
+    // the next link attempt is refused as already_linked.
+    const revoked = await signedInbox(`${INBOX}/events`, {
+      eventId: `e-revoke-${Math.random()}`,
+      eventType: 'link.revoked',
+      version: 1,
+      netpulseAccountId: accountId,
+      payload: {},
+    });
+    expect(revoked.status).toBe(200);
+
+    const status = (await (await authed('/api/v1/account/telegram', token)).json()) as { connected: boolean };
+    expect(status.connected).toBe(false);
+    const remaining = await env.DB.prepare(`SELECT COUNT(*) AS n FROM np_entitlements WHERE user_id = ?`).bind(userId).first<{ n: number }>();
+    expect(remaining?.n).toBe(0);
+
+    const relink = await authed('/api/v1/account/telegram/link', token, { method: 'POST', body: '{}' });
+    expect(relink.status).toBe(200);
   });
 
   it('refuses to start a second link while one is active', async () => {

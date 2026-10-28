@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   Activity,
@@ -26,17 +26,21 @@ import {
   TriangleAlert,
   Waves,
   X,
+  Zap,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
 import { CommandPalette } from '@/components/CommandPalette';
+import { QuickConnectOverlay } from '@/components/QuickConnectOverlay';
 import { startSyncLoop, stopSyncLoop } from '@/lib/cloud/syncEngine';
 import { useCloudSession } from '@/lib/cloud/useCloudSession';
 import { useStartupHealth } from '@/lib/useStartupHealth';
 import { DemoBadge } from '@/components/ui/Badge';
+import { PageSkeleton } from '@/components/ui/States';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { UpdateBanner } from '@/features/settings/UpdateBanner';
 import { api } from '@/lib/api';
+import { overlayShortcut } from '@/lib/quickConnect';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { useThemeApplier } from '@/app/useTheme';
 import { useTypeScaleApplier } from '@/app/useTypeScale';
@@ -157,12 +161,28 @@ function isChildActive(child: NavItem, pathname: string): boolean {
   return pathname === child.to || pathname.startsWith(`${child.to}/`);
 }
 
+/**
+ * Is this destination the current one?
+ *
+ * The same rule decides the row's ink AND which row the travelling pill parks
+ * on, so the two can never disagree — before this, the highlight came from
+ * NavLink's own `isActive` while the section's collapsed state used a second,
+ * hand-written rule, and `end` was only honoured by one of them.
+ */
+function isLinkActive(item: NavItem, pathname: string): boolean {
+  if (item.end) return pathname === item.to;
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
+
 /** Every collapsible section in the nav, derived so the two never drift apart. */
 const NAV_SECTIONS = NAV.flatMap((group) => group.items).filter(isSection);
 
+// The active row carries no background of its own: the travelling pill in
+// `SidebarContent` is the highlight. Two backgrounds would double the tint on
+// the row the pill happens to be resting on.
 const linkClass = (isActive: boolean) =>
-  `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-    isActive ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
+  `nav-row flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+    isActive ? 'text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
   }`;
 
 /**
@@ -186,6 +206,10 @@ function NavSectionEntry({
 }) {
   const active = section.children.some((child) => isChildActive(child, pathname));
   const panelId = `nav-section-${section.label.toLowerCase()}`;
+  // The pill marks the section row only while it is collapsed — when it is open
+  // the active child is the row being pointed at, and two pills would be two
+  // answers to "where am I".
+  const pillHere = active && !open;
 
   return (
     <div>
@@ -194,9 +218,10 @@ function NavSectionEntry({
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={panelId}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+        data-nav-current={pillHere ? 'true' : undefined}
+        className={`nav-row flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
           active && !open
-            ? 'bg-accent-soft/60 text-accent-strong'
+            ? 'text-accent-strong'
             : active
               ? 'text-text hover:bg-surface-2'
               : 'text-muted hover:bg-surface-2 hover:text-text'
@@ -214,11 +239,12 @@ function NavSectionEntry({
               key={child.to}
               to={child.to}
               onClick={onNavigate}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-mini transition-colors ${
-                  isActive ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:bg-surface-2 hover:text-text'
-                }`
-              }
+              data-nav-current={isLinkActive(child, pathname) ? 'true' : undefined}
+              className={`nav-row flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-mini transition-colors ${
+                isLinkActive(child, pathname)
+                  ? 'text-accent-strong'
+                  : 'text-muted hover:bg-surface-2 hover:text-text'
+              }`}
             >
               <span className="shrink-0">{child.icon}</span>
               {child.label}
@@ -259,6 +285,65 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     [setCollapsed],
   );
 
+  /*
+   * The travelling highlight.
+   *
+   * One absolutely-positioned element is moved to whichever row carries
+   * `data-nav-current`, instead of each row painting its own background. A
+   * background can only appear and disappear; a moving element reads as a
+   * cursor travelling down a menu, which is the whole point.
+   *
+   * Measurement is by `offsetTop`/`offsetHeight` against the scrolling list,
+   * so it survives the sections nesting, the expanded/collapsed heights and the
+   * mobile drawer (a second instance of this component) without any of those
+   * needing to know it exists.
+   */
+  const listRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ top: number; height: number } | null>(null);
+  const [pillReady, setPillReady] = useState(false);
+  // `display: none` below `lg` gives the list no box, so a transition started
+  // then would never advance. The travel is enabled only while the sidebar is
+  // actually laid out.
+  const [laidOut, setLaidOut] = useState(false);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const measure = () => {
+      setLaidOut(list.getBoundingClientRect().height > 0);
+      const current = list.querySelector<HTMLElement>('[data-nav-current="true"]');
+      setPill(current ? { top: current.offsetTop, height: current.offsetHeight } : null);
+    };
+    measure();
+    // Rows move without a route change in two ways, and both are observed above
+    // the level of the row itself:
+    //   - the window is resized (labels reflow; the type scale is adjustable),
+    //   - the sidebar goes from `display: none` (below `lg`) to visible, which is
+    //     the case that made the pill measure 0x0 and then stay there, because a
+    //     hidden element has no box to measure.
+    // A ResizeObserver on the scrolling list catches both without depending on
+    // a resize event being delivered.
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    // Opening or closing a section inserts/removes rows and shifts every row
+    // below it, without changing the list's own box — a ResizeObserver cannot
+    // see that, so the subtree's structure is watched too. Without this the
+    // pill stayed on the row above after a section was expanded.
+    const mutations = new MutationObserver(measure);
+    mutations.observe(list, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+    };
+  }, [pathname, collapsed]);
+
+  // Enable the travel only after the first measurement, so the pill does not
+  // fly in from the top of the sidebar on mount.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setPillReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   return (
     <nav className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -270,7 +355,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <div className="text-micro uppercase tracking-[0.18em] text-faint">Network intelligence</div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-3 pb-4">
+      <div ref={listRef} className="relative flex-1 overflow-y-auto px-3 pb-4">
+        <span
+          aria-hidden="true"
+          className="nav-pill"
+          data-visible={pill ? 'true' : 'false'}
+          data-ready={pillReady && laidOut ? 'true' : 'false'}
+          style={pill ? { transform: `translateY(${pill.top}px)`, height: `${pill.height}px` } : undefined}
+        />
         {NAV.map((group) => (
           <div key={group.heading} className="mb-4">
             <div className="px-2 pb-1.5 text-micro font-semibold uppercase tracking-[0.16em] text-faint">
@@ -293,7 +385,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     to={item.to}
                     end={item.end}
                     onClick={onNavigate}
-                    className={({ isActive }) => linkClass(isActive)}
+                    data-nav-current={isLinkActive(item, pathname) ? 'true' : undefined}
+                    className={linkClass(isLinkActive(item, pathname))}
                   >
                     <span className="shrink-0">{item.icon}</span>
                     {item.label}
@@ -315,6 +408,22 @@ export function AppShell() {
   useTypeScaleApplier();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** Ctrl/Cmd+Shift+K — connect to a node from whichever page is open. */
+  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
+  /**
+   * Has the page scrolled away from the top?
+   *
+   * The header is sticky and translucent, so over a scrolled page it needs to
+   * read as a layer rather than as part of the content underneath it. One
+   * boolean, read in a passive listener, and set only when it flips — a scroll
+   * handler that calls setState per event would re-render the whole shell
+   * (sidebar included) on every wheel notch.
+   *
+   * Deliberately not routed through requestAnimationFrame: a hidden or occluded
+   * window starves rAF, so the flag would stick at whatever it was on the last
+   * painted frame — including "not scrolled" while the page is scrolled.
+   */
+  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
 
   // Cloud session hydration + the periodic sync loop. Both are no-ops when
@@ -330,16 +439,43 @@ export function AppShell() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // Ctrl/Cmd + K opens the command palette
+  useEffect(() => {
+    // The ref, not the state, is what the listener compares against: reading
+    // `scrolled` in the closure would need the effect to re-subscribe.
+    let last = window.scrollY > 4;
+    setScrolled(last);
+    const read = () => {
+      const next = window.scrollY > 4;
+      if (next === last) return;
+      last = next;
+      setScrolled(next);
+    };
+    window.addEventListener('scroll', read, { passive: true });
+    return () => window.removeEventListener('scroll', read);
+  }, []);
+
+  // Ctrl/Cmd + K opens the command palette; Ctrl/Cmd + Shift + K opens quick
+  // connect. One handler for both, because `Shift+K` still reports key 'k' —
+  // two listeners would have opened the palette underneath the overlay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
+      const target = overlayShortcut(e);
+      if (!target) return;
+      e.preventDefault();
+      if (target === 'quick-connect') setQuickConnectOpen((v) => !v);
+      // With quick connect open, Ctrl+K is ignored rather than stacking the
+      // palette on top of it: two dialogs at once have no obvious Escape.
+      else if (!quickConnectOpen) setPaletteOpen((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [quickConnectOpen]);
+
+  const closeQuickConnect = useCallback(() => setQuickConnectOpen(false), []);
+  /** From the palette: the overlay replaces it, so a keystroke never leaves two dialogs stacked. */
+  const openQuickConnect = useCallback(() => {
+    setPaletteOpen(false);
+    setQuickConnectOpen(true);
   }, []);
 
   return (
@@ -352,8 +488,8 @@ export function AppShell() {
       {/* mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-surface">
+          <div className="drawer-backdrop-in absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <aside className="drawer-panel-in absolute inset-y-0 left-0 w-64 border-r border-line bg-surface">
             <button
               className="absolute right-3 top-4 rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-text"
               onClick={() => setMobileOpen(false)}
@@ -368,7 +504,12 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         {/* topbar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-bg/80 px-4 shadow-raised backdrop-blur lg:px-8">
+        <header
+          data-scrolled={scrolled ? 'true' : 'false'}
+          className={`sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b bg-bg/80 px-4 backdrop-blur transition-[box-shadow,border-color] duration-200 lg:px-8 ${
+            scrolled ? 'border-line-strong shadow-floating' : 'border-line shadow-raised'
+          }`}
+        >
           <div className="flex items-center gap-3">
             <button
               className="rounded-lg border border-line bg-surface-2 p-2 text-muted lg:hidden"
@@ -390,6 +531,18 @@ export function AppShell() {
               <Search size={13} />
               <span className="hidden sm:inline">Commands</span>
               <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-micro text-faint">Ctrl K</kbd>
+            </button>
+            <button
+              className="flex h-8 items-center gap-2 rounded-full border border-line bg-surface px-3 text-xs text-muted hover:bg-surface-2 hover:text-text"
+              onClick={() => setQuickConnectOpen(true)}
+              aria-label="Quick connect to a node"
+              title="Connect to a tested node without leaving this page"
+            >
+              <Zap size={13} />
+              <span className="hidden sm:inline">Connect</span>
+              <kbd className="hidden rounded border border-line bg-surface-2 px-1 font-mono text-micro text-faint md:inline">
+                Ctrl ⇧ K
+              </kbd>
             </button>
             {meta?.demoMode && <DemoBadge />}
             <NavLink
@@ -485,11 +638,29 @@ export function AppShell() {
         )}
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 lg:px-8 lg:py-8">
-          <Outlet />
+          {/* Pages are lazy routes (see router.tsx). The boundary sits inside
+              the shell on purpose: the sidebar and header stay mounted while a
+              page chunk downloads, so navigation never blanks the window.
+
+              The key is on the animated wrapper, not on the boundary: a new
+              pathname mounts a new wrapper, which re-runs the `page-enter`
+              animation. The fallback renders OUTSIDE that wrapper so its fixed
+              progress rail is measured against the window — a transform on an
+              ancestor would make the rail position itself against the page. */}
+          <Suspense fallback={<PageSkeleton />}>
+            <div key={location.pathname} className="page-enter">
+              <Outlet />
+            </div>
+          </Suspense>
         </main>
       </div>
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onQuickConnect={openQuickConnect}
+      />
+      <QuickConnectOverlay open={quickConnectOpen} onClose={closeQuickConnect} />
     </div>
   );
 }

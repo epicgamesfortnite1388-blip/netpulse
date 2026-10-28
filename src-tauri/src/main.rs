@@ -29,6 +29,7 @@ mod diagnostics;
 mod dpapi;
 mod elevation;
 mod logging;
+mod navigation;
 mod os_open;
 mod paths;
 mod ports;
@@ -260,10 +261,22 @@ fn main() {
             let safe_mode_on = handle.state::<safe_mode::SafeModeState>().active();
             safe_mode::announce_to_sidecar(safe_mode_on);
 
-            // GUI-first policy: the window is already being created by the
-            // config below; nothing in this setup hook is allowed to take it
-            // down. Optional subsystems (tray, migrations path, sidecar) fail
-            // soft — they log and continue.
+            // GUI-first policy: the window is the first thing this hook builds,
+            // and nothing after it is allowed to take it down. Optional
+            // subsystems (tray, migrations path, sidecar) fail soft — they log
+            // and continue.
+            //
+            // The window is created HERE, not by `tauri.conf.json`, because
+            // only the builder can carry `on_navigation` / `on_new_window`.
+            // Those put the navigation rule in front of the very first
+            // navigation, before any page script could install the JS guard
+            // (see `navigation.rs`). A failure here is fatal by design: running
+            // a GUI app with no window would be a headless backend nobody can
+            // reach.
+            if let Err(e) = window::create_main_window(&handle) {
+                log_error!("could not create the main window: {e}");
+                return Err(e.into());
+            }
 
             if let Err(e) = tray::build_tray(&handle) {
                 log_warn!("tray unavailable (app continues without it): {e}");

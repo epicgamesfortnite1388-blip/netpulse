@@ -271,7 +271,7 @@ export default function SystemHealthPage() {
   const pl = phaseLabel[phase] ?? { text: phase, tone: 'idle' as const };
 
   return (
-    <DisclosureScope name="health">
+    <DisclosureScope name="health" className="stagger">
       <PageHeader
         title="System Health"
         description="Live diagnostics for this installation — what is working, what is not, and what to do about it."

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { RouterProvider } from 'react-router';
 
+import { installExternalNavigationGuard } from '@/lib/externalNavigation';
 import { initTransport } from '@/lib/transport';
 import { router } from './app/router';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
@@ -23,6 +24,12 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Every external exit from the webview (left/middle/keyboard clicks on any
+// anchor, plus a link dragged onto the page) goes through the OS opener. The
+// guard is installed before the first render so a link in the very first frame
+// cannot navigate the app away from itself.
+installExternalNavigationGuard();
 
 // Resolve the transport (desktop sidecar via Tauri IPC, or same-origin web)
 // BEFORE the first render so no component fires a request against an unknown

@@ -200,3 +200,119 @@ describe('POST /vpn/profiles/from-node — promoting a node into an engine profi
     expect(res.statusCode).toBe(404);
   });
 });
+
+/**
+ * The plan issues Hysteria 2 as its UDP fallback and the Account page imports
+ * provisioned configs as sing-box outbounds. Both halves are covered here:
+ * the engine has to accept a hysteria2 outbound (and keep salamander obfs,
+ * without which the server refuses the handshake), and a re-provisioned config
+ * has to replace its predecessor rather than leave a dead twin in the list.
+ */
+describe('POST /vpn/profiles — hysteria2 intake and replacement', () => {
+  const HY2_OUTBOUND = JSON.stringify({
+    type: 'hysteria2',
+    server: 'hy2.intake-test.net',
+    server_port: 8443,
+    password: 'u_abc123def456:00112233445566778899aabbccddeeff',
+    obfs: { type: 'salamander', password: 'salamander-secret' },
+    tls: { enabled: true, server_name: 'hy2.intake-test.net' },
+  });
+
+  async function listProfiles() {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/vpn/profiles', headers: H() });
+    return (res.json() as { profiles: Array<{ id: string; providerId: string; name: string; protocol: string }> }).profiles;
+  }
+
+  it('imports a hysteria2 outbound JSON and keeps the obfuscation layer', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/vpn/profiles',
+      headers: H(),
+      payload: { providerId: 'singbox', name: 'NP Hysteria 2', configText: HY2_OUTBOUND },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { profile: { id: string; protocol: string; name: string } };
+    expect(body.profile.protocol).toBe('hysteria2');
+    expect(body.profile.name).toBe('NP Hysteria 2');
+
+    // The stored profile must not carry the credential in the clear, but the
+    // obfs password is configuration, not an identity, and has to survive.
+    const profile = ctx.vpn.getProfile(body.profile.id);
+    expect(profile).toBeTruthy();
+    const stored = fs.readFileSync(profile!.configPath!, 'utf8');
+    expect(stored).toContain('salamander-secret');
+    expect(stored).not.toContain('00112233445566778899aabbccddeeff');
+
+    await app.inject({ method: 'DELETE', url: `/api/v1/vpn/profiles/${body.profile.id}`, headers: H() });
+  });
+
+  it('imports a hysteria2:// link, including its obfs query parameters', async () => {
+    const link =
+      'hysteria2://u_abc123def456%3A00112233445566778899aabbccddeeff@hy2.intake-test.net:8443?sni=hy2.intake-test.net&obfs=salamander&obfs-password=salamander-secret#NP%20Hy2%20Link';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/vpn/profiles',
+      headers: H(),
+      payload: { providerId: 'singbox', name: 'NP Hy2 Link', configText: link },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { profile: { id: string; protocol: string } };
+    expect(body.profile.protocol).toBe('hysteria2');
+    await app.inject({ method: 'DELETE', url: `/api/v1/vpn/profiles/${body.profile.id}`, headers: H() });
+  });
+
+  it('rejects a hysteria2 link whose salamander password is missing', async () => {
+    const link = 'hysteria2://u:p@hy2.intake-test.net:8443?obfs=salamander#no-obfs-password';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/vpn/profiles',
+      headers: H(),
+      payload: { providerId: 'singbox', name: 'NP Hy2 Broken', configText: link },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('replaces the profile of the same name instead of leaving a dead twin', async () => {
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/vpn/profiles',
+      headers: H(),
+      payload: { providerId: 'singbox', name: 'NP Rotating', configText: HY2_OUTBOUND },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const rotated = HY2_OUTBOUND.replace('00112233445566778899aabbccddeeff', 'ffffffffffffffffffffffffffffffff');
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/v1/vpn/profiles',
+      headers: H(),
+      payload: { providerId: 'singbox', name: 'NP Rotating', configText: rotated, replace: true },
+    });
+    expect(second.statusCode).toBe(201);
+
+    const matching = (await listProfiles()).filter((p) => p.name === 'NP Rotating');
+    expect(matching).toHaveLength(1);
+    // The surviving profile is the new one, not the old credential.
+    const survivor = ctx.vpn.getProfile(matching[0]!.id);
+    expect(fs.readFileSync(survivor!.configPath!, 'utf8')).not.toContain('00112233445566778899aabbccddeeff');
+
+    await app.inject({ method: 'DELETE', url: `/api/v1/vpn/profiles/${matching[0]!.id}`, headers: H() });
+  });
+
+  it('appends when replace is not requested (the paste flow is unchanged)', async () => {
+    for (let i = 0; i < 2; i += 1) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/vpn/profiles',
+        headers: H(),
+        payload: { providerId: 'singbox', name: 'NP Append', configText: HY2_OUTBOUND },
+      });
+      expect(res.statusCode).toBe(201);
+    }
+    const matching = (await listProfiles()).filter((p) => p.name === 'NP Append');
+    expect(matching).toHaveLength(2);
+    for (const p of matching) {
+      await app.inject({ method: 'DELETE', url: `/api/v1/vpn/profiles/${p.id}`, headers: H() });
+    }
+  });
+});

@@ -150,5 +150,23 @@ export interface AppSettings {
       intervalMinutes: number;
     };
   };
+  /**
+   * Adaptive connectivity.
+   *
+   * `enabled` lets the engine ORDER the approved strategies from what it has
+   * observed. It is on by default because with no stored evidence the engine
+   * reproduces the previous order exactly (asserted in the policy tests), so a
+   * fresh install behaves identically — and once there IS evidence, using it is
+   * the whole point of the feature.
+   *
+   * `exploration` lets it spend part of an attempt budget trying a strategy that
+   * is NOT expected to win, in order to learn. That is deliberately off: it is
+   * the part that can cost the user a slower connect, so it is opt-in until the
+   * replay evaluation says otherwise.
+   */
+  adaptive: {
+    enabled: boolean;
+    exploration: boolean;
+  };
   scheduling: ScheduleSettings;
 }

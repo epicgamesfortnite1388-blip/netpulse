@@ -431,7 +431,7 @@ export function opsPageHtml(): string {
   /* Failure codes are longer than their column; wrap them rather than clip the
      one string that says WHY a link is broken. */
   td.wrap { overflow-wrap: anywhere; }
-  #msg { margin: 10px 0; font-size: 13px; min-height: 18px; }
+  #msg, #rot-msg { margin: 10px 0 0; font-size: 13px; min-height: 18px; overflow-wrap: anywhere; }
   .ok { color: #6fd18b; } .err { color: #ff7a7a; }
   section { margin-top: 18px; }
 </style>
@@ -446,6 +446,17 @@ export function opsPageHtml(): string {
   </div>
   <div id="msg"></div>
   <div id="content"></div>
+
+  <section class="card" style="margin-top:18px">
+    <h2>Rotate VPN credentials</h2>
+    <p class="sub" style="margin:0 0 10px">Kills a leaked config for one account without touching its subscription: the customer keeps access, only the secrets it authenticates with change. The VPN host drops the old identity within a minute of its next sync.</p>
+    <div class="bar" style="margin-bottom:0">
+      <input id="rot-account" placeholder="account email or usr_ id" autocomplete="off">
+      <input id="rot-protocol" placeholder="protocol (blank = all)" autocomplete="off">
+      <button id="rotate">Rotate</button>
+    </div>
+    <div id="rot-msg"></div>
+  </section>
 </main>
 <script>
 (function () {
@@ -454,6 +465,47 @@ export function opsPageHtml(): string {
   try { input.value = sessionStorage.getItem(KEY) || ''; } catch (e) {}
   document.getElementById('load').addEventListener('click', load);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+
+  // Rotation. Everything is written with textContent: the response is data,
+  // never markup, so there is nothing here for a crafted value to break out of.
+  document.getElementById('rotate').addEventListener('click', rotate);
+  function say(el, text, cls) { el.textContent = text; el.className = cls; }
+  function rotate() {
+    var btn = document.getElementById('rotate');
+    var msg = document.getElementById('rot-msg');
+    var account = document.getElementById('rot-account').value.trim();
+    var protocol = document.getElementById('rot-protocol').value.trim();
+    var token = input.value.trim();
+    if (!token) { say(msg, 'Enter the OPS_TOKEN above first.', 'err'); return; }
+    if (!account) { say(msg, 'Enter the account email or usr_ id.', 'err'); return; }
+    // Irreversible by design: the old secret cannot be handed back.
+    if (!window.confirm('Rotate VPN credentials for ' + account + '? The current config stops working and the customer must re-sync.')) return;
+    var body = account.indexOf('@') > -1 ? { email: account } : { userId: account };
+    if (protocol) body.protocol = protocol;
+    btn.disabled = true; btn.textContent = 'Rotating...';
+    fetch('/api/v1/ops/vpn/rotate', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = 'Rotate';
+        if (!res.body.ok) {
+          var why = res.body.error || res.status;
+          if (res.status === 401) why = 'unauthorized - wrong token';
+          if (res.status === 503) why = 'OPS_TOKEN is not configured on the worker';
+          say(msg, 'Rotation refused (' + why + ')' + (res.body.message ? ': ' + res.body.message : '') + '.', 'err');
+          return;
+        }
+        var lines = res.body.rotated.map(function (r) { return r.protocol + ' ' + r.previousFingerprint + ' -> ' + r.fingerprint + (r.active ? '' : ' (revoked: access unchanged)'); });
+        say(msg, 'Rotated ' + res.body.rotated.length + ' credential(s) for ' + res.body.account.email +
+          '; ' + res.body.profilesUpdated + ' stored config(s) rebuilt. Old identity stops authenticating within ' +
+          res.body.syncWindowSeconds + 's.  ' + lines.join(' | '), 'ok');
+        document.getElementById('content').innerHTML = '';
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = 'Rotate'; say(msg, 'Network error.', 'err'); });
+  }
 
   // The markup is built and escaped SERVER-side by renderOpsSnapshot() and
   // arrives on the snapshot response as the html field. There is deliberately

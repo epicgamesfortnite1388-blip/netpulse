@@ -115,6 +115,43 @@ export interface NetpulseEntitlement {
   configUpdatedAt: string;
 }
 
+/**
+ * The instant an entitlement ends, or `null` when it has no end date.
+ *
+ * `np_entitlements.expires_at` is a TEXT column and the bot writes whatever its
+ * own database produced: a `YYYY-MM-DD HH:MM:SS` datetime, an ISO string, or
+ * a bare epoch (seconds or milliseconds) as text. The provision gate used to
+ * call `Number(value)`, which yields `NaN` for every datetime string — and
+ * `NaN < now` is false, so a subscription whose bot-side status had not been
+ * flipped yet could still be provisioned after it expired. Parsing is therefore
+ * explicit here, and an unreadable value is reported as `null` (the caller
+ * decides; it fails closed).
+ *
+ * Space-separated datetimes are pinned to UTC. V8 treats them as local time in
+ * some hosts and rejects them in others; the bot stores UTC, and a gate whose
+ * answer depends on the server's timezone is not a gate.
+ */
+export function parseEntitlementExpiry(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return fromEpoch(value);
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(raw)) return fromEpoch(Number(raw));
+
+  const sql = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/.exec(raw);
+  const ms = Date.parse(sql ? `${sql[1]}T${sql[2]}Z` : raw);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Epoch seconds or milliseconds, never a `0`/negative placeholder. */
+function fromEpoch(n: number): number | null {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // 1e11 seconds is year 5138; 1e11 milliseconds is 1973. A real timestamp is
+  // unambiguous under this threshold, which is the one the UI's parser uses.
+  return n > 1e11 ? n : n * 1000;
+}
+
 /** ─── Signed outbound client (NetPulse → bot) ────────────────────────────── */
 
 export type BotApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
@@ -482,6 +519,25 @@ export async function ingestNetpulseEvent(db: D1Database, body: unknown, ip: str
   if (!userId) {
     await db.prepare(`UPDATE np_events SET processed_at = ?, processed_status = 'no_link' WHERE event_id = ?`).bind(t, parsed.eventId).run();
     await audit(db, 'np.event.no_link', null, ip, `${parsed.eventType}:${parsed.eventId.slice(0, 12)}`);
+    return { ok: true, duplicate: false };
+  }
+
+  // A bot-side revocation is authoritative and must reach the mirror, not just
+  // the console. Without this the app kept reporting "Telegram linked" after
+  // the user unlinked in Telegram, and — because the local row stayed active —
+  // a fresh link attempt was refused with `already_linked` (409), leaving no
+  // way back in short of a reinstall. Clearing the row first is what makes
+  // start-linking usable again; the entitlements go with it because they were
+  // a projection of a link that no longer exists.
+  if (parsed.eventType === 'link.revoked') {
+    await db.batch([
+      db
+        .prepare(`UPDATE np_links SET status = 'unlinked', unlinked_at = ?, updated_at = ? WHERE netpulse_account_id = ? AND status = 'active'`)
+        .bind(t, t, parsed.netpulseAccountId),
+      db.prepare(`DELETE FROM np_entitlements WHERE user_id = ?`).bind(userId),
+    ]);
+    await db.prepare(`UPDATE np_events SET processed_at = ?, processed_status = 'applied' WHERE event_id = ?`).bind(t, parsed.eventId).run();
+    await audit(db, 'np.event.link_revoked', userId, ip, `${parsed.eventId.slice(0, 12)}`);
     return { ok: true, duplicate: false };
   }
 

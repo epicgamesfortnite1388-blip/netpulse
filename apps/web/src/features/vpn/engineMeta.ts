@@ -23,7 +23,8 @@ export type VpnSurfaceId =
   | 'v2ray'
   | 'hysteria'
   | 'wireguard'
-  | 'openvpn';
+  | 'openvpn'
+  | 'whitedns';
 
 export interface VpnSurfaceMeta {
   id: VpnSurfaceId;
@@ -42,6 +43,7 @@ export const VPN_SURFACES: readonly VpnSurfaceMeta[] = [
   { id: 'hysteria', label: 'Hysteria2', blurb: "Hysteria2's own client — dials hysteria2 nodes natively" },
   { id: 'wireguard', label: 'WireGuard', blurb: 'Native WireGuard tunnel (elevated on Windows)' },
   { id: 'openvpn', label: 'OpenVPN', blurb: 'Native OpenVPN tunnel' },
+  { id: 'whitedns', label: 'WhiteDNS Soar', blurb: 'DNS tunnel data-plane verification' },
 ] as const;
 
 export interface ProxyCoreMeta {

@@ -18,16 +18,13 @@ export default defineConfig({
     env: {
       NETPULSE_VAULT_KEY_STORE: 'file',
     },
-    // Keep files in one pool so SQLite-backed suites never contend on the
-    // same temp database directories. `pool: 'threads'` is what makes the
-    // option below actually apply: vitest 3 defaults to the `forks` pool,
-    // which silently ignored `poolOptions.threads` — files ran in parallel
-    // child processes and the real-socket suites (SOCKS/proxy listeners,
-    // spawned cores) timed out under the contention, failing different tests
-    // on every run.
+    // Keep files in one worker so SQLite-backed suites never contend on the
+    // same temp database directories. Vitest 4 removed `poolOptions`; the old
+    // `threads.singleThread` is now `maxWorkers: 1` (module isolation between
+    // files stays on, which the old setting also preserved). Without this the
+    // real-socket suites (SOCKS/proxy listeners, spawned cores) time out under
+    // the contention and fail different tests on every run.
     pool: 'threads',
-    poolOptions: {
-      threads: { singleThread: true },
-    },
+    maxWorkers: 1,
   },
 });

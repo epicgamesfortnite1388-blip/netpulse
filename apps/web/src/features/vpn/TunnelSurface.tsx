@@ -70,7 +70,7 @@ export function TunnelSurface() {
         </Notice>
       )}
 
-      <div className="space-y-7">
+      <div className="stagger space-y-7">
         <ProxyTunnelCard />
         <DiscoveryCard />
         <VpnHistoryCard />

@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
+import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ErrorState, LoadingState } from '@/components/ui/States';
 import { useToast } from '@/components/Toaster';
@@ -244,14 +245,12 @@ export default function EngineManagerPage() {
                     </p>
                   )}
                   {release?.url && (
-                    <a
+                    <ExternalUrlLink
                       className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
                       href={release.url}
-                      target="_blank"
-                      rel="noreferrer"
                     >
                       <ExternalLink size={12} /> Release notes on GitHub
-                    </a>
+                    </ExternalUrlLink>
                   )}
 
                   <div className="flex flex-wrap gap-1.5 pt-0.5">

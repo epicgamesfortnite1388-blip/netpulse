@@ -197,6 +197,31 @@ describe('verifyConnect behavior', () => {
     expect(status.previousPublicIp).toBe('1.1.1.1');
   });
 
+  it('reports verified as soon as the address changes, without a fixed settle wait', async () => {
+    let call = 0;
+    const startedAt = Date.now();
+    const status = await verifyConnect(
+      { publicIpProbe: async () => (call++ === 0 ? '1.1.1.1' : '2.2.2.2') },
+      baseStatus,
+    );
+    expect(status.verification).toBe('verified');
+    // The old implementation slept 400ms before the first post-connect probe.
+    expect(Date.now() - startedAt).toBeLessThan(200);
+  });
+
+  it('keeps probing while the tunnel settles, and verifies once the route claims traffic', async () => {
+    const answers = ['1.1.1.1', '1.1.1.1', '1.1.1.1', '2.2.2.2'];
+    let call = 0;
+    const status = await verifyConnect(
+      { publicIpProbe: async () => answers[call++] ?? '2.2.2.2' },
+      baseStatus,
+    );
+    expect(status.verification).toBe('verified');
+    expect(status.verifiedPublicIp).toBe('2.2.2.2');
+    // One pre-connect probe plus the retries that saw the old address.
+    expect(call).toBe(4);
+  });
+
   it('marks failed when the public IP is unchanged', async () => {
     const status = await verifyConnect({ publicIpProbe: async () => '1.1.1.1' }, baseStatus);
     expect(status.verification).toBe('failed');

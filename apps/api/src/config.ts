@@ -60,6 +60,16 @@ const EnvSchema = z.object({
    * updater honestly reports "no feed".
    */
   NETPULSE_RELEASE_DIR: z.string().optional(),
+  /**
+   * Trust anchor for signed ADAPTIVE POLICY updates (not for the installer feed —
+   * that keeps its own minisign key in tauri.conf.json).
+   *
+   * Both must be set before any policy update can be installed: an unset key
+   * means "this build only learns locally", which is the shipping default. The
+   * public key is the base64 raw 32-byte Ed25519 key or an SPKI PEM.
+   */
+  NETPULSE_ADAPTIVE_POLICY_KEY_ID: z.string().optional(),
+  NETPULSE_ADAPTIVE_POLICY_PUBKEY: z.string().optional(),
 });
 
 /**
@@ -94,6 +104,13 @@ export interface AppConfig {
   safeMode: boolean;
   /** Directory the local update feed serves from (undefined = feed off). */
   releaseDir?: string;
+  /**
+   * Key id + public key a signed adaptive policy update must verify against.
+   * Undefined means no policy update channel is configured for this build, and
+   * `installManifest` refuses every envelope instead of trusting one.
+   */
+  adaptivePolicyKeyId?: string;
+  adaptivePolicyPublicKey?: string;
 }
 
 export function loadConfig(
@@ -122,6 +139,8 @@ export function loadConfig(
     isTest: env.VITEST === 'true',
     safeMode: parsed.NETPULSE_SAFE_MODE,
     releaseDir: parsed.NETPULSE_RELEASE_DIR ? path.resolve(parsed.NETPULSE_RELEASE_DIR) : undefined,
+    adaptivePolicyKeyId: parsed.NETPULSE_ADAPTIVE_POLICY_KEY_ID,
+    adaptivePolicyPublicKey: parsed.NETPULSE_ADAPTIVE_POLICY_PUBKEY,
     ...overrides,
   };
   // Derive dependent paths from the FINAL dataDir — otherwise an override

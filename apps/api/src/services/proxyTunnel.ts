@@ -125,6 +125,8 @@ export interface TunnelDeps {
   setSystemProxy(proxyOrNull: string | null): Promise<{ ok: boolean; error?: string }>;
   getSystemProxy(): Promise<{ proxy: string | null }>;
   publish(kind: string, payload: Record<string, unknown>): void;
+  /** Scoped per-run activity channel; other tunnel events stay on the shared topic. */
+  publishActivity?(topic: string, payload: Record<string, unknown>): void;
   /**
    * Kill switch — owns what happens to the system proxy when this tunnel
    * drops. Structurally typed (not an import) so the two stay independently
@@ -202,6 +204,8 @@ interface StartOpts {
    * captures everything, and both at once double-captures.
    */
   tun?: boolean;
+  /** Optional per-run activity topic, supplied only by the quick-connect route. */
+  activity?: { topic: string };
 }
 
 /** Which hop of a chain a core is running. */
@@ -333,6 +337,18 @@ export class ProxyTunnelService {
   /** Kill-switch hold label for the current tunnel. */
   private tunLabel(): string {
     return this.status.nodeName ?? this.status.nodeId ?? 'proxy tunnel';
+  }
+
+  /** Best-effort progress for the current quick-connect run; never affects tunnel behavior. */
+  private activity(opts: StartOpts | undefined, stage: string, message: string, detail?: Record<string, unknown>): void {
+    if (!opts?.activity) return;
+    this.deps.publishActivity?.(opts.activity.topic, {
+      type: 'quick-connect:activity',
+      stage,
+      message,
+      at: Date.now(),
+      ...detail,
+    });
   }
 
   /**
@@ -481,13 +497,12 @@ export class ProxyTunnelService {
       return this.getStatus();
     }
     this.deps.publish('tunnel:starting', { nodeId: exitNode.id, nested });
-
     // 1) ENTRY hop (nested only). It is started and verified first: the exit
     //    core will dial through it, so it must provably relay before we depend
     //    on it.
     let entryHop: TunnelHop | null = null;
     if (entryNode) {
-      const entry = await this.startHop(entryNode, opts.preferredEngine, { kind: 'entry' }, bypass);
+      const entry = await this.startHop(entryNode, opts.preferredEngine, { kind: 'entry' }, bypass, opts);
       if (!entry.ok) {
         this.fail(`entry hop — ${entry.error}`, exitNode.id);
         return this.getStatus();
@@ -495,10 +510,12 @@ export class ProxyTunnelService {
       this.cores.push({ engine: entry.engine, run: entry.run });
       this.watch(entry.run);
       try {
+        this.activity(opts, 'relay-check', 'Resolving the trace hostname and requesting HTTPS through the entry core', { engine: entry.engine, node: entryNode.remark ?? entryNode.id });
         const trace = await this.deps.fetchThroughPort(entry.run.inboundPort, EXIT_TRACE_URL, 12_000);
         const ip = traceField(trace, 'ip');
         if (!ip) throw new Error('trace did not contain an ip= line');
         // The entry edge's OWN observed address — the thing the exit must differ from.
+        this.activity(opts, 'dns-response', 'Trace hostname resolved as part of the tunneled HTTPS request; resolver used is not independently identified', { engine: entry.engine, node: entryNode.remark ?? entryNode.id, exitIp: ip, dnsPolicy: opts.dns ? 'tunnel-configured' : 'core-default' });
         entryHop = {
           nodeId: entryNode.id,
           name: entryNode.remark ?? null,
@@ -510,13 +527,14 @@ export class ProxyTunnelService {
           inboundPort: entry.run.inboundPort,
         };
       } catch (err) {
+        this.activity(opts, 'verification-failed', `Entry route did not return a valid trace: ${message(err)}`, { node: entryNode.remark ?? entryNode.id });
         this.fail(`entry hop started but could not relay: ${message(err)}`, exitNode.id);
         return this.getStatus();
       }
     }
 
     // 2) EXIT hop — dials its node THROUGH the entry core in nested mode.
-    const exit = await this.startHop(exitNode, opts.preferredEngine, nested ? { kind: 'exit', entryPort: entryHop!.inboundPort } : { kind: 'single' }, bypass);
+    const exit = await this.startHop(exitNode, opts.preferredEngine, nested ? { kind: 'exit', entryPort: entryHop!.inboundPort } : { kind: 'single' }, bypass, opts);
     if (!exit.ok) {
       this.fail(nested ? `exit hop — ${exit.error}` : exit.error, exitNode.id);
       return this.getStatus();
@@ -534,10 +552,22 @@ export class ProxyTunnelService {
 
     // 3) Verify by fetching a real trace THROUGH the final hop (not a TCP check
     //    — that would light "active" for a core that cannot actually relay).
-    try {        const trace = await this.deps.fetchThroughPort(exit.run.inboundPort, EXIT_TRACE_URL, 12_000);
+    this.activity(opts, 'relay-check', 'Resolving the trace hostname and requesting HTTPS through the selected core', {
+      engine: exit.engine,
+      node: exitNode.remark ?? exitNode.id,
+      dnsPolicy: opts.dns ? 'tunnel-configured' : 'core-default',
+    });
+    try {
+      const trace = await this.deps.fetchThroughPort(exit.run.inboundPort, EXIT_TRACE_URL, 12_000);
       const ip = traceField(trace, 'ip');
       const loc = traceField(trace, 'loc');
       if (!ip) throw new Error('trace did not contain an ip= line');
+      this.activity(opts, 'dns-response', 'Trace hostname resolved as part of the tunneled HTTPS request; resolver used is not independently identified', {
+        engine: exit.engine,
+        node: exitNode.remark ?? exitNode.id,
+        exitIp: ip,
+        dnsPolicy: opts.dns ? 'tunnel-configured' : 'core-default',
+      });
       const now = Date.now();
       const chain = entryHop
         ? chainRecord(entryHop, {
@@ -569,6 +599,7 @@ export class ProxyTunnelService {
         ...(chain ? { nested: true, entryExitIp: chain.entryExitIp, exitDiffers: chain.exitDiffers } : {}),
       });
       // Proven: this is the only place gateway memory is written.
+      this.activity(opts, 'route-active', 'System tunnel verified and ready', { engine: exit.engine, node: exitNode.remark ?? exitNode.id, exitIp: ip });
       this.deps.onVerifiedGateway?.({
         nodeId: exitNode.id,
         name: exitNode.remark ?? null,
@@ -580,6 +611,11 @@ export class ProxyTunnelService {
         verifyMs: this.status.startedAt != null ? now - this.status.startedAt : null,
       });
     } catch (err) {
+      this.activity(opts, 'verification-failed', `Tunneled hostname/HTTPS verification failed: ${message(err)}`, {
+        engine: exit.engine,
+        node: exitNode.remark ?? exitNode.id,
+        dnsPolicy: opts.dns ? 'tunnel-configured' : 'core-default',
+      });
       // The cores started but cannot relay — that is a dead tunnel; be honest.
       // Cancel any pending restart chain: reconnecting into a target that just
       // failed traffic verification would resurrect a dead node over and over.
@@ -659,7 +695,13 @@ export class ProxyTunnelService {
    * honours the dial-through wiring — refused upfront rather than shipping a
    * "chain" that silently dials the node directly.
    */
-  private async startHop(node: TunnelNodeInput, preferred: 'auto' | ProxyEngineId, role: HopRole, bypass: BypassRuleSet | null): Promise<HopStart> {
+  private async startHop(
+    node: TunnelNodeInput,
+    preferred: 'auto' | ProxyEngineId,
+    role: HopRole,
+    bypass: BypassRuleSet | null,
+    activityOpts?: StartOpts,
+  ): Promise<HopStart> {
     const config = toParsedConfig(node);
     // What this hop actually needs a core to honour, decided once here so the
     // preflight and the pick agree.
@@ -669,10 +711,20 @@ export class ProxyTunnelService {
       chain: role.kind === 'exit',
     };
     const bar = this.preflight(config, preferred, role, options);
-    if (bar) return { ok: false, error: bar };
+    if (bar) {
+      this.activity(activityOpts, 'core-failed', `No compatible core could start: ${bar}`, { node: node.remark ?? node.id });
+      return { ok: false, error: bar };
+    }
     const engine = this.pickEngine(config, preferred, options)!;
+    this.activity(activityOpts, 'core-start', `Starting ${engine} core`, {
+      engine,
+      node: node.remark ?? node.id,
+    });
     const bin = (this.deps.findBinary ?? findEngineBinary)(engine);
-    if (!bin) return { ok: false, error: `${engine} binary not found` };
+    if (!bin) {
+      this.activity(activityOpts, 'core-failed', `${engine} binary was not found`, { engine, node: node.remark ?? node.id });
+      return { ok: false, error: `${engine} binary not found` };
+    }
     // The secret comes from the at-rest vault — a node without a stored secret
     // can still tunnel if its protocol is unauthenticated, so we pass null
     // through and let the core decide.
@@ -685,7 +737,25 @@ export class ProxyTunnelService {
       dns: this.dns,
       ...(role.kind === 'exit' ? { dialThroughPort: role.entryPort } : {}),
     });
-    if (!started.ok) return { ok: false, error: `${engine}: ${started.error}` };
+    if (!started.ok) {
+      this.activity(activityOpts, 'core-failed', `${engine} core failed to start: ${started.error}`, {
+        engine,
+        node: node.remark ?? node.id,
+      });
+      return { ok: false, error: `${engine}: ${started.error}` };
+    }
+    this.activity(activityOpts, 'core-ready', `${engine} core is accepting local proxy traffic`, {
+      engine,
+      node: node.remark ?? node.id,
+    });
+    this.activity(
+      activityOpts,
+      'dns-policy-active',
+      this.dns
+        ? 'Core started with configured DoH and fallback policy; resolver response is not yet verified'
+        : 'DNS-through-tunnel is disabled for this core',
+      { engine, node: node.remark ?? node.id, dnsPolicy: this.dns ? 'tunnel-configured' : 'core-default' },
+    );
     return { ok: true, engine, run: started.run };
   }
 
@@ -851,8 +921,15 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Normalize a node row into the config shape the core builders consume. */
-function toParsedConfig(node: TunnelNodeInput): ParsedNodeConfig {
+/**
+ * Normalize a node row into the config shape the core builders consume.
+ *
+ * Exported so every caller that needs to ask "which cores can dial this node"
+ * (the adaptive engine's strategy list, for one) asks it about the SAME config
+ * the tunnel will dial. A second mapping here would be a second answer to that
+ * question, and the two would drift.
+ */
+export function toParsedConfig(node: TunnelNodeInput): ParsedNodeConfig {
   return {
     protocol: node.protocol as ParsedNodeConfig['protocol'],
     host: node.host,

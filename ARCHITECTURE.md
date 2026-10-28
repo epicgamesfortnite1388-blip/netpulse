@@ -67,7 +67,8 @@ context `main.rs` does not have.
 | `tray.rs` | The system-tray icon, its menu, and the actions those items dispatch | `logging` |
 | `elevation.rs` | The only path to administrator rights: the app-level rights check + single-call elevated relaunch, and the per-action WireGuard tunnel-service broker | `logging` |
 | `updater_feed.rs` | Update-feed fetch/parse/verify | `tauri_plugin_updater` only — it logs nowhere |
-| `window.rs` | Main-window presentation only: restore, size to the monitor's **work area** in logical pixels (DPI-scaled), centre, focus, and the bounded post-startup re-assert | `logging`, `tauri::Manager` |
+| `window.rs` | The main window: built here (not in `tauri.conf.json`, which cannot carry the navigation callbacks), then restored, sized to the monitor's **work area** in logical pixels (DPI-scaled), centred, focused, and re-asserted once after startup | `logging`, `navigation`, `tauri::Manager` |
+| `navigation.rs` | The navigation policy as one pure function: the app's own document stays in the window, an `https` link goes to the OS browser, everything else is refused — and a new window is never created | `os_open` (its URL validator) |
 | `paths.rs` | The single resolver for the app data dir and the rotating log dir, plus the `data_paths` command | `tauri::PathResolver` |
 | `safe_mode.rs` | The `--safe-mode` flag end to end: parsed once from `argv`, held in managed state, announced to the sidecar | `logging` |
 | `status.rs` | The runtime-status snapshot the System Health page polls — an aggregator, owning nothing itself, and forbidden from inventing good news | `sidecar`, `paths`, `safe_mode`, `logging` |
@@ -82,6 +83,12 @@ Five rules hold this together:
   finished showing the window, and minimises it again afterwards) and not in `tauri.conf.json`
   (a fixed pixel size is wrong on every display but the one it was written on). If you are
   changing how large or where the window appears, `window.rs` is the only file to edit.
+- **The window is created in Rust, and it carries the navigation backstop.** A window declared in
+  `tauri.conf.json` cannot have `on_navigation` / `on_new_window` — those are builder callbacks —
+  so its navigation policy would exist only in the page's JavaScript, i.e. only while a bundle that
+  installs the guard is loaded. Building the window in `setup` puts the rule in front of the first
+  navigation. The policy itself is `navigation::classify`, a pure function with its own tests;
+  `window.rs` only wires it to the two callbacks. There is no `app.windows` entry to add.
 - **A status page that guesses is worse than one that says nothing.** This page exists because
   something is already wrong, so its failure mode is a snapshot that reassures: a stopped sidecar
   publishing its old port (the `Child` handle outlives the process, so the port is right there in the

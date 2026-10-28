@@ -187,9 +187,9 @@ export default function DashboardPage() {
       {statusQuery.isLoading && <LoadingState label="Measuring your connection" />}
 
       {statusQuery.data?.health && statusQuery.data.health.score != null ? (
-        <div className="space-y-6">
+        <div className="stagger space-y-6">
           {/* health + connection */}
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="stagger grid gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-1">
               <CardHeader title="Network health" icon={<GaugeIcon size={15} />} />
               <CardBody className="flex flex-col items-center">
@@ -245,7 +245,7 @@ export default function DashboardPage() {
           </Card>
 
           {/* chart + insights */}
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="stagger grid gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2" fold={{ id: 'live-latency' }}>
               <CardHeader
                 title="Live latency"
@@ -258,7 +258,7 @@ export default function DashboardPage() {
             </Card>
             <InsightsCard insights={insights} />
           </div>          {/* breakdown + events */}
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="stagger grid gap-5 lg:grid-cols-3">
             <HealthBreakdown status={statusQuery.data} />
             <Card className="lg:col-span-2" fold={{ id: 'recent-activity', defaultOpen: false, summary: `${(eventsQuery.data?.events ?? []).length} recent events` }}>
               <CardHeader

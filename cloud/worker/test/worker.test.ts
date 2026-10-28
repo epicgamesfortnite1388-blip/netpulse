@@ -57,7 +57,7 @@ async function seedPlan(plan?: { code?: string; name?: string; defaultProfiles?:
 /**
  * Security + behavior contract of the NetPulse cloud Worker, driven through
  * the real fetch handler against real D1 (miniflare). Migration 0001 is
- * applied by the vitest-pool-workers config before these run.
+ * applied by the vitest setup file before these run.
  */
 
 const DEVICE = { name: 'TestDesk', os: 'Windows', appVersion: '1.0.2' };
@@ -407,6 +407,27 @@ describe('security abuse', () => {
     expect(anyToken?.n).toBe(0);
   });
 
+  it('forgot-password throttling states how long the wait is', async () => {
+    // A dedicated client IP: the bucket is per-address, and the other reset
+    // tests share the default one.
+    const call = (): Promise<Response> =>
+      SELF.fetch('https://worker.test/api/v1/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '203.0.113.77' },
+        body: JSON.stringify({ email: 'throttle-probe@example.com' }),
+      });
+    let last = await call();
+    for (let i = 0; i < 5 && last.status === 200; i += 1) last = await call();
+    expect(last.status).toBe(429);
+    const body = (await last.json()) as { error: { code: string }; retryAfterSec?: number };
+    expect(body.error.code).toBe('rate_limited');
+    // The number is what the sign-in screen counts down from; without it the
+    // only honest thing to say is "later", which is what this change removes.
+    expect(body.retryAfterSec).toBeGreaterThan(0);
+    expect(body.retryAfterSec).toBeLessThanOrEqual(3600);
+    expect(last.headers.get('Retry-After')).toBe(String(body.retryAfterSec));
+  });
+
   it('resend transport: correct request shape, link carries the token, failures are honest', async () => {
     let captured: { url: string; auth: string; body: string } | null = null;
     setMailPost(async (url, init) => {
@@ -425,6 +446,14 @@ describe('security abuse', () => {
     expect((await sendResetEmail({ RESEND_API_KEY: 'k' } as never, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_from_missing');
     setMailPost(async () => new Response('nope', { status: 403 }));
     expect((await sendResetEmail(envLike, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_http_403');
+    // A provider rejection carries its reason into the audit: a bare status made
+    // an unverified sender domain indistinguishable from a malformed request.
+    setMailPost(async () =>
+      new Response('{"name":"validation_error","message":"The from address is not verified"}', { status: 422 }),
+    );
+    expect((await sendResetEmail(envLike, 'a@b.test', 't', 'https://worker.test')).reason).toBe(
+      'mail_http_422:validation_error/The from address is not verified',
+    );
     setMailPost(async () => { throw new Error('boom'); });
     expect((await sendResetEmail(envLike, 'a@b.test', 't', 'https://worker.test')).reason).toBe('mail_error');
   });

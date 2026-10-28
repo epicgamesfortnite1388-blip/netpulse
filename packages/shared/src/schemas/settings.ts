@@ -141,6 +141,10 @@ export const SettingsSchema = z.object({
       intervalMinutes: z.number().min(10).max(240),
     }),
   }),
+  adaptive: z.object({
+    enabled: z.boolean(),
+    exploration: z.boolean(),
+  }),
   scheduling: ScheduleSettingsSchema,
 });
 
@@ -193,6 +197,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   automation: {
     autoTestNodes: { enabled: true, intervalMinutes: 30 },
+  },
+  adaptive: {
+    enabled: true,
+    exploration: false,
   },
 };
 
@@ -261,6 +269,12 @@ export const SettingsPatchSchema = z
             intervalMinutes: z.number().min(10).max(240),
           })
           .partial(),
+      })
+      .partial(),
+    adaptive: z
+      .object({
+        enabled: z.boolean(),
+        exploration: z.boolean(),
       })
       .partial(),
     scheduling: ScheduleSettingsSchema.partial(),

@@ -172,7 +172,7 @@ export function ProviderSurface({ providerId }: { providerId: ManagedProviderId 
   ];
 
   return (
-    <DisclosureScope name={`vpn:${providerId}`} className="animate-fade-up">
+    <DisclosureScope name={`vpn:${providerId}`} className="stagger animate-fade-up">
       <EngineHero
         glyph={
           <EngineGlyph glyph={meta.glyph} size="lg">

@@ -24,7 +24,7 @@ import type { RawDocumentsRepository, SourceFetchesRepository } from '../db/repo
 import type { AppSettings, ProxyEngineId, PublicSource } from '@netpulse/shared';
 import { geoStatusReasonFor } from './nodeGeoService';
 import { applyTestOutcome, distributionOf } from './nodeScoring';
-import { runProbe } from './nodeTestProbes';
+import { proxyProbeMany, runProbe, type ProbeDeps } from './nodeTestProbes';
 import { isExportFormat, nodeLink, serializeExport } from './nodeExport';
 import type { ExportRow } from './nodeExport';
 import { toWebDTO } from './nodeView';
@@ -47,6 +47,17 @@ import type { VpnRegistry } from '../vpn/vpnService';
 import type { PlatformNetworkController } from '../providers/platform/types';
 
 /* --------------------------- internal state -------------------------------- */
+
+/**
+ * One node's outcome from a bulk run. `result` is a completed measurement;
+ * `error` is a failure that produced no measurement at all (unknown node id,
+ * or a probe that threw). At most one is set.
+ */
+export interface NodeTestOutcome {
+  nodeId: string;
+  result?: NodeTestResult;
+  error?: string;
+}
 
 export class NodesService {
   constructor(
@@ -146,26 +157,39 @@ export class NodesService {
    * config has no feed behind it, and inventing one would put a fiction in the
    * Sources page. Results stay split into imported / duplicates / invalid so the
    * UI can report what really happened rather than "added".
+   *
+   * A manual import may REPLACE a stored credential (`replaceExistingSecret`).
+   * That is the only path allowed to, and it has to be: the fingerprint ignores
+   * the credential, so a provider that rotates a password/UUID — or a control
+   * plane that re-issues one to the same account — produces exactly the same
+   * node, and the vault kept the retired value forever. Re-submitting the
+   * provider's link is the user's own statement that this is the current
+   * credential. A subscription feed is not: a public list carrying the same
+   * host with a shared credential would otherwise silently overwrite a
+   * per-user one, so sources keep the backfill-only rule.
    */
   async importManualConfigs(
     rawConfigs: string[],
-  ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[] }> {
+  ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[]; credentialsUpdated: number }> {
     const candidates = rawConfigs.map((c) => c.trim()).filter((c) => c.length > 0);
-    if (candidates.length === 0) return { imported: 0, duplicates: 0, invalid: 0, nodeIds: [] };
+    if (candidates.length === 0) return { imported: 0, duplicates: 0, invalid: 0, nodeIds: [], credentialsUpdated: 0 };
 
     const { valid, invalid } = partitionConfigs(candidates);
     if (valid.length === 0) {
       this.recordEvent('node.manual-import', { submitted: candidates.length, imported: 0, duplicates: 0, invalid });
-      return { imported: 0, duplicates: 0, invalid, nodeIds: [] };
+      return { imported: 0, duplicates: 0, invalid, nodeIds: [], credentialsUpdated: 0 };
     }
 
-    const stored = await this.importParsedConfigs(null, valid, null);
+    const stored = await this.importParsedConfigs(null, valid, null, { replaceExistingSecret: true });
     const result = { ...stored, invalid: stored.invalid + invalid };
     this.recordEvent('node.manual-import', {
       submitted: candidates.length,
       imported: result.imported,
       duplicates: result.duplicates,
       invalid: result.invalid,
+      // Reported so "imported 0, duplicates N" can be told apart from
+      // "imported 0, duplicates N, and N credentials were stale and replaced".
+      credentialsUpdated: result.credentialsUpdated,
     });
     return result;
   }
@@ -174,7 +198,16 @@ export class NodesService {
     sourceId: string | null,
     configs: Array<{ raw: string; parsed: { config: ParsedNodeConfig; secret: string } | null }>,
     sourceUrl: string | null,
-  ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[] }> {
+    opts: {
+      /**
+       * Allow this import to replace a stored credential with the one it was
+       * given. Off by default: only a manual/provider-supplied config is an
+       * assertion about which credential the server accepts now (see
+       * `importManualConfigs`).
+       */
+      replaceExistingSecret?: boolean;
+    } = {},
+  ): Promise<{ imported: number; duplicates: number; invalid: number; nodeIds: string[]; credentialsUpdated: number }> {
     const now = Date.now();
     // `created` counts what this call actually added; `touched` also carries the
     // ids of nodes it already knew. Both were the same array before, so a
@@ -184,6 +217,10 @@ export class NodesService {
     const touched: string[] = [];
     let duplicates = 0;
     let invalid = 0;
+    // How many already-known nodes had their stored credential replaced by the
+    // one supplied here. This is the app's only evidence that a stored credential
+    // was out of date, so it is counted rather than inferred.
+    let credentialsUpdated = 0;
 
     for (const item of configs) {
       if (!item.parsed) {
@@ -235,11 +272,31 @@ export class NodesService {
         // could never regain their credentials — every proxy test then failed
         // auth honestly but permanently. If the source still supplies the
         // secret and the vault has none, store it.
-        if (item.parsed.secret && this.deps.nodeVault?.get(existing.id) == null) {
+        //
+        // A stored credential that DIFFERS is the rotation case, and it is
+        // decided separately: the fingerprint (which ignores the credential)
+        // says "same node", but the server may no longer accept what is vaulted.
+        // Without this branch a rotated credential could never be repaired from
+        // the app — the node is a duplicate forever, so no import would ever
+        // write the new secret.
+        const vaulted = this.deps.nodeVault?.get(existing.id) ?? null;
+        const incoming = item.parsed.secret || null;
+        let secretReplaced = false;
+
+        if (incoming && vaulted == null) {
           try {
-            this.deps.nodeVault?.set(existing.id, item.parsed.secret);
+            this.deps.nodeVault?.set(existing.id, incoming);
           } catch {
             // vault failure must not block the import; tests will report
+          }
+        } else if (incoming && vaulted !== incoming && opts.replaceExistingSecret) {
+          try {
+            this.deps.nodeVault?.set(existing.id, incoming);
+            secretReplaced = true;
+            credentialsUpdated++;
+          } catch {
+            // As above: a vault failure leaves the old credential in place and is
+            // reported as "not replaced" rather than as a successful refresh.
           }
         }
 
@@ -248,7 +305,8 @@ export class NodesService {
           host: existing.host,
           sourceId,
           sourceUrl,
-          secretBackfilled: Boolean(item.parsed.secret),
+          secretBackfilled: Boolean(incoming) && vaulted == null,
+          secretReplaced,
         });
 
         touched.push(existing.id);
@@ -404,27 +462,26 @@ export class NodesService {
     // nodeIds[i] then read a different node than it imported — and the VPN
     // proof driver does exactly that. A duplicate lands only in `touched`,
     // so the union is still the complete set either way.
-    return { imported: created.length, duplicates, invalid, nodeIds: [...new Set([...created, ...touched])] };
+    return {
+      imported: created.length,
+      duplicates,
+      invalid,
+      nodeIds: [...new Set([...created, ...touched])],
+      credentialsUpdated,
+    };
   }
 
   /* ----------------------------- testing ----------------------------- */
 
-  async testNode(nodeId: string, type: NodeTestType, ip?: string): Promise<NodeTestResult> {
+  /**
+   * The engine-facing view of a stored node row. ONE mapping, shared by the
+   * single-node test and the bulk path, so a batched probe can never measure a
+   * node with a field dropped that the single path would have sent.
+   */
+  private nodeForTest(nodeId: string): PublicNode {
     const nodeRow = this.deps.nodes.get(nodeId);
     if (!nodeRow) throw new Error(`node not found: ${nodeId}`);
-
-    // SSRF guard for the caller-supplied IP override: without this, a request
-    // could point a node test at loopback/private/link-local addresses (e.g.
-    // the sidecar itself or a metadata service). resolveTarget rejects those
-    // literals before any socket is opened; the validated literal is what the
-    // probe variants below actually connect to.
-    let probedIpOverride: string | undefined;
-    if (ip !== undefined) {
-      const validated = await resolveTarget(ip);
-      probedIpOverride = validated.ips[0];
-    }
-
-    const node: PublicNode = {
+    return {
       id: nodeRow.id,
       canonicalFingerprint: nodeRow.canonicalFingerprint,
       protocol: nodeRow.protocol as NodeProtocol,
@@ -498,17 +555,207 @@ export class NodesService {
       createdAt: nodeRow.createdAt,
       updatedAt: nodeRow.updatedAt,
     };
+  }
 
-    const testId = `test:${nodeId}:${type}:${Date.now().toString(36)}`;
-    const startTime = Date.now();
+  async testNode(nodeId: string, type: NodeTestType, ip?: string): Promise<NodeTestResult> {
+    // SSRF guard for the caller-supplied IP override: without this, a request
+    // could point a node test at loopback/private/link-local addresses (e.g.
+    // the sidecar itself or a metadata service). resolveTarget rejects those
+    // literals before any socket is opened; the validated literal is what the
+    // probe variants below actually connect to.
+    let probedIpOverride: string | undefined;
+    if (ip !== undefined) {
+      const validated = await resolveTarget(ip);
+      probedIpOverride = validated.ips[0];
+    }
 
-    // Create test record
+    const node = this.nodeForTest(nodeId);
+
+    const { testId } = this.beginTest(node, type);
+
+    try {
+      if (type !== 'tcp' && type !== 'tls' && type !== 'proxy' && type !== 'icmp') {
+        throw new Error(`unknown test type: ${type}`);
+      }
+
+      // The probe owns the network work; this service owns the row lifecycle
+      // (inserted 'running' above, terminal state written below) — so a test's
+      // record can never be left hanging by a probe that forgot to persist.
+      // Retry once on failure to absorb intermittent per-port stalls (ISP
+      // flakiness) before recording a dead core.
+      let result = await runProbe(node, type, probedIpOverride, this.probeDeps(nodeId));
+      if (result.status === 'failed' || result.status === 'error') {
+        result = await runProbe(node, type, probedIpOverride, this.probeDeps(nodeId));
+      }
+
+      this.recordResult(testId, result);
+
+      // Update node with test result
+      await this.updateNodeAfterTest(nodeId, node, result, type);
+
+      return result;
+
+    } catch (err) {
+      this.recordFailure(nodeId, testId, type, err);
+      throw err;
+    }
+  }
+
+  /**
+   * Test many nodes at once.
+   *
+   * Proxy tests are the reason this exists: testNode spawns a core per node,
+   * so a bulk run spends most of its time starting and stopping processes.
+   * The batched path puts several nodes in ONE core (proxyProbeMany →
+   * startMultiCore), which is where a scan of dozens of nodes gets its time
+   * back. tcp/tls/icmp spawn nothing, so they keep a bounded worker pool.
+   *
+   * Index-aligned with `nodeIds`. A `null` entry means the run stopped before
+   * that node was reached (cancellation) — no test row exists for it, which is
+   * deliberate: a cancelled scan must not leave `running` rows behind.
+   */
+  async testNodes(
+    nodeIds: readonly string[],
+    type: NodeTestType,
+    opts: {
+      concurrency?: number;
+      shouldStop?: () => boolean;
+      /** One outcome per node as it settles — scan progress reads this. */
+      onResult?: (outcome: NodeTestOutcome) => void;
+    } = {},
+  ): Promise<Array<NodeTestOutcome | null>> {
+    const outcomes: Array<NodeTestOutcome | null> = new Array(nodeIds.length).fill(null);
+    const nodes: Array<PublicNode | null> = nodeIds.map((id) => {
+      try {
+        return this.nodeForTest(id);
+      } catch {
+        return null;
+      }
+    });
+    nodeIds.forEach((id, i) => {
+      if (nodes[i]) return;
+      const outcome: NodeTestOutcome = { nodeId: id, error: `node not found: ${id}` };
+      outcomes[i] = outcome;
+      opts.onResult?.(outcome);
+    });
+    const runnable = nodeIds.map((_, i) => i).filter((i) => nodes[i]);
+
+    if (type === 'proxy') {
+      // Rows are opened per shared core (onGroupStart), not for the whole
+      // request: a cancelled batch then has no unstarted 'running' rows.
+      const testIds = new Map<number, string>();
+      let results: Array<NodeTestResult | null> = [];
+      try {
+        results = await proxyProbeMany(
+          runnable.map((i) => nodes[i]!),
+          {
+            testEndpoints: this.deps.testEndpoints,
+            proxyEnginePreference: () => this.proxyEnginePreference(),
+          },
+          {
+            secretFor: (nodeId) => this.deps.nodeVault?.get(nodeId) ?? null,
+            onGroupStart: (batch) => {
+              for (const k of batch) {
+                const i = runnable[k];
+                if (i === undefined) continue;
+                testIds.set(i, this.beginTest(nodes[i]!, type).testId);
+              }
+            },
+            shouldStop: opts.shouldStop,
+          },
+        );
+      } catch (err) {
+        // The runner is contractually never-throwing, but a config-generation
+        // bug must not leave rows 'running' or become an unexplained 500.
+        const message = err instanceof Error ? err.message : String(err);
+        for (const [i, testId] of testIds) {
+          this.recordFailure(nodes[i]!.id, testId, type, err);
+          const outcome: NodeTestOutcome = { nodeId: nodes[i]!.id, error: message };
+          outcomes[i] = outcome;
+          opts.onResult?.(outcome);
+        }
+        return outcomes;
+      }
+
+      for (let k = 0; k < runnable.length; k++) {
+        const i = runnable[k]!;
+        const node = nodes[i]!;
+        const result = results[k];
+        const testId = testIds.get(i);
+        // No row = this node's group never started (cancelled).
+        if (!result || !testId) continue;
+        this.recordResult(testId, result);
+        await this.updateNodeAfterTest(node.id, node, result, type);
+        const outcome: NodeTestOutcome = { nodeId: node.id, result };
+        outcomes[i] = outcome;
+        opts.onResult?.(outcome);
+      }
+      return outcomes;
+    }
+
+    const concurrency = Math.max(1, Math.min(16, opts.concurrency ?? 8));
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < runnable.length) {
+        if (opts.shouldStop?.()) return;
+        const i = runnable[cursor++]!;
+        const node = nodes[i]!;
+        const { testId } = this.beginTest(node, type);
+        try {
+          // One retry before the failure is recorded, the same bound the
+          // single-node path (testNode) applies: reports/adaptive/
+          // RAW_PATH_IR_ISP.txt D1/D3 shows the ISP stalling one port
+          // intermittently (:443 answered at 13:07Z, no answer at 13:15Z while
+          // the other three answered), so a single timed-out attempt must not
+          // be recorded as a dead node; a second failed attempt is what makes
+          // the failure a finding.
+          let result = await runProbe(node, type, undefined, this.probeDeps(node.id));
+          if (result.status === 'failed' || result.status === 'error') {
+            result = await runProbe(node, type, undefined, this.probeDeps(node.id));
+          }
+          this.recordResult(testId, result);
+          await this.updateNodeAfterTest(node.id, node, result, type);
+          const outcome: NodeTestOutcome = { nodeId: node.id, result };
+          outcomes[i] = outcome;
+          opts.onResult?.(outcome);
+        } catch (err) {
+          this.recordFailure(node.id, testId, type, err);
+          const outcome: NodeTestOutcome = { nodeId: node.id, error: err instanceof Error ? err.message : String(err) };
+          outcomes[i] = outcome;
+          opts.onResult?.(outcome);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, runnable.length) }, worker));
+    return outcomes;
+  }
+
+  /** Probe dependencies, built once and shared by the single and bulk paths. */
+  private probeDeps(nodeId: string): ProbeDeps {
+    return {
+      testEndpoints: this.deps.testEndpoints,
+      proxyEnginePreference: () => this.proxyEnginePreference(),
+      controller: this.deps.controller,
+      secret: this.deps.nodeVault?.get(nodeId) ?? null,
+    };
+  }
+
+  /**
+   * Open a test row in the 'running' state and announce the start.
+   *
+   * The row is what keeps `running` honest: whichever path ran the probe, the
+   * terminal state is written by recordResult/recordFailure, so a threw probe
+   * can never leave a row hanging.
+   */
+  private beginTest(node: PublicNode, type: NodeTestType): { testId: string; startedAt: number } {
+    const testId = `test:${node.id}:${type}:${Date.now().toString(36)}`;
+    const startedAt = Date.now();
     this.deps.tests.insert({
       id: testId,
-      nodeId,
+      nodeId: node.id,
       type,
       status: 'running',
-      startedAt: startTime,
+      startedAt,
       finishedAt: null,
       latencyMs: null,
       totalMs: null,
@@ -522,65 +769,41 @@ export class NodesService {
       probedIp: null,
       testEndpoint: null,
     });
+    this.recordEvent('node.test.started', { testId, nodeId: node.id, type });
+    return { testId, startedAt };
+  }
 
-    this.recordEvent('node.test.started', { testId, nodeId, type });
+  /** Persist the final row state for EVERY test type (see testNode's history). */
+  private recordResult(testId: string, result: NodeTestResult): void {
+    this.deps.tests.update(testId, {
+      status: result.status,
+      latencyMs: result.latencyMs,
+      totalMs: result.totalMs,
+      tlsVersion: result.tlsVersion,
+      authorized: result.authorized,
+      httpStatus: result.httpStatus,
+      responseSize: result.responseSize,
+      error: result.error,
+      finishedAt: result.finishedAt,
+      engine: result.engine ?? undefined,
+    });
+  }
 
-    try {
-      if (type !== 'tcp' && type !== 'tls' && type !== 'proxy' && type !== 'icmp') {
-        throw new Error(`unknown test type: ${type}`);
-      }
-
-      // The probe owns the network work; this service owns the row lifecycle
-      // (inserted 'running' above, terminal state written below) — so a test's
-      // record can never be left hanging by a probe that forgot to persist.
-      const result = await runProbe(node, type, probedIpOverride, {
-        testEndpoints: this.deps.testEndpoints,
-        proxyEnginePreference: () => this.proxyEnginePreference(),
-        controller: this.deps.controller,
-        secret: this.deps.nodeVault?.get(nodeId) ?? null,
-      });
-
-      // Persist the final row state for EVERY test type. tcp/tls tests write
-      // their own row inline, but proxy/icmp return results without touching
-      // the row — without this finalize the row stays `running` forever, so
-      // the node's lastProxyMs/median/score never update and the tunnel gate
-      // sees no tunnelable node. Idempotent for the types that already wrote.
-      this.deps.tests.update(testId, {
-        status: result.status,
-        latencyMs: result.latencyMs,
-        totalMs: result.totalMs,
-        tlsVersion: result.tlsVersion,
-        authorized: result.authorized,
-        httpStatus: result.httpStatus,
-        responseSize: result.responseSize,
-        error: result.error,
-        finishedAt: result.finishedAt,
-        engine: result.engine ?? undefined,
-      });
-
-      // Update node with test result
-      await this.updateNodeAfterTest(nodeId, node, result, type);
-
-      return result;
-
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.deps.tests.update(testId, {
-        status: 'failed',
-        latencyMs: null,
-        totalMs: null,
-        tlsVersion: null,
-        authorized: null,
-        httpStatus: null,
-        responseSize: null,
-        error,
-        finishedAt: Date.now(),
-      });
-
-      this.recordEvent('node.test.failed', { testId, nodeId, type, error });
-
-      throw err;
-    }
+  /** Terminate a test row that never produced a result, and announce it. */
+  private recordFailure(nodeId: string, testId: string, type: NodeTestType, err: unknown): void {
+    const error = err instanceof Error ? err.message : String(err);
+    this.deps.tests.update(testId, {
+      status: 'failed',
+      latencyMs: null,
+      totalMs: null,
+      tlsVersion: null,
+      authorized: null,
+      httpStatus: null,
+      responseSize: null,
+      error,
+      finishedAt: Date.now(),
+    });
+    this.recordEvent('node.test.failed', { testId, nodeId, type, error });
   }
 
   /**

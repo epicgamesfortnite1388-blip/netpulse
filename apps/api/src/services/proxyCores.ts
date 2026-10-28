@@ -19,6 +19,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { reservePort, spawnCoreProcess, startupReason } from './coreProcess';
+// The engine manager owns where installs land; this module must look there too
+// (see findEngineBinary). No cycle: engineManager does not import proxyCores.
+import { coresDir } from './engineManager';
 
 import type { CoreProcess } from './coreProcess';
 import { isProcessElevated } from '../util/privileges';
@@ -443,18 +446,12 @@ export function buildSingboxRouteRules(rs: BypassRuleSet): Record<string, unknow
 }
 
 /**
- * sing-box config (same shape proxyProbe already used, extracted so both
- * engines share one lifecycle). `bypass` is tunnel-only, same rationale as
- * buildXrayConfig.
+ * One sing-box outbound for a node. Split out of buildSingboxConfig so a
+ * batched core can put several nodes in ONE process (see buildSingboxMultiConfig)
+ * without a second copy of the protocol switch. The tag is the caller's: the
+ * single-node config uses a fixed one, a batch needs one per node.
  */
-export function buildSingboxConfig(
-  config: ParsedNodeConfig,
-  secret: string | null,
-  mixedPort: number,
-  bypass?: BypassRuleSet | null,
-  dialThroughPort?: number | null,
-  dns?: DnsThroughTunnel | null,
-): Record<string, unknown> {
+export function buildSingboxOutbound(config: ParsedNodeConfig, secret: string | null): Record<string, unknown> {
   const proto = config.protocol;
   const outbound: Record<string, unknown> = {
     type: proto,
@@ -546,6 +543,23 @@ export function buildSingboxConfig(
       break;
   }
 
+  return outbound;
+}
+
+/**
+ * sing-box config (same shape proxyProbe already used, extracted so both
+ * engines share one lifecycle). `bypass` is tunnel-only, same rationale as
+ * buildXrayConfig.
+ */
+export function buildSingboxConfig(
+  config: ParsedNodeConfig,
+  secret: string | null,
+  mixedPort: number,
+  bypass?: BypassRuleSet | null,
+  dialThroughPort?: number | null,
+  dns?: DnsThroughTunnel | null,
+): Record<string, unknown> {
+  const outbound = buildSingboxOutbound(config, secret);
   outbound['tag'] = NODE_OUT_TAG;
   const outbounds: Record<string, unknown>[] = [outbound];
   if (dialThroughPort != null) {
@@ -571,6 +585,99 @@ export function buildSingboxConfig(
     inbounds: [{ type: 'mixed', tag: 'probe-in', listen: '127.0.0.1', listen_port: mixedPort }],
     outbounds,
     route,
+  };
+}
+
+/* ===================== batched probing (one core, N nodes) ================= */
+
+/** One node in a batched core: its outbound config plus the vaulted secret. */
+export interface MultiCoreNode {
+  config: ParsedNodeConfig;
+  secret: string | null;
+}
+
+/** Inbound tag for entry `i` in a batched config. */
+export function multiInboundTag(i: number): string {
+  return `probe-in-${i}`;
+}
+
+/** Outbound tag for entry `i` in a batched config. */
+export function multiOutboundTag(i: number): string {
+  return `np-node-${i}`;
+}
+
+function assertBatchShape(nodes: readonly MultiCoreNode[], ports: readonly number[]): void {
+  if (nodes.length === 0) throw new Error('a batched core needs at least one node');
+  if (nodes.length !== ports.length) throw new Error(`batched core needs one port per node (${nodes.length} nodes, ${ports.length} ports)`);
+  if (new Set(ports).size !== ports.length) throw new Error('batched core ports must be distinct');
+}
+
+/**
+ * Xray/v2ray config for N nodes in ONE process.
+ *
+ * Each node gets its own HTTP inbound and its own outbound, and a field rule
+ * pins inbound `i` to outbound `i` — the routing is what makes the batch
+ * honest: without it a probe on port 5001 could exit through node 7 and be
+ * scored as node 1. Both engines accept this shape (xray's `inboundTag` and
+ * sing-box's `inbound` are per-inbound selectors), so the routing rules are
+ * generated, not assumed.
+ *
+ * Everything a single-node probe config also carries (TLS, Reality, WS/gRPC/
+ * HTTP transports, VMess security, SS method) comes from buildXrayOutbound, so
+ * a batched probe cannot drift from a single-node one.
+ */
+export function buildXrayMultiConfig(
+  nodes: readonly MultiCoreNode[],
+  ports: readonly number[],
+): Record<string, unknown> {
+  assertBatchShape(nodes, ports);
+  const inbounds = nodes.map((_, i) => ({
+    tag: multiInboundTag(i),
+    listen: '127.0.0.1',
+    port: ports[i],
+    protocol: 'http',
+  }));
+  const outbounds = nodes.map((node, i) => {
+    const outbound = buildXrayOutbound(node.config, node.secret);
+    outbound['tag'] = multiOutboundTag(i);
+    return outbound;
+  });
+  const rules = nodes.map((_, i) => ({
+    type: 'field',
+    inboundTag: [multiInboundTag(i)],
+    outboundTag: multiOutboundTag(i),
+  }));
+  return {
+    log: { loglevel: 'warning' },
+    inbounds,
+    outbounds,
+    routing: { domainStrategy: 'AsIs', rules },
+  };
+}
+
+/** The sing-box equivalent of buildXrayMultiConfig (see its routing note). */
+export function buildSingboxMultiConfig(
+  nodes: readonly MultiCoreNode[],
+  ports: readonly number[],
+): Record<string, unknown> {
+  assertBatchShape(nodes, ports);
+  return {
+    log: { level: 'warn', timestamp: true },
+    inbounds: nodes.map((_, i) => ({
+      type: 'mixed',
+      tag: multiInboundTag(i),
+      listen: '127.0.0.1',
+      listen_port: ports[i],
+    })),
+    outbounds: nodes.map((node, i) => {
+      const outbound = buildSingboxOutbound(node.config, node.secret);
+      outbound['tag'] = multiOutboundTag(i);
+      return outbound;
+    }),
+    route: {
+      auto_detect_interface: true,
+      rules: nodes.map((_, i) => ({ inbound: [multiInboundTag(i)], outbound: multiOutboundTag(i) })),
+    },
   };
 }
 
@@ -680,6 +787,14 @@ export function findEngineBinary(id: ProxyEngineId): string | null {
   const dirs: string[] = [];
   if (process.env['NETPULSE_CORES_DIR']) dirs.push(process.env['NETPULSE_CORES_DIR']);
   if (process.env['NETPULSE_DATA_DIR']) dirs.push(path.join(process.env['NETPULSE_DATA_DIR'], 'cores'));
+  // The engine manager's own install directory (see coreEngineManager.coresDir).
+  // In the packaged app this is the folder above, but when NETPULSE_DATA_DIR is
+  // unset — `npm run dev:api`, and any run started from a different cwd — it is
+  // `<cwd>/cores`. Without this entry a core installed THROUGH the app's engine
+  // manager was invisible here: `GET /nodes/engines` reported its version while
+  // claiming `available: false`, and every proxy test answered "no proxy core
+  // installed" with the binary sitting on disk.
+  dirs.push(coresDir());
   dirs.push(...(process.env['PATH'] ?? '').split(path.delimiter).filter(Boolean));
   for (const dir of dirs) {
     for (const name of names) {
@@ -1056,6 +1171,97 @@ export async function startCore(
   };
 }
 
+/** A core serving several nodes at once: one inbound port per node. */
+export interface MultiCoreRun {
+  /** Node `i` in the batch is reachable through `inboundPorts[i]`. */
+  inboundPorts: number[];
+  /** Kill the core + delete the temp config (idempotent). */
+  cleanup: () => void;
+  readonly stderrTail: string;
+}
+
+export type MultiCoreStartResult =
+  | { ok: true; run: MultiCoreRun }
+  | { ok: false; failure: EngineStartFailure; error: string };
+
+/**
+ * Start ONE core for a batch of nodes.
+ *
+ * This is the cost the bulk path exists to avoid: today a proxy test spawns a
+ * process, waits for readiness and tears it down per node, which dominates the
+ * measurement when dozens of nodes are tested at once. A batched config puts
+ * every node's outbound and inbound in one process, so the batch pays one
+ * spawn, one readiness wait and one teardown.
+ *
+ * Hysteria is refused rather than silently mis-wired: its client config holds
+ * a single `server`, so a batch would test one node N times. Callers route
+ * hysteria2 nodes to sing-box (which dials them) or to the single-node path.
+ *
+ * Ports are reserved for the whole batch up front, and a clash retries ONCE
+ * with a fresh set — the same rule as startCore, because a port taken between
+ * reservation and spawn is the environment's fault, not the node's.
+ */
+export async function startMultiCore(
+  engine: ResolvedEngine,
+  nodes: readonly MultiCoreNode[],
+  readyTimeoutMs = 5_000,
+  opts?: { _portRetried?: boolean },
+): Promise<MultiCoreStartResult> {
+  if (engine.id === 'hysteria') {
+    return {
+      ok: false,
+      failure: 'engine_unavailable',
+      error: 'the Hysteria2 client holds one server per config, so it cannot serve a batched probe',
+    };
+  }
+  if (nodes.length === 0) {
+    return { ok: false, failure: 'engine_start_failed', error: 'a batched core needs at least one node' };
+  }
+
+  const ports: number[] = [];
+  for (let i = 0; i < nodes.length; i++) ports.push(await reservePort());
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `netpulse-${engine.id}-batch-`));
+  const cfgPath = path.join(tmpDir, 'core.json');
+  const cfgJson = engine.id === 'sing-box'
+    ? buildSingboxMultiConfig(nodes, ports)
+    : buildXrayMultiConfig(nodes, ports); // xray + v2ray share the schema
+  fs.writeFileSync(cfgPath, JSON.stringify(cfgJson));
+
+  const started = await spawnCoreProcess({
+    bin: engine.bin,
+    args: [...engine.args, '-c', cfgPath],
+    readyPort: ports[0]!,
+    extraReadyPorts: ports.slice(1),
+    readyTimeoutMs,
+    tempDir: tmpDir,
+    label: `${engine.id} (batch of ${nodes.length})`,
+  });
+
+  if (!started.ok) {
+    if (started.failure === 'port_clash' && !opts?._portRetried) {
+      return startMultiCore(engine, nodes, readyTimeoutMs, { _portRetried: true });
+    }
+    const failure: EngineStartFailure =
+      started.failure === 'spawn_error' || started.failure === 'port_clash'
+        ? 'engine_unavailable'
+        : 'engine_start_failed';
+    return { ok: false, failure, error: started.error };
+  }
+
+  const { cleanup } = started.process;
+  return {
+    ok: true,
+    run: {
+      inboundPorts: ports,
+      cleanup,
+      get stderrTail() {
+        return started.process.output;
+      },
+    },
+  };
+}
+
 /**
  * Which engines can dial a protocol. Honest matrix: xray/v2ray have no
  * hysteria2/tuic outbounds; NO core supports shadowsocksr (it was removed
@@ -1104,6 +1310,19 @@ export function engineSupportsConfig(engine: ProxyEngineId, config: ParsedNodeCo
     if (!isAeadShadowsocksCipher(cipher)) {
       return { ok: false, error: `${engine}-core cannot run the shadowsocks cipher "${cipher}" (not AEAD — the v2ray family dropped those; use sing-box for this node)` };
     }
+  }
+  // allowInsecure is gone from the v2ray family. Measured on xray 26.3.27: a
+  // TLS node that sets it makes the core refuse the WHOLE config file
+  // ("The feature \"allowInsecure\" has been removed and migrated to
+  // \"pinnedPeerCertSha256\"", exit 23), so the node failed with a bare exit
+  // code — and in a batched probe that rejection took every sibling in the
+  // shared core down with it. sing-box still carries `insecure: true` and starts
+  // the same node, so such a node is dialled there instead.
+  if ((engine === 'xray' || engine === 'v2ray') && config.security === 'tls' && config.allowInsecure === true) {
+    return {
+      ok: false,
+      error: `${engine}-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)`,
+    };
   }
   if (engine !== 'v2ray') return { ok: true };
   if (config.security === 'reality' || config.realityPublicKey) {

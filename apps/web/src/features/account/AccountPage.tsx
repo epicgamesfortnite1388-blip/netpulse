@@ -21,16 +21,30 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { useToast } from '@/components/Toaster';
-import { CloudError, cloudApi, CLOUD_TIMEOUT } from '@/lib/cloud/client';
+import { CloudError, cloudApi, cloudAuth, CLOUD_TIMEOUT } from '@/lib/cloud/client';
+import { fmtCountdown } from '@/lib/format';
 import { TelegramIntegrationCard } from './TelegramIntegrationCard';
 import { pendingCount, lastSyncError, restoreProfileFromVault, syncNow } from '@/lib/cloud/syncEngine';
+import { describeImport, importProvisionedConfigs } from '@/lib/cloud/provisionProfiles';
 import { useSessionStore } from '@/lib/cloud/sessionStore';
 import { useCloudSession } from '@/lib/cloud/useCloudSession';
-import type { CloudDevice, CloudSession } from '@/lib/cloud/types';
+import type { CloudDevice, CloudProfile, CloudSession } from '@/lib/cloud/types';
 
 function fmtTime(ts: number | null): string {
   if (!ts) return 'not yet';
   return new Date(ts).toLocaleString();
+}
+
+/**
+ * The one sentence a failed auth call gets. Never "check your connection": by
+ * far the most common cause is that the cloud is filtered on this network and
+ * a tunnel/proxy would fix it, and the client already knows which. Showing a
+ * code or a generic sentence sent people to debug a working connection.
+ */
+function authFailureMessage(err: unknown): string {
+  if (err instanceof CloudError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return 'Could not reach the cloud service. If this network blocks it, turn on your VPN or tunnel and try again.';
 }
 
 /* ------------------------------ logged out ------------------------------- */
@@ -39,11 +53,18 @@ function WelcomeGate() {
   const navigate = useNavigate();
   const { login, register, busy } = useCloudSession();
   const toast = useToast();
-  const [mode, setMode] = useState<'signin' | 'register'>('signin');
+  const [mode, setMode] = useState<'signin' | 'register' | 'reset'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  /**
+   * True only after the Worker accepted the request — never before, and never
+   * keyed on whether the address exists: the endpoint answers uniformly, so the
+   * screen must not become an account-existence oracle.
+   */
+  const [resetSent, setResetSent] = useState(false);
   /**
    * How many times this form has been submitted. The first press answers fast
    * and names the cause; a press after that is the user choosing to wait, so
@@ -51,103 +72,206 @@ function WelcomeGate() {
    * retried automatically — the wait is theirs to spend.
    */
   const [attempts, setAttempts] = useState(0);
+  /**
+   * When the Worker refuses a reset email for being too frequent, it also says
+   * how much of its window is left. Holding that deadline — not a count of
+   * seconds elapsed — keeps the number honest across re-renders, and the
+   * submit button stays shut until it passes so the next press is a real
+   * request rather than another guaranteed 429.
+   */
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (cooldownUntil === null) return;
+    setNowMs(Date.now());
+    const id = setInterval(() => {
+      if (Date.now() >= cooldownUntil) {
+        // The throttle has lifted: drop the deadline and the sentence that
+        // explained it, so the form returns to normal without a reload.
+        setCooldownUntil(null);
+        setError(null);
+      } else {
+        setNowMs(Date.now());
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldownUntil]);
+
+  /** Whole seconds left on the Worker's window; 0 when there is no cooldown. */
+  const cooldownLeft = cooldownUntil === null ? 0 : Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Pressing Enter in the email field submits the form even while the button
+    // is disabled, and that request could only be refused again.
+    if (cooldownLeft > 0) return;
     setError(null);
+    const timeoutMs = attempts === 0 ? CLOUD_TIMEOUT.interactive : CLOUD_TIMEOUT.patient;
+    setAttempts((n) => n + 1);
+    if (mode === 'reset') {
+      setResetBusy(true);
+      try {
+        await cloudAuth.forgotPassword(email.trim(), timeoutMs);
+        setResetSent(true);
+      } catch (err) {
+        setError(authFailureMessage(err));
+        // Only throttling is actionable as a wait; every other failure is a
+        // cause to read, not a clock to watch.
+        if (err instanceof CloudError && err.code === 'rate_limited' && err.retryAfterSec) {
+          setCooldownUntil(Date.now() + err.retryAfterSec * 1000);
+        }
+      } finally {
+        setResetBusy(false);
+      }
+      return;
+    }
     if (mode === 'register' && password !== confirm) {
       setError('Passwords do not match');
       return;
     }
-    const timeoutMs = attempts === 0 ? CLOUD_TIMEOUT.interactive : CLOUD_TIMEOUT.patient;
-    setAttempts((n) => n + 1);
     try {
       if (mode === 'signin') await login(email.trim(), password, timeoutMs);
       else await register(email.trim(), password, timeoutMs);
       toast('ok', mode === 'signin' ? 'Signed in' : 'Account created');
     } catch (err) {
-      // Never "check your connection": by far the most common cause is that the
-      // cloud is filtered on this network and a tunnel/proxy would fix it, and
-      // the client already knows which. Showing a code or a generic sentence
-      // sent people to debug the connection that was working fine.
-      setError(
-        err instanceof CloudError
-          ? err.message
-          : err instanceof Error && err.message
-            ? err.message
-            : 'Could not reach the cloud service. If this network blocks it, turn on your VPN or tunnel and try again.',
-      );
+      setError(authFailureMessage(err));
     }
+  };
+
+  const backToSignIn = () => {
+    setMode('signin');
+    setError(null);
+    setResetSent(false);
+    setAttempts(0);
+    setCooldownUntil(null);
   };
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-md flex-col justify-center gap-4 p-6">
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {mode === 'signin' ? 'Welcome back' : 'Create your account'}
+          {mode === 'signin' ? 'Welcome back' : mode === 'register' ? 'Create your account' : 'Reset your password'}
         </h1>
         <p className="mt-1 text-sm text-muted">
           {mode === 'signin'
             ? 'Sign in to sync settings and favorites across devices.'
-            : 'One account syncs your settings, favorites and profiles.'}
+            : mode === 'register'
+              ? 'One account syncs your settings, favorites and profiles.'
+              : resetSent
+                ? 'Check your inbox for the reset link.'
+                : 'Enter the email for your account and we will send a reset link.'}
         </p>
       </div>
 
       <Card>
         <CardBody>
-          <form className="flex flex-col gap-3" onSubmit={submit}>
-            <Field label="Email">
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
-              />
-            </Field>
-            <Field label="Password" hint={mode === 'register' ? 'At least 10 characters with upper case, lower case and a digit' : undefined}>
-              <input
-                type="password"
-                required
-                minLength={mode === 'register' ? 10 : 1}
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
-              />
-            </Field>
-            {mode === 'register' && (
-              <Field label="Confirm password">
+          {mode === 'reset' && resetSent ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm">
+                If an account exists for <span className="font-medium">{email.trim()}</span>, a reset link is on its
+                way.
+              </p>
+              <p className="text-xs text-muted">
+                The link opens the reset page in your browser and expires in 30 minutes. If it does not arrive, check
+                your spam folder before requesting another.
+              </p>
+              <Button type="button" variant="ghost" onClick={backToSignIn}>
+                Back to sign in
+              </Button>
+            </div>
+          ) : (
+            <form className="flex flex-col gap-3" onSubmit={submit}>
+              <Field label="Email">
                 <input
-                  type="password"
+                  type="email"
                   required
-                  autoComplete="new-password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
                   className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
                 />
               </Field>
-            )}
-            {error && <p className="text-sm text-red-400">{error}</p>}
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setMode(mode === 'signin' ? 'register' : 'signin');
-                // The banner describes one attempt at one mode. Carrying it
-                // across the toggle showed "The cloud did not answer in time"
-                // on a registration form that had never been submitted.
-                setError(null);
-              }}
-            >
-              {mode === 'signin' ? 'Need an account? Create one' : 'Already have an account? Sign in'}
-            </Button>
-          </form>
+              {mode !== 'reset' && (
+                <Field label="Password" hint={mode === 'register' ? 'At least 10 characters with upper case, lower case and a digit' : undefined}>
+                  <input
+                    type="password"
+                    required
+                    minLength={mode === 'register' ? 10 : 1}
+                    autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
+                  />
+                </Field>
+              )}
+              {mode === 'signin' && (
+                <button
+                  type="button"
+                  className="self-end text-xs text-muted underline-offset-2 hover:text-text hover:underline"
+                  onClick={() => {
+                    setMode('reset');
+                    setError(null);
+                    setResetSent(false);
+                    setAttempts(0);
+                  }}
+                >
+                  Forgot password?
+                </button>
+              )}
+              {mode === 'register' && (
+                <Field label="Confirm password">
+                  <input
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent/80"
+                  />
+                </Field>
+              )}
+              {error && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm text-red-400">{error}</p>
+                  {cooldownLeft > 0 && (
+                    <p className="text-xs text-muted" aria-live="polite">
+                      You can request another link in {fmtCountdown(cooldownLeft)}.
+                    </p>
+                  )}
+                </div>
+              )}
+              <Button type="submit" disabled={busy || resetBusy || cooldownLeft > 0}>
+                {busy || resetBusy
+                  ? 'Working…'
+                  : mode === 'signin'
+                    ? 'Sign in'
+                    : mode === 'register'
+                      ? 'Create account'
+                      : 'Email me a reset link'}
+              </Button>
+              {mode === 'reset' ? (
+                <Button type="button" variant="ghost" onClick={backToSignIn}>
+                  Back to sign in
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setMode(mode === 'signin' ? 'register' : 'signin');
+                    // The banner describes one attempt at one mode. Carrying it
+                    // across the toggle showed "The cloud did not answer in time"
+                    // on a registration form that had never been submitted.
+                    setError(null);
+                  }}
+                >
+                  {mode === 'signin' ? 'Need an account? Create one' : 'Already have an account? Sign in'}
+                </Button>
+              )}
+            </form>
+          )}
         </CardBody>
       </Card>
 
@@ -283,6 +407,150 @@ function EncryptedBackupCard() {
               ))}
             </ul>
           )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function VpnProfilesCard() {
+  const session = useSessionStore((s) => s.session);
+  const toast = useToast();
+  const [profiles, setProfiles] = useState<CloudProfile[] | null>(null);
+  const [copying, setCopying] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await cloudApi.profiles();
+      setProfiles(r.profiles);
+    } catch {
+      setProfiles(null);
+    }
+  }, []);
+
+  /**
+   * Ask the Worker to re-issue this account's configs, then import them.
+   *
+   * The VPN flags every config with its own per-account credential, so the
+   * copies stored earlier (or the shared ones an older build produced) stop
+   * authenticating the moment the entitlement lapses, is refunded or is
+   * revoked. Provisioning again is what makes the card show the identity the
+   * server currently accepts — the Worker reuses the same secret for as long
+   * as the account stays entitled, so a refresh does not invalidate a config
+   * the user already imported.
+   *
+   * Importing is the part that makes Connect work. Showing a config the user
+   * must copy by hand left the app's own profile list holding a profile whose
+   * credential the server had already retired: the list looked healthy and the
+   * tunnel silently failed. Each import replaces the profile of the same name,
+   * so repeated refreshes converge on one profile per protocol.
+   */
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await cloudApi.provision();
+      if (r.provisioned.length === 0) {
+        setRefreshNote('Your subscription produced no configs.');
+      } else {
+        const imported = await importProvisionedConfigs(r.provisioned);
+        setRefreshNote(describeImport(imported, r.provisioned.length));
+      }
+    } catch (err) {
+      const code = err instanceof CloudError ? err.code : '';
+      setRefreshNote(
+        code === 'entitlement_expired'
+          ? 'Your subscription has expired — the existing configs no longer work.'
+          : code === 'entitlement_not_active'
+            ? 'Your subscription is not active — the existing configs no longer work.'
+            : code === 'no_active_entitlement'
+              ? 'No active subscription is linked to this account yet.'
+              : 'Could not refresh configs from your subscription.',
+      );
+    } finally {
+      setRefreshing(false);
+      await load();
+    }
+  }, [load]);
+
+  useEffect(() => {
+    // Refresh on open, not merely load the stored rows: a stored config can be
+    // one the server has already stopped accepting (older shared credential, or
+    // an identity revoked while the app was closed). Showing it without
+    // refreshing is what made a dead profile look usable.
+    if (session) void refresh();
+  }, [session, refresh]);
+
+  const copy = async (id: string, text: string) => {
+    setCopying(id);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('ok', 'Config copied', "Paste it into your VPN client or the app's import surface.");
+    } catch {
+      toast('error', 'Copy failed', 'Could not write to the clipboard.');
+    } finally {
+      setCopying(null);
+    }
+  };
+
+  if (!session) return null;
+  if (profiles === null)
+    return (
+      <Card fold={{ id: 'account-vpn-profiles', defaultOpen: true, summary: 'unavailable' }}>
+        <CardHeader title="VPN profiles" icon={<Download size={16} />} />
+        <CardBody>
+          <p className="text-sm text-muted">VPN profiles not loaded.</p>
+          {refreshNote && <p className="text-xs text-warn mt-2">{refreshNote}</p>}
+        </CardBody>
+      </Card>
+    );
+  if (profiles.length === 0)
+    return (
+      <Card fold={{ id: 'account-vpn-profiles', defaultOpen: true, summary: 'none yet' }}>
+        <CardHeader title="VPN profiles" icon={<Download size={16} />} />
+        <CardBody>
+          <p className="text-sm text-muted">
+            {refreshNote ?? 'No VPN profiles yet. An active subscription issues them on refresh.'}
+          </p>
+          <Button variant="ghost" size="sm" className="mt-2" onClick={() => void refresh()} disabled={refreshing}>
+            <RefreshCw size={13} /> {refreshing ? 'Refreshing…' : 'Refresh profiles'}
+          </Button>
+        </CardBody>
+      </Card>
+    );
+
+  return (
+    <Card fold={{ id: 'account-vpn-profiles', defaultOpen: true, summary: `${profiles.length} profile(s)` }}>
+      <CardHeader title="VPN profiles" icon={<Download size={16} />} />
+      <CardBody>
+        <p className="text-xs text-muted mb-3">
+          Provisioned from your active subscription. Copy a config and import it into the matching client (Xray, WhiteDNS, Hysteria, SOCKS5). Credentials
+          are shown here only to you — never logged or backed up in plain text. They are tied to this account and stop working when the subscription ends,
+          so refresh after renewing.
+        </p>
+        {refreshNote && <p className="text-xs text-warn mb-2">{refreshNote}</p>}
+        <div className="mb-2">
+          <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={refreshing}>
+            <RefreshCw size={13} /> {refreshing ? 'Refreshing…' : 'Refresh profiles'}
+          </Button>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {profiles.map((p) => (
+            <div key={p.id} className="border border-line rounded-lg p-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium text-text">{p.name}</span>
+                <Badge tone="neutral">{p.protocol}</Badge>
+              </div>
+              <p className="text-xs text-muted truncate">{p.endpoint ?? '—'}</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => void copy(p.id, p.config)} disabled={copying === p.id}>
+                  <Copy size={13} /> {copying === p.id ? 'Copying…' : 'Copy config'}
+                </Button>
+              </div>
+              <pre className="mt-2 text-micro text-mono text-muted overflow-auto bg-surface-2 rounded p-2 break-all">{p.config}</pre>
+            </div>
+          ))}
         </div>
       </CardBody>
     </Card>
@@ -491,6 +759,8 @@ function AccountDashboard() {
       <EncryptedBackupCard />
 
       <TelegramIntegrationCard />
+
+      <VpnProfilesCard />
 
       <Card fold={{ id: 'account-danger', defaultOpen: false, summary: 'irreversible account actions' }}>
         <CardHeader title="Danger zone" />

@@ -318,17 +318,43 @@ export async function verifyConnect(hooks: VpnProviderHooks | undefined, status:
   } catch {
     // pre-connect probe is best effort
   }
-  // tiny delay lets the tunnel fully claim the default route
-  await new Promise((r) => setTimeout(r, 400));
+  /*
+   * Ask until the answer changes, instead of sleeping 400ms and asking once.
+   *
+   * The fixed settle was pure dead time on every connect: a tunnel that claims
+   * the default route in 30ms still made the app wait 400ms before it could
+   * report traffic as verified, and a tunnel that took 700ms was reported as
+   * failed even though it was only late. Probing from the first moment means a
+   * healthy tunnel verifies as soon as the route is in place, while a slow one
+   * is retried on the same budget the old single check had. Each attempt stops
+   * the loop the moment the address changes, so the common case costs one
+   * request.
+   *
+   * The attempt budget deliberately ends around where the old fixed delay did
+   * (4 attempts, 200ms apart ≈ 600ms plus the probes' own time), so a tunnel
+   * that genuinely does not route is still called out at the same point rather
+   * than much later — this changes when we LOOK, not what counts as a failure.
+   */
+  const VERIFY_ATTEMPTS = 4;
+  const VERIFY_RETRY_MS = 200;
   let after: string | null = null;
-  try {
-    after = await hooks.publicIpProbe();
-  } catch {
-    return {
-      ...status,
-      verification: 'unavailable',
-      verificationNote: 'Public IP check could not be executed, so the tunnel is reported but not verified.',
-    };
+  for (let attempt = 0; attempt < VERIFY_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, VERIFY_RETRY_MS));
+    try {
+      after = await hooks.publicIpProbe();
+    } catch {
+      // A probe that cannot even run is not a settle question; retrying it
+      // would only turn one honest "unavailable" into several failed requests.
+      return {
+        ...status,
+        verification: 'unavailable',
+        verificationNote: 'Public IP check could not be executed, so the tunnel is reported but not verified.',
+      };
+    }
+    // Proven routing: stop immediately. `before` being unknown cannot prove a
+    // change, so there is nothing to wait for in that case either — the caller
+    // gets `not_verified` with the address that answered.
+    if (after && after !== before) break;
   }
   if (!after) {
     return {
@@ -961,7 +987,7 @@ export class OpenVpnProvider implements VpnProvider {
  * process runs and is regenerated at connect time.
  */
 
-const SINGBOX_PROTOCOLS = ['vless', 'vmess', 'trojan', 'shadowsocks'] as const;
+const SINGBOX_PROTOCOLS = ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2'] as const;
 
 export interface ParsedShareLink {
   protocol: (typeof SINGBOX_PROTOCOLS)[number] | 'unknown';
@@ -1112,6 +1138,63 @@ export function parseShadowsocksUri(uri: string): ParsedShareLink | null {
 }
 
 /**
+ * Parse hysteria2://password@host:port?sni=…&obfs=salamander&obfs-password=…#name
+ * (hy2:// is the same scheme under its short alias).
+ *
+ * Hysteria 2 is the plan's UDP fallback, so it has to be importable as a real
+ * profile: a user whose TCP path is impaired must be able to connect, not just
+ * copy a link. The auth string may contain characters that break `new URL`
+ * (it is `user:password` in this deployment), so userinfo and authority are
+ * split manually and only the query is handed to URLSearchParams.
+ */
+export function parseHysteria2Uri(uri: string): ParsedShareLink | null {
+  const scheme = uri.startsWith('hysteria2://') ? 'hysteria2://' : uri.startsWith('hy2://') ? 'hy2://' : null;
+  if (!scheme) return null;
+  try {
+    const rest = uri.slice(scheme.length);
+    const hashIdx = rest.indexOf('#');
+    const main = hashIdx >= 0 ? rest.slice(0, hashIdx) : rest;
+    const qIdx = main.indexOf('?');
+    const authority = qIdx >= 0 ? main.slice(0, qIdx) : main;
+    const params = new URLSearchParams(qIdx >= 0 ? main.slice(qIdx + 1) : '');
+    const at = authority.lastIndexOf('@');
+    if (at < 0) return null;
+    const password = decodeURIComponent(authority.slice(0, at));
+    if (!password) return null;
+    let hostPort = authority.slice(at + 1);
+    if (hostPort.endsWith('/')) hostPort = hostPort.slice(0, -1);
+    const close = hostPort.startsWith('[') ? hostPort.indexOf(']') : -1;
+    const host = close >= 0 ? hostPort.slice(1, close) : hostPort.slice(0, hostPort.lastIndexOf(':'));
+    const port = Number(close >= 0 ? hostPort.slice(close + 1).replace(/^:/, '') : hostPort.slice(hostPort.lastIndexOf(':') + 1));
+    if (!host || !Number.isFinite(port) || port <= 0) return null;
+
+    const outbound: Record<string, unknown> = {
+      type: 'hysteria2',
+      server: host,
+      server_port: port,
+      password,
+      tls: {
+        enabled: true,
+        server_name: params.get('sni') ?? host,
+        insecure: params.get('insecure') === '1' || params.get('allowInsecure') === '1',
+      },
+    };
+    // Salamander obfuscation is not optional on a server that enables it: a
+    // client without it cannot complete the handshake, so drop the link rather
+    // than import a profile that would always fail.
+    const obfs = params.get('obfs');
+    if (obfs) {
+      const obfsPassword = params.get('obfs-password') ?? params.get('obfs_password') ?? '';
+      if (obfs !== 'salamander' || !obfsPassword) return null;
+      outbound.obfs = { type: 'salamander', password: obfsPassword };
+    }
+    return { protocol: 'hysteria2', host, port, fields: outbound, secret: password };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build the sing-box config document for one outbound. Only 127.0.0.1:port
  * inbound is bound — the tunnel is a local SOCKS/HTTP proxy plus TUN only
  * when the platform layer grants it; default is proxy-mode (no route
@@ -1154,6 +1237,7 @@ export function materializeSingboxConfig(storedText: string, secret: string): st
   else if (type === 'vmess') outbound['uuid'] = secret;
   else if (type === 'trojan') outbound['password'] = secret;
   else if (type === 'shadowsocks') outbound['password'] = secret;
+  else if (type === 'hysteria2') outbound['password'] = secret;
   return JSON.stringify(doc, null, 2);
 }
 
@@ -1243,6 +1327,7 @@ export class SingboxProvider implements VpnProvider {
     else if (text.startsWith('vmess://')) parsed = parseVmessUri(text);
     else if (text.startsWith('trojan://')) parsed = parseTrojanUri(text);
     else if (text.startsWith('ss://')) parsed = parseShadowsocksUri(text);
+    else if (text.startsWith('hysteria2://') || text.startsWith('hy2://')) parsed = parseHysteria2Uri(text);
     else if (text.startsWith('{')) {
       // sing-box outbound JSON: user pasted an outbound object
       try {
@@ -1270,7 +1355,7 @@ export class SingboxProvider implements VpnProvider {
     }
 
     if (!parsed || parsed.protocol === 'unknown' || !parsed.host) {
-      throw vpnError(400, 'invalid_config', 'Could not parse this as a VLESS, VMess, Trojan or Shadowsocks link (or a sing-box outbound JSON). Supported: vless://, vmess://, trojan://, ss://');
+      throw vpnError(400, 'invalid_config', 'Could not parse this as a VLESS, VMess, Trojan, Shadowsocks or Hysteria2 link (or a sing-box outbound JSON). Supported: vless://, vmess://, trojan://, ss://, hysteria2://');
     }
     if (!parsed.secret) {
       throw vpnError(400, 'invalid_config', 'The link contains no credential (UUID or password) to store');

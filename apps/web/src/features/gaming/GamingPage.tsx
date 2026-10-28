@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
+import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ScheduleChip } from '@/components/ScheduleChip';
 import { Progress } from '@/components/ui/Progress';
@@ -241,7 +242,10 @@ export default function GamingPage() {
           )}
           {game?.statusUrl && (
             <p className="mt-2 text-micro text-faint">
-              Publisher status: <a className="underline decoration-line underline-offset-2 hover:text-muted" href={game.statusUrl} target="_blank" rel="noreferrer">{game.statusUrl}</a>
+              Publisher status:{' '}
+              <ExternalUrlLink className="underline decoration-line underline-offset-2 hover:text-muted" href={game.statusUrl}>
+                {game.statusUrl}
+              </ExternalUrlLink>
             </p>
           )}
         </CardBody>

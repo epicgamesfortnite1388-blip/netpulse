@@ -13,6 +13,8 @@ import pino from 'pino';
 
 import { normalizeBypass } from '@netpulse/shared';
 
+import type { ProxyEngineId } from '@netpulse/shared';
+
 import { createAuth, ensureDaemonToken } from './auth';
 import { loadConfig } from './config';
 import { openDb } from './db/client';
@@ -47,6 +49,7 @@ import { registerIranRoutes } from './routes/iran';
 import { registerMapRoutes } from './routes/map';
 import { registerMetaRoutes } from './routes/meta';
 import { registerNetworkRoutes } from './routes/network';
+import { registerAdaptiveRoutes } from './routes/adaptive';
 import { registerOptimizerRoutes } from './routes/optimizer';
 import { registerPingRoutes } from './routes/ping';
 import { registerRouteRoutes } from './routes/routes';
@@ -57,6 +60,7 @@ import { registerStabilityRoutes } from './routes/stability';
 import { registerVpnRoutes } from './routes/vpn';
 import { registerTunnelRoutes } from './routes/tunnel';
 import { registerWebrtcRoutes } from './routes/webrtc';
+import { registerWhitednsRoutes } from './routes/whitedns';
 import { registerNodesRoutes } from './routes/nodes';
 import { UpdateFeedHistoryService } from './services/updateFeedHistory';
 import { registerUpdateFeedRoutes } from './routes/updateFeed';
@@ -76,9 +80,14 @@ import { PingService } from './services/pingService';
 import { RouteService } from './services/routeService';
 import { ScheduleService } from './services/scheduleService';
 import { VpnSelfTestService } from './services/vpnSelfTestService';
+import { WhitednsService } from './services/whitednsService';
 import { SelectionService } from './services/selectionService';
 import { NodesService } from './services/nodesService';
 import { NodeSecretVault } from './services/nodeSecretVault';
+import { AdaptiveEngine } from './services/adaptiveEngine';
+import { createEd25519Verifier } from './services/adaptiveManifestTrust';
+
+import pkg from '../package.json';
 import { ProfileCloudVault } from './services/profileCloudVault';
 import { ProxyTunnelService, fetchThroughHttpProxy } from './services/proxyTunnel';
 import { getSystemProxy, setSystemProxy } from './services/systemProxy';
@@ -106,6 +115,16 @@ export interface BuildOptions {
    * it to the webview via typed IPC and to this process via stdin/env.
    */
   daemonToken?: string;
+  /**
+   * Which local cores this machine has, injected by tests.
+   *
+   * Production passes nothing and the adaptive engine asks `findEngineBinary` —
+   * the same detector the tunnel itself uses to pick a core — so the two can
+   * never disagree. The seam exists because a suite cannot install real xray and
+   * sing-box binaries, and "does the engine order only what is really present"
+   * is exactly the property that needs testing.
+   */
+  adaptiveEngines?: () => ProxyEngineId[];
 }
 
 const PUBLIC_API_PATHS = new Set([
@@ -362,6 +381,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   const selection = new SelectionService({ controller, tests: repos.tests, events, settings, bus, log });
   const healthMonitor = new HealthMonitorService({ controller, servers: repos.servers, health: repos.serverHealth, events, log });
   const vpnSelfTest = new VpnSelfTestService({ vpn, controller, settings, events, bus, log });
+  const whitedns = new WhitednsService(log);
   const schedule = new ScheduleService({ settings, dns, gaming, vpnSelfTest, events, bus, log });
   const iran = new IranService({
     route,
@@ -436,6 +456,25 @@ export async function buildApp(opts: BuildOptions = {}) {
   // across restarts so a reconnect can retry what last worked before scanning.
   const gatewayMemory = new GatewayMemoryService({ store: repos.settings, log });
 
+  // Adaptive connectivity — learns which INSTALLED, COMPATIBLE core actually
+  // reaches the internet under the conditions observed on this machine, and may
+  // reorder only that choice. Storage is the same local settings table gateway
+  // memory uses; nothing leaves the device. The policy trust anchor comes from
+  // the environment: with no key configured, signed policy updates are refused
+  // (local learning still works), which is the shipping default.
+  const adaptiveVerifier = createEd25519Verifier(config.adaptivePolicyPublicKey);
+  const adaptive = new AdaptiveEngine({
+    store: repos.settings,
+    settings,
+    log,
+    bus,
+    events,
+    appVersion: pkg.version,
+    ...(opts.adaptiveEngines ? { installedEngines: opts.adaptiveEngines } : {}),
+    ...(adaptiveVerifier ? { verifySignature: adaptiveVerifier } : {}),
+    ...(config.adaptivePolicyKeyId ? { trustedKeyId: config.adaptivePolicyKeyId } : {}),
+  });
+
   // Proxy tunnel — one long-lived local core (xray/sing-box/v2ray) the system
   // can be routed through. Verified exit IP, crash detection with bounded
   // auto-reconnect, system-proxy handoff with restore.
@@ -445,6 +484,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     setSystemProxy: (p) => setSystemProxy(p),
     getSystemProxy: () => getSystemProxy(),
     publish: (kind, payload) => bus.publish('nodes', { type: kind, ...payload }),
+    publishActivity: (topic, payload) => bus.publish(topic, { type: 'quick-connect:activity', ...payload }),
     killSwitch,
     // Same live preference the Aether provider reads: a route-mode hold the
     // user asked for must never be skipped without the status saying so.
@@ -560,10 +600,12 @@ export async function buildApp(opts: BuildOptions = {}) {
     schedule,
     vpnSelfTest,
     tunnel: proxyTunnel,
+    whitedns,
     killSwitch,
     gatewayMemory,
     discovery: nodeDiscovery,
     vpnHistory,
+    adaptive,
     // Drop watchdog — routes acknowledge it on deliberate disconnects and
     // mode handovers so it only ever reconnects a real, unattended drop.
     watchdog: vpnWatchdog,
@@ -727,6 +769,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerRouteRoutes(app, ctx);
   registerEndpointRoutes(app, ctx);
   registerOptimizerRoutes(app, ctx);
+  registerAdaptiveRoutes(app, ctx);
   registerDiagnosticRoutes(app, ctx);
   registerStabilityRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
@@ -737,6 +780,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerVpnRoutes(app, ctx);
   registerTunnelRoutes(app, ctx);
   registerWebrtcRoutes(app, ctx);
+  registerWhitednsRoutes(app, ctx);
   registerNodesRoutes(app, ctx);
   // Local update feed (public — the updater is not the webview; see route docs).
   registerUpdateFeedRoutes(app, ctx);

@@ -148,6 +148,34 @@
   --type-scale: 1;
 }
 
+/*
+ * ------------------------------- motion --------------------------------
+ * Three curves, named for what they do rather than for a duration, so a
+ * component picks by intent:
+ *
+ *   --ease-fluid    the house curve for anything that moves between two
+ *                   resting places (page enter, nav pill, panels). Fast out of
+ *                   the gate, long settle — this is what makes a 260ms move
+ *                   read as "fluid" instead of "quick".
+ *   --ease-spring   a small overshoot, for things that are *pressed* (button
+ *                   release, pill settle). Overshoot above 1.56 reads as a
+ *                   cartoon; this is the smallest amount that is perceptible.
+ *   --ease-out-soft decelerate-only, for opacity and colour.
+ *
+ * Durations are capped at 320ms on purpose: above that a navigation starts to
+ * feel like waiting rather than travelling, and every one of these runs on the
+ * main thread of a WebView.
+ */
+:root {
+  --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-quick: 140ms;
+  --dur-base: 200ms;
+  --dur-move: 280ms;
+  --dur-slow: 380ms;
+}
+
 html[data-type-scale='large'] {
   --type-scale: 1.125;
 }
@@ -403,6 +431,263 @@ body {
 }
 .animate-fade-up {
   animation: fade-up 0.25s ease-out both;
+}
+
+/*
+ * ============================== motion system ============================
+ * The shell's movement, in one place. Every rule here is opt-in by class, so
+ * a page that does not use it is unaffected, and all of it collapses to no
+ * movement under `prefers-reduced-motion` (bottom of this section).
+ */
+
+/*
+ * Page enter. The routed page rises 10px and fades, over 380ms. It is an
+ * ENTER-only animation (there is no exit presence): a page that animates out
+ * delays the next one, which is the opposite of feeling fluid.
+ *
+ * Deliberately no `filter` and no `will-change`: either one turns this element
+ * into a containing block for `position: fixed` descendants, so a modal or a
+ * floating panel inside a page would be positioned against the page box instead
+ * of the window. The same reason it is `translate3d(...)` and then `none` — a
+ * completed transform must not linger.
+ */
+@keyframes page-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.998); }
+  55% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+/*
+ * Fill mode is `backwards`, never `both`. `both` retains the animation's last
+ * keyframe forever, and a retained transform — even `transform: none`, which
+ * the browser reports as an identity matrix — makes the element a containing
+ * block for `position: fixed` descendants. The map page mounts a full-screen
+ * `fixed inset-0` panel inside a routed page; with `both` it would size itself
+ * to the page box instead of the window. `backwards` applies the first
+ * keyframe before the animation runs and then hands the element back to its
+ * ordinary styles, which are already the finished look.
+ */
+.page-enter {
+  animation: page-in var(--dur-slow) var(--ease-fluid) backwards;
+}
+
+/*
+ * Indeterminate route bar. Rendered only while a lazy page chunk is in flight
+ * (the Suspense fallback), so its life is exactly the wait: it grows to 72%
+ * quickly and creeps from there, which is the honest shape of "still loading"
+ * without pretending to know a percentage.
+ */
+@keyframes route-progress {
+  from { transform: scaleX(0.02); opacity: 0.9; }
+  40% { transform: scaleX(0.55); }
+  70% { transform: scaleX(0.72); }
+  to { transform: scaleX(0.86); opacity: 0.65; }
+}
+.route-progress {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: 2px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-strong));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  animation: route-progress 2.4s var(--ease-fluid) both;
+  pointer-events: none;
+}
+
+/*
+ * The sidebar's active-row highlight exists as ONE element that travels,
+ * instead of a background painted on whichever link happens to be current.
+ * That is the difference between a menu that highlights and a menu that has
+ * a cursor. Position/size are set inline by `SidebarContent`; this rule owns
+ * only the look and the travel.
+ */
+.nav-pill {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  border-radius: 0.5rem;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    var(--color-accent-soft),
+    color-mix(in srgb, var(--color-accent) 5%, transparent) 72%,
+    transparent
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent);
+  will-change: transform, height;
+}
+
+/* The 2px rail is the "you are here" marker; the glow is what makes it read
+   as lit rather than drawn. */
+.nav-pill::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+.nav-pill[data-visible='true'] {
+  opacity: 1;
+}
+
+/*
+ * The travel is enabled only once the pill has been measured in a laid-out
+ * sidebar (`data-ready`). Two things depend on that:
+ *
+ *   - on mount, so the pill does not fly in from y=0 before it has a place;
+ *   - while the sidebar is `display: none` (below `lg`), because a transition
+ *     started inside a non-rendered subtree never advances in Chromium: the
+ *     element keeps the value it had when it was hidden. That was observed
+ *     live — the inline style said `height: 36px` while the computed value
+ *     stayed `0px` after widening the window again.
+ *
+ * `height` is deliberately NOT transitioned. It is layout, not movement: it
+ * has to be exact the moment it is set, and animating it was the property that
+ * got stuck. The rows differ by 4px, which the eye reads as the pill settling,
+ * not as a missing morph.
+ */
+.nav-pill[data-ready='true'] {
+  transition:
+    transform var(--dur-move) var(--ease-fluid),
+    opacity var(--dur-quick) linear;
+}
+
+/*
+ * Command palette. The backdrop fades; the panel rises and settles with the
+ * spring curve. Kept out of the JS so opening it costs no layout read.
+ */
+@keyframes palette-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes palette-panel-in {
+  from { opacity: 0; transform: translate3d(0, -10px, 0) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.palette-backdrop-in {
+  animation: palette-backdrop-in var(--dur-quick) linear backwards;
+}
+.palette-panel-in {
+  animation: palette-panel-in var(--dur-base) var(--ease-spring) backwards;
+}
+
+/*
+ * Mobile navigation drawer. It slides from the edge it lives on, the same
+ * gesture as the thumb that opened it; the backdrop only fades, so the drawer
+ * is the one thing that appears to move. There is no exit animation: closing
+ * the drawer must reveal the page immediately, not after a curtain call.
+ */
+@keyframes drawer-panel-in {
+  from { transform: translate3d(-100%, 0, 0); }
+  to { transform: none; }
+}
+@keyframes drawer-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.drawer-panel-in {
+  animation: drawer-panel-in var(--dur-move) var(--ease-fluid) backwards;
+}
+.drawer-backdrop-in {
+  animation: drawer-backdrop-in var(--dur-base) var(--ease-out-soft) backwards;
+}
+
+/*
+ * Toasts arrive from the right edge they are anchored to, which is the
+ * direction they will leave in — a toast that fades up from below reads as
+ * content, one that slides in from the edge reads as an interruption.
+ */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate3d(18px, 0, 0) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.toast-in {
+  animation: toast-in var(--dur-base) var(--ease-fluid) backwards;
+}
+
+/*
+ * Card entrances — the page's movement, handed one level down.
+ *
+ * `page-enter` moves the routed page as ONE surface. On a page made of cards
+ * that leaves every card indistinguishable from the page, so the content reads
+ * as arriving all at once. A `stagger` container lets each direct child settle
+ * 8px after the one before it: the page still leads, and the cards then resolve
+ * in the order they are read (top-left first) instead of as a slab.
+ *
+ * The index is a custom property set by `:nth-child`, not inline style and not
+ * JS: a card that mounts later (a query resolving, a fold opening) joins the
+ * same rhythm with no hook, and a re-render never replays it because the
+ * animation runs only when the element is created.
+ *
+ * Capped at 8. Past that the last card would arrive after the user has already
+ * started reading the first, which reads as lag, not as choreography — items 9+
+ * share the final slot instead of queueing further.
+ *
+ * Fill is `backwards`, never `both`, for the same reason `page-enter` is: a
+ * retained transform (even `none`, which the browser reports as an identity
+ * matrix) makes the element a containing block for `position: fixed`
+ * descendants, and these cards can host panels that must be sized to the window.
+ */
+@keyframes card-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+.stagger {
+  --stagger-base: 40ms;
+  --stagger-step: 35ms;
+}
+.stagger > * {
+  /* The cap: anything past the 8th child waits in the last slot. */
+  --stagger-i: 7;
+  animation: card-in var(--dur-move) var(--ease-fluid) backwards;
+  animation-delay: calc(var(--stagger-base) + var(--stagger-i) * var(--stagger-step));
+}
+.stagger > :nth-child(1) { --stagger-i: 0; }
+.stagger > :nth-child(2) { --stagger-i: 1; }
+.stagger > :nth-child(3) { --stagger-i: 2; }
+.stagger > :nth-child(4) { --stagger-i: 3; }
+.stagger > :nth-child(5) { --stagger-i: 4; }
+.stagger > :nth-child(6) { --stagger-i: 5; }
+.stagger > :nth-child(7) { --stagger-i: 6; }
+.stagger > :nth-child(8) { --stagger-i: 7; }
+
+/*
+ * The active nav row no longer paints its own background — the travelling
+ * pill does. Only the ink changes here.
+ */
+.nav-row {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .palette-panel-in,
+  .palette-backdrop-in,
+  .drawer-panel-in,
+  .drawer-backdrop-in,
+  .toast-in {
+    animation: none;
+  }
+  .route-progress {
+    animation: none;
+    transform: scaleX(0.5);
+  }
+  .nav-pill {
+    transition: none;
+  }
+  /* Cards land in place: the stagger is decoration, and a page that arrives
+     instantly is the honest reading of "reduce motion". */
+  .stagger > * {
+    animation: none;
+  }
 }
 
 /*

@@ -10,6 +10,7 @@ export const DnsType = {
   A: 1,
   NS: 2,
   CNAME: 5,
+  SOA: 6,
   PTR: 12,
   TXT: 16,
   AAAA: 28,
@@ -44,7 +45,9 @@ export interface DnsResourceRecord {
 export interface DnsResponse {
   id: number;
   rcode: number;
-  /** authoritative-data flag (DNSSEC validation applied) */
+  /** authoritative answer flag (AA): the responding server owns the zone */
+  aa: boolean;
+  /** authentic-data flag (AD): DNSSEC validation was applied */
   ad: boolean;
   /** DNSSEC OK advertised in the OPT record */
   dnssecOk: boolean;
@@ -207,6 +210,7 @@ export function decodeDnsResponse(buf: Buffer): DnsResponse {
   const nscount = buf.readUInt16BE(8);
 
   const rcode = flags & 0x000f;
+  const aa = (flags & 0x0400) !== 0;
   const ad = (flags & 0x0020) !== 0;
 
   let p = 12;
@@ -229,5 +233,5 @@ export function decodeDnsResponse(buf: Buffer): DnsResponse {
     // OPT parsing is best-effort; the message body is still usable
   }
 
-  return { id, rcode, ad, dnssecOk, answers: answers.records, authorities: authorities.records, size: buf.length };
+  return { id, rcode, aa, ad, dnssecOk, answers: answers.records, authorities: authorities.records, size: buf.length };
 }

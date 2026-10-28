@@ -688,3 +688,231 @@ fn a_reparse_point_inside_the_root_pointing_outside_is_refused() {
     std::os::unix::fs::symlink(s.root().join("logs"), &inner).expect("symlink");
     assert!(resolve_revealable(&inner, &s.allowed()).is_some());
 }
+
+// ---------------------------------------------------------------------
+// The handoff record: evidence for a test, never a journal.
+//
+// `NETPULSE_HANDOFF_RECORD` exists so `tests/navigation_webview.rs` can read
+// each handoff as DATA — this URL, this layer, this outcome — instead of
+// matching log phrases. It is unset in every normal run, and what that protects
+// is not merely "no rows" but "no FILE": a durable file listing the URLs the
+// app opened is a browsing record, and this product does not keep one. So the
+// negatives below ARE the feature, and they are pinned from both sides — a
+// configured path really does receive a row (without that, every negative here
+// would also pass with the channel broken outright), and once the variable is
+// unset or empty no file receives one anywhere the app could name by default.
+//
+// The app's durable location for a user is `%APPDATA%/<identifier>` — the same
+// directory the log lives in — so this test points APPDATA at a scratch profile
+// and CREATES that directory before the negative calls. A fallback that
+// invented a path would otherwise fail on a missing parent, and "nothing
+// appeared" would then be true for the wrong reason. `with_appdata` also holds
+// the process-wide environment lock, so this case cannot run beside the other
+// env-reading tests in this binary.
+// ---------------------------------------------------------------------
+
+/// The file's bytes, or `None` when it does not exist.
+///
+/// The negatives below compare BYTES, so an append, a rewrite and a truncation
+/// all fail the same assertion a missing row would — "still one row" must not
+/// be satisfiable by rewriting the file.
+fn record_file(path: &Path) -> Option<Vec<u8>> {
+    std::fs::read(path).ok()
+}
+
+/// An empty scratch directory named for this process and case.
+fn scratch(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("np-record-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    dir
+}
+
+#[test]
+fn a_handoff_records_nothing_once_the_record_variable_is_unset() {
+    let profile = scratch("unset");
+    crate::paths::tests::with_appdata(Some(&profile.to_string_lossy()), || {
+        let data_dir = crate::paths::data_dir_without_handle()
+            .expect("a scratch APPDATA resolves to the app's data dir");
+        assert!(
+            data_dir.starts_with(&profile),
+            "{data_dir:?} is not inside the scratch profile {profile:?} — the assertions below \
+             would be about a stranger's directory"
+        );
+        std::fs::create_dir_all(&data_dir).expect("create the scratch data dir");
+
+        // What a reader would find there — the whole point of the negatives, so
+        // a failure names the files rather than a count.
+        let data_dir_entries = || {
+            let mut names: Vec<String> = std::fs::read_dir(&data_dir)
+                .expect("read the scratch data dir")
+                .filter_map(|entry| entry.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                .collect();
+            names.sort();
+            names
+        };
+
+        let configured = profile.join("configured.jsonl");
+        let command_url = validated_external_url("https://example.com/").expect("valid https");
+
+        // Positive control. WITH the variable set, one call writes exactly one
+        // row, carrying the fields the real-webview test reads as data. Without
+        // this, every assertion below would also pass if recording were broken
+        // altogether — a test that only ever proves an ABSENCE proves nothing.
+        std::env::set_var(HANDOFF_RECORD_ENV, &configured);
+        record_handoff(&command_url, HandoffSource::Command, true);
+        let after_set = record_file(&configured).expect("a configured path receives the row");
+        let text = String::from_utf8(after_set.clone()).expect("the record is UTF-8");
+        let row: serde_json::Value = serde_json::from_str(text.trim_end()).expect("one JSON row");
+        assert_eq!(row["url"], serde_json::json!("https://example.com/"), "{text:?}");
+        assert_eq!(row["host"], serde_json::json!("example.com"), "{text:?}");
+        assert_eq!(row["source"], serde_json::json!("command"), "{text:?}");
+        assert_eq!(row["ok"], serde_json::json!(true), "{text:?}");
+        assert_eq!(text.lines().count(), 1, "one handoff writes one row: {text:?}");
+
+        // 1. UNSET. The handoff itself still happens (this is only the record of
+        //    it), and nothing is written: not to the file the app was just told
+        //    to use — a cached path (a `OnceLock`, a static, a field that outlives
+        //    the variable) keeps writing there and fails right here — and not to
+        //    the profile's data dir, which is where a fallback would land.
+        //    Each negative call uses a DIFFERENT url and layer, so any write at
+        //    all changes the bytes rather than adding a row identical to the
+        //    first one.
+        let navigation_url =
+            validated_external_url("https://example.net/navigation").expect("valid https");
+        std::env::remove_var(HANDOFF_RECORD_ENV);
+        record_handoff(&navigation_url, HandoffSource::Navigation, true);
+        assert_eq!(
+            record_file(&configured),
+            Some(after_set.clone()),
+            "a handoff was recorded after the variable was unset — an unset variable must \
+             end the record channel, not fall back to a remembered path"
+        );
+        assert!(
+            data_dir_entries().is_empty(),
+            "an unset variable still wrote into the app's data dir {:?}: {:?}",
+            data_dir,
+            data_dir_entries()
+        );
+
+        // 2. EMPTY is not a path either. It is the value that makes a relative or
+        //    parent-less write look attractive to an implementation, and the one
+        //    an operator would produce by unsetting a variable the wrong way.
+        let new_window_url =
+            validated_external_url("https://example.org/new-window").expect("valid https");
+        std::env::set_var(HANDOFF_RECORD_ENV, "");
+        record_handoff(&new_window_url, HandoffSource::NewWindow, true);
+        assert_eq!(
+            record_file(&configured),
+            Some(after_set),
+            "an empty value was treated as a path"
+        );
+        assert!(
+            data_dir_entries().is_empty(),
+            "an empty value still wrote into the app's data dir {:?}: {:?}",
+            data_dir,
+            data_dir_entries()
+        );
+
+        // Leave the process as we found it: a record channel left configured
+        // would be inherited by every test that runs after this one.
+        std::env::remove_var(HANDOFF_RECORD_ENV);
+    });
+    let _ = std::fs::remove_dir_all(&profile);
+}
+
+/// The same guarantee at the boundary a user action actually crosses.
+///
+/// The case above calls `record_handoff` directly, which pins the writer but
+/// not the command: a write added between `open_external` and the handoff
+/// would leave that test green. This one drives the real command through the
+/// debug-only launch seam (no browser is started) and checks that the command
+/// still succeeds, reaches the launch point every time, and creates no file
+/// once the record variable is unset or empty. The positive control again runs
+/// first, so a broken record channel cannot make the negatives pass.
+#[test]
+fn the_open_external_command_keeps_no_journal_when_the_record_channel_is_off() {
+    let profile = scratch("command-boundary");
+    crate::paths::tests::with_appdata(Some(&profile.to_string_lossy()), || {
+        let data_dir = crate::paths::data_dir_without_handle()
+            .expect("a scratch APPDATA resolves to the app's data dir");
+        assert!(
+            data_dir.starts_with(&profile),
+            "{data_dir:?} is not inside the scratch profile {profile:?} — the assertions below \
+             would be about a stranger's directory"
+        );
+        std::fs::create_dir_all(&data_dir).expect("create the scratch data dir");
+
+        let data_dir_entries = || {
+            let mut names: Vec<String> = std::fs::read_dir(&data_dir)
+                .expect("read the scratch data dir")
+                .filter_map(|entry| entry.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+                .collect();
+            names.sort();
+            names
+        };
+
+        let configured = profile.join("command-configured.jsonl");
+        let _seam = ExternalLaunchSeam::disabled();
+
+        // Positive control THROUGH THE COMMAND. One row, command source, and
+        // the seam was reached — otherwise the negatives below could pass by
+        // short-circuiting the launch before the handoff site.
+        std::env::set_var(HANDOFF_RECORD_ENV, &configured);
+        open_external("https://example.com/command".to_string())
+            .expect("the command accepts a validated https URL");
+        let after_set = record_file(&configured).expect("the command writes one row when configured");
+        let text = String::from_utf8(after_set.clone()).expect("the record is UTF-8");
+        let row: serde_json::Value = serde_json::from_str(text.trim_end()).expect("one JSON row");
+        assert_eq!(row["url"], serde_json::json!("https://example.com/command"), "{text:?}");
+        assert_eq!(row["host"], serde_json::json!("example.com"), "{text:?}");
+        assert_eq!(row["source"], serde_json::json!("command"), "{text:?}");
+        assert_eq!(row["ok"], serde_json::json!(true), "{text:?}");
+        assert_eq!(text.lines().count(), 1, "one command handoff writes one row: {text:?}");
+        assert_eq!(ExternalLaunchSeam::skipped(), 1, "the command must reach the launch point");
+        assert!(
+            data_dir_entries().is_empty(),
+            "a configured command wrote into the app's data dir {:?}: {:?}",
+            data_dir,
+            data_dir_entries()
+        );
+
+        // UNSET: the command keeps working, and the only file that changes is
+        // the one it was explicitly told to use. The data dir stays empty.
+        std::env::remove_var(HANDOFF_RECORD_ENV);
+        open_external("https://example.net/after-unset".to_string())
+            .expect("an unset record variable must not fail the handoff");
+        assert_eq!(
+            record_file(&configured),
+            Some(after_set.clone()),
+            "the open_external command wrote a row after the variable was unset"
+        );
+        assert!(
+            data_dir_entries().is_empty(),
+            "an unset variable still left a file in the app's data dir {:?}: {:?}",
+            data_dir,
+            data_dir_entries()
+        );
+        assert_eq!(ExternalLaunchSeam::skipped(), 2, "the second command must reach the launch point");
+
+        // EMPTY: not a path, and not a fallback either.
+        std::env::set_var(HANDOFF_RECORD_ENV, "");
+        open_external("https://example.org/after-empty".to_string())
+            .expect("an empty record variable must not fail the handoff");
+        assert_eq!(
+            record_file(&configured),
+            Some(after_set),
+            "the open_external command treated an empty value as a path"
+        );
+        assert!(
+            data_dir_entries().is_empty(),
+            "an empty value still left a file in the app's data dir {:?}: {:?}",
+            data_dir,
+            data_dir_entries()
+        );
+        assert_eq!(ExternalLaunchSeam::skipped(), 3, "all three commands must reach the launch point");
+
+        std::env::remove_var(HANDOFF_RECORD_ENV);
+    });
+    let _ = std::fs::remove_dir_all(&profile);
+}

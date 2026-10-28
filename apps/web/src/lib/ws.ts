@@ -17,6 +17,15 @@ export interface WsTestMessage {
   done?: number;
   total?: number;
   profile?: string;
+  stage?: string;
+  at?: number;
+  engine?: string;
+  node?: string;
+  depth?: string;
+  latencyMs?: number | null;
+  exitIp?: string | null;
+  dnsPolicy?: string;
+  ok?: boolean;
 }
 
 /**

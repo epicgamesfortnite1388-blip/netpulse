@@ -254,23 +254,51 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
 type RefreshOutcome = 'ok' | 'offline' | 'dead';
 
+/**
+ * The refresh currently in flight, shared by every caller that needs one.
+ *
+ * Refresh tokens are SINGLE-USE and rotate on every call, and the Worker
+ * treats a second use of an already-rotated token as theft: it revokes the
+ * whole session chain and answers `refresh_reused`. This client used to fire
+ * one refresh per pending request, so a page that mounts two cloud calls at
+ * once (the account screen loads sessions + devices together) raced itself on
+ * the very first request after a restart — one call rotated the token, the
+ * other presented the old one, and the user was signed out with "Sign in
+ * again to continue". One rotation, shared, is the only correct shape.
+ */
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
+
 async function tryRefresh(): Promise<RefreshOutcome> {
+  if (refreshInFlight) return refreshInFlight;
   const s = currentSession();
   if (!s) return 'dead';
-  let res: Response;
+
+  refreshInFlight = (async (): Promise<RefreshOutcome> => {
+    let res: Response;
+    try {
+      res = await rawFetch('/api/v1/auth/refresh', { method: 'POST', json: { refreshToken: s.refreshToken } }, null);
+    } catch {
+      return 'offline'; // network failure: keep local state, sync retries later
+    }
+    // A sign-out or a fresh sign-in may have replaced the store while this
+    // request was in flight. The old attempt must never overwrite (adopt) or
+    // clear the new session.
+    if (currentSession()?.sessionId !== s.sessionId) return 'dead';
+    if (!res.ok) {
+      const err = await parseError(res);
+      if (err.code === 'refresh_reused' || err.code === 'invalid_refresh') clearSession();
+      return 'dead';
+    }
+    const body = (await res.json()) as { accessToken: string; refreshToken: string; session: CloudSession };
+    adoptRefresh(body.accessToken, body.refreshToken, body.session.id);
+    return 'ok';
+  })();
+
   try {
-    res = await rawFetch('/api/v1/auth/refresh', { method: 'POST', json: { refreshToken: s.refreshToken } }, null);
-  } catch {
-    return 'offline'; // network failure: keep local state, sync retries later
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
   }
-  if (!res.ok) {
-    const err = await parseError(res);
-    if (err.code === 'refresh_reused' || err.code === 'invalid_refresh') clearSession();
-    return 'dead';
-  }
-  const body = (await res.json()) as { accessToken: string; refreshToken: string; session: CloudSession };
-  adoptRefresh(body.accessToken, body.refreshToken, body.session.id);
-  return 'ok';
 }
 
 /* ------------------------------ public auth ------------------------------ */
@@ -292,6 +320,19 @@ export const cloudAuth = {
     }));
     adoptAuthResponse(auth);
     return auth;
+  },
+
+  /**
+   * Ask the Worker to email a reset link.
+   *
+   * Unauthenticated by design (the whole point is a user who cannot sign in),
+   * and answered uniformly by the Worker whether or not the address exists.
+   * The caller must keep its wording neutral for that reason; the only errors
+   * worth surfacing are transport failures and `rate_limited`.
+   */
+  async forgotPassword(email: string, timeoutMs?: number): Promise<void> {
+    const res = await rawFetch('/api/v1/auth/forgot-password', { method: 'POST', json: { email }, timeoutMs }, null);
+    if (!res.ok) throw await parseError(res);
   },
 
   async logout(): Promise<void> {
@@ -331,6 +372,19 @@ export const cloudApi = {
   deleteAccount: () => request<{ ok: boolean }>('/api/v1/account', { method: 'DELETE' }),
   devices: () => request<{ devices: CloudDevice[] }>('/api/v1/devices', { method: 'GET' }),
   profiles: () => request<{ profiles: CloudProfile[] }>('/api/v1/profiles', { method: 'GET' }),
+  /**
+   * Mint or refresh this account's own VPN identities and store the matching
+   * client configs. Every profile the server will accept comes from here: the
+   * credentials are per-user now, so a config that was copied before an
+   * expiry/revocation is no longer usable and this call is what replaces it.
+   */
+  provision: () =>
+    request<{
+      ok: boolean;
+      provisioned: Array<{ id: string; name: string; protocol: string; endpoint: string | null; config: string }>;
+      skipped: Array<{ protocol: string; reason: string }>;
+      errors: Array<{ protocol: string; reason: string }>;
+    }>('/api/v1/provision', { method: 'POST', json: {} }),
   putProfile: (body: unknown) => request<{ ok: boolean }>('/api/v1/profiles', { method: 'PUT', json: body }),
   favorites: () => request<{ favorites: CloudFavorite[] }>('/api/v1/favorites', { method: 'GET' }),
   putFavorite: (nodeKey: string, label: string | null) =>

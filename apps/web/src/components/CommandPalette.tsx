@@ -14,7 +14,16 @@ interface Command {
  * the only action — long-running tests are launched from their pages so real
  * progress and results stay visible.
  */
-export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CommandPalette({
+  open,
+  onClose,
+  onQuickConnect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Opens the quick-connect overlay (which replaces this palette). */
+  onQuickConnect?: () => void;
+}) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -26,6 +35,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       navigate(to);
     };
     return [
+      {
+        id: 'quick-connect',
+        label: 'Quick connect to a node',
+        hint: 'Ctrl ⇧ K',
+        run: () => {
+          onClose();
+          onQuickConnect?.();
+        },
+      },
       { id: 'dashboard', label: 'Open dashboard', hint: '', run: go('/') },
       { id: 'live-map', label: 'Open live map', hint: 'Live Map', run: go('/map') },
       { id: 'map-cloudflare', label: 'Measure nearest Cloudflare', hint: 'Live Map', run: go('/map?target=cloudflare:speed&run=1') },
@@ -57,7 +75,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { id: 'events', label: 'Open event log', hint: 'Events', run: go('/events') },
       { id: 'settings', label: 'Open settings', hint: 'Settings', run: go('/settings') },
     ];
-  }, [navigate, onClose]);
+  }, [navigate, onClose, onQuickConnect]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -82,12 +100,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[15vh]"
+      className="palette-backdrop-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[15vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface shadow-overlay">
+      <div className="palette-panel-in w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface shadow-overlay">
         <div className="flex items-center gap-2.5 border-b border-line px-4">
           <span className="text-muted">⌕</span>
           <input

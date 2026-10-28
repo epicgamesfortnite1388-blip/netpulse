@@ -12,6 +12,7 @@
  * POST   /api/v1/vpn/discover          { profile?, limit?, protocol? }
  */
 import { z } from 'zod';
+import crypto from 'node:crypto';
 
 import {
   normalizeBypass,
@@ -296,11 +297,15 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
    */
   app.post('/api/v1/vpn/tunnel/quick', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (req) => serializeVpnOp(async () => {
     const body = QuickConnectSchema.parse(req.body ?? {});
+    const activityId = body.activityId ?? crypto.randomUUID();
+    const topic = `quick-connect:${activityId}`;
+    ctx.bus.publish(topic, { type: 'quick-connect:activity', stage: 'accepted', message: 'Quick-connect request accepted', at: Date.now() });
     return quickConnectCore(ctx, {
       systemProxy: body.systemProxy ?? DEFAULTS.systemProxy,
       wantTun: body.tun ?? false,
       maxMemoryAttempts: body.maxMemoryAttempts,
       profile: body.profile ?? undefined,
+      activityId,
     });
   }));
 

@@ -27,6 +27,24 @@ export interface Env {
   TELEGRAM_BOT_BASE_URL?: string;
   /** Operator status page token (GET /ops + /api/v1/ops/netpulse). Never committed. */
   OPS_TOKEN?: string;
+  /** Bearer token the VPN host uses to pull its per-user identity set. Never committed. */
+  VPS_SYNC_SECRET?: string;
+  /**
+   * LEGACY shared VPN server credentials. They are still set as Worker
+   * secrets, but nothing reads them for provisioning any more: every client
+   * config carries a per-account credential from `vpn_credentials`, and
+   * `test/provision.test.ts` asserts no profile ever contains these values.
+   * Rotating them revokes nothing — revoke through the entitlement (or by
+   * deleting the account's `vpn_credentials` rows) instead.
+   */
+  VPN_REALITY_UUID?: string;
+  VPN_VMESS_UUID?: string;
+  VPN_VLESS_WS_UUID?: string;
+  VPN_TROJAN_PASSWORD?: string;
+  VPN_SS2022_PASSWORD?: string;
+  VPN_HYSTERIA_PASSWORD?: string;
+  /** Still used: the shared salamander obfs password (obfuscation, not identity). */
+  VPN_HYSTERIA_OBFS_PASSWORD?: string;
   /** The deployment origin used to validate reset link hostnames, preventing
    * attacker-controlled reset URLs. Set in wrangler.toml as a string binding. */
   EXPECTED_ORIGIN?: string;

@@ -61,7 +61,21 @@ function candidateLabel(c: DiscoveryCandidate): string {
 export class NodeDiscoveryService {
   constructor(private readonly deps: NodeDiscoveryDeps) {}
 
-  async run(req: { profile: ScanProfileId; limit?: number; protocol?: string }): Promise<DiscoveryReport> {
+  async run(req: {
+    profile: ScanProfileId;
+    limit?: number;
+    protocol?: string;
+    onProgress?: (p: {
+      done: number;
+      total: number;
+      profile: ScanProfileId;
+      label: string;
+      ok: boolean;
+      latencyMs: number | null;
+      depth: ScanDepth;
+      failure: string | null;
+    }) => void;
+  }): Promise<DiscoveryReport> {
     const startedAt = Date.now();
     const profile = scanProfile(req.profile);
     // A caller may narrow the search, never widen it past the profile's budget.
@@ -83,7 +97,7 @@ export class NodeDiscoveryService {
       };
     }
 
-    const outcomes = await this.probeAll(candidates, profile.depth, profile.timeoutMs, profile.concurrency, profile.id);
+    const outcomes = await this.probeAll(candidates, profile.depth, profile.timeoutMs, profile.concurrency, profile.id, req.onProgress);
 
     const passed = outcomes.filter((o) => o.depth === profile.depth && o.failure === null);
     // Rank by measured latency; a candidate with no latency measurement can
@@ -108,6 +122,16 @@ export class NodeDiscoveryService {
     timeoutMs: number,
     concurrency: number,
     profileId: ScanProfileId,
+    onRunProgress?: (p: {
+      done: number;
+      total: number;
+      profile: ScanProfileId;
+      label: string;
+      ok: boolean;
+      latencyMs: number | null;
+      depth: ScanDepth;
+      failure: string | null;
+    }) => void,
   ): Promise<DiscoveryOutcome[]> {
     const outcomes: DiscoveryOutcome[] = new Array<DiscoveryOutcome>(candidates.length);
     let next = 0;
@@ -139,6 +163,16 @@ export class NodeDiscoveryService {
         };
         done += 1;
         this.deps.onProgress?.({ done, total: candidates.length, profile: profileId });
+        onRunProgress?.({
+          done,
+          total: candidates.length,
+          profile: profileId,
+          label: candidateLabel(candidate),
+          ok: result.ok,
+          latencyMs: result.ok ? result.latencyMs : null,
+          depth: result.ok ? depth : 'tcp',
+          failure: result.ok ? null : result.failure ?? 'probe failed',
+        });
       }
     };
 

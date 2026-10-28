@@ -13,10 +13,10 @@
     "types": "wrangler types"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.7",
     "@cloudflare/workers-types": "^5.20260922.0",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4",
-    "@cloudflare/vitest-pool-workers": "^0.9.14",
-    "wrangler": "^4.111.0"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.152.0"
   }
 }

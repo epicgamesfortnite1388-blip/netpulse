@@ -1,0 +1,127 @@
+# The two host reconciler verifiers, on a schedule, with an alert on failure.
+#
+# What they prove and why it needs a schedule:
+#
+#   scripts/verify-vps-reconciler-removal.py
+#     A rotated secret, a revoked identity and an expired identity must be gone
+#     from the server config the reconciler would write, an unchanged set must
+#     not churn it, and the retired shared-secret inbound must be left alone.
+#
+#   scripts/verify-vps-reconciler-failure.py
+#     A failed pull keeps the last known-good set, a malformed payload applies
+#     nothing, an empty set applies deny-all, `expiresAt` is still enforced while
+#     the Worker is unreachable, recovery converges, and an unusable `xray`
+#     binary fails closed.
+#
+# Both run the REAL `scripts/vps-sync-vpn-users.py` in `--print` mode against a
+# sandboxed copy of the server config and a loopback stand-in for the Worker, so
+# this needs no VPN host, no SSH key and no production credential. That is why
+# they can be scheduled at all.
+#
+# The failure they guard against is silent: nothing crashes, the reconciler just
+# stops removing what it should, or starts wiping on a transient error. A red
+# check on a scheduled run has no audience, so `alert` turns the result into a
+# GitHub issue that stays open until a run passes (and an optional
+# `OPS_ALERT_WEBHOOK_URL` push, when that secret is configured).
+
+name: Reconciler verifiers
+
+on:
+  schedule:
+    # Daily. Cron is UTC; 02:17 rather than 02:00 so it does not pile onto the
+    # top-of-hour runs every other repository schedules.
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/vps-sync-vpn-users.py
+      - scripts/verify-vps-reconciler-removal.py
+      - scripts/verify-vps-reconciler-failure.py
+      - scripts/alert-reconciler-regression.sh
+      - .github/workflows/reconciler-verifiers.yml
+  pull_request:
+    paths:
+      - scripts/vps-sync-vpn-users.py
+      - scripts/verify-vps-reconciler-removal.py
+      - scripts/verify-vps-reconciler-failure.py
+      - scripts/alert-reconciler-regression.sh
+      - .github/workflows/reconciler-verifiers.yml
+
+concurrency:
+  group: reconciler-verifiers-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.verifier }} verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Both verifiers must report: a removal regression must not hide a
+      # failure-handling regression behind a cancelled matrix leg.
+      fail-fast: false
+      matrix:
+        include:
+          - verifier: entitlement-removal
+            script: scripts/verify-vps-reconciler-removal.py
+          - verifier: failure-handling
+            script: scripts/verify-vps-reconciler-failure.py
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The reconciler reads YAML server configs; PyYAML is the one dependency
+      # neither the harness nor the runner guarantees.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: python -m pip install --disable-pip-version-check pyyaml
+
+      - name: Run the ${{ matrix.verifier }} verifier
+        shell: bash
+        run: |
+          set -o pipefail
+          python "${{ matrix.script }}" 2>&1 | tee "reconciler-${{ matrix.verifier }}.log"
+
+      # The log is the evidence for the alert and for anyone reading the run
+      # later; keep it even (especially) when the verifier failed.
+      - name: Upload verifier log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciler-${{ matrix.verifier }}-log
+          path: reconciler-${{ matrix.verifier }}.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  alert:
+    name: alert on regression
+    needs: verify
+    # Runs even when (especially when) the verifiers failed. Skipped on pull
+    # requests: a fork's token is read-only, and the red check is the alert there.
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RESULT: ${{ needs.verify.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WEBHOOK: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
+        run: bash scripts/alert-reconciler-regression.sh

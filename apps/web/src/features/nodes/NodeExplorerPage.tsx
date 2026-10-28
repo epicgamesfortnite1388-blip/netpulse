@@ -359,7 +359,7 @@ export default function NodeExplorerPage() {
   if (listQuery.isError) return <ErrorState error={listQuery.error} retry={() => void listQuery.refetch()} />;
 
   return (
-    <DisclosureScope name="nodes:explorer" className="animate-fade-up">
+    <DisclosureScope name="nodes:explorer" className="stagger animate-fade-up">
       <PageHeader
         title="Node Explorer"
         description={`Public proxy configs discovered from subscription sources, each attributable to the local core that last tested it.${

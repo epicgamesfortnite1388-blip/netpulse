@@ -398,7 +398,7 @@ export default function NodeDetailPage() {
   ) : null;
 
   return (
-    <DisclosureScope name="node-detail" className="animate-fade-up">
+    <DisclosureScope name="node-detail" className="stagger animate-fade-up">
       <NodesNav current={node.label} />
 
       <EngineHero

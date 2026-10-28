@@ -70,18 +70,18 @@ Phase EST: 2–4 days. Parallelizable with Phase 4.
 |---|---|---|---|---|---|---|---|---|
 | T6.1 | NSIS clean-install / upgrade / uninstall validation on a clean Windows VM | build verified only | P1 | T4.1 | 1–2 days | Medium | install → run → upgrade → uninstall leaves no data/routes behind | T4.1 |
 | T6.2 | Updater end-to-end (signed feed → download → verify → install → respawn) | feed pipeline implemented; updater disabled in tauri.conf | P2 | T6.1, signing certs | 1–2 days | Medium | staged update installs and the app restarts on the new version | T6.1 |
-| T6.3 | Code-split the 3.17 MB web bundle (dynamic imports per feature domain) | warning at build | P3 | none | 1–2 days | Low | initial chunk < 900 kB; routes load on demand | none |
+| T6.3 | Code-split the 3.17 MB web bundle (dynamic imports per feature domain) | **COMPLETE 2026-10-24** — every page is a `React.lazy` route ([router.tsx](../../apps/web/src/app/router.tsx)); the Suspense boundary sits around the AppShell `Outlet`, so the sidebar stays mounted while a page chunk loads. Entry chunk 548,802 B (169.8 kB gzip) vs 3,184,410 B (920.1 kB gzip) before; 22 route chunks plus shared vendor chunks. Verified against the production build served by the API (`index-*.js` then `VpnPage-*.js` on navigation, no console errors). The 3D map route remains a 1.27 MB lazy chunk (~369 kB gzip) — loaded only when the map is opened, and the one expected build-warning exception | P3 | none | closed | Low | initial chunk < 900 kB; routes load on demand | none |
 
-Phase EST: 3–6 days.
+Phase EST: 2–4 days remaining (T6.3 closed).
 
 ## Phase 7 — Reliability and CI
 | ID | Task | Current state | Priority | Dependencies | EST | Risk | Acceptance criteria | Blocker |
 |---|---|---|---|---|---|---|---|---|
-| T7.1 | CI workflows (typecheck + all test suites + cargo check on push; Windows runner for the desktop build) | NOT IMPLEMENTED | P1 | none | 2–3 days | Low | PR gate runs every suite; desktop build artifact produced | none |
+| T7.1 | CI workflows (typecheck + all test suites + cargo check on push; Windows runner for the desktop build) | **PARTIAL** — `.github/workflows/ci.yml` runs lint, the four `tsc --noEmit` projects, all four vitest suites, `cargo test` and the updater-feed tests on every push/PR on `windows-latest` (commit 0805372); the earlier NOT IMPLEMENTED row was stale. The gate half is met; a packaged desktop artifact is not produced in CI (needs the signing path, T6.2) | P1 | T6.2 for the artifact | 0.5–1 day (artifact) | Low | PR gate runs every suite (met); desktop build artifact produced (open) | none for the gate |
 | T7.2 | Repeated connect/disconnect soak (50 cycles) watching for port/process/config leaks | not measured | P2 | T4.1 | 1 day | Low | zero leaked processes/ports after soak | T4.1 |
-| T7.3 | Dependency audit (`npm audit`, `cargo audit`) and lockfile review | not run this session | P2 | none | 0.5–1 day | Low | no known-vulnerable deps at warn level | none |
+| T7.3 | Dependency audit (`npm audit`, `cargo audit`) and lockfile review | **COMPLETE for production; dev advisories tracked (2026-10-24)** — production tree is **0 vulnerabilities** (fastify 5.12.7, zod 4.6.7, ip-address 10.7.4, fast-uri 3.1.9/4.2.3, source-map-js 1.2.2). The dev toolchain was then upgraded wholesale: vitest 3.2.7→**5.0.5** (all four workspaces), `@cloudflare/vitest-pool-workers` 0.9.14→`@cloudflare/vitest-plugin` 1.4.7, wrangler 4.136→4.152 — with the full 1,527-test suite, four typechecks, lint and the web build green afterwards. Remaining: 9 advisories in dev-only transitive deps (`@cloudflare/vitest-plugin`/miniflare/undici/zod, wrangler, drizzle-kit's esbuild chain). `npm audit` offers only downgrades for them (plugin 0.0.0, wrangler 4.35.0, drizzle-kit 0.18.1), so no safe upgrade exists today. `cargo audit` not installed/run | P2 | upstream fixes for the dev advisories | 0 (cargo audit optional) | Low | no known-vulnerable prod deps (met); dev advisories tracked and disclosed | none for prod |
 
-Phase EST: 3.5–5 days.
+Phase EST: 0.5–1 day remaining (T7.1 desktop artifact only).
 
 ## Phase 8 — Alpha Release Candidate and Final Acceptance
 **Objective:** internal Alpha with the conditional scope of Phase-3/4 items verified.
@@ -89,11 +89,15 @@ Phase EST: 3.5–5 days.
 - EST: 2–3 days of verification + bugfix buffer (3–5 days).
 
 ## Totals
-- **Total remaining: 14.5–27 engineering days** (midpoint ≈ 20.75; Phase 2's 1.75–3.5 days closed this session), of which ~8.75 days are blocked on external access (T3.1, T4.1, node access).
+- **Total remaining: 11.5–22 engineering days** (2026-10-24 closeout: T6.3 and T7.3 closed, 1.5–3 days; T7.1's gate was already implemented and is now recorded, leaving only its desktop artifact), of which ~8.75 days are blocked on external access (T3.1, T4.1, node access).
 - **P0/P1 repair effort remaining: 0** (all confirmed defects fixed and regression-tested).
 - **Critical path:** (T3.2/T4.2/T4.3 in parallel) → Phase 8. Phase 2 is complete.
 - **Minimum viable Alpha effort:** Phases 4.2 + 4.3 + 5.2 ≈ 4.5–8.5 days (Phase 2 complete; the production isolation half of 5.2 is already verified live).
 - **Largest uncertainties:** live VPN behavior on real Windows networks (T4.2–T4.4) and Abystral sandbox availability (T3.1).
+
+## Closeout log
+
+- **2026-10-24** — T6.3 closed: the web app is route-split (entry chunk 3.18 MB → 549 kB; every page loads on demand), verified against the production build in a browser. T7.1's CI gate was already implemented (workflow 0805372) and is now recorded; only its desktop artifact is open. T7.3 production dependencies are audit-clean, and the dev toolchain is current (Vitest 5.0.5, `@cloudflare/vitest-plugin` 1.4.7, wrangler 4.152); 9 dev-only advisories have no non-downgrade fix yet. Full gate: 1,527 tests green, four typechecks clean, lint clean. The failing egress-proxy test was an environmental assertion (the machine runs a system proxy), not an egress defect — the test now measures the ambient decision. Evidence: TEST_RESULTS.md rows 28–40.
 
 ## Release milestones
 - M1 (Phase 2) — **REACHED 2026-10-13**: production worker deployed and healthy; internal dev against production cloud is live.

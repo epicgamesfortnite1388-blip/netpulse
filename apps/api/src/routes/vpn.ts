@@ -35,6 +35,12 @@ const ImportSchema = z.object({
   /** WireGuard: INI config text. OpenVPN: .ovpn text. sing-box: share link or
    *  outbound JSON. aether: settings JSON (empty string = defaults). */
   configText: z.string().max(64_000).default(''),
+  /** Replace an existing profile with the same provider + name instead of
+   *  creating a duplicate. Provisioning refresh uses this: the config for a
+   *  given protocol is stable in name but its credential changes on rotation,
+   *  and a stale twin left behind is exactly the dead profile that looks
+   *  usable in the list. */
+  replace: z.boolean().optional(),
 });
 
 const ConnectSchema = z.object({
@@ -149,6 +155,26 @@ async function importProfileVia(ctx: AppContext, providerId: ImportProviderId, n
     // The repo insert above keeps it — the server needs it to connect.
     createdAt: profile.createdAt,
   };
+}
+
+/** Drop profiles that a replacement is about to supersede.
+ *
+ * `POST /vpn/profiles` normally appends. Provisioning refresh needs the
+ * opposite: the app must end up with exactly one profile per entitlement, so a
+ * rotated credential replaces its predecessor instead of leaving a twin that
+ * still looks connectable but no longer authenticates.
+ */
+function replaceProfilesNamed(ctx: AppContext, providerId: ImportProviderId, name: string): number {
+  const doomed = ctx.vpn.listProfiles().filter((p) => p.providerId === providerId && p.name === name);
+  for (const profile of doomed) {
+    const { provider } = ctx.vpn.removeProfile(profile.id);
+    provider?.deleteProfile?.(profile.id);
+    ctx.repos.vpnProfiles.remove(profile.id);
+  }
+  if (doomed.length > 0) {
+    ctx.services.events.record('info', 'vpn', `Replaced ${doomed.length} existing "${name}" profile(s) with a refreshed config`);
+  }
+  return doomed.length;
 }
 
 async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, opId: string) {
@@ -322,6 +348,7 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
     async (req, reply) => {
       const parsed = ImportSchema.safeParse(req.body);
       if (!parsed.success) throw parsed.error;
+      if (parsed.data.replace) replaceProfilesNamed(ctx, parsed.data.providerId, parsed.data.name);
       const profile = await importProfileVia(ctx, parsed.data.providerId, parsed.data.name, parsed.data.configText);
       reply.status(201);
       return { profile };

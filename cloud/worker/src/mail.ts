@@ -42,6 +42,27 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#x27;');
 }
 
+/**
+ * Provider-side rejection detail for the audit log. Resend answers failures
+ * with `{ name, message }`; without it the audit only ever says
+ * `mail_http_422`, which cannot distinguish a bad sender from a bad recipient
+ * (this incident: an unverified `MAIL_FROM` domain read as a bare 422). The
+ * message never contains the API key or the reset token, and the result is
+ * flattened to one bounded line because the audit trail is line-oriented.
+ */
+async function resendFailureDetail(res: Response): Promise<string> {
+  let detail = `mail_http_${res.status}`;
+  try {
+    const body = (await res.json()) as { name?: unknown; message?: unknown };
+    const name = typeof body?.name === 'string' ? body.name.slice(0, 40) : '';
+    const msg = typeof body?.message === 'string' ? body.message.slice(0, 160) : '';
+    if (name || msg) detail += `:${name}${name && msg ? '/' : ''}${msg}`;
+  } catch {
+    // Non-JSON error body: the HTTP status is the whole signal.
+  }
+  return detail.replace(/[\r\n]+/g, ' ').slice(0, 240);
+}
+
 const resendMailer: ResetMailer = {
   configured: (env) => typeof env.RESEND_API_KEY === 'string' && env.RESEND_API_KEY.length > 0,
   send: async (env, to, token, origin) => {
@@ -52,7 +73,7 @@ const resendMailer: ResetMailer = {
     // Guard: reject attacker-controlled origins. Only send to the expected domain.
     const expected = env.EXPECTED_ORIGIN;
     if (expected && origin !== expected) {
-      return { delivered: false, reason: `origin_mismatch: expected ${expected}, got ${origin}` };
+      return { delivered: false, reason: 'origin_mismatch' };
     }
     // URL-encode the token so it cannot break out of the href attribute.
     const encodedToken = encodeURIComponent(token);
@@ -70,7 +91,8 @@ const resendMailer: ResetMailer = {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to: [to], subject: 'NetPulse password reset', html }),
       });
-      return res.ok ? { delivered: true, reason: 'mail_sent' } : { delivered: false, reason: `mail_http_${res.status}` };
+      if (res.ok) return { delivered: true, reason: 'mail_sent' };
+      return { delivered: false, reason: await resendFailureDetail(res) };
     } catch {
       return { delivered: false, reason: 'mail_error' };
     }

@@ -1,29 +1,47 @@
+import { lazy } from 'react';
 import { createBrowserRouter } from 'react-router';
 
 import { AppShell } from './AppShell';
 import NotFoundPage from './NotFoundPage';
-import AccountPage from '@/features/account/AccountPage';
-import SystemHealthPage from '@/features/health/SystemHealthPage';
-import CloudflarePage from '@/features/cloudflare/CloudflarePage';
-import DashboardPage from '@/features/dashboard/DashboardPage';
-import DiagnosticsPage from '@/features/diagnostics/DiagnosticsPage';
-import DnsPage from '@/features/dns/DnsPage';
-import EngineManagerPage from '@/features/engines/EngineManagerPage';
-import EventsPage from '@/features/events/EventsPage';
-import GamingPage from '@/features/gaming/GamingPage';
-import HistoryPage from '@/features/history/HistoryPage';
-import IranConnectivityPage from '@/features/iran/IranConnectivityPage';
-import IpPage from '@/features/ip/IpPage';
-import LiveMapPage from '@/features/map/LiveMapPage';
-import NodeExplorerPage from '@/features/nodes/NodeExplorerPage';
-import NodeDetailPage from '@/features/nodes/NodeDetailPage';
-import NodeSourcesPage from '@/features/nodes/NodeSourcesPage';
-import OptimizerPage from '@/features/optimizer/OptimizerPage';
-import RoutesPage from '@/features/routes/RoutesPage';
-import ServersPage from '@/features/servers/ServersPage';
-import SettingsPage from '@/features/settings/SettingsPage';
-import SpeedTestPage from '@/features/speed-test/SpeedTestPage';
-import VpnPage from '@/features/vpn/VpnPage';
+
+/**
+ * Every page is its own chunk.
+ *
+ * This router used to import all 22 pages eagerly, which put the entire
+ * application — the 3D globe, `three`, the chart library, every engine surface
+ * — into one 3.1 MB entry chunk that the WebView had to parse before the
+ * sidebar could paint. Lazy routes mean the shell boots from the small chunk
+ * and each page arrives only when it is opened.
+ *
+ * The Suspense boundary that catches these lives in `AppShell`, around the
+ * `Outlet`, so the sidebar stays interactive while a page loads; a boundary
+ * here would have replaced the whole application with a spinner.
+ *
+ * `NotFoundPage` stays eager: it is tiny, and it is what renders when a URL
+ * matches nothing — including a URL opened before any page chunk was fetched.
+ */
+const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'));
+const LiveMapPage = lazy(() => import('@/features/map/LiveMapPage'));
+const DiagnosticsPage = lazy(() => import('@/features/diagnostics/DiagnosticsPage'));
+const SpeedTestPage = lazy(() => import('@/features/speed-test/SpeedTestPage'));
+const DnsPage = lazy(() => import('@/features/dns/DnsPage'));
+const GamingPage = lazy(() => import('@/features/gaming/GamingPage'));
+const IranConnectivityPage = lazy(() => import('@/features/iran/IranConnectivityPage'));
+const IpPage = lazy(() => import('@/features/ip/IpPage'));
+const RoutesPage = lazy(() => import('@/features/routes/RoutesPage'));
+const CloudflarePage = lazy(() => import('@/features/cloudflare/CloudflarePage'));
+const NodeExplorerPage = lazy(() => import('@/features/nodes/NodeExplorerPage'));
+const NodeDetailPage = lazy(() => import('@/features/nodes/NodeDetailPage'));
+const NodeSourcesPage = lazy(() => import('@/features/nodes/NodeSourcesPage'));
+const ServersPage = lazy(() => import('@/features/servers/ServersPage'));
+const VpnPage = lazy(() => import('@/features/vpn/VpnPage'));
+const OptimizerPage = lazy(() => import('@/features/optimizer/OptimizerPage'));
+const HistoryPage = lazy(() => import('@/features/history/HistoryPage'));
+const EventsPage = lazy(() => import('@/features/events/EventsPage'));
+const AccountPage = lazy(() => import('@/features/account/AccountPage'));
+const EngineManagerPage = lazy(() => import('@/features/engines/EngineManagerPage'));
+const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+const SystemHealthPage = lazy(() => import('@/features/health/SystemHealthPage'));
 
 export const router = createBrowserRouter([
   {

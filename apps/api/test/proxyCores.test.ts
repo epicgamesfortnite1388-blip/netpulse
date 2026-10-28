@@ -193,6 +193,25 @@ describe('binary detection', () => {
     }
   });
 
+  it('consults the engine manager install directory when no data dir is set', () => {
+    // The engine manager installs into `<dataDir>/cores`; with NETPULSE_DATA_DIR
+    // unset that resolves to `<cwd>/cores` (the dev layout). The finder used to
+    // skip that folder, so a core installed through the app's own engine manager
+    // was invisible to every probe — `GET /nodes/engines` printed its version
+    // while reporting `available: false`.
+    //
+    // Asserted only where such an install exists (a machine that has used the
+    // app's engine manager); on a clean checkout there is no `<cwd>/cores` to
+    // find and the check would be vacuous either way. Creating one here instead
+    // would leave a fake executable in the app's real install directory if this
+    // test ever died mid-way — worse than a conditional assertion.
+    const managed = path.join(process.cwd(), 'cores', process.platform === 'win32' ? 'xray.exe' : 'xray');
+    if (!fs.existsSync(managed)) return;
+    delete process.env['NETPULSE_DATA_DIR'];
+    delete process.env['NETPULSE_CORES_DIR'];
+    expect(findEngineBinary('xray')).toBe(managed);
+  });
+
   it('honors NETPULSE_CORES_DIR over the data dir', () => {
     const a = fs.mkdtempSync(path.join(os.tmpdir(), 'np-cores-a-'));
     const b = fs.mkdtempSync(path.join(os.tmpdir(), 'np-cores-b-'));
@@ -434,6 +453,22 @@ describe('v2ray core support', () => {
     });
     expect(engineSupportsConfig('v2ray', cfg()).ok).toBe(true);
     expect(engineSupportsConfig('xray', cfg({ security: 'reality', realityPublicKey: 'k' })).ok).toBe(true);
+  });
+
+  it('refuses allowInsecure on the v2ray family (measured: xray 26.3.27 exits 23 on the whole config)', () => {
+    // The node cannot be dialled by the core that would otherwise take it, and
+    // inside a shared core that rejection is not the node's failure alone.
+    const insecure = cfg({ security: 'tls', allowInsecure: true });
+    for (const engine of ['xray', 'v2ray'] as const) {
+      const verdict = engineSupportsConfig(engine, insecure);
+      expect(verdict.ok).toBe(false);
+      expect(verdict.ok === false && verdict.error).toContain('allowInsecure');
+    }
+    // sing-box still carries tls.insecure and starts the same node.
+    expect(engineSupportsConfig('sing-box', insecure).ok).toBe(true);
+    // A verified TLS node is unaffected, and so is Reality (no tlsSettings).
+    expect(engineSupportsConfig('xray', cfg({ security: 'tls', allowInsecure: false })).ok).toBe(true);
+    expect(engineSupportsConfig('xray', cfg({ security: 'reality', realityPublicKey: 'k', allowInsecure: true })).ok).toBe(true);
   });
 
   it('engineOrder puts the preferred engine first and never repeats it', () => {
