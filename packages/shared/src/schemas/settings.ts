@@ -140,6 +140,24 @@ export const SettingsSchema = z.object({
       enabled: z.boolean(),
       intervalMinutes: z.number().min(10).max(240),
     }),
+    /**
+     * What the discovery agent is allowed to do on its own, and how often.
+     *
+     * These are the ONLY knobs that widen or narrow agent autonomy. They cannot
+     * grant a forbidden capability (shell, elevation, credential read): that list
+     * lives in code in `services/ai-agent/permissions.ts`, not in settings, so a
+     * bad settings file cannot turn the agent into something it is not.
+     */
+    agent: z.object({
+      /** stop acting without the user; manual actions keep working */
+      paused: z.boolean(),
+      /** autonomous source fetches per hour, across all sources */
+      fetchPerHour: z.number().int().min(1).max(120),
+      /** autonomous endpoint probes per hour, across all batches */
+      probesPerHour: z.number().int().min(1).max(600),
+      /** user-initiated traffic verifications per hour (Smart Connect) */
+      verifyPerHour: z.number().int().min(1).max(120),
+    }),
   }),
   adaptive: z.object({
     enabled: z.boolean(),
@@ -197,6 +215,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   automation: {
     autoTestNodes: { enabled: true, intervalMinutes: 30 },
+    agent: { paused: false, fetchPerHour: 12, probesPerHour: 60, verifyPerHour: 20 },
   },
   adaptive: {
     enabled: true,
@@ -267,6 +286,14 @@ export const SettingsPatchSchema = z
           .object({
             enabled: z.boolean(),
             intervalMinutes: z.number().min(10).max(240),
+          })
+          .partial(),
+        agent: z
+          .object({
+            paused: z.boolean(),
+            fetchPerHour: z.number().int().min(1).max(120),
+            probesPerHour: z.number().int().min(1).max(600),
+            verifyPerHour: z.number().int().min(1).max(120),
           })
           .partial(),
       })

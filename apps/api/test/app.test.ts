@@ -532,9 +532,13 @@ describe('nodes route hardening', () => {
     const { jobId } = res.json() as { jobId: string };
     expect(jobId).toBeTruthy();
 
-    // Wait for the async scan to settle (few targets finish quickly).
+    // Wait for the async scan to settle (few targets finish quickly). The
+    // window is generous on purpose: a TCP probe against a blackholed TEST-NET
+    // address waits out its own timeout, and under a parallel full-suite run
+    // that can exceed the old 5 s budget — which made this assert on wall-clock
+    // load rather than on the job's outcome.
     let job: { status: string; tested?: number } | undefined;
-    for (let i = 0; i < 50 && (!job || job.status === 'running'); i++) {
+    for (let i = 0; i < 200 && (!job || job.status === 'running'); i++) {
       await new Promise((r) => setTimeout(r, 100));
       job = ctx.repos.scanJobs.get(jobId) as { status: string; tested?: number } | undefined;
     }

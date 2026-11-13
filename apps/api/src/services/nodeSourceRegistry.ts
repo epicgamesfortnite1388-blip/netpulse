@@ -6,7 +6,12 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 
 import type { IncomingMessage } from 'node:http';
-import type { PublicSource, SourceType, ParsedNodeConfig } from '@netpulse/shared';
+import type {
+  PublicSource,
+  SourceType,
+  ParsedNodeConfig,
+  RedistributionPermission,
+} from '@netpulse/shared';
 import type { Logger } from '../logger';
 import type { PublicSourcesRepository, SourceFetchesRepository, RawDocumentsRepository } from '../db/repositories';
 import { parseNodeUri } from './nodeParsers';
@@ -16,6 +21,68 @@ import { isPrivateIp } from '../util/targetGuard';
 const USER_AGENT = 'NetPulse-SourceFetcher/1.0 (+local diagnostics; educational network research)';
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 60_000;
+
+/**
+ * Bounded concurrency for a source that declares several URLs. A feed with
+ * four mirrors used to fire four requests in the same tick; three at a time is
+ * the cap that keeps a refresh burst from looking like a crawl to a host.
+ */
+const SOURCE_FETCH_CONCURRENCY = 3;
+
+/**
+ * Minimum gap between two requests to the SAME host. This is politeness, not
+ * security: without it a refresh that touched several raw URLs on one host
+ * (raw.githubusercontent.com serves every built-in) arrived as one burst.
+ */
+const PER_HOST_MIN_INTERVAL_MS = 500;
+
+/**
+ * Conditional-request state, keyed by absolute URL. The API server is a
+ * long-lived Node process, so remembering the last validator lets the next
+ * refresh answer `304 Not Modified` instead of downloading the same bytes.
+ * Process-lifetime only — a restart simply refetches once.
+ */
+const CONDITIONAL_STATE = new Map<string, { etag?: string; lastModified?: string }>();
+
+/** Last request timestamp per host, used to space out same-host requests. */
+const HOST_LAST_REQUEST = new Map<string, number>();
+
+/** Serialize same-host requests behind a minimum interval. */
+async function paceHost(host: string): Promise<void> {
+  const last = HOST_LAST_REQUEST.get(host);
+  const now = Date.now();
+  if (last != null) {
+    const wait = PER_HOST_MIN_INTERVAL_MS - (now - last);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+  HOST_LAST_REQUEST.set(host, Date.now());
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` promises in flight. Returns
+ * `allSettled`-shaped results so one failed URL cannot abort the others.
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results: Array<PromiseSettledResult<R>> = new Array(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { status: 'fulfilled', value: await fn(items[i]!, i) };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 /**
  * Built-in source catalog — the only place in the app that declares a source
@@ -38,13 +105,26 @@ interface BuiltinSourceSpec {
   type: SourceType;
   urls: string[];
   formats: string[];
+  /**
+   * What we may do with the endpoints this source exposes. Every built-in
+   * states it explicitly; when omitted the source falls back to
+   * DEFAULT_REDISTRIBUTION_PERMISSION (discovery-only).
+   */
+  redistributionPermission?: RedistributionPermission;
   notes: string;
+  /**
+   * The upstream repository is gone. Kept in the catalog so the id stays
+   * stable and the retirement is visible, but never seeded enabled — and an
+   * existing database row is disabled on the next boot (see seedKnownSources).
+   */
+  retired?: boolean;
 }
 
 const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   /* ------------------------- v2ray-flavoured URI lists ------------------------- */
   {
     id: 'barry-far',
+    redistributionPermission: 'discovery-only', // MIT repo licence covers the aggregator's files, not the third-party endpoints it lists
     name: 'barry-far / V2ray-Config',
     homepage: 'https://github.com/barry-far/V2ray-Config',
     repositoryUrl: 'https://github.com/barry-far/V2ray-Config',
@@ -60,6 +140,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'epodonios',
+    redistributionPermission: 'prohibited', // no licence file and the repository is gone; nothing grants redistribution
     name: 'Epodonios / v2ray-configs',
     homepage: 'https://github.com/Epodonios/v2ray-configs',
     repositoryUrl: 'https://github.com/Epodonios/v2ray-configs',
@@ -69,10 +150,13 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
       'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Sub1.txt',
     ],
     formats: ['uri', 'base64'],
-    notes: 'Subscription files at the repo root on `main`.',
+    notes:
+      'RETIRED 2026-11-02: github.com/Epodonios/v2ray-configs returns 404 — the repository was deleted, so neither All_Configs_Sub.txt nor Sub1.txt exists. Disabled rather than left pointing at a dead feed.',
+    retired: true,
   },
   {
     id: 'ebrasha',
+    redistributionPermission: 'prohibited', // no licence file and the repository is gone; nothing grants redistribution
     name: 'ebrasha / free-v2ray-public-list',
     homepage: 'https://github.com/ebrasha/free-v2ray-public-list',
     repositoryUrl: 'https://github.com/ebrasha/free-v2ray-public-list',
@@ -82,10 +166,13 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
       'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/separated-protocols/vless_configs.txt',
     ],
     formats: ['uri', 'base64', 'plaintext'],
-    notes: 'VLESS-heavy all-protocol list. Measured 2026-09-16: 37,063 lines → 34,657 parsed (20,870 VLESS · 4,994 SS · 4,532 Trojan · 4,131 VMess · 129 Hysteria2).',
+    notes:
+      'RETIRED 2026-11-02: github.com/ebrasha/free-v2ray-public-list returns 404 — the repository was deleted. It was the widest VLESS feed (34,657 parsed on 2026-09-16). No replacement was added: the only live candidate measured that day (mahdibland/V2RayAggregator) served a byte-identical file to the existing mahdibland feed, so listing it would have padded the totals with duplicates.',
+    retired: true,
   },
   {
     id: '0xRadikal',
+    redistributionPermission: 'discovery-only', // MIT repo licence covers the aggregator's files, not the endpoints it lists
     name: '0xRadikal / Free-v2ray-Configs',
     homepage: 'https://github.com/0xRadikal/Free-v2ray-Configs',
     repositoryUrl: 'https://github.com/0xRadikal/Free-v2ray-Configs',
@@ -101,6 +188,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   /* --------------- added 2026-09-16 (each URL fetched + measured) --------------- */
   {
     id: 'mahdibland',
+    redistributionPermission: 'prohibited', // no licence file: default copyright grants no redistribution
     name: 'mahdibland / ShadowsocksAggregator',
     homepage: 'https://github.com/mahdibland/ShadowsocksAggregator',
     repositoryUrl: 'https://github.com/mahdibland/ShadowsocksAggregator',
@@ -113,6 +201,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'mheidari98',
+    redistributionPermission: 'prohibited', // no licence file: default copyright grants no redistribution
     name: 'mheidari98 / .proxy',
     homepage: 'https://github.com/mheidari98/.proxy',
     repositoryUrl: 'https://github.com/mheidari98/.proxy',
@@ -123,6 +212,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'ALIILAPRO',
+    redistributionPermission: 'prohibited', // GPL-3.0 would impose copyleft on any product shipping the list
     name: 'ALIILAPRO / v2rayNG-Config',
     homepage: 'https://github.com/ALIILAPRO/v2rayNG-Config',
     repositoryUrl: 'https://github.com/ALIILAPRO/v2rayNG-Config',
@@ -133,6 +223,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'ermaozi',
+    redistributionPermission: 'prohibited', // GPL-3.0 would impose copyleft on any product shipping the list
     name: 'ermaozi / get_subscribe',
     homepage: 'https://github.com/ermaozi/get_subscribe',
     repositoryUrl: 'https://github.com/ermaozi/get_subscribe',
@@ -144,6 +235,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'MhdiTaheri',
+    redistributionPermission: 'discovery-only', // MIT repo licence covers the aggregator's files, not the endpoints it lists
     name: 'MhdiTaheri / V2rayCollector',
     homepage: 'https://github.com/MhdiTaheri/V2rayCollector',
     repositoryUrl: 'https://github.com/MhdiTaheri/V2rayCollector',
@@ -156,6 +248,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'peasoft',
+    redistributionPermission: 'prohibited', // licence is unidentifiable (GitHub reports NOASSERTION), so no grant can be relied on
     name: 'peasoft / NoMoreWalls',
     homepage: 'https://github.com/peasoft/NoMoreWalls',
     repositoryUrl: 'https://github.com/peasoft/NoMoreWalls',
@@ -166,6 +259,7 @@ const BUILTIN_SPECS: readonly BuiltinSourceSpec[] = [
   },
   {
     id: 'ts-sf',
+    redistributionPermission: 'discovery-only', // MIT repo licence covers the aggregator's files, not the endpoints it lists
     name: 'ts-sf / fly',
     homepage: 'https://github.com/ts-sf/fly',
     repositoryUrl: 'https://github.com/ts-sf/fly',
@@ -186,10 +280,12 @@ function builtinSource(spec: BuiltinSourceSpec): PublicSource {
     name: spec.name,
     homepage: spec.homepage,
     repositoryUrl: spec.repositoryUrl,
-    enabled: true,
+    enabled: spec.retired !== true,
     type: spec.type,
     urls: [...spec.urls],
     formats: [...spec.formats],
+    redistributionPermission:
+      spec.redistributionPermission ?? DEFAULT_REDISTRIBUTION_PERMISSION,
     intervalMinutes: 60,
     lastFetch: null,
     lastSuccess: null,
@@ -210,6 +306,30 @@ function builtinSource(spec: BuiltinSourceSpec): PublicSource {
 }
 
 const KNOWN_SOURCES: PublicSource[] = BUILTIN_SPECS.map(builtinSource);
+
+/**
+ * Permission for a source that does not state one.
+ *
+ * Discovery-only is the safe default: fetching and testing a public list needs
+ * no permission from its author, but shipping the endpoints inside a paid
+ * product does, and silence is not permission.
+ */
+export const DEFAULT_REDISTRIBUTION_PERMISSION: RedistributionPermission = 'discovery-only';
+
+const PERMISSION_BY_ID: ReadonlyMap<string, RedistributionPermission> = new Map(
+  BUILTIN_SPECS.map((s) => [s.id, s.redistributionPermission ?? DEFAULT_REDISTRIBUTION_PERMISSION]),
+);
+
+/**
+ * Redistribution permission for any source id.
+ *
+ * Built-ins answer from the catalogue; user-added sources answer
+ * discovery-only, because nothing about adding a URL grants redistribution
+ * rights over what it serves.
+ */
+export function redistributionPermissionOf(sourceId: string): RedistributionPermission {
+  return PERMISSION_BY_ID.get(sourceId) ?? DEFAULT_REDISTRIBUTION_PERMISSION;
+}
 
 export interface FetchContext {
   sourceId: string;
@@ -283,12 +403,18 @@ async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
   return parsed;
 }
 
-async function fetchOnce(rawUrl: string, timeoutMs: number): Promise<{ text: string; bytes: number; statusCode: number }> {
+async function fetchOnce(
+  rawUrl: string,
+  timeoutMs: number,
+): Promise<{ text: string; bytes: number; statusCode: number; notModified: boolean }> {
   const parsed = await assertPublicHttpUrl(rawUrl);
   const mod = parsed.protocol === 'https:' ? https : http;
   const chunks: Buffer[] = [];
+  const validators = CONDITIONAL_STATE.get(rawUrl);
 
-  return new Promise<{ text: string; bytes: number; statusCode: number }>((resolve, reject) => {
+  await paceHost(parsed.hostname);
+
+  return new Promise<{ text: string; bytes: number; statusCode: number; notModified: boolean }>((resolve, reject) => {
     let settled = false;
     // Single-shot guard: timeout/error/end must never double-settle the promise
     // (`req` is safe to reference in the timer callback: it only fires after this tick)
@@ -311,9 +437,25 @@ async function fetchOnce(rawUrl: string, timeoutMs: number): Promise<{ text: str
       headers: {
         'User-Agent': USER_AGENT,
         Accept: 'text/plain, text/markdown, application/json, text/yaml, */*',
+        // Conditional request: a listed feed that has not changed costs one
+        // small 304 instead of a full download + parse + import pass.
+        ...(validators?.etag ? { 'If-None-Match': validators.etag } : {}),
+        ...(validators?.lastModified ? { 'If-Modified-Since': validators.lastModified } : {}),
       },
       agent: false,
     }, (res: IncomingMessage) => {
+      // Cache validators are recorded on every full response so the next
+      // refresh can ask conditionally. 304 means "unchanged": no body.
+      if (res.statusCode === 304) {
+        res.resume();
+        finish(() => resolve({ text: '', bytes: 0, statusCode: 304, notModified: true }));
+        return;
+      }
+      const etag = typeof res.headers.etag === 'string' ? res.headers.etag : undefined;
+      const lastModified = typeof res.headers['last-modified'] === 'string' ? res.headers['last-modified'] : undefined;
+      if (etag || lastModified) {
+        CONDITIONAL_STATE.set(rawUrl, { etag, lastModified });
+      }
       // A single redirect hop to a still-public https URL is followed (many
       // raw hosts canonicalize paths); anything else is an honest error.
       if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
@@ -345,7 +487,9 @@ async function fetchOnce(rawUrl: string, timeoutMs: number): Promise<{ text: str
       });
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
-        finish(() => resolve({ text, bytes: Buffer.byteLength(text, 'utf8'), statusCode: res.statusCode ?? 200 }));
+        finish(() =>
+          resolve({ text, bytes: Buffer.byteLength(text, 'utf8'), statusCode: res.statusCode ?? 200, notModified: false }),
+        );
       });
       res.on('error', (err: Error) => {
         finish(() => reject(err));
@@ -369,7 +513,10 @@ const FETCH_RETRIES = 2;
  * with linear backoff; 4xx (not found, forbidden) fails fast — retrying a
  * deterministic 404 just burns the timeout budget.
  */
-async function fetchText(rawUrl: string, timeoutMs: number): Promise<{ text: string; bytes: number; statusCode: number }> {
+async function fetchText(
+  rawUrl: string,
+  timeoutMs: number,
+): Promise<{ text: string; bytes: number; statusCode: number; notModified: boolean }> {
   let lastErr: Error = new Error('unreachable');
   for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
     try {
@@ -436,27 +583,37 @@ function extractUrlsFromMarkdown(text: string): string[] {
 
 /* --------------------------------- source fetching -------------------------------- */
 
-export async function fetchSourceUrls(source: PublicSource, _ctx: FetchContext): Promise<{ urls: string[]; rawText: string | null }> {
+export async function fetchSourceUrls(
+  source: PublicSource,
+  _ctx: FetchContext,
+): Promise<{ urls: string[]; rawText: string | null; notModified: boolean }> {
   // For github_raw, the URLs are already configured; fetch each
   if (source.type === 'github_raw') {
-    const results = await Promise.allSettled(
-      source.urls.map(async (url) => {
-        const { text, bytes } = await fetchText(url, FETCH_TIMEOUT_MS);
-        return { url, text, bytes };
-      }),
-    );
+    const results = await mapLimit(source.urls, SOURCE_FETCH_CONCURRENCY, async (url) => {
+      const { text, bytes, notModified } = await fetchText(url, FETCH_TIMEOUT_MS);
+      return { url, text, bytes, notModified };
+    });
 
     const valid: { url: string; text: string; bytes: number }[] = [];
+    const unchanged: string[] = [];
     const failures: string[] = [];
     for (let i = 0; i < results.length; i++) {
       const r = results[i]!;
       if (r.status === 'fulfilled') {
-        valid.push(r.value);
+        if (r.value.notModified) unchanged.push(r.value.url);
+        else valid.push({ url: r.value.url, text: r.value.text, bytes: r.value.bytes });
       } else {
         const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
         failures.push(`${source.urls[i] ?? `url#${i}`}: ${reason}`);
       }
     }
+
+    // Every URL answered 304 → the feed is unchanged. Say so instead of
+    // failing with "no content retrieved".
+    if (valid.length === 0 && unchanged.length > 0) {
+      return { urls: unchanged, rawText: null, notModified: true };
+    }
+
     if (valid.length === 0) {
       throw new Error(`all ${source.urls.length} source URLs failed — ${failures.join(' | ')}`);
     }
@@ -465,30 +622,31 @@ export async function fetchSourceUrls(source: PublicSource, _ctx: FetchContext):
 
     // Concatenate all fetched content
     const combined = valid.map((v) => `# Source: ${v.url}\n\n${v.text}`).join('\n\n---\n\n');
-    return { urls: valid.map((v) => v.url), rawText: combined };
+    return { urls: valid.map((v) => v.url), rawText: combined, notModified: false };
   }
 
   if (source.type === 'raw_file') {
     const firstUrl = source.urls[0];
     if (!firstUrl) throw new Error('no source URLs configured');
-    const { text } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
-    return { urls: [firstUrl], rawText: text };
+    const { text, notModified } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
+    return { urls: [firstUrl], rawText: notModified ? null : text, notModified };
   }
 
   if (source.type === 'subscription_url') {
     const firstUrl = source.urls[0];
     if (!firstUrl) throw new Error('no source URLs configured');
-    const { text } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
-    return { urls: [firstUrl], rawText: text };
+    const { text, notModified } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
+    return { urls: [firstUrl], rawText: notModified ? null : text, notModified };
   }
 
   // website type: discover URLs from content
   if (source.type === 'website') {
     const firstUrl = source.urls[0];
     if (!firstUrl) throw new Error('no source URLs configured');
-    const { text } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
+    const { text, notModified } = await fetchText(firstUrl, FETCH_TIMEOUT_MS);
+    if (notModified) return { urls: [firstUrl], rawText: null, notModified: true };
     const urls = extractUrlsFromMarkdown(text);
-    return { urls, rawText: text };
+    return { urls, rawText: text, notModified: false };
   }
 
   throw new Error(`unsupported source type: ${source.type}`);
@@ -634,7 +792,16 @@ export function getKnownSources(): PublicSource[] {
  */
 export function seedKnownSources(repo: PublicSourcesRepository): void {
   for (const s of KNOWN_SOURCES) {
-    if (repo.get(s.id)) continue;
+    const existing = repo.get(s.id);
+    if (existing) {
+      // A retired built-in must not stay enabled in an existing database: the
+      // seed is the only place that knows the upstream repository is gone, and
+      // `seedKnownSources` otherwise never overwrites a row (by design).
+      if (s.enabled === false && existing.enabled) {
+        repo.update(s.id, { enabled: false, notes: s.notes ?? null });
+      }
+      continue;
+    }
     repo.insert({
       id: s.id,
       name: s.name,
@@ -683,6 +850,7 @@ export function createSourceFromInput(input: {
     type: input.type ?? 'raw_file',
     urls: input.urls,
     formats: input.formats ?? ['uri'],
+    redistributionPermission: DEFAULT_REDISTRIBUTION_PERMISSION,
     intervalMinutes: input.intervalMinutes ?? 60,
     lastFetch: null,
     lastSuccess: null,
@@ -718,6 +886,8 @@ export interface SourceFetchOutcome {
   duplicates: number;
   invalid: number;
   documents: string[];
+  /** True when every URL answered 304 — the feed was already up to date. */
+  notModified?: boolean;
 }
 
 export async function fetchAndImportSource(
@@ -752,7 +922,38 @@ export async function fetchAndImportSource(
 
   try {
     // Fetch
-    const { urls, rawText } = await fetchSourceUrls(source, ctx);
+    const { urls, rawText, notModified } = await fetchSourceUrls(source, ctx);
+
+    // Incremental path: the host validated our cached copy with 304. No bytes
+    // were downloaded, parsed, or imported — record the check and stop.
+    if (notModified) {
+      ctx.fetchesRepo.finish(fetchId, {
+        finishedAt: Date.now(),
+        status: 'skipped',
+        configCount: 0,
+        importedCount: 0,
+        duplicateCount: 0,
+        invalidCount: 0,
+        contentHash: source.lastContentHash,
+        rawBytes: 0,
+      });
+      ctx.sourcesRepo.update(source.id, {
+        lastFetch: Date.now(),
+        lastSuccess: Date.now(),
+        status: 'healthy',
+      });
+      return {
+        status: 'completed',
+        error: null,
+        fetched: 0,
+        imported: 0,
+        duplicates: 0,
+        invalid: 0,
+        documents,
+        notModified: true,
+      };
+    }
+
     ctx.onStatus('parsing');
 
     if (!rawText) {

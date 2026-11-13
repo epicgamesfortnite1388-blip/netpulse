@@ -1,0 +1,69 @@
+npm notice run netpulse@1.1.1 npx
+npm notice run tsx scripts/bench-adaptive-replay.ts
+
+live corpus · 15 of 15 nodes · cores xray, sing-box, v2ray
+  endpoint https://httpbin.org/ip · timeout 8000ms · one attempt per (node, core), sequential
+
+  xray     vps-vless-443                       failed: probe timed out
+  sing-box vps-vless-443                       ok 4147ms
+  xray     line 2 (vmess)                      ok 828ms
+  sing-box line 2 (vmess)                      ok 881ms
+  v2ray    line 2 (vmess)                      ok 1022ms
+  xray     vps-vless-2053                      ok 1381ms
+  sing-box vps-vless-2053                      ok 905ms
+  v2ray    vps-vless-2053                      ok 1521ms
+  xray     vps-trojan-2087                     ok 2104ms
+  sing-box vps-trojan-2087                     ok 1348ms
+  v2ray    vps-trojan-2087                     failed: probe timed out
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       failed: probe timed out
+  sing-box vps-vless-443                       failed: probe timed out
+  xray     line 7 (vmess)                      ok 854ms
+  sing-box line 7 (vmess)                      ok 2842ms
+  v2ray    line 7 (vmess)                      ok 2848ms
+  xray     vps-vless-2053                      ok 1101ms
+  sing-box vps-vless-2053                      ok 2126ms
+  v2ray    vps-vless-2053                      ok 6015ms
+  xray     vps-trojan-2087                     failed: probe timed out
+  sing-box vps-trojan-2087                     failed: probe timed out
+  v2ray    vps-trojan-2087                     failed: probe timed out
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       failed: probe timed out
+  sing-box vps-vless-443                       ok 6183ms
+  xray     line 12 (vmess)                     failed: probe timed out
+  sing-box line 12 (vmess)                     ok 4840ms
+  v2ray    line 12 (vmess)                     ok 822ms
+  xray     vps-vless-2053                      failed: probe timed out
+  sing-box vps-vless-2053                      ok 2814ms
+  v2ray    vps-vless-2053                      ok 892ms
+  xray     vps-trojan-2087                     ok 5906ms
+  sing-box vps-trojan-2087                     ok 5998ms
+  v2ray    vps-trojan-2087                     failed: probe timed out
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+
+baseline vs adaptive · replay of REAL outcomes
+  corpus        live measurement through the app's own proxy probe over C:\Users\RADIN\AppData\Local\Temp\vps-corpus.txt (xray, sing-box, v2ray)
+  attempts      36 recorded
+  policies      fixed order (xray → hysteria → sing-box → v2ray) vs ranked decisions, budget 2 attempt(s)
+
+  metric                                        baseline    adaptive
+  ────────────────────────────────────────────────────────────────────
+  episodes compared                                   15          15
+  episodes excluded (no recorded outcome)              0           0
+  reached a working core                           53.3%       53.3%
+  worked on the FIRST core tried                   40.0%       46.7%
+  mean attempts per episode                          1.2        1.13
+  p50 ms to a working core                          1381        1381
+  p95 ms to a working core                         12926       12926
+  attempts spent on a core that never worked           8           7
+  baseline first core by episode: xray x12 sing-box x3
+  first-core choice differed from baseline: 2 of 15 episodes
+  adaptive won the first attempt where baseline did not: 1
+  adaptive lost the first attempt where baseline won:  0
+
+  verdict: PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won
+  caveat: a counterfactual replay scores recorded outcomes; it cannot reproduce the network,
+          run-to-run flakiness, or what else was happening on this machine at the time.
+
+  evidence written to reports/adaptive/REPLAY_LIVE_IR_ISP.json
+

@@ -155,9 +155,14 @@ describe('engineSupportsConfig matrix', () => {
     expect(engineSupportsConfig('v2ray', cfg({ protocol: 'vless', realityPublicKey: 'key' })).ok).toBe(false);
   });
 
-  it('xray and sing-box accept Reality', () => {
-    expect(engineSupportsConfig('xray', cfg({ protocol: 'vless', security: 'reality' })).ok).toBe(true);
-    expect(engineSupportsConfig('sing-box', cfg({ protocol: 'vless', security: 'reality' })).ok).toBe(true);
+  it('xray and sing-box accept Reality, but not a Reality row with no public key', () => {
+    // A real REALITY config carries the server's public key. Measured live on
+    // xray 26.10.31: without it the outbound was built as plaintext and the core
+    // exited 23 at startup, so `ok: true` here would have been a lie.
+    const reality = cfg({ protocol: 'vless', security: 'reality', realityPublicKey: 'PUBKEY', realityShortId: 'ab' });
+    expect(engineSupportsConfig('xray', reality).ok).toBe(true);
+    expect(engineSupportsConfig('sing-box', reality).ok).toBe(true);
+    expect(engineSupportsConfig('xray', cfg({ protocol: 'vless', security: 'reality' })).ok).toBe(false);
   });
 
   it('the v2ray family refuses non-AEAD shadowsocks ciphers, sing-box still carries them', () => {

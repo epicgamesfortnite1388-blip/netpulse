@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ADAPTIVE_MANIFEST_LIMITS,
   ADAPTIVE_STATE_VERSION,
+  DEFAULT_ADAPTIVE_POLICY,
   canonicalManifestPayload,
 } from '@netpulse/shared';
 import { AdaptiveEngine } from '../src/services/adaptiveEngine';
@@ -107,6 +108,33 @@ describe('adaptive engine — ordering from observed outcomes', () => {
     expect(plan.decisions[0]!.successProbability).toBeGreaterThan(plan.decisions.at(-1)!.successProbability);
     expect(plan.decisions[0]!.confidence).not.toBe('none');
     expect(plan.decisions[0]!.explanation.length).toBeGreaterThan(0);
+  });
+
+  it('scores its own predictions against what happened, instead of only counting successes', () => {
+    const { engine } = engineWith();
+    expect(engine.status().calibration).toBeNull();
+
+    // Same prediction, one hit and one miss: a well-behaved 0.9 should look
+    // better than 0.5 on average, and this pair deliberately does not.
+    engine.observe({ nodeId: 'a', engine: 'xray', ok: true, timeToWorkingMs: 400, predicted: 0.9 });
+    engine.observe({ nodeId: 'b', engine: 'xray', ok: false, failure: NOT_VERIFIED, predicted: 0.9 });
+
+    const calibration = engine.status().calibration;
+    expect(calibration).not.toBeNull();
+    expect(calibration!.samples).toBe(2);
+    // (0.1² + 0.9²) / 2 = 0.41 against a 0.25 coin-flip baseline → negative skill.
+    expect(calibration!.brier).toBe(0.41);
+    expect(calibration!.baselineBrier).toBe(0.25);
+    expect(calibration!.skill).toBeLessThan(0);
+    expect(calibration!.observedRate).toBe(0.5);
+    expect(calibration!.meanPredicted).toBe(0.9);
+  });
+
+  it('does not invent a prediction for an attempt that was not a model choice', () => {
+    const { engine } = engineWith();
+    engine.observe({ nodeId: 'a', engine: 'xray', ok: true, timeToWorkingMs: 400 });
+    expect(engine.status().calibration).toBeNull();
+    expect(engine.status().observationsKept).toBe(1);
   });
 
   it('never puts a core that is not installed into an order', () => {
@@ -427,5 +455,104 @@ describe('policy signature trust', () => {
     const message = '{"kind":"adaptive-policy"}';
     const signature = signAdaptivePayload(message, key.privateKey);
     expect(createEd25519Verifier(publicPem)?.(message, signature)).toBe(true);
+  });
+});
+
+
+describe('adaptive engine — a persisted policy is re-validated on load', () => {
+  it('clamps a corrupted stored manifest instead of trusting it', () => {
+    const { engine, rows } = engineWith();
+    // Simulate a partial write / manual edit: every safety field is nonsense.
+    rows.rows['adaptivePolicyManifest'] = {
+      applied: {
+        version: 9,
+        channel: 'production',
+        options: {
+          ...DEFAULT_ADAPTIVE_POLICY,
+          halfLifeMs: 0,
+          minSamples: 0,
+          explorationShare: 1,
+          costWeight: 5,
+          uncertaintyZ: 0,
+          maxObservations: 1e9,
+          flopThreshold: 0,
+        },
+        enabledStrategyIds: [],
+        disabledStrategyIds: [],
+        revocation: [],
+        applied: [],
+        refused: [],
+      },
+    };
+
+    const policy = engine.policy();
+    expect(policy.uncertaintyZ).toBe(DEFAULT_ADAPTIVE_POLICY.uncertaintyZ);
+    expect(policy.minSamples).toBeGreaterThanOrEqual(ADAPTIVE_MANIFEST_LIMITS.minMinSamples);
+    expect(policy.halfLifeMs).toBeGreaterThanOrEqual(ADAPTIVE_MANIFEST_LIMITS.minHalfLifeMs);
+    expect(policy.explorationShare).toBeLessThanOrEqual(ADAPTIVE_MANIFEST_LIMITS.maxExplorationShare);
+    expect(policy.costWeight).toBeLessThanOrEqual(ADAPTIVE_MANIFEST_LIMITS.maxCostWeight);
+    expect(policy.maxObservations).toBe(DEFAULT_ADAPTIVE_POLICY.maxObservations);
+    expect(policy.flopThreshold).toBeGreaterThanOrEqual(1);
+    // The record itself is still readable, so the UI can say which policy is on.
+    expect(engine.status().manifest.installed?.version).toBe(9);
+  });
+
+  it('drops a stored manifest that is not a usable record', () => {
+    const { engine, rows } = engineWith();
+    rows.rows['adaptivePolicyManifest'] = { applied: { version: 'nine', channel: 'production' } };
+    expect(engine.status().manifest.installed).toBeNull();
+    expect(engine.policy().uncertaintyZ).toBe(DEFAULT_ADAPTIVE_POLICY.uncertaintyZ);
+  });
+});
+
+
+describe('adaptive engine — an outcome keeps the strategy it planned', () => {
+  it('attributes to the planned strategy even after the DNS setting changes', () => {
+    let dnsThroughVpn = true;
+    const { engine } = engineWith({
+      settings: {
+        get: () => ({
+          adaptive: { enabled: true, exploration: false },
+          vpn: { scanProfile: 'balanced', dnsThroughVpn },
+        }),
+      },
+    });
+
+    const plan = engine.plan({ config: VLESS_TLS, baselineOrder: BASELINE, attemptBudget: 2 });
+    const planned = plan.decisions.find((d) => d.engine === 'xray')!;
+    expect(planned.strategyId).toBe('xray+doh');
+
+    // The user flips the setting between planning and the outcome.
+    dnsThroughVpn = false;
+
+    const observation = engine.observe({
+      nodeId: 'node:1',
+      engine: 'xray',
+      strategyId: planned.strategyId,
+      ok: true,
+      timeToWorkingMs: 500,
+    });
+    expect(observation.strategyId).toBe('xray+doh');
+    expect(engine.status().entries.some((row) => row.strategyId === 'xray+doh')).toBe(true);
+    expect(engine.status().entries.some((row) => row.strategyId === 'xray')).toBe(false);
+  });
+
+  it('ignores an invalid strategy id instead of storing it', () => {
+    const { engine } = engineWith({
+      settings: {
+        get: () => ({
+          adaptive: { enabled: true, exploration: false },
+          vpn: { scanProfile: 'balanced', dnsThroughVpn: false },
+        }),
+      },
+    });
+    const observation = engine.observe({
+      nodeId: 'node:1',
+      engine: 'xray',
+      strategyId: 'not a strategy',
+      ok: true,
+      timeToWorkingMs: 500,
+    });
+    expect(observation.strategyId).toBe('xray');
   });
 });

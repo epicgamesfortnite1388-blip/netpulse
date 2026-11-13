@@ -112,5 +112,9 @@ g4-boot-token.txt
 # installer, not source (xray.exe alone is 33 MB).
 /tmp/
 /apps/api/cores/
+# Engine installers write these too: the Aether tunnel binary in `aether/` and
+# the proxy core drop-in folder in `cores/` (xray.exe alone is ~33 MB).
+/aether/
+/cores/
 scripts/.tmp-*
 __pycache__/

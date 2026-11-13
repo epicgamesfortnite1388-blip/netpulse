@@ -30,6 +30,7 @@ mod dpapi;
 mod elevation;
 mod logging;
 mod navigation;
+mod network_intelligence;
 mod os_open;
 mod paths;
 mod ports;

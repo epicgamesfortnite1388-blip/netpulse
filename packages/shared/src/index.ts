@@ -30,5 +30,6 @@ export * from './schemas/tests';
 export * from './schemas/whitedns';
 export * from './score/engine';
 export * from './adaptive';
+export * from './nani';
 export * from './net/stats';
 export * from './cloud/provisionConfig';

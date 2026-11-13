@@ -101,7 +101,14 @@ export function AdaptiveRecoveryCard({ nodeId }: { nodeId?: string | null }) {
 
   const query = useQuery({
     queryKey: ['adaptive', 'status', nodeId ?? null],
-    queryFn: () => api.get<AdaptiveStatusDto>(`/adaptive/status${nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : ''}`),
+    // One literal path per branch: `routeWiring.test.ts` strips the query and then
+    // normalizes `${…}` to `:param`, so a ternary inside the template produced the
+    // pseudo-path `/adaptive/status${nodeId ? ` and the gate could not tell a wrong
+    // request from a missing route.
+    queryFn: () =>
+      nodeId
+        ? api.get<AdaptiveStatusDto>(`/adaptive/status?nodeId=${encodeURIComponent(nodeId)}`)
+        : api.get<AdaptiveStatusDto>('/adaptive/status'),
     refetchInterval: 20_000,
   });
 

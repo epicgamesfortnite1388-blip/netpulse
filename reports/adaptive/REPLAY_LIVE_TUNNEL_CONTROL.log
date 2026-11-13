@@ -1,0 +1,69 @@
+npm notice run netpulse@1.1.1 npx
+npm notice run tsx scripts/bench-adaptive-replay.ts
+
+live corpus · 15 of 15 nodes · cores xray, sing-box, v2ray
+  endpoint https://httpbin.org/ip · timeout 8000ms · one attempt per (node, core), sequential
+
+  xray     vps-vless-443                       ok 1420ms
+  sing-box vps-vless-443                       ok 898ms
+  xray     line 2 (vmess)                      ok 832ms
+  sing-box line 2 (vmess)                      ok 900ms
+  v2ray    line 2 (vmess)                      ok 6371ms
+  xray     vps-vless-2053                      failed: probe timed out
+  sing-box vps-vless-2053                      ok 1011ms
+  v2ray    vps-vless-2053                      ok 1465ms
+  xray     vps-trojan-2087                     ok 914ms
+  sing-box vps-trojan-2087                     ok 1216ms
+  v2ray    vps-trojan-2087                     ok 1341ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 974ms
+  sing-box vps-vless-443                       ok 1911ms
+  xray     line 7 (vmess)                      ok 864ms
+  sing-box line 7 (vmess)                      ok 900ms
+  v2ray    line 7 (vmess)                      ok 1292ms
+  xray     vps-vless-2053                      failed: probe timed out
+  sing-box vps-vless-2053                      ok 1158ms
+  v2ray    vps-vless-2053                      ok 1741ms
+  xray     vps-trojan-2087                     ok 846ms
+  sing-box vps-trojan-2087                     failed: probe timed out
+  v2ray    vps-trojan-2087                     failed: probe timed out
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 903ms
+  sing-box vps-vless-443                       ok 6262ms
+  xray     line 12 (vmess)                     ok 823ms
+  sing-box line 12 (vmess)                     ok 932ms
+  v2ray    line 12 (vmess)                     ok 1329ms
+  xray     vps-vless-2053                      ok 3476ms
+  sing-box vps-vless-2053                      ok 5946ms
+  v2ray    vps-vless-2053                      ok 1385ms
+  xray     vps-trojan-2087                     ok 849ms
+  sing-box vps-trojan-2087                     ok 890ms
+  v2ray    vps-trojan-2087                     ok 1360ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+
+baseline vs adaptive · replay of REAL outcomes
+  corpus        live measurement through the app's own proxy probe over C:\Users\RADIN\AppData\Local\Temp\vps-corpus.txt (xray, sing-box, v2ray)
+  attempts      36 recorded
+  policies      fixed order (xray → hysteria → sing-box → v2ray) vs ranked decisions, budget 2 attempt(s)
+
+  metric                                        baseline    adaptive
+  ────────────────────────────────────────────────────────────────────
+  episodes compared                                   15          15
+  episodes excluded (no recorded outcome)              0           0
+  reached a working core                           80.0%       80.0%
+  worked on the FIRST core tried                   66.7%       66.7%
+  mean attempts per episode                         1.13        1.13
+  p50 ms to a working core                           903         903
+  p95 ms to a working core                          9246        9246
+  attempts spent on a core that never worked           5           5
+  baseline first core by episode: xray x12 sing-box x3
+  first-core choice differed from baseline: 0 of 15 episodes
+  adaptive won the first attempt where baseline did not: 0
+  adaptive lost the first attempt where baseline won:  0
+
+  verdict: PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won
+  caveat: a counterfactual replay scores recorded outcomes; it cannot reproduce the network,
+          run-to-run flakiness, or what else was happening on this machine at the time.
+
+  evidence written to reports/adaptive/REPLAY_LIVE_TUNNEL_CONTROL.json
+

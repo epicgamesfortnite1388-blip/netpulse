@@ -42,6 +42,9 @@ const AccountPage = lazy(() => import('@/features/account/AccountPage'));
 const EngineManagerPage = lazy(() => import('@/features/engines/EngineManagerPage'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const SystemHealthPage = lazy(() => import('@/features/health/SystemHealthPage'));
+const MissionControlPage = lazy(() => import('@/features/mission/MissionControlPage'));
+const OverdrivePage = lazy(() => import('@/features/mission/OverdrivePage'));
+const CopilotPage = lazy(() => import('@/features/copilot/CopilotPage'));
 
 export const router = createBrowserRouter([
   {
@@ -49,6 +52,8 @@ export const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <DashboardPage /> },
+      { path: 'mission', element: <MissionControlPage /> },
+      { path: 'overdrive', element: <OverdrivePage /> },
       { path: 'map', element: <LiveMapPage /> },
       { path: 'diagnostics', element: <DiagnosticsPage /> },
       { path: 'speed-test', element: <SpeedTestPage /> },
@@ -70,6 +75,7 @@ export const router = createBrowserRouter([
       { path: 'engines', element: <EngineManagerPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'health', element: <SystemHealthPage /> },
+      { path: 'copilot', element: <CopilotPage /> },
       // Last child, so it only matches what nothing above claimed. Without it
       // an unmatched URL escapes to React Router's own boundary and replaces
       // the whole shell with a developer-facing error screen.

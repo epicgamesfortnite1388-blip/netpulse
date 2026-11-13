@@ -22,6 +22,7 @@ import { RetentionService, RETENTION_INTERVAL_MS } from './db/retention';
 import { enrichNodeGeoBatch, scrubAnycastGeo, setGeoPreferenceSource } from './services/nodeGeoService';
 import { defaultGeoOverridePath, geoOverrideError, setGeoOverrideFile } from './services/geoGuard';
 import { NodeTestScheduler } from './services/nodeTestScheduler';
+import { AgentPermissions } from './services/ai-agent/permissions';
 import { GatewayMemoryService } from './services/gatewayMemory';
 import { VpnHistoryService } from './services/vpnHistory';
 import { NodeDiscoveryService } from './services/nodeDiscovery';
@@ -48,8 +49,10 @@ import { registerIpRoutes } from './routes/ip';
 import { registerIranRoutes } from './routes/iran';
 import { registerMapRoutes } from './routes/map';
 import { registerMetaRoutes } from './routes/meta';
+import { registerMissionRoutes } from './routes/mission';
 import { registerNetworkRoutes } from './routes/network';
 import { registerAdaptiveRoutes } from './routes/adaptive';
+import { registerAgentRoutes } from './routes/agent';
 import { registerOptimizerRoutes } from './routes/optimizer';
 import { registerPingRoutes } from './routes/ping';
 import { registerRouteRoutes } from './routes/routes';
@@ -65,8 +68,10 @@ import { registerNodesRoutes } from './routes/nodes';
 import { UpdateFeedHistoryService } from './services/updateFeedHistory';
 import { registerUpdateFeedRoutes } from './routes/updateFeed';
 import { registerUpdateHistoryRoutes } from './routes/updateHistory';
+import { registerNaniRoutes } from './routes/nani';
 
 import { DiagnosticsService } from './services/diagnosticsService';
+import { NaniService } from './services/naniService';
 import { DnsService } from './services/dnsService';
 import { GamingService } from './services/gamingService';
 import { EndpointService } from './services/endpointService';
@@ -560,7 +565,11 @@ export async function buildApp(opts: BuildOptions = {}) {
   // Adaptive node tester — bounded TCP-probe batches on a settings-driven
   // cadence (never-validated first, then stale-good, then unstable; retires
   // dead+unseen nodes). Disabled in tests/Safe Mode like all network workers.
-  const nodeTestScheduler = new NodeTestScheduler({ nodes: nodesService, settings, log });
+  // Capability policy for the discovery agent — built before the schedulers so
+  // every unattended network action (probe batch, scheduled feed refresh) passes
+  // through the same gate and the same hourly budget.
+  const agentPermissions = new AgentPermissions({ settings: () => settings.get(), log });
+  const nodeTestScheduler = new NodeTestScheduler({ nodes: nodesService, settings, log, permissions: agentPermissions });
 
   // VPN history — persists discovery/quick-connect runs and aggregates them
   // (with gateway memory) into the dashboard report. Recording failures are
@@ -573,6 +582,15 @@ export async function buildApp(opts: BuildOptions = {}) {
 
   // Source refresh scheduler — periodically re-fetches enabled public sources.
   const sourceScheduler = new SourceRefreshScheduler([], async (source) => {
+    const gate = agentPermissions.authorize('network:fetch-source', {
+      origin: 'autonomous',
+      count: 1,
+      detail: `scheduled refresh: ${source.id}`,
+    });
+    if (!gate.allowed) {
+      log.warn({ sourceId: source.id, code: gate.code }, `scheduled source refresh skipped: ${gate.reason}`);
+      return;
+    }
     log.info({ sourceId: source.id }, 'scheduled source refresh');
     try {
       await nodesService.discoverFromSource(source.id);
@@ -581,6 +599,76 @@ export async function buildApp(opts: BuildOptions = {}) {
     }
   }, log);
   sourceScheduler.start({ enabled: false, intervalMinutes: 60, onSourceFetched: undefined });
+
+  // NANI — adaptive network intelligence: diagnosis, health monitoring, and
+  // bounded self-recovery. Pure core in @netpulse/shared; this service owns the
+  // side effects (probes, recovery activation, event publishing).
+  const nani = new NaniService({
+    controller,
+    bus,
+    events,
+    log,
+  });
+
+  // Register default providers from configuration (secrets referenced by key id,
+  // never stored here). These are the APIs the desktop application depends on.
+  const defaultApis = [
+    {
+      id: 'backend',
+      provider: 'netpulse-backend',
+      endpoint: `${config.host}:${config.port}`,
+      authType: 'bearer' as const,
+      authKeyId: 'backend-daemon',
+      healthCheck: 'http-get' as const,
+      healthCheckPath: '/healthz',
+      timeoutMs: 5_000,
+      directPermitted: true,
+      autoRecoveryPermitted: true,
+      dependsOn: [],
+    },
+    {
+      id: 'xkiro',
+      provider: 'xkiro',
+      endpoint: 'api.xkiro.ai:443',
+      authType: 'bearer' as const,
+      authKeyId: 'xkiro-api-key',
+      healthCheck: 'https-get' as const,
+      healthCheckPath: '/v1/health',
+      timeoutMs: 8_000,
+      directPermitted: true,
+      autoRecoveryPermitted: true,
+      dependsOn: [],
+    },
+    {
+      id: 'deepseek',
+      provider: 'deepseek',
+      endpoint: 'api.deepseek.com:443',
+      authType: 'bearer' as const,
+      authKeyId: 'deepseek-api-key',
+      healthCheck: 'https-get' as const,
+      healthCheckPath: '/v1/models',
+      timeoutMs: 8_000,
+      directPermitted: true,
+      autoRecoveryPermitted: true,
+      dependsOn: [],
+    },
+    {
+      id: 'telegram',
+      provider: 'telegram-bot',
+      endpoint: 'api.telegram.org:443',
+      authType: 'bearer' as const,
+      authKeyId: 'telegram-bot-token',
+      healthCheck: 'https-get' as const,
+      healthCheckPath: '/bot<token>/getMe',
+      timeoutMs: 8_000,
+      directPermitted: true,
+      autoRecoveryPermitted: true,
+      dependsOn: [],
+    },
+  ];
+  for (const api of defaultApis) {
+    nani.registerApi(api as any);
+  }
 
   const services = {
     events,
@@ -620,6 +708,10 @@ export async function buildApp(opts: BuildOptions = {}) {
     // Sealer for cloud profile backups. Built once because it owns a key file.
     profileCloudVault,
     sourceScheduler,
+    /** What the discovery agent may do on its own, with hourly budgets. */
+    agent: agentPermissions,
+    /** NANI — adaptive network intelligence engine. */
+    nani,
   };
   await vpn.initAll();
 
@@ -756,6 +848,7 @@ export async function buildApp(opts: BuildOptions = {}) {
 
   registerWsRoute(app, bus);
   registerMetaRoutes(app, ctx);
+  registerMissionRoutes(app, ctx);
   registerHealthRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerNetworkRoutes(app, ctx);
@@ -770,6 +863,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerEndpointRoutes(app, ctx);
   registerOptimizerRoutes(app, ctx);
   registerAdaptiveRoutes(app, ctx);
+  registerAgentRoutes(app, ctx);
   registerDiagnosticRoutes(app, ctx);
   registerStabilityRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
@@ -782,6 +876,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerWebrtcRoutes(app, ctx);
   registerWhitednsRoutes(app, ctx);
   registerNodesRoutes(app, ctx);
+  registerNaniRoutes(app, ctx);
   // Local update feed (public — the updater is not the webview; see route docs).
   registerUpdateFeedRoutes(app, ctx);
   registerUpdateHistoryRoutes(app, ctx);

@@ -1,0 +1,70 @@
+﻿npm warn install-scripts .npmrc allow-scripts setting is being ignored because --allow-scripts was passed on the command line
+npm notice run netpulse@1.1.1 npx
+npm notice run tsx E:\Code\Project\Vpn_app\scripts\bench-adaptive-replay.ts
+
+live corpus · 15 of 15 nodes · cores xray, sing-box, v2ray
+  endpoint https://httpbin.org/ip · timeout 8000ms · one attempt per (node, core), sequential
+
+  xray     vps-vless-443                       ok 1110ms
+  sing-box vps-vless-443                       ok 3159ms
+  xray     line 2 (vmess)                      ok 793ms
+  sing-box line 2 (vmess)                      ok 825ms
+  v2ray    line 2 (vmess)                      ok 1337ms
+  xray     vps-vless-2053                      ok 2127ms
+  sing-box vps-vless-2053                      ok 925ms
+  v2ray    vps-vless-2053                      ok 1473ms
+  xray     vps-trojan-2087                     ok 833ms
+  sing-box vps-trojan-2087                     ok 894ms
+  v2ray    vps-trojan-2087                     ok 1325ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 1391ms
+  sing-box vps-vless-443                       ok 878ms
+  xray     line 7 (vmess)                      ok 860ms
+  sing-box line 7 (vmess)                      ok 883ms
+  v2ray    line 7 (vmess)                      ok 1230ms
+  xray     vps-vless-2053                      ok 5996ms
+  sing-box vps-vless-2053                      ok 1212ms
+  v2ray    vps-vless-2053                      ok 6429ms
+  xray     vps-trojan-2087                     ok 846ms
+  sing-box vps-trojan-2087                     failed: read ECONNRESET
+  v2ray    vps-trojan-2087                     ok 1312ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 836ms
+  sing-box vps-vless-443                       ok 869ms
+  xray     line 12 (vmess)                     ok 873ms
+  sing-box line 12 (vmess)                     ok 829ms
+  v2ray    line 12 (vmess)                     ok 1281ms
+  xray     vps-vless-2053                      ok 895ms
+  sing-box vps-vless-2053                      ok 914ms
+  v2ray    vps-vless-2053                      ok 1449ms
+  xray     vps-trojan-2087                     ok 862ms
+  sing-box vps-trojan-2087                     ok 1151ms
+  v2ray    vps-trojan-2087                     ok 1321ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+
+baseline vs adaptive · replay of REAL outcomes
+  corpus        live measurement through the app's own proxy probe over C:\Users\RADIN\AppData\Local\Temp\vps-corpus.txt (xray, sing-box, v2ray)
+  attempts      36 recorded
+  policies      fixed order (xray → hysteria → sing-box → v2ray) vs ranked decisions, budget 2 attempt(s)
+
+  metric                                        baseline    adaptive
+  ────────────────────────────────────────────────────────────────────
+  episodes compared                                   15          15
+  episodes excluded (no recorded outcome)              0           0
+  reached a working core                           80.0%       80.0%
+  worked on the FIRST core tried                   80.0%       80.0%
+  mean attempts per episode                            1           1
+  p50 ms to a working core                           862         862
+  p95 ms to a working core                          5996        5996
+  attempts spent on a core that never worked           3           3
+  baseline first core by episode: xray x12 sing-box x3
+  first-core choice differed from baseline: 0 of 15 episodes
+  adaptive won the first attempt where baseline did not: 0
+  adaptive lost the first attempt where baseline won:  0
+
+  verdict: PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won
+  caveat: a counterfactual replay scores recorded outcomes; it cannot reproduce the network,
+          run-to-run flakiness, or what else was happening on this machine at the time.
+
+  evidence written to E:\Code\Project\Vpn_app\reports\adaptive\REPLAY_LIVE_TUNNEL_CONTROL_control-7.json
+

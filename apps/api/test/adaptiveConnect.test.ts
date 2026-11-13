@@ -281,3 +281,26 @@ describe('quick connect uses the adaptive order for the real dial', () => {
     }
   });
 });
+
+
+describe('quick connect feeds the plan probability back for calibration', () => {
+  it('records a prediction with the verified outcome', async () => {
+    ctx.services.adaptive.reset();
+    // Build trusted evidence under the context the connect path will use, so the
+    // plan is willing to stand behind a probability for the chosen core.
+    for (let i = 0; i < 6; i += 1) {
+      ctx.services.adaptive.observe({ nodeId, engine: 'xray', ok: true, timeToWorkingMs: 500 });
+    }
+
+    dialled.length = 0;
+    answer = (engine) => statusFor(engine, 'active');
+
+    const { quick } = await quickConnectCore(ctx, { systemProxy: false, wantTun: false });
+    expect(quick.ok).toBe(true);
+
+    const status = ctx.services.adaptive.status();
+    expect(status.calibration).not.toBeNull();
+    expect(status.calibration!.samples).toBeGreaterThan(0);
+    expect(Number.isFinite(status.calibration!.brier)).toBe(true);
+  });
+});

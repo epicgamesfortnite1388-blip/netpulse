@@ -7,10 +7,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { parseNodeUri } from '../src/services/nodeParsers';
 import {
+  DEFAULT_REDISTRIBUTION_PERMISSION,
+  createSourceFromInput,
   extractRawConfigs,
   fetchAndImportSource,
   getKnownSources,
   partitionConfigs,
+  redistributionPermissionOf,
 } from '../src/services/nodeSourceRegistry';
 
 import type { FetchContext } from '../src/services/nodeSourceRegistry';
@@ -391,5 +394,51 @@ describe('fetchAndImportSource failure honesty', () => {
     expect(row.importedConfigCount).toBe(0);
     expect(row.discoveredConfigCount).toBe(0);
     expect(row.lastSuccess).toBeNull();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* redistribution permission                                                 */
+/* -------------------------------------------------------------------------- */
+
+describe('redistribution permission', () => {
+  const sources = getKnownSources();
+
+  it('classifies every built-in source, with no silent gaps', () => {
+    for (const s of sources) {
+      expect(s.redistributionPermission, s.id + ' has no redistribution permission').toBeTruthy();
+    }
+  });
+
+  it('only ever uses the three defined values', () => {
+    const allowed = new Set(['discovery-only', 'redistribution-allowed', 'prohibited']);
+    for (const s of sources) {
+      expect(allowed.has(s.redistributionPermission as string), s.id).toBe(true);
+    }
+  });
+
+  it('defaults to discovery-only, never to a grant', () => {
+    expect(DEFAULT_REDISTRIBUTION_PERMISSION).toBe('discovery-only');
+  });
+
+  it('answers discovery-only for a source the catalogue has never heard of', () => {
+    expect(redistributionPermissionOf('source:user-added')).toBe('discovery-only');
+    expect(redistributionPermissionOf('')).toBe('discovery-only');
+  });
+
+  it('answers from the catalogue for a built-in id', () => {
+    expect(redistributionPermissionOf('barry-far')).toBe('discovery-only');
+    expect(redistributionPermissionOf('ALIILAPRO')).toBe('prohibited');
+  });
+
+  it('still classifies retired sources, so re-enabling one cannot skip the rule', () => {
+    const retired = sources.filter((s) => s.enabled === false);
+    expect(retired.length).toBeGreaterThan(0);
+    for (const s of retired) expect(s.redistributionPermission).toBeTruthy();
+  });
+
+  it('gives a user-created source the default rather than an assumed grant', () => {
+    const created = createSourceFromInput({ name: 'mine', urls: ['https://example.com/list.txt'] });
+    expect(created.redistributionPermission).toBe('discovery-only');
   });
 });

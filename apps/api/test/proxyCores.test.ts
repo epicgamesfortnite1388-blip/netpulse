@@ -154,6 +154,16 @@ describe('nested-mode chain wiring', () => {
     expect(isAeadShadowsocksCipher('aes-256-cfb')).toBe(false);
   });
 
+  it('refuses REALITY without a public key, which would build as plaintext and die at startup', () => {
+    const keyless = cfg({ protocol: 'vless', security: 'reality', realityPublicKey: undefined });
+    const keyed = cfg({ protocol: 'vless', security: 'reality', realityPublicKey: 'PUBKEY' });
+
+    const rejected = engineSupportsConfig('xray', keyless);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.error).toContain('public key');
+    expect(engineSupportsConfig('xray', keyed).ok).toBe(true);
+  });
+
   it('startCore refuses the exit role on v2ray before spawning anything', async () => {
     const res = await startCore({ id: 'v2ray', bin: 'definitely-not-a-real-binary', args: ['run'] }, cfg(), 'uuid', 500, { dialThroughPort: 9999 });
     expect(res.ok).toBe(false);

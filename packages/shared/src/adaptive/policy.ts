@@ -55,6 +55,15 @@ export function emptyAdaptiveState(now: number): AdaptiveState {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const finite = (value: unknown, fallback: number): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+/**
+ * Upper bound for a persisted Beta count. Counts are decayed floats and real
+ * states stay tiny, so this only catches corrupt/out-of-range blobs. Without a
+ * cap, two finite counts near Number.MAX_VALUE make `alpha + beta` Infinity and
+ * `alpha / (alpha + beta)` NaN. One million leaves ample headroom while keeping
+ * every posterior arithmetic-safe.
+ */
+const MAX_ADAPTIVE_COUNT = 1_000_000;
+const boundedCount = (value: unknown): number => clamp(finite(value, 0), 0, MAX_ADAPTIVE_COUNT);
 
 function emptyStats(now: number): AdaptiveStats {
   return { successes: 0, failures: 0, meanSuccessMs: null, consecutiveFailures: 0, updatedAt: now };
@@ -121,8 +130,8 @@ function round2(value: number): number {
 /** Beta(1,1) prior over the decayed counts — so 0 observations is "unknown", not "0%". */
 export function posteriorOf(stats: AdaptiveStats, now: number, options: AdaptivePolicyOptions): AdaptivePosterior {
   const decayed = decayStats(stats, now, options.halfLifeMs);
-  const successes = round2(Math.max(0, finite(decayed.successes, 0)));
-  const failures = round2(Math.max(0, finite(decayed.failures, 0)));
+  const successes = round2(boundedCount(decayed.successes));
+  const failures = round2(boundedCount(decayed.failures));
   const alpha = 1 + successes;
   const beta = 1 + failures;
   return { alpha, beta, probability: alpha / (alpha + beta), evidence: round2(successes + failures) };
@@ -136,13 +145,44 @@ export function confidenceOf(evidence: number, options: AdaptivePolicyOptions): 
 }
 
 /**
- * Score = expected success − time cost. Cost is normalized so the weight means
- * "how much of a probability point is worth one full-cost connect", keeping the
- * two terms comparable rather than unit-dependent.
+ * One-sided lower confidence bound on the success probability.
+ *
+ * Beta(1,1) mean minus `uncertaintyZ` standard errors, using the normal
+ * approximation to the Beta with the two prior pseudo-counts included. The point
+ * is not statistical elegance — it is that the ranking must stop paying for
+ * optimism. A strategy that succeeded 5 times out of 5 is not better evidenced
+ * than one that succeeded 30 out of 40, and with a point estimate it looked
+ * better (0.857 vs 0.738). Under the bound it does not (0.593 vs 0.602).
+ *
+ * Zero evidence returns the prior mean (0.5): still "unknown", never "likely".
+ */
+export function lowerBoundOf(posterior: AdaptivePosterior, options: AdaptivePolicyOptions): number {
+  const n = Math.max(0, posterior.evidence);
+  const p = clamp(posterior.probability, 0, 1);
+  const z = Math.max(0, finite(options.uncertaintyZ, 0));
+  if (z === 0) return p;
+  // +2 pseudo-counts: Beta(1,1) is worth two observations of prior mass.
+  const se = Math.sqrt((p * (1 - p)) / (n + 2));
+  return round4(clamp(p - z * se, 0, 1));
+}
+
+function round4(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/**
+ * Score = uncertainty-adjusted success − time cost. Cost is normalized so the
+ * weight means "how much of a probability point is worth one full-cost connect",
+ * keeping the two terms comparable rather than unit-dependent.
+ *
+ * Sorting on the lower bound rather than the mean is the single change that stops
+ * thin evidence from winning ties it has not earned; `uncertaintyZ: 0` restores
+ * the old point-estimate behaviour exactly, which is how the replay comparison is
+ * run.
  */
 export function scoreOf(stats: AdaptiveStats, posterior: AdaptivePosterior, options: AdaptivePolicyOptions): number {
   const cost = stats.meanSuccessMs == null ? 0 : clamp(stats.meanSuccessMs / options.costReferenceMs, 0, 1);
-  return posterior.probability - options.costWeight * cost;
+  return lowerBoundOf(posterior, options) - options.costWeight * cost;
 }
 
 /** The ordinal position of a strategy in the caller's baseline order. */
@@ -168,6 +208,8 @@ interface Scored {
   strategy: AdaptiveStrategy;
   stats: AdaptiveStats;
   posterior: AdaptivePosterior;
+  /** the uncertainty-adjusted probability the ranking sorts on */
+  lowerBound: number;
   score: number;
   /** exploration bonus (UCB shape) — only used to rank untrusted strategies */
   bonus: number;
@@ -205,6 +247,7 @@ export function rankStrategies(input: RankInput): AdaptiveDecision[] {
       strategy,
       stats,
       posterior,
+      lowerBound: lowerBoundOf(posterior, options),
       score: scoreOf(stats, posterior, options),
       bonus,
       trusted,
@@ -342,6 +385,7 @@ function decision(
     dnsThroughTunnel: s.strategy.dnsThroughTunnel,
     label: s.strategy.label,
     successProbability: s.posterior.probability,
+    lowerBound: s.lowerBound,
     score: s.score,
     evidence: s.posterior.evidence,
     confidence: confidenceOf(s.posterior.evidence, options),
@@ -509,12 +553,17 @@ export function parseAdaptiveState(
       warnings.push('dropped an adaptive entry with negative counts');
       continue;
     }
+    const clampedSuccesses = boundedCount(successes);
+    const clampedFailures = boundedCount(failures);
+    if (clampedSuccesses !== successes || clampedFailures !== failures) {
+      warnings.push('clamped an adaptive entry with out-of-range counts');
+    }
     entries.push({
       context: e.context,
       strategyId: e.strategyId,
       stats: {
-        successes,
-        failures,
+        successes: clampedSuccesses,
+        failures: clampedFailures,
         meanSuccessMs: typeof s.meanSuccessMs === 'number' && Number.isFinite(s.meanSuccessMs) ? s.meanSuccessMs : null,
         consecutiveFailures: Math.max(0, Math.round(finite(s.consecutiveFailures, 0))),
         updatedAt: finite(s.updatedAt, now),
@@ -534,6 +583,11 @@ export function parseAdaptiveState(
       timeToWorkingMs: typeof o.timeToWorkingMs === 'number' && Number.isFinite(o.timeToWorkingMs) ? o.timeToWorkingMs : null,
       failureKind: (o.failureKind ?? null) as AdaptiveObservation['failureKind'],
       reasonCode: typeof o.reasonCode === 'string' ? o.reasonCode : null,
+      // Dropping this on load silently reset calibration on every restart: the
+      // observations survived, their predictions did not, so `calibration` was
+      // null again after a reload with six scored samples on disk.
+      predicted:
+        typeof o.predicted === 'number' && Number.isFinite(o.predicted) && o.predicted >= 0 && o.predicted <= 1 ? o.predicted : null,
     });
   }
 
@@ -554,10 +608,74 @@ export function parseAdaptiveState(
 }
 
 /** The persisted shape: exactly the state, nothing else. */
+/**
+ * How well the model's probabilities match reality.
+ *
+ * Brier score is mean squared error of the predicted probability against the
+ * outcome (0 = perfect, 0.25 = always guessing 0.5). `baselineBrier` is that
+ * same corpus scored by always predicting 0.5, so `skill` answers the only
+ * question that matters — is the model better than a coin flip? — on the same
+ * attempts, and can be negative.
+ *
+ * Only observations that carry a `predicted` value are scored. Exploratory or
+ * manual attempts where the engine made no prediction are excluded rather than
+ * counted as 0.5, because inventing a prediction to score against would make the
+ * result look better than the model is.
+ */
+export interface AdaptiveCalibration {
+  samples: number;
+  brier: number;
+  baselineBrier: number;
+  /** baselineBrier − brier: positive means the model beats always-0.5 */
+  skill: number;
+  meanPredicted: number;
+  observedRate: number;
+}
+
+export function calibrationOf(observations: readonly AdaptiveObservation[]): AdaptiveCalibration | null {
+  let samples = 0;
+  let squared = 0;
+  let baseline = 0;
+  let sumPredicted = 0;
+  let successes = 0;
+
+  for (const o of observations) {
+    const p = o.predicted;
+    if (p == null || !Number.isFinite(p) || p < 0 || p > 1) continue;
+    const y = o.ok === true ? 1 : 0;
+    samples += 1;
+    sumPredicted += p;
+    successes += y;
+    squared += (p - y) * (p - y);
+    baseline += (0.5 - y) * (0.5 - y);
+  }
+
+  if (samples === 0) return null;
+
+  const brier = squared / samples;
+  const baselineBrier = baseline / samples;
+  const round = (n: number) => Math.round(n * 1000) / 1000;
+  return {
+    samples,
+    brier: round(brier),
+    baselineBrier: round(baselineBrier),
+    skill: round(baselineBrier - brier),
+    meanPredicted: round(sumPredicted / samples),
+    observedRate: round(successes / samples),
+  };
+}
+
 export function serializeAdaptiveState(state: AdaptiveState): AdaptiveState {
   return {
     version: ADAPTIVE_STATE_VERSION,
-    entries: state.entries,
+    entries: state.entries.map((entry) => ({
+      ...entry,
+      stats: {
+        ...entry.stats,
+        successes: boundedCount(entry.stats.successes),
+        failures: boundedCount(entry.stats.failures),
+      },
+    })),
     observations: state.observations,
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,

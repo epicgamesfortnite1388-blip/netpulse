@@ -1,0 +1,57 @@
+{
+  "generatedAt": "2026-10-26T20:50:23.804Z",
+  "source": "db",
+  "corpus": "recorded node tests in C:\\Users\\RADIN\\AppData\\Roaming\\app.netpulse.desktop\\netpulse.db",
+  "host": {
+    "platform": "win32",
+    "node": "v24.18.0"
+  },
+  "live": null,
+  "attemptBudget": 2,
+  "attemptsRecorded": 1,
+  "rows": [
+    {
+      "node": "node:52b74a5c-6a3",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": false,
+      "totalMs": 2539,
+      "error": "read ECONNRESET"
+    }
+  ],
+  "episodes": 1,
+  "comparableEpisodes": 1,
+  "excludedEpisodes": 0,
+  "baseline": {
+    "episodes": 1,
+    "succeeded": 0,
+    "successRate": "0.0%",
+    "firstChoiceOk": 0,
+    "firstChoiceRate": "0.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": null,
+    "p95MsToWorking": null,
+    "wastedAttempts": 1
+  },
+  "adaptive": {
+    "episodes": 1,
+    "succeeded": 0,
+    "successRate": "0.0%",
+    "firstChoiceOk": 0,
+    "firstChoiceRate": "0.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": null,
+    "p95MsToWorking": null,
+    "wastedAttempts": 1
+  },
+  "firstChoiceDiffered": 0,
+  "adaptiveWins": 0,
+  "adaptiveLosses": 0,
+  "verdict": "NOT TESTED — 1 comparable episode(s) is too small a sample to conclude anything about reliability or speed",
+  "limitations": [
+    "counterfactual replay over recorded outcomes; the network at the time is not reproduced",
+    "an episode is excluded when a policy wants an (node, core) outcome the corpus does not hold",
+    "accuracy of a probability from fewer than MIN_SAMPLES observations is not claimed by the engine itself",
+    "sample of 1 comparable episodes is too small for a reliability claim"
+  ]
+}

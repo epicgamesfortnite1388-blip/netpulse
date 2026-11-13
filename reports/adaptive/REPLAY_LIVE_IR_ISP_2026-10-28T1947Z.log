@@ -1,0 +1,70 @@
+﻿npm warn install-scripts .npmrc allow-scripts setting is being ignored because --allow-scripts was passed on the command line
+npm notice run netpulse@1.1.1 npx
+npm notice run tsx E:\Code\Project\Vpn_app\scripts\bench-adaptive-replay.ts
+
+live corpus · 15 of 15 nodes · cores xray, sing-box, v2ray
+  endpoint https://httpbin.org/ip · timeout 8000ms · one attempt per (node, core), sequential
+
+  xray     vps-vless-443                       failed: probe timed out
+  sing-box vps-vless-443                       failed: probe timed out
+  xray     line 2 (vmess)                      ok 1395ms
+  sing-box line 2 (vmess)                      ok 705ms
+  v2ray    line 2 (vmess)                      ok 658ms
+  xray     vps-vless-2053                      ok 749ms
+  sing-box vps-vless-2053                      ok 804ms
+  v2ray    vps-vless-2053                      failed: probe timed out
+  xray     vps-trojan-2087                     ok 3684ms
+  sing-box vps-trojan-2087                     ok 750ms
+  v2ray    vps-trojan-2087                     ok 705ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 7354ms
+  sing-box vps-vless-443                       failed: probe timed out
+  xray     line 7 (vmess)                      ok 674ms
+  sing-box line 7 (vmess)                      ok 5389ms
+  v2ray    line 7 (vmess)                      failed: probe timed out
+  xray     vps-vless-2053                      ok 764ms
+  sing-box vps-vless-2053                      ok 829ms
+  v2ray    vps-vless-2053                      failed: probe timed out
+  xray     vps-trojan-2087                     ok 689ms
+  sing-box vps-trojan-2087                     ok 754ms
+  v2ray    vps-trojan-2087                     ok 802ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+  xray     vps-vless-443                       ok 740ms
+  sing-box vps-vless-443                       ok 5602ms
+  xray     line 12 (vmess)                     ok 3070ms
+  sing-box line 12 (vmess)                     ok 3098ms
+  v2ray    line 12 (vmess)                     ok 2776ms
+  xray     vps-vless-2053                      ok 725ms
+  sing-box vps-vless-2053                      ok 764ms
+  v2ray    vps-vless-2053                      ok 823ms
+  xray     vps-trojan-2087                     ok 1699ms
+  sing-box vps-trojan-2087                     ok 5739ms
+  v2ray    vps-trojan-2087                     ok 861ms
+  sing-box vps-hysteria2-8443                  failed: sing-box rejected the config: core exited duri
+
+baseline vs adaptive · replay of REAL outcomes
+  corpus        live measurement through the app's own proxy probe over C:\Users\RADIN\AppData\Local\Temp\vps-corpus.txt (xray, sing-box, v2ray)
+  attempts      36 recorded
+  policies      fixed order (xray → hysteria → sing-box → v2ray) vs ranked decisions, budget 2 attempt(s)
+
+  metric                                        baseline    adaptive
+  ────────────────────────────────────────────────────────────────────
+  episodes compared                                   15          15
+  episodes excluded (no recorded outcome)              0           0
+  reached a working core                           73.3%       73.3%
+  worked on the FIRST core tried                   73.3%       73.3%
+  mean attempts per episode                            1           1
+  p50 ms to a working core                           764         764
+  p95 ms to a working core                          7354        7354
+  attempts spent on a core that never worked           4           4
+  baseline first core by episode: xray x12 sing-box x3
+  first-core choice differed from baseline: 0 of 15 episodes
+  adaptive won the first attempt where baseline did not: 0
+  adaptive lost the first attempt where baseline won:  0
+
+  verdict: PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won
+  caveat: a counterfactual replay scores recorded outcomes; it cannot reproduce the network,
+          run-to-run flakiness, or what else was happening on this machine at the time.
+
+  evidence written to E:\Code\Project\Vpn_app\reports\adaptive\REPLAY_LIVE_IR_ISP_2026-10-28T1947Z.json
+

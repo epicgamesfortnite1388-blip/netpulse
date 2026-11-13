@@ -1,0 +1,303 @@
+{
+  "generatedAt": "2026-11-03T17:18:57.545Z",
+  "tunnelPort": 1819,
+  "resolver": "1.1.1.1:53 over DNS-over-TCP through SOCKS5",
+  "rounds": 5,
+  "names": [
+    "api.ipify.org",
+    "www.cloudflare.com",
+    "example.com"
+  ],
+  "samples": 15,
+  "localResolved": 15,
+  "tunnelResolved": 15,
+  "localMedianMs": 0,
+  "tunnelMedianMs": 80,
+  "sameAnswerCount": 15,
+  "differentAnswerCount": 0,
+  "endToEndExitIp": "104.28.197.9",
+  "endToEndNote": "resolved 104.x/172.x in tunnel → CONNECT 104.26.13.205:80 → 104.28.197.9",
+  "verdict": "DNS resolved through the tunnel in every round; payload still reaches the same destination",
+  "details": [
+    {
+      "name": "api.ipify.org",
+      "local": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.12.205",
+          "104.26.13.205"
+        ],
+        "ms": 90
+      },
+      "tunnel": {
+        "addresses": [
+          "104.26.13.205",
+          "104.26.12.205",
+          "172.67.74.152"
+        ],
+        "elapsedMs": 93
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "www.cloudflare.com",
+      "local": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "ms": 1
+      },
+      "tunnel": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "elapsedMs": 73
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "example.com",
+      "local": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "elapsedMs": 84
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "api.ipify.org",
+      "local": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.12.205",
+          "104.26.13.205"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.26.12.205",
+          "172.67.74.152",
+          "104.26.13.205"
+        ],
+        "elapsedMs": 80
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "www.cloudflare.com",
+      "local": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "ms": 1
+      },
+      "tunnel": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "elapsedMs": 89
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "example.com",
+      "local": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "172.66.147.243",
+          "104.20.23.154"
+        ],
+        "elapsedMs": 78
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "api.ipify.org",
+      "local": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.12.205",
+          "104.26.13.205"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.26.13.205",
+          "104.26.12.205",
+          "172.67.74.152"
+        ],
+        "elapsedMs": 77
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "www.cloudflare.com",
+      "local": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "ms": 1
+      },
+      "tunnel": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "elapsedMs": 90
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "example.com",
+      "local": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "elapsedMs": 75
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "api.ipify.org",
+      "local": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.12.205",
+          "104.26.13.205"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.26.12.205",
+          "172.67.74.152",
+          "104.26.13.205"
+        ],
+        "elapsedMs": 78
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "www.cloudflare.com",
+      "local": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.16.123.96",
+          "104.16.124.96"
+        ],
+        "elapsedMs": 78
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "example.com",
+      "local": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "elapsedMs": 79
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "api.ipify.org",
+      "local": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.12.205",
+          "104.26.13.205"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "172.67.74.152",
+          "104.26.13.205",
+          "104.26.12.205"
+        ],
+        "elapsedMs": 80
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "www.cloudflare.com",
+      "local": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "ms": 0
+      },
+      "tunnel": {
+        "addresses": [
+          "104.16.124.96",
+          "104.16.123.96"
+        ],
+        "elapsedMs": 81
+      },
+      "sameAnswer": true
+    },
+    {
+      "name": "example.com",
+      "local": {
+        "addresses": [
+          "104.20.23.154",
+          "172.66.147.243"
+        ],
+        "ms": 1
+      },
+      "tunnel": {
+        "addresses": [
+          "172.66.147.243",
+          "104.20.23.154"
+        ],
+        "elapsedMs": 99
+      },
+      "sameAnswer": true
+    }
+  ]
+}

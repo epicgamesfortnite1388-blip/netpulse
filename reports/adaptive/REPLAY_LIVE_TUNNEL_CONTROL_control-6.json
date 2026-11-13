@@ -1,0 +1,417 @@
+{
+  "generatedAt": "2026-10-27T14:49:54.234Z",
+  "source": "live",
+  "corpus": "live measurement through the app's own proxy probe over C:\\Users\\RADIN\\AppData\\Local\\Temp\\vps-corpus.txt (xray, sing-box, v2ray)",
+  "host": {
+    "platform": "win32",
+    "node": "v24.18.0"
+  },
+  "live": {
+    "installedCores": [
+      "xray",
+      "sing-box",
+      "v2ray"
+    ],
+    "skippedNodes": 0,
+    "timeoutMs": 8000,
+    "endpoint": "https://httpbin.org/ip"
+  },
+  "attemptBudget": 2,
+  "attemptsRecorded": 36,
+  "rows": [
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:0",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1725,
+      "at": 1793112548947,
+      "error": null
+    },
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:0",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 892,
+      "at": 1793112550673,
+      "error": null
+    },
+    {
+      "node": "line 2 (vmess)",
+      "nodeId": "file:1",
+      "protocol": "vmess",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 803,
+      "at": 1793112551568,
+      "error": null
+    },
+    {
+      "node": "line 2 (vmess)",
+      "nodeId": "file:1",
+      "protocol": "vmess",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 872,
+      "at": 1793112552372,
+      "error": null
+    },
+    {
+      "node": "line 2 (vmess)",
+      "nodeId": "file:1",
+      "protocol": "vmess",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1305,
+      "at": 1793112553245,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:2",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 943,
+      "at": 1793112554560,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:2",
+      "protocol": "vless",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 914,
+      "at": 1793112555504,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:2",
+      "protocol": "vless",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1936,
+      "at": 1793112556419,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:3",
+      "protocol": "trojan",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 938,
+      "at": 1793112558367,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:3",
+      "protocol": "trojan",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 915,
+      "at": 1793112559306,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:3",
+      "protocol": "trojan",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1355,
+      "at": 1793112560222,
+      "error": null
+    },
+    {
+      "node": "vps-hysteria2-8443",
+      "nodeId": "file:4",
+      "protocol": "hysteria2",
+      "engine": "sing-box",
+      "ok": false,
+      "totalMs": 65,
+      "at": 1793112561585,
+      "error": "sing-box rejected the config: core exited during startup (code 1) — \u001b[31mFATAL\u001b[0m[0000] create service: initialize outbound[0]: missing obfs password"
+    },
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:5",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 832,
+      "at": 1793112561658,
+      "error": null
+    },
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:5",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 3254,
+      "at": 1793112562491,
+      "error": null
+    },
+    {
+      "node": "line 7 (vmess)",
+      "nodeId": "file:6",
+      "protocol": "vmess",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 841,
+      "at": 1793112565753,
+      "error": null
+    },
+    {
+      "node": "line 7 (vmess)",
+      "nodeId": "file:6",
+      "protocol": "vmess",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 896,
+      "at": 1793112566595,
+      "error": null
+    },
+    {
+      "node": "line 7 (vmess)",
+      "nodeId": "file:6",
+      "protocol": "vmess",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1240,
+      "at": 1793112567493,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:7",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1009,
+      "at": 1793112568742,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:7",
+      "protocol": "vless",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 924,
+      "at": 1793112569752,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:7",
+      "protocol": "vless",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1577,
+      "at": 1793112570677,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:8",
+      "protocol": "trojan",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1163,
+      "at": 1793112572261,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:8",
+      "protocol": "trojan",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 950,
+      "at": 1793112573425,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:8",
+      "protocol": "trojan",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1324,
+      "at": 1793112574376,
+      "error": null
+    },
+    {
+      "node": "vps-hysteria2-8443",
+      "nodeId": "file:9",
+      "protocol": "hysteria2",
+      "engine": "sing-box",
+      "ok": false,
+      "totalMs": 65,
+      "at": 1793112575708,
+      "error": "sing-box rejected the config: core exited during startup (code 1) — \u001b[31mFATAL\u001b[0m[0000] create service: initialize outbound[0]: missing obfs password"
+    },
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:10",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 824,
+      "at": 1793112575781,
+      "error": null
+    },
+    {
+      "node": "vps-vless-443",
+      "nodeId": "file:10",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": false,
+      "totalMs": 8144,
+      "at": 1793112576606,
+      "error": "probe timed out"
+    },
+    {
+      "node": "line 12 (vmess)",
+      "nodeId": "file:11",
+      "protocol": "vmess",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 811,
+      "at": 1793112584759,
+      "error": null
+    },
+    {
+      "node": "line 12 (vmess)",
+      "nodeId": "file:11",
+      "protocol": "vmess",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 849,
+      "at": 1793112585571,
+      "error": null
+    },
+    {
+      "node": "line 12 (vmess)",
+      "nodeId": "file:11",
+      "protocol": "vmess",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1327,
+      "at": 1793112586421,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:12",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 960,
+      "at": 1793112587757,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:12",
+      "protocol": "vless",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 939,
+      "at": 1793112588719,
+      "error": null
+    },
+    {
+      "node": "vps-vless-2053",
+      "nodeId": "file:12",
+      "protocol": "vless",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1411,
+      "at": 1793112589659,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:13",
+      "protocol": "trojan",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 860,
+      "at": 1793112591078,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:13",
+      "protocol": "trojan",
+      "engine": "sing-box",
+      "ok": true,
+      "totalMs": 892,
+      "at": 1793112591939,
+      "error": null
+    },
+    {
+      "node": "vps-trojan-2087",
+      "nodeId": "file:13",
+      "protocol": "trojan",
+      "engine": "v2ray",
+      "ok": true,
+      "totalMs": 1327,
+      "at": 1793112592832,
+      "error": null
+    },
+    {
+      "node": "vps-hysteria2-8443",
+      "nodeId": "file:14",
+      "protocol": "hysteria2",
+      "engine": "sing-box",
+      "ok": false,
+      "totalMs": 63,
+      "at": 1793112594166,
+      "error": "sing-box rejected the config: core exited during startup (code 1) — \u001b[31mFATAL\u001b[0m[0000] create service: initialize outbound[0]: missing obfs password"
+    }
+  ],
+  "episodes": 15,
+  "comparableEpisodes": 15,
+  "excludedEpisodes": 0,
+  "baseline": {
+    "episodes": 15,
+    "succeeded": 12,
+    "successRate": "80.0%",
+    "firstChoiceOk": 12,
+    "firstChoiceRate": "80.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": 860,
+    "p95MsToWorking": 1725,
+    "wastedAttempts": 3
+  },
+  "adaptive": {
+    "episodes": 15,
+    "succeeded": 12,
+    "successRate": "80.0%",
+    "firstChoiceOk": 12,
+    "firstChoiceRate": "80.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": 860,
+    "p95MsToWorking": 1725,
+    "wastedAttempts": 3
+  },
+  "firstChoiceDiffered": 0,
+  "adaptiveWins": 0,
+  "adaptiveLosses": 0,
+  "verdict": "PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won",
+  "limitations": [
+    "counterfactual replay over recorded outcomes; the network at the time is not reproduced",
+    "an episode is excluded when a policy wants an (node, core) outcome the corpus does not hold",
+    "accuracy of a probability from fewer than MIN_SAMPLES observations is not claimed by the engine itself"
+  ]
+}

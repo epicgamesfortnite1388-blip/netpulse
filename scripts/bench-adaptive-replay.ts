@@ -84,6 +84,14 @@ const TIMEOUT_MS = Number(process.env['TIMEOUT_MS'] ?? 8_000);
 /** The app's own fallback probe target (`resolveTestEndpoint`'s default). */
 const TEST_URL = process.env['TEST_URL'] ?? 'https://httpbin.org/ip';
 const ATTEMPTS = Math.max(1, Number(process.env['ATTEMPTS'] ?? 2));
+/**
+ * Override the uncertainty margin, so two policies can be replayed over the SAME
+ * recorded corpus. `0` is the pre-2026-11-05 point-estimate ordering; unset uses
+ * whatever the shipped policy says. This is how the change is measured instead of
+ * asserted.
+ */
+const UNCERTAINTY_Z =
+  process.env['UNCERTAINTY_Z'] != null && process.env['UNCERTAINTY_Z'] !== '' ? Number(process.env['UNCERTAINTY_Z']) : null;
 const EPISODE_GAP_MS = Math.max(60_000, Number(process.env['EPISODE_GAP_MS'] ?? 5 * 60_000));
 const CORPUS_JSON = process.env['CORPUS_JSON'] ?? null;
 const ENGINES = (process.env['ENGINES'] ?? '')
@@ -470,7 +478,7 @@ function replay(attempts: readonly Attempt[]) {
       strategies,
       baselineOrder: strategies.map((s) => s.id),
       now,
-      options: { explorationShare: 0 },
+      options: { explorationShare: 0, ...(UNCERTAINTY_Z != null ? { uncertaintyZ: UNCERTAINTY_Z } : {}) },
       attemptBudget: ATTEMPTS,
     });
     const adaptiveOrder = decisions.map((d) => engineOfStrategy(d.strategyId));
@@ -690,6 +698,8 @@ async function main(): Promise<void> {
     host: { platform: process.platform, node: process.version },
     live: live ? { installedCores: live.installed, skippedNodes: live.skipped, timeoutMs: TIMEOUT_MS, endpoint: TEST_URL } : null,
     attemptBudget: ATTEMPTS,
+    /** null = the shipped policy; 0 = pre-change point estimate; 2 = shipped bound */
+    uncertaintyZ: UNCERTAINTY_Z ?? null,
     attemptsRecorded: attempts.length,
     /**
      * Every recorded outcome, so the report can be audited without a rerun: the

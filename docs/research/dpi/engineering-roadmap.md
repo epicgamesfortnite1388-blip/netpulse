@@ -1,5 +1,11 @@
 # Engineering Roadmap
 
+> **This file is the identifier ledger** (DPI-nn, with its evidence and the
+> conditions under which it was closed). The consolidated, ordered plan that
+> supersedes the scoping here is [`ROADMAP.md`](ROADMAP.md) (2026-11-02), which
+> re-ranks the transport ladder around the two paths that survive without a
+> server. Keep the DPI IDs here; plan effects there.
+
 Ranked by user impact and evidence strength. Status reflects this iteration
 (2026-10-25).
 
@@ -73,3 +79,33 @@ missing implementation.
 - Do not copy proprietary Android code or ship an APK.
 - Do not claim Iran readiness from VPS-only tests.
 - Do not enable an experimental transport globally after one success.
+
+## Post-VPS re-plan (2026-11-02)
+
+The single provider host is retired (`reports/accounting/VPS_LOSS_ACCOUNTING_2026-11-02.md`).
+Every item below assumed a server that no longer exists, so the roadmap is re-cut around
+the two delivery paths that survive without one: **Aether** (serverless, discovers its own
+route) and the **free-source catalog** (community feeds, measured live).
+
+| ID | Task | Why it is now first | Acceptance | Status |
+|---|---|---|---|---|
+| P0-01 | Aether end-to-end on Windows: verified install → connect → exit-IP proof | it is the only tunnel that needs no host; if this is unproven the product has no working path | `POST /vpn/aether/engine/install`, connect, exit IP differs from baseline, evidence recorded | **OPEN** |
+| P0-02 | Free-source health gate before any count is trusted | 2 of 11 built-ins were dead repositories when measured; stale counts are claims | `npm run probe:sources` green, report regenerated | **DONE** (probe shipped; 9/9 live, 34,150 configs) |
+| P0-03 | Retire dead built-ins without breaking existing installs | seeding never overwrites, so a dead feed could stay enabled forever | `retired` flag + seed disables an existing row | **DONE** |
+| P1-01 | Decide: replace the host, or drop paid per-user configs | provisioning currently cannot deliver anything | written decision + matching plan copy | **OPEN** |
+| P1-02 | WhiteDNS: resurrect with a new server *and* per-user zones, or withdraw the feature | its server and zone delegation died with the host | either a live delegation + tunnel test, or the feature removed from plans/docs | **BLOCKED** (needs a new host) |
+| P1-03 | Entitlement mirror against live D1 | code is green; the live read is untested from this workstation | signed-event round trip evidenced | **NOT TESTED** |
+
+Marked **MOOT** by the loss (they described the retired host and cannot be closed or
+reopened from the repository): DPI-10 (shipping Windows WhiteDNS client), DPI-12 (rotate
+the exposed panel path), DPI-13 (child-zone NS/SOA conformance), DPI-14 (Windows client
+test without a conflicting TUN), DPI-24 (WhiteDNS throughput on a real VPS). DPI-11's
+issuance half stays closed only in the sense that nothing is issued at all.
+
+Unchanged and still worth doing, because they need no host: DPI-20 (multi-vantage
+attempt matrices against free configs), DPI-21 (bounded transport selector), DPI-22 (DNS
+leak tests per mode), DPI-25 (licence review), DPI-30..DPI-34 (research).
+
+Do-not-do additions: do not present a retired host's latency as current; do not add a
+source whose bytes are identical to an existing one (V2RayAggregator == ShadowsocksAggregator,
+verified by SHA256); do not re-enable a retired built-in without a fresh live measurement.

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { describeContextBucket } from '@netpulse/shared';
 
 import { toParsedConfig } from '../services/proxyTunnel';
+import { replyApiError } from '../util/apiError';
 
 import type { ProxyEngineId, ScanProfileId } from '@netpulse/shared';
 import type { FastifyInstance } from 'fastify';
@@ -74,9 +75,9 @@ export function registerAdaptiveRoutes(app: FastifyInstance, ctx: AppContext): v
     const parsed = NodeQuery.safeParse(req.query ?? {});
     if (!parsed.success) throw parsed.error;
     const nodeId = parsed.data.nodeId;
-    if (!nodeId) return reply.status(400).send({ error: 'invalid_request', message: 'nodeId is required' });
+    if (!nodeId) return replyApiError(reply, 400, 'invalid_request', 'nodeId is required');
     const config = configFor(nodeId);
-    if (!config) return reply.status(404).send({ error: 'not_found', message: 'no such node' });
+    if (!config) return replyApiError(reply, 404, 'not_found', 'no such node');
 
     const settings = ctx.services.settings.get();
     const preferred = settings.proxyEngine?.preferred ?? 'auto';

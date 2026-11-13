@@ -1,0 +1,10 @@
+   Compiling netpulse-desktop v1.1.1 (E:\Code\Project\Vpn_app\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.61s
+     Running tests\navigation_webview.rs (src-tauri\target\debug\deps\navigation_webview-e538c18289166909.exe)
+
+running 1 test
+test the_navigation_backstop_holds_in_a_real_webview ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.51s
+
+TEST_EXIT=0

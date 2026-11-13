@@ -566,6 +566,53 @@ deployment evidence.
 - **License / confidence:** Cloudflare blog terms / **High** for protocol
   explanation.
 
+### S36 — Psiphon Tunnel Core
+
+- **URL:** https://github.com/Psiphon-Labs/psiphon-tunnel-core
+- **Type / Iran relevance:** production circumvention core / indirect (Psiphon
+  publishes Iran usage figures and operates in-country)
+- **Date / version:** pushed 2026-11-02 (metadata re-read 2026-11-03); GPL-3.0;
+  1,199 stars
+- **Findings:** Go client/server ``core'' used by the shipping Psiphon 3 clients;
+  the README states the tunnel is an SSH connection that protects traffic
+  between client and proxy, and that the components handle *evading blocking*
+  rather than only transporting bytes. Remote server lists are fetched out of
+  band so the client does not need a working address at install time.
+- **Evidence:** GitHub API metadata and README, read 2026-11-03. No code audit,
+  no local build (the project needs a specific Go toolchain; an Arch forum
+  report on 2026-09-05 records build failures on newer compilers).
+- **Limitations:** an active repository is not an Iranian measurement; the
+  remote-server-list mechanism depends on Psiphon's own distribution channels,
+  which a third-party client cannot replicate.
+- **NetPulse implication:** the *pattern* worth borrowing is out-of-band seed
+  distribution plus transport rotation, not the SSH tunnel itself; it also
+  confirms that a hard-coded endpoint list is the first thing to fail.
+- **License / confidence:** GPL-3.0 / **High** that the project is active and
+  production-used; **Low** for any Iran-efficacy claim.
+
+### S37 — Tor anti-censorship group (bridgestatus)
+
+- **URL:** https://gitlab.torproject.org/tpo/anti-censorship/
+- **Type / Iran relevance:** measurement + pluggable transports / general-purpose
+  with direct Iranian relevance in the bridge-distribution work
+- **Date / version:** group listed 24 projects on 2026-11-03; the
+  `connectivity-measurement/bridgestatus` project was last active 2026-10-16
+- **Findings:** the group hosts bridge distribution, pluggable-transport and
+  connectivity-measurement work. `bridgestatus` measures reachability of
+  bridges from distributed vantage points — the same shape of evidence this
+  project lacks (many vantage points, per-endpoint outcomes) rather than a
+  single-path handshake.
+- **Evidence:** GitLab API (group and project metadata) read 2026-11-03;
+  repository contents not inspected line by line.
+- **Limitations:** Tor-specific transports and distribution assumptions do not
+  transfer to a SOCKS5/Xray product; the measurements are about Tor bridges.
+- **NetPulse implication:** the honest model for F-05 is a *reachability matrix
+  over time and vantage*, not one success rate — which is why the current
+  measurements are labelled lab-only.
+- **License / confidence:** Tor project licensing varies per repository (not
+  reviewed) / **Medium** for the architectural point, **High** that the
+  measurement approach is the right one.
+
 ## E. What is still missing
 
 The registry is intentionally not padded with unrelated projects. A complete

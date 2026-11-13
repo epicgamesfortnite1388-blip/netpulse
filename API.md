@@ -149,7 +149,7 @@ system route.
 | GET | `/nodes/stats` | Node database totals + protocol/country/transport breakdowns, each a COUNT over the stored rows |
 | GET | `/nodes/engines` | Local proxy-core availability (xray / sing-box): installed, path, protocols, which engine proxy tests will use. Cores are found on `PATH` or dropped into `<dataDir>/cores/` (or `NETPULSE_CORES_DIR`) |
 | POST | `/cloudflare/scan` | Start a Cloudflare endpoint scan. CIDRs /8–/32 accepted; large published ranges (e.g. the default `104.16.0.0/13`, `172.64.0.0/13`) are sampled on an even stride up to `maxCandidates`; private/reserved bases rejected |
-| GET | `/sources` | Public node sources (built-ins seeded into the DB at boot; DB is authoritative). Built-in catalog: 11 v2ray-flavoured subscription lists (`All_Configs_Sub.txt`-style), each with the per-source counts it really returned |
+| GET | `/sources` | Public node sources (built-ins seeded into the DB at boot; DB is authoritative). Built-in catalog: 11 v2ray-flavoured subscription lists (`All_Configs_Sub.txt`-style), each with the per-source counts it really returned. Every source also carries `redistributionPermission` — `discovery-only` (default: may be fetched and tested, never shipped), `redistribution-allowed` (explicit grant) or `prohibited` (its licence is incompatible with redistribution) — derived from the source registry, never stored |
 | POST | `/sources` | Add a custom source `{ name, urls[] }` (https public hosts only) |
 | PATCH | `/sources/:id` | Enable/disable a source |
 | DELETE | `/sources/:id` | Remove a custom source |

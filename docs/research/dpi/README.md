@@ -71,6 +71,9 @@ Iranian-ISP result.
 - [`architecture-proposal.md`](architecture-proposal.md) — recommended
   NetPulse design.
 - [`engineering-roadmap.md`](engineering-roadmap.md) — prioritized work.
+- [`ROADMAP.md`](ROADMAP.md) — the consolidated, ordered plan (2026-11-02):
+  workstreams, sequence, traceability to this corpus, and the evidence each
+  task must produce.
 - [`security-review.md`](security-review.md) — privacy, abuse, and secrets.
 - [`mission-journal.md`](mission-journal.md) — durable resume state.
 

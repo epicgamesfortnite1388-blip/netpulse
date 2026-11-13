@@ -1,0 +1,49 @@
+workdir: tmp/reconcile-failure
+note: cache seeded as an applied pass would leave it (--print never writes state.json)
+note: apply-mode happy path not exercised (pass --apply on a host with a real xray binary)
+seeded identities: 2 accounts × 5 protocols
+pull-failure log lines: 2026-10-27T13:52:11Z pull failed: HTTP Error 500: Internal Server Error
+
+=== checks ===
+[PASS] healthy pass: the set came from the endpoint (source: cloud)
+[PASS] healthy pass: an identical published set rewrites nothing (byte-identical config)
+[PASS] HTTP 500: the reconciler fell back to its last known-good set (source: state)
+[PASS] HTTP 500: the emitted config is byte-identical to the last known-good one (no wipe)
+[PASS] HTTP 500: the failure is logged, not swallowed
+[PASS] endpoint unreachable: still source: state (no fail-open, no fail-wipe)
+[PASS] endpoint unreachable: emitted config unchanged
+[PASS] unknown protocol in the payload: treated as a failed pull
+[PASS] unknown protocol: the rejection says why
+[PASS] unknown protocol: the malformed identity never reaches the config
+[PASS] illegal secret: the entry is rejected, nothing is written
+[PASS] an already-expired identity never reaches the config
+[PASS] outage with a cached set: source: state
+[PASS] outage: an identity whose expiry passed is still pruned locally - access ends on time without the Worker
+[PASS] outage: the still-valid identities are untouched (only the expired one went)
+[PASS] recovery: the fresh set is pulled again (source: cloud)
+[PASS] recovery: the rotated identity now carries the new hysteria2 secret
+[PASS] recovery: the rotated identity now carries the new xray-trojan-tls secret
+[PASS] recovery: the rotated identity now carries the new xray-vless-reality secret
+[PASS] recovery: the rotated identity now carries the new xray-vless-ws-tls secret
+[PASS] recovery: the rotated identity now carries the new xray-vmess-ws secret
+[PASS] recovery: the rotated-away secret is gone from the config
+[PASS] recovery: the revoked identity is gone from the config
+[PASS] recovery: the newly entitled identity is written
+[PASS] recovery: the surviving (rotated) subscriber is kept and the expired identity stays out
+[PASS] post-recovery outage: the revoked identity is NOT resurrected from cache
+[PASS] post-recovery outage: the new hysteria2 secret stays in place
+[PASS] post-recovery outage: the new xray-trojan-tls secret stays in place
+[PASS] post-recovery outage: the new xray-vless-reality secret stays in place
+[PASS] post-recovery outage: the new xray-vless-ws-tls secret stays in place
+[PASS] post-recovery outage: the new xray-vmess-ws secret stays in place
+[PASS] apply with an unusable xray binary exits 2 (got 2)
+[PASS] apply: the validation gate refuses to write an unvalidated config
+[PASS] apply: the refusal wrote neither config nor state cache (fail-closed)
+[PASS] no cache + no endpoint exits 1 (got 1)
+[PASS] no cache: no config is emitted at all
+[PASS] no cache: the existing server config is left exactly as it was
+[PASS] no cache: last-run records why nothing was done
+[PASS] no cache: no empty set is cached either (a later Worker outage still cannot wipe anyone)
+[PASS] --print passes never modified the sandbox configs (and the live ones are hash-guarded)
+
+40/40 checks passed

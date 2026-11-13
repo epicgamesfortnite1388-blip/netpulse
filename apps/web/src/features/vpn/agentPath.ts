@@ -43,12 +43,6 @@ export interface AgentPathEvent {
   ok?: boolean;
 }
 
-const FAILED_STAGES = new Set(['core-failed', 'verification-failed']);
-
-function isFailure(event: AgentPathEvent): boolean {
-  return event.stage != null && FAILED_STAGES.has(event.stage);
-}
-
 /**
  * The events that describe the attempt currently in flight.
  *

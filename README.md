@@ -89,7 +89,7 @@ npm start -w @netpulse/api   # serves the API and the built UI from one process
 
 ```bash
 npm run lint        # ESLint over all packages (incl. react-hooks rules)
-npm test            # Vitest unit + API integration tests (973 tests across shared/api/web)
+npm test            # Vitest unit + API integration tests (1,806 tests across shared/api/web)
 npm run audit:ci    # circular-deps + dead-export + unused-dependency gate
 npm run test:deploy # boots the INSTALLED backend bundle: auth, real measurements, persistence
 npm run build       # typecheck + production bundles

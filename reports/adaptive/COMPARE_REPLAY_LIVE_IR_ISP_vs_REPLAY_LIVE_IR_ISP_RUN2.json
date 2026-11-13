@@ -1,0 +1,188 @@
+{
+  "generatedAt": "2026-10-28T18:55:24.193Z",
+  "comparison": {
+    "kind": "same corpus and same arm — repeatability / time-of-day comparison",
+    "sameCorpus": true,
+    "samePlatform": true,
+    "armA": "isp",
+    "armB": "isp"
+  },
+  "a": {
+    "label": "REPLAY_LIVE_IR_ISP",
+    "file": "reports/adaptive/REPLAY_LIVE_IR_ISP.json",
+    "generatedAt": "2026-10-27T13:10:54.380Z",
+    "corpus": "live measurement through the app's own proxy probe over C:\\Users\\RADIN\\AppData\\Local\\Temp\\vps-corpus.txt (xray, sing-box, v2ray)",
+    "attempts": {
+      "total": 36,
+      "ok": 22,
+      "pct": 61.111111111111114
+    },
+    "arm": "isp"
+  },
+  "b": {
+    "label": "REPLAY_LIVE_IR_ISP_RUN2",
+    "file": "reports/adaptive/REPLAY_LIVE_IR_ISP_RUN2.json",
+    "generatedAt": "2026-10-27T13:12:52.226Z",
+    "corpus": "live measurement through the app's own proxy probe over C:\\Users\\RADIN\\AppData\\Local\\Temp\\vps-corpus.txt (xray, sing-box, v2ray)",
+    "attempts": {
+      "total": 36,
+      "ok": 30,
+      "pct": 83.33333333333334
+    },
+    "arm": "isp"
+  },
+  "rows": {
+    "compared": 33,
+    "agreementPct": 78.8,
+    "bothOk": 22,
+    "bothFail": 4,
+    "onlyA": 0,
+    "onlyB": 7,
+    "onlyInA": [],
+    "onlyInB": [],
+    "flips": [
+      {
+        "key": "file:11|xray",
+        "node": "line 12 (vmess)",
+        "nodeId": "file:11",
+        "protocol": "vmess",
+        "engine": "xray",
+        "workedOn": "B",
+        "aMs": 8086,
+        "bMs": 1058,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:12|xray",
+        "node": "vps-vless-2053",
+        "nodeId": "file:12",
+        "protocol": "vless",
+        "engine": "xray",
+        "workedOn": "B",
+        "aMs": 8093,
+        "bMs": 1111,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:13|v2ray",
+        "node": "vps-trojan-2087",
+        "nodeId": "file:13",
+        "protocol": "trojan",
+        "engine": "v2ray",
+        "workedOn": "B",
+        "aMs": 8087,
+        "bMs": 5905,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:3|v2ray",
+        "node": "vps-trojan-2087",
+        "nodeId": "file:3",
+        "protocol": "trojan",
+        "engine": "v2ray",
+        "workedOn": "B",
+        "aMs": 8093,
+        "bMs": 1113,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:5|xray",
+        "node": "vps-vless-443",
+        "nodeId": "file:5",
+        "protocol": "vless",
+        "engine": "xray",
+        "workedOn": "B",
+        "aMs": 8172,
+        "bMs": 955,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:8|sing-box",
+        "node": "vps-trojan-2087",
+        "nodeId": "file:8",
+        "protocol": "trojan",
+        "engine": "sing-box",
+        "workedOn": "B",
+        "aMs": 8113,
+        "bMs": 928,
+        "aError": "probe timed out"
+      },
+      {
+        "key": "file:8|xray",
+        "node": "vps-trojan-2087",
+        "nodeId": "file:8",
+        "protocol": "trojan",
+        "engine": "xray",
+        "workedOn": "B",
+        "aMs": 8091,
+        "bMs": 874,
+        "aError": "probe timed out"
+      }
+    ]
+  },
+  "aggregate": {
+    "a": {
+      "baseline": {
+        "episodes": 15,
+        "succeeded": 8,
+        "successRate": "53.3%",
+        "firstChoiceOk": 6,
+        "firstChoiceRate": "40.0%",
+        "meanAttempts": 1.2,
+        "p50MsToWorking": 1381,
+        "p95MsToWorking": 12926,
+        "wastedAttempts": 8
+      },
+      "adaptive": {
+        "episodes": 15,
+        "succeeded": 8,
+        "successRate": "53.3%",
+        "firstChoiceOk": 7,
+        "firstChoiceRate": "46.7%",
+        "meanAttempts": 1.13,
+        "p50MsToWorking": 1381,
+        "p95MsToWorking": 12926,
+        "wastedAttempts": 7
+      },
+      "wins": 1,
+      "losses": 0,
+      "firstChoiceDiffered": 2
+    },
+    "b": {
+      "baseline": {
+        "episodes": 15,
+        "succeeded": 10,
+        "successRate": "66.7%",
+        "firstChoiceOk": 10,
+        "firstChoiceRate": "66.7%",
+        "meanAttempts": 1,
+        "p50MsToWorking": 874,
+        "p95MsToWorking": 5924,
+        "wastedAttempts": 3
+      },
+      "adaptive": {
+        "episodes": 15,
+        "succeeded": 10,
+        "successRate": "66.7%",
+        "firstChoiceOk": 10,
+        "firstChoiceRate": "66.7%",
+        "meanAttempts": 1,
+        "p50MsToWorking": 874,
+        "p95MsToWorking": 5924,
+        "wastedAttempts": 3
+      },
+      "wins": 0,
+      "losses": 0,
+      "firstChoiceDiffered": 0
+    }
+  },
+  "verdicts": {
+    "a": "PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won",
+    "b": "PASS on this corpus — adaptive reaches a working core at least as often, no slower at p95, and loses nothing the baseline won"
+  },
+  "limitations": [
+    "counterfactual replay over recorded outcomes; the network at the time is not reproduced",
+    "an episode is excluded when a policy wants an (node, core) outcome the corpus does not hold",
+    "accuracy of a probability from fewer than MIN_SAMPLES observations is not claimed by the engine itself"
+  ]
+}

@@ -1324,6 +1324,17 @@ export function engineSupportsConfig(engine: ProxyEngineId, config: ParsedNodeCo
       error: `${engine}-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)`,
     };
   }
+  // Measured on xray 26.10.31: a feed node that says `reality` but carries no
+  // public key built a plaintext outbound (the key is what authenticates the
+  // server), and the core died at startup with "vless without TLS or other
+  // encryption is prohibited…". Reject it here, before a process is spawned, so
+  // the failure names the missing key instead of reporting an exit code.
+  if ((engine === 'xray' || engine === 'v2ray') && config.security === 'reality' && !config.realityPublicKey) {
+    return {
+      ok: false,
+      error: `${engine}-core cannot build REALITY without the node's public key; the config would fall back to plaintext, which the core refuses at startup`,
+    };
+  }
   if (engine !== 'v2ray') return { ok: true };
   if (config.security === 'reality' || config.realityPublicKey) {
     return { ok: false, error: 'v2ray-core does not support Reality (use xray or sing-box for this node)' };

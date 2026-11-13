@@ -18,6 +18,12 @@ account_id = "7380a67667052f3a7a3b11301ce7a77b"
 # it needs its own URL; staging likewise. Never copy one value across.
 [vars]
 EXPECTED_ORIGIN = "https://netpulse-cloud.shuridehradin.workers.dev"
+# AI Copilot proxy target (Abystral worker). Set ABYSTRAL_AI_BASE_URL to the
+# Abystral worker origin, e.g. https://abystral-telegram.<account>.workers.dev.
+# The desktop calls /api/v1/ai/ask; this Worker forwards to Abystral's
+# /admin/ai (authenticated with ABYSTRAL_AI_KEY). Without these, the endpoint
+# returns 503 — no fake responses are served.
+ABYSTRAL_AI_BASE_URL = ""
 
 [[d1_databases]]
 binding = "DB"

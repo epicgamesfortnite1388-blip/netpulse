@@ -1,0 +1,21 @@
+   Compiling netpulse-desktop v1.1.1 (E:\Code\Project\Vpn_app\src-tauri)
+error: failed to run custom build command for `netpulse-desktop v1.1.1 (E:\Code\Project\Vpn_app\src-tauri)`
+
+Caused by:
+  process didn't exit successfully: `E:\Code\Project\Vpn_app\src-tauri\target\debug\build\netpulse-desktop-840d6adb1e1f64aa\build-script-build` (exit code: 1)
+  --- stdout
+  cargo:rerun-if-env-changed=TAURI_CONFIG
+  cargo:rustc-check-cfg=cfg(desktop)
+  cargo:rustc-cfg=desktop
+  cargo:rustc-check-cfg=cfg(mobile)
+  cargo:rerun-if-changed=E:\Code\Project\Vpn_app\src-tauri\tauri.conf.json
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_APP_NAME=desktop
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_PREFIX=app_netpulse
+  cargo:rustc-check-cfg=cfg(dev)
+  cargo:rustc-cfg=dev
+  cargo:PERMISSION_FILES_PATH=E:\Code\Project\Vpn_app\src-tauri\target\debug\build\netpulse-desktop-c43592dd8b2e781d\out\app-manifest\__app__-permission-files
+  cargo:rerun-if-changed=capabilities
+  cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+  cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE=x86_64-pc-windows-msvc
+  resource path `backend` doesn't exist
+BUILD_EXIT=101

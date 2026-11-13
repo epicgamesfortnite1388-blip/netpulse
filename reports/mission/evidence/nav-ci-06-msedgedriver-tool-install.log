@@ -1,0 +1,42 @@
+    Updating git repository `https://github.com/chippers/msedgedriver-tool`
+  Installing msedgedriver-tool v0.2.2 (https://github.com/chippers/msedgedriver-tool#8c4b34f5)
+    Updating crates.io index
+     Locking 50 packages to latest Rust 1.98.1 compatible versions
+      Adding zip v4.6.1 (available: v9.1.2)
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling cfg-if v1.0.5
+   Compiling zeroize v1.9.1
+   Compiling httparse v1.10.1
+   Compiling untrusted v0.9.0
+   Compiling log v0.4.34
+   Compiling bytes v1.12.1
+   Compiling crc32fast v1.5.3
+   Compiling rustls v0.23.46
+   Compiling itoa v1.0.18
+   Compiling hashbrown v0.17.1
+   Compiling base64 v0.23.1
+   Compiling zlib-rs v0.6.8
+   Compiling equivalent v1.0.3
+   Compiling subtle v2.6.1
+   Compiling once_cell v1.21.4
+   Compiling utf8-zero v0.8.1
+   Compiling percent-encoding v2.3.2
+   Compiling memchr v2.8.3
+   Compiling getrandom v0.2.17
+   Compiling rustls-pki-types v1.15.1
+   Compiling cc v1.10.0
+   Compiling http v1.5.0
+   Compiling indexmap v2.14.2
+   Compiling webpki-roots v1.0.11
+   Compiling ureq-proto v0.6.5
+   Compiling ring v0.17.14
+   Compiling flate2 v1.1.10
+   Compiling zip v4.6.1
+   Compiling rustls-webpki v0.103.16
+   Compiling ureq v3.5.0
+   Compiling msedgedriver-tool v0.2.2 (D:\cargo\git\checkouts\msedgedriver-tool-e7d552771155a8d7\8c4b34f)
+    Finished `release` profile [optimized] target(s) in 26.91s
+  Installing D:\cargo\bin\msedgedriver-tool.exe
+   Installed package `msedgedriver-tool v0.2.2 (https://github.com/chippers/msedgedriver-tool#8c4b34f5)` (executable `msedgedriver-tool.exe`)
+EXIT=0

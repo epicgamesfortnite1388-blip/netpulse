@@ -124,6 +124,26 @@ export type SourceStatus = 'idle' | 'fetching' | 'parsing' | 'importing' | 'heal
 
 export type SourceHealth = 'excellent' | 'good' | 'fair' | 'poor' | 'unknown';
 
+/**
+ * What we may do with the endpoints a source makes visible.
+ *
+ * This is a legal fact, not a quality signal, and it defaults to the most
+ * restrictive useful value: unless a source explicitly grants more, nodes found
+ * through it may inform our own testing and discovery but may not be handed to
+ * paying customers (as a catalogue entry, an exported list, or a verified-proxy
+ * claim).
+ *
+ *   discovery-only         - may be fetched and tested; never redistributed.
+ *   redistribution-allowed - an explicit grant covers shipping the endpoints.
+ *   prohibited             - the licence (or its absence) is incompatible with
+ *                            redistribution; discovery and testing are
+ *                            unaffected, because reading a public list is not
+ *                            redistribution.
+ *
+ * Absent on a payload is treated as discovery-only.
+ */
+export type RedistributionPermission = 'discovery-only' | 'redistribution-allowed' | 'prohibited';
+
 export interface PublicSource {
   id: string;
   name: string;
@@ -152,6 +172,12 @@ export interface PublicSource {
   lastContentHash: string | null;
   /** human notes */
   notes?: string | null;
+  /**
+   * What we may redistribute from this source. Derived from the source registry
+   * rather than stored, so it always reflects the current classification;
+   * absent means discovery-only.
+   */
+  redistributionPermission?: RedistributionPermission;
   /** when the source was added */
   createdAt: number;
 }

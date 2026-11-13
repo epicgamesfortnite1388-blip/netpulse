@@ -1,5 +1,6 @@
 import type { Logger } from '../logger';
 import type { AppSettings } from '@netpulse/shared';
+import type { AgentPermissions } from './ai-agent/permissions';
 import type { NodesService } from './nodesService';
 
 /**
@@ -31,6 +32,12 @@ export class NodeTestScheduler {
       settings: { get: () => AppSettings; setOnChange?: (fn: () => void) => void };
       log: Logger;
       onTick?: (r: TickResult) => void;
+      /**
+       * Capability gate for the agent's unattended probing. Optional so tests and
+       * tooling can run a scheduler without the policy layer, but the real app
+       * always passes one: without it this loop would be an unpoliced prober.
+       */
+      permissions?: AgentPermissions;
     },
   ) {
     // A PUT /settings that touches automation re-arms immediately (same
@@ -94,7 +101,7 @@ export class NodeTestScheduler {
   /** One bounded adaptive batch. Serialized — overlapping ticks are dropped. */
   async tick(): Promise<TickResult> {
     if (this.running) {
-      return this.lastResult ?? { tested: 0, retired: 0, skippedRunning: true, prioritized: { neverValidated: 0, staleGood: 0, unstable: 0, rest: 0 } };
+      return this.lastResult ?? { tested: 0, retired: 0, skippedRunning: true, denied: null, prioritized: { neverValidated: 0, staleGood: 0, unstable: 0, rest: 0 } };
     }
     this.running = true;
     try {
@@ -137,6 +144,23 @@ export class NodeTestScheduler {
       for (const n of unstable) add(n.id);
     }
 
+    // ---- permission gate: the batch is an unattended network action ----
+    // Checked before the first dial, for the whole batch, so a denial cannot be
+    // half-spent. Retirement still runs: tidying the local database is not a
+    // network action and must not depend on the agent being allowed to probe.
+    if (candidates.length > 0) {
+      const gate = this.deps.permissions?.authorize('network:probe-endpoint', {
+        origin: 'autonomous',
+        count: candidates.length,
+        detail: 'scheduled TCP batch',
+      });
+      if (gate && !gate.allowed) {
+        const retired = svc.retireStaleNodes();
+        this.deps.log.info(`auto node test skipped: ${gate.code} — ${gate.reason}`);
+        return { tested: 0, retired, skippedRunning: false, denied: `${gate.code}: ${gate.reason}`, prioritized };
+      }
+    }
+
     // ---- execution: cheap, bounded TCP probes ----
     let tested = 0;
     const results = await Promise.allSettled(
@@ -151,7 +175,7 @@ export class NodeTestScheduler {
     // ---- retirement: dead + unseen for 14 days → stale ----
     const retired = svc.retireStaleNodes();
 
-    return { tested, retired, skippedRunning: false, prioritized };
+    return { tested, retired, skippedRunning: false, denied: null, prioritized };
   }
 }
 
@@ -159,5 +183,7 @@ export interface TickResult {
   tested: number;
   retired: number;
   skippedRunning: boolean;
+  /** set when the agent policy refused the batch; null when it ran */
+  denied: string | null;
   prioritized: { neverValidated: number; staleGood: number; unstable: number; rest: number };
 }

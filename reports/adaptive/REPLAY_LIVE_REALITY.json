@@ -1,0 +1,249 @@
+{
+  "generatedAt": "2026-10-26T20:36:14.331Z",
+  "source": "live",
+  "corpus": "live measurement through the app's own proxy probe over C:/Users/RADIN/AppData/Local/Temp/adaptive-reality/nodes12.txt (xray, sing-box, v2ray)",
+  "host": {
+    "platform": "win32",
+    "node": "v24.18.0"
+  },
+  "live": {
+    "installedCores": [
+      "xray",
+      "sing-box",
+      "v2ray"
+    ],
+    "skippedNodes": 0,
+    "timeoutMs": 10000,
+    "endpoint": "https://httpbin.org/ip"
+  },
+  "attemptBudget": 2,
+  "attemptsRecorded": 24,
+  "rows": [
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 954,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 961,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 875,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1042,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 962,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1040,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 891,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1041,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 903,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1085,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 926,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1021,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 896,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 978,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 894,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1014,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 946,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 964,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 996,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 977,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1166,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 1008,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 933,
+      "error": null
+    },
+    {
+      "node": "reality-local",
+      "protocol": "vless",
+      "engine": "xray",
+      "ok": true,
+      "totalMs": 984,
+      "error": null
+    }
+  ],
+  "episodes": 12,
+  "comparableEpisodes": 12,
+  "excludedEpisodes": 0,
+  "baseline": {
+    "episodes": 12,
+    "succeeded": 12,
+    "successRate": "100.0%",
+    "firstChoiceOk": 12,
+    "firstChoiceRate": "100.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": 926,
+    "p95MsToWorking": 1166,
+    "wastedAttempts": 0
+  },
+  "adaptive": {
+    "episodes": 12,
+    "succeeded": 12,
+    "successRate": "100.0%",
+    "firstChoiceOk": 12,
+    "firstChoiceRate": "100.0%",
+    "meanAttempts": 1,
+    "p50MsToWorking": 926,
+    "p95MsToWorking": 1166,
+    "wastedAttempts": 0
+  },
+  "firstChoiceDiffered": 0,
+  "adaptiveWins": 0,
+  "adaptiveLosses": 0,
+  "verdict": "PASS on this corpus — adaptive reaches a working core at least as often, and no slower at p95",
+  "limitations": [
+    "counterfactual replay over recorded outcomes; the network at the time is not reproduced",
+    "an episode is excluded when a policy wants an (node, core) outcome the corpus does not hold",
+    "accuracy of a probability from fewer than MIN_SAMPLES observations is not claimed by the engine itself"
+  ]
+}

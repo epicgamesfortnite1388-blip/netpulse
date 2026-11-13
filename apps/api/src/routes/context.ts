@@ -35,6 +35,8 @@ import type { PlatformNetworkController } from '../providers/platform/types';
 import type { ProviderRegistry } from '../providers/registry';
 import type { ReputationProvider } from '../providers/reputation/types';
 import type { AdaptiveEngine } from '../services/adaptiveEngine';
+import type { AgentPermissions } from '../services/ai-agent/permissions';
+import type { NaniService } from '../services/naniService';
 import type { DiagnosticsService } from '../services/diagnosticsService';
 import type { DnsService } from '../services/dnsService';
 import type { EndpointService } from '../services/endpointService';
@@ -130,6 +132,10 @@ export interface AppContext {
     gatewayMemory: GatewayMemoryService;
     /** Adaptive connectivity: reorders installed+compatible cores from observed outcomes. */
     adaptive: AdaptiveEngine;
+    /** Capability policy and hourly budgets for unattended discovery work. */
+    agent: AgentPermissions;
+    /** NANI — adaptive network intelligence engine. */
+    nani: NaniService;
     discovery: NodeDiscoveryService;
     vpnHistory: VpnHistoryService;
     /**

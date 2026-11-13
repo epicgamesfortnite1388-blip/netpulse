@@ -11,7 +11,12 @@ import { MAX_LIST_LIMIT } from '../db/repositories';
 
 import type { AppContext } from './context';
 import type { NodesService } from '../services/nodesService';
-import { getKnownSources, createSourceFromInput, isValidSourceUrl } from '../services/nodeSourceRegistry';
+import {
+  getKnownSources,
+  createSourceFromInput,
+  isValidSourceUrl,
+  redistributionPermissionOf,
+} from '../services/nodeSourceRegistry';
 import { recheckNodeGeo } from '../services/nodeGeoService';
 import type { NodeProtocol, NodeSecurity, NodeSort, NodeStatus, PublicSource } from '@netpulse/shared';
 import { EngineInstallRequestSchema } from '@netpulse/shared';
@@ -504,6 +509,7 @@ export function registerNodesRoutes(app: FastifyInstance, ctx: AppContext): void
         type: s.type,
         urls: s.urls.map(maskSourceUrl),
         formats: s.formats,
+        redistributionPermission: redistributionPermissionOf(s.id),
         intervalMinutes: s.intervalMinutes,
         lastFetch: s.lastFetch,
         lastSuccess: s.lastSuccess,

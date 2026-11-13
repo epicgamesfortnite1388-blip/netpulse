@@ -1,0 +1,8 @@
+--- normal state: real backend payload and the vendored DLL are back
+-rwxr-xr-x 1 RADIN 197609 160320 Sep  7 01:01 src-tauri/WebView2Loader.dll
+drizzle
+netpulse-backend.js
+node.exe
+--- cargo build:
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.34s
+BUILD_EXIT=0

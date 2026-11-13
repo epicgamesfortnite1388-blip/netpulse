@@ -1230,6 +1230,101 @@ export default {
         });
       }
 
+      // -------- AI Copilot proxy (desktop -> centralized AI service) --------
+      // The desktop never holds a provider API key. This endpoint authenticates
+      // the caller (session bearer token) and forwards to the centralized AI
+      // service running in the Abystral worker. Configure ABYSTRAL_AI_BASE_URL
+      // (var) and ABYSTRAL_AI_KEY (secret) to enable. Without them the endpoint
+      // returns 503 with an honest message — no fake responses are ever served.
+      if (path === '/api/v1/ai/ask' && req.method === 'POST') {
+        const aiBase = (env.ABYSTRAL_AI_BASE_URL ?? '').replace(/\/+$/, '');
+        const aiKey = env.ABYSTRAL_AI_KEY;
+        if (!aiBase || !aiKey) {
+          return fail(503, 'ai_not_configured', 'AI Copilot is not configured on this backend. Set ABYSTRAL_AI_BASE_URL and ABYSTRAL_AI_KEY.');
+        }
+        let body: { question: string; role?: string };
+        try {
+          body = (await readJson(req)) as { question: string; role?: string };
+        } catch {
+          return fail(400, 'invalid_json', 'Request body is not valid JSON');
+        }
+        if (typeof body.question !== 'string' || !body.question.trim()) {
+          return fail(400, 'validation_error', 'question is required');
+        }
+        const role = body.role && ['support', 'admin', 'diagnostics', 'developer'].includes(body.role)
+          ? body.role
+          : 'admin';
+        const userIdStr = String(userId ?? '');
+        try {
+          const upstream = await fetch(`${aiBase}/admin/ai`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-secret': aiKey,
+              'x-ai-user-id': userIdStr,
+              'x-ai-admin-telegram-id': userIdStr,
+            },
+            body: JSON.stringify({ role, question: body.question.trim() }),
+          });
+          const text = await upstream.text();
+          let parsed: unknown;
+          try { parsed = JSON.parse(text); } catch { parsed = text; }
+          return json(upstream.status, parsed);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return fail(502, 'ai_upstream_error', 'AI service unreachable: ' + msg.slice(0, 160));
+        }
+      }
+
+      // -------- AI Copilot stream proxy (SSE) --------
+      if (path === '/api/v1/ai/stream' && req.method === 'POST') {
+        const aiBase = (env.ABYSTRAL_AI_BASE_URL ?? '').replace(/\/+$/, '');
+        const aiKey = env.ABYSTRAL_AI_KEY;
+        if (!aiBase || !aiKey) {
+          return fail(503, 'ai_not_configured', 'AI Copilot is not configured on this backend.');
+        }
+        let body: { question: string; role?: string };
+        try {
+          body = (await readJson(req)) as { question: string; role?: string };
+        } catch {
+          return fail(400, 'invalid_json', 'Request body is not valid JSON');
+        }
+        if (typeof body.question !== 'string' || !body.question.trim()) {
+          return fail(400, 'validation_error', 'question is required');
+        }
+        const role = body.role && ['support', 'admin', 'diagnostics', 'developer'].includes(body.role)
+          ? body.role
+          : 'admin';
+        const userIdStr = String(userId ?? '');
+        try {
+          const upstream = await fetch(`${aiBase}/admin/ai/stream`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-secret': aiKey,
+              'x-ai-user-id': userIdStr,
+              'x-ai-admin-telegram-id': userIdStr,
+            },
+            body: JSON.stringify({ role, question: body.question.trim() }),
+          });
+          if (!upstream.ok) {
+            const text = await upstream.text().catch(() => '');
+            return fail(upstream.status, 'ai_upstream_error', text.slice(0, 160) || 'AI stream failed');
+          }
+          return new Response(upstream.body, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            },
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return fail(502, 'ai_upstream_error', 'AI stream unreachable: ' + msg.slice(0, 160));
+        }
+      }
+
       return fail(404, 'not_found', `No API route for ${req.method} ${path}`);
     } catch (err) {
       if (err instanceof HttpError) return fail(err.status, err.code, err.message);

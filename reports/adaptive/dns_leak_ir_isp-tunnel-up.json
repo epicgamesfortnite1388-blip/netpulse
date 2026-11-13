@@ -1,0 +1,190 @@
+{
+    "measuredAt":  "2026-10-28T18:45:43.9071053Z",
+    "tag":  "tunnel-up",
+    "host":  {
+                 "name":  "RADIN_PC",
+                 "os":  "Microsoft Windows NT 10.0.26200.0",
+                 "ps":  "5.1.26100.9711"
+             },
+    "tunnel":  {
+                   "interfaceAlias":  "happ-xray",
+                   "ifIndex":  18,
+                   "egressIp":  "83.229.87.141",
+                   "location":  "DE",
+                   "colo":  "FRA",
+                   "traceOk":  true,
+                   "traceError":  null,
+                   "defaultRoutes":  [
+                                         {
+                                             "ifIndex":  18,
+                                             "nextHop":  "0.0.0.0",
+                                             "metric":  0,
+                                             "interfaceAlias":  "happ-xray"
+                                         },
+                                         {
+                                             "ifIndex":  6,
+                                             "nextHop":  "192.168.1.1",
+                                             "metric":  0,
+                                             "interfaceAlias":  "Ethernet"
+                                         }
+                                     ]
+               },
+    "dns":  {
+                "serversByInterface":  [
+                                           {
+                                               "interfaceAlias":  "happ-xray",
+                                               "ifIndex":  18,
+                                               "servers":  [
+                                                               "172.19.0.2"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Local Area Connection 3",
+                                               "ifIndex":  13,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Ethernet",
+                                               "ifIndex":  6,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1",
+                                                               "192.168.1.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Local Area Connection",
+                                               "ifIndex":  3,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Local Area Connection 2",
+                                               "ifIndex":  22,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Wi-Fi",
+                                               "ifIndex":  11,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Local Area Connection* 8",
+                                               "ifIndex":  7,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Local Area Connection* 9",
+                                               "ifIndex":  14,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           },
+                                           {
+                                               "interfaceAlias":  "Bluetooth Network Connection",
+                                               "ifIndex":  19,
+                                               "servers":  [
+                                                               "1.1.1.1",
+                                                               "1.0.0.1"
+                                                           ]
+                                           }
+                                       ],
+                "resolverProbes":  [
+                                       {
+                                           "server":  "1.0.0.1",
+                                           "configuredOn":  "Local Area Connection 3, Ethernet, Local Area Connection (+5 more)",
+                                           "routeInterface":  "happ-xray",
+                                           "routeIfIndex":  18,
+                                           "routeViaTunnel":  true,
+                                           "answered":  true,
+                                           "resolverEcho":  "172.71.140.37",
+                                           "echoRecord":  "A whoami.akamai.net",
+                                           "googleTxtEcho":  null,
+                                           "rttMs":  14,
+                                           "error":  null,
+                                           "verdict":  "answered-through-tunnel-path"
+                                       },
+                                       {
+                                           "server":  "1.1.1.1",
+                                           "configuredOn":  "Local Area Connection 3, Ethernet, Local Area Connection (+5 more)",
+                                           "routeInterface":  "happ-xray",
+                                           "routeIfIndex":  18,
+                                           "routeViaTunnel":  true,
+                                           "answered":  true,
+                                           "resolverEcho":  "172.71.140.37",
+                                           "echoRecord":  "A whoami.akamai.net",
+                                           "googleTxtEcho":  null,
+                                           "rttMs":  1,
+                                           "error":  null,
+                                           "verdict":  "answered-through-tunnel-path"
+                                       },
+                                       {
+                                           "server":  "172.19.0.2",
+                                           "configuredOn":  "happ-xray",
+                                           "routeInterface":  "happ-xray",
+                                           "routeIfIndex":  18,
+                                           "routeViaTunnel":  true,
+                                           "answered":  true,
+                                           "resolverEcho":  "172.71.140.37",
+                                           "echoRecord":  "A whoami.akamai.net",
+                                           "googleTxtEcho":  null,
+                                           "rttMs":  0,
+                                           "error":  null,
+                                           "verdict":  "answered-through-tunnel-path"
+                                       },
+                                       {
+                                           "server":  "192.168.1.1",
+                                           "configuredOn":  "Ethernet",
+                                           "routeInterface":  "Ethernet",
+                                           "routeIfIndex":  6,
+                                           "routeViaTunnel":  false,
+                                           "answered":  false,
+                                           "resolverEcho":  null,
+                                           "echoRecord":  null,
+                                           "googleTxtEcho":  null,
+                                           "rttMs":  7030,
+                                           "error":  "whoami.akamai.net : This operation returned because the timeout period expired",
+                                           "verdict":  "off-tunnel-unreachable"
+                                       }
+                                   ],
+                "systemResolution":  {
+                                         "ok":  true,
+                                         "address":  "172.66.147.243",
+                                         "rttMs":  85,
+                                         "error":  null
+                                     },
+                "failOpenSurface":  [
+                                        "1.0.0.1",
+                                        "1.1.1.1",
+                                        "192.168.1.1"
+                                    ]
+            },
+    "verdict":  {
+                    "leaked":  false,
+                    "summary":  "NO LEAK OBSERVED: every answering resolver routes through the tunnel",
+                    "answeredOffTunnel":  [
+
+                                          ],
+                    "answeredThroughTunnel":  [
+                                                  "1.0.0.1",
+                                                  "1.1.1.1",
+                                                  "172.19.0.2"
+                                              ],
+                    "note":  "A resolver is judged by the interface its packets would use, not by being public. Off-tunnel resolvers that never answer are unreachable, not leaking. failOpenSurface lists public resolvers configured on physical adapters: they are not leaking now, but would be raw-path queries if the tunnel route disappeared."
+                }
+}

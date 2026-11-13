@@ -1,0 +1,251 @@
+{
+  "summary": {
+    "generatedAt": 1793621329501,
+    "generatedAtIso": "2026-11-02T12:08:49.501Z",
+    "vantage": "win32 x64, node v24.18.0",
+    "transport": "node fetch (follow redirects, bounded timeout); parsing via the app pipeline",
+    "sourcesProbed": 9,
+    "sourcesOk": 9,
+    "sourcesFailed": 0,
+    "totalParsed": 34150,
+    "byScheme": {
+      "ss": 3901,
+      "vless": 15915,
+      "hy2": 279,
+      "hysteria2": 492,
+      "trojan": 4268,
+      "vmess": 9285,
+      "tuic": 10
+    }
+  },
+  "sources": [
+    {
+      "id": "barry-far",
+      "name": "barry-far / V2ray-Config",
+      "url": "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/All_Configs_Sub.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 2132727,
+      "lines": 8772,
+      "discovered": 8767,
+      "parsed": 8699,
+      "invalid": 68,
+      "schemes": {
+        "ss": 1299,
+        "vless": 6053,
+        "hy2": 5,
+        "hysteria2": 49,
+        "trojan": 894,
+        "vmess": 399
+      },
+      "distinctEndpoints": 3354,
+      "elapsedMs": 1048
+    },
+    {
+      "id": "0xRadikal",
+      "name": "0xRadikal / Free-v2ray-Configs",
+      "url": "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 21249,
+      "lines": 107,
+      "discovered": 100,
+      "parsed": 100,
+      "invalid": 0,
+      "schemes": {
+        "ss": 20,
+        "trojan": 35,
+        "vmess": 21,
+        "vless": 24
+      },
+      "distinctEndpoints": 59,
+      "elapsedMs": 330
+    },
+    {
+      "id": "mahdibland",
+      "name": "mahdibland / ShadowsocksAggregator",
+      "url": "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/sub/sub_merge.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 1200085,
+      "lines": 4728,
+      "discovered": 4641,
+      "parsed": 4579,
+      "invalid": 62,
+      "schemes": {
+        "ss": 1878,
+        "trojan": 810,
+        "vmess": 1891
+      },
+      "distinctEndpoints": 4213,
+      "elapsedMs": 141
+    },
+    {
+      "id": "mheidari98",
+      "name": "mheidari98 / .proxy",
+      "url": "https://raw.githubusercontent.com/mheidari98/.proxy/main/all",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 5169888,
+      "lines": 1,
+      "discovered": 14990,
+      "parsed": 14920,
+      "invalid": 70,
+      "schemes": {
+        "hy2": 274,
+        "hysteria2": 393,
+        "ss": 435,
+        "trojan": 2325,
+        "tuic": 10,
+        "vless": 8431,
+        "vmess": 3052
+      },
+      "distinctEndpoints": 7833,
+      "elapsedMs": 450
+    },
+    {
+      "id": "ALIILAPRO",
+      "name": "ALIILAPRO / v2rayNG-Config",
+      "url": "https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/server.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 1451469,
+      "lines": 4113,
+      "discovered": 4103,
+      "parsed": 4058,
+      "invalid": 45,
+      "schemes": {
+        "vmess": 3577,
+        "trojan": 1,
+        "vless": 480
+      },
+      "distinctEndpoints": 2474,
+      "elapsedMs": 126
+    },
+    {
+      "id": "ermaozi",
+      "name": "ermaozi / get_subscribe",
+      "url": "https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 15409,
+      "lines": 66,
+      "discovered": 66,
+      "parsed": 62,
+      "invalid": 4,
+      "schemes": {
+        "vless": 33,
+        "vmess": 11,
+        "ss": 11,
+        "trojan": 7
+      },
+      "distinctEndpoints": 45,
+      "elapsedMs": 82
+    },
+    {
+      "id": "MhdiTaheri",
+      "name": "MhdiTaheri / V2rayCollector",
+      "url": "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/mix",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 527100,
+      "lines": 1932,
+      "discovered": 1932,
+      "parsed": 1115,
+      "invalid": 817,
+      "schemes": {
+        "vless": 651,
+        "vmess": 130,
+        "ss": 202,
+        "trojan": 132
+      },
+      "distinctEndpoints": 687,
+      "elapsedMs": 107
+    },
+    {
+      "id": "peasoft",
+      "name": "peasoft / NoMoreWalls",
+      "url": "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 107452,
+      "lines": 1,
+      "discovered": 483,
+      "parsed": 417,
+      "invalid": 66,
+      "schemes": {
+        "hysteria2": 50,
+        "vless": 243,
+        "ss": 56,
+        "trojan": 64,
+        "vmess": 4
+      },
+      "distinctEndpoints": 397,
+      "elapsedMs": 83
+    },
+    {
+      "id": "ts-sf",
+      "name": "ts-sf / fly",
+      "url": "https://raw.githubusercontent.com/ts-sf/fly/main/v2",
+      "ok": true,
+      "status": 200,
+      "error": null,
+      "bytes": 87404,
+      "lines": 1,
+      "discovered": 201,
+      "parsed": 200,
+      "invalid": 1,
+      "schemes": {
+        "vmess": 200
+      },
+      "distinctEndpoints": 200,
+      "elapsedMs": 88
+    }
+  ],
+  "parseRate": [
+    {
+      "id": "barry-far",
+      "rate": "99.2%"
+    },
+    {
+      "id": "0xRadikal",
+      "rate": "100.0%"
+    },
+    {
+      "id": "mahdibland",
+      "rate": "98.7%"
+    },
+    {
+      "id": "mheidari98",
+      "rate": "99.5%"
+    },
+    {
+      "id": "ALIILAPRO",
+      "rate": "98.9%"
+    },
+    {
+      "id": "ermaozi",
+      "rate": "93.9%"
+    },
+    {
+      "id": "MhdiTaheri",
+      "rate": "57.7%"
+    },
+    {
+      "id": "peasoft",
+      "rate": "86.3%"
+    },
+    {
+      "id": "ts-sf",
+      "rate": "99.5%"
+    }
+  ]
+}

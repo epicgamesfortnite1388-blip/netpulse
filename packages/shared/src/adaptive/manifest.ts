@@ -372,6 +372,82 @@ export function strategyAllowed(strategyId: string, applied: AppliedManifest | n
   return { allowed: true };
 }
 
+const STRATEGY_ID = /^[a-z0-9][a-z0-9.+-]{0,63}$/i;
+
+function sanitizedIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids
+    .filter((id): id is string => typeof id === 'string' && STRATEGY_ID.test(id))
+    .slice(0, ADAPTIVE_MANIFEST_LIMITS.maxStrategyIds);
+}
+
+/**
+ * Re-validate an `AppliedManifest` that was persisted earlier.
+ *
+ * `applyManifestPolicy` clamps only at INSTALL time. The row is read back from
+ * local storage on every boot, so a partial write, a manual edit or a record
+ * written by an older build would otherwise move a bound past what this build
+ * permits. Two different rules apply on load:
+ *
+ *  - fields the signed patch MAY change (`explorationShare`, `costWeight`,
+ *    `minSamples`, `halfLifeMs`, `flopThreshold`) are clamped to the same hard
+ *    limits used at install;
+ *  - fields the signed patch may NEVER change (`uncertaintyZ`, `costReferenceMs`
+ *    and the storage caps) are forced to this build's defaults. `uncertaintyZ`
+ *    is the guard that stops thin evidence from displacing a better-evidenced
+ *    strategy, and no stored byte may switch it off.
+ *
+ * Returns null when the record is not a usable manifest, so the caller can fall
+ * back to "no policy installed" rather than to garbage.
+ */
+export function sanitizeAppliedManifest(value: unknown): AppliedManifest | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Partial<AppliedManifest>;
+  if (typeof v.version !== 'number' || !Number.isFinite(v.version) || v.version < 1) return null;
+  if (v.channel !== 'test' && v.channel !== 'production') return null;
+
+  const stored = (v.options ?? {}) as Partial<AdaptivePolicyOptions>;
+  const options: AdaptivePolicyOptions = { ...DEFAULT_ADAPTIVE_POLICY };
+  const clamp = (x: unknown, min: number, max: number): number | null => {
+    if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+    return Math.min(max, Math.max(min, x));
+  };
+  const exploration = clamp(stored.explorationShare, 0, ADAPTIVE_MANIFEST_LIMITS.maxExplorationShare);
+  if (exploration != null) options.explorationShare = exploration;
+  const costWeight = clamp(stored.costWeight, 0, ADAPTIVE_MANIFEST_LIMITS.maxCostWeight);
+  if (costWeight != null) options.costWeight = costWeight;
+  const minSamples = clamp(stored.minSamples, ADAPTIVE_MANIFEST_LIMITS.minMinSamples, 200);
+  if (minSamples != null) options.minSamples = Math.round(minSamples);
+  const halfLifeMs = clamp(stored.halfLifeMs, ADAPTIVE_MANIFEST_LIMITS.minHalfLifeMs, ADAPTIVE_MANIFEST_LIMITS.maxHalfLifeMs);
+  if (halfLifeMs != null) options.halfLifeMs = Math.round(halfLifeMs);
+  const flopThreshold = clamp(stored.flopThreshold, 1, 20);
+  if (flopThreshold != null) options.flopThreshold = Math.round(flopThreshold);
+
+  const revocation = (Array.isArray(v.revocation) ? v.revocation : [])
+    .filter(
+      (r): r is AdaptiveRevocation =>
+        r != null && typeof r === 'object' && typeof (r as AdaptiveRevocation).strategyId === 'string' && STRATEGY_ID.test((r as AdaptiveRevocation).strategyId),
+    )
+    .slice(0, ADAPTIVE_MANIFEST_LIMITS.maxRevocations)
+    .map((r) => ({
+      strategyId: r.strategyId,
+      reason: typeof r.reason === 'string' ? r.reason.slice(0, 200) : '',
+      at: typeof r.at === 'number' && Number.isFinite(r.at) ? r.at : 0,
+    }));
+
+  return {
+    version: v.version,
+    channel: v.channel,
+    options,
+    enabledStrategyIds: sanitizedIds(v.enabledStrategyIds),
+    disabledStrategyIds: sanitizedIds(v.disabledStrategyIds),
+    revocation,
+    applied: Array.isArray(v.applied) ? v.applied.filter((x): x is string => typeof x === 'string').slice(0, 64) : [],
+    refused: Array.isArray(v.refused) ? v.refused.filter((x): x is string => typeof x === 'string').slice(0, 64) : [],
+    ...(typeof v.rolledBackFrom === 'number' && Number.isFinite(v.rolledBackFrom) ? { rolledBackFrom: v.rolledBackFrom } : {}),
+  };
+}
+
 /**
  * Rollback: keep the previous manifest and re-apply it. Returns the manifest to
  * install, or the current one when there is nothing to roll back to.

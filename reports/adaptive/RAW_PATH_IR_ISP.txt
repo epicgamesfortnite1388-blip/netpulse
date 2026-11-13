@@ -1,0 +1,45 @@
+# Raw-path vantage evidence — NetPulse adaptive field measurement
+captured: 2026-10-27T13:08:08Z (bypass routes active: 206.1.96.89/32, 1.1.1.1/32 via 192.168.1.1)
+
+## A. egress through the user's tunnel (control path, all other traffic)
+  "ip": "83.229.87.141",
+  "hostname": "universalvoyage.shop",
+  "city": "Frankfurt am Main",
+  "country": "DE",
+  "org": "AS204548 Kamatera Inc",
+
+## B. egress through the raw ISP path (route table, no proxy, no tunnel)
+ip=46.167.134.165
+colo=FRA
+http=http/1.1
+loc=IR
+tls=TLSv1.3
+sni=off
+
+## C. ASN / holder of the raw egress IP (resolved through the tunnel)
+{
+  "ip": "46.167.134.165",
+  "city": "Tehran",
+  "region": "Tehran",
+  "country": "IR",
+  "loc": "35.6944,51.4215",
+  "org": "AS16322 Parsan Lin Co. PJS",
+  "timezone": "Asia/Tehran",
+  "readme": "https://ipinfo.io/missingauth"
+}
+## D. raw-path port reachability, before and after the two field runs
+D1. 13:07Z (at bypass setup, 6 s bound; from the elevated setup output):
+  206.1.96.89:443  open
+  206.1.96.89:2053  no TCP answer within 6 s
+  206.1.96.89:2087  open
+  206.1.96.89:8443  open
+D2. 13:13:33Z — trace only (this shell's curl build has no telnet scheme, so the
+    socket probe was redone with System.Net.Sockets.TcpClient instead):
+ip=46.167.134.165
+colo=FRA
+loc=IR
+D3. 13:15:47Z (5 s bound):
+  206.1.96.89:443  no answer within 5s
+  206.1.96.89:2053  open in 69 ms
+  206.1.96.89:2087  open in 44 ms
+  206.1.96.89:8443  open in 42 ms

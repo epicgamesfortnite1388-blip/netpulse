@@ -691,6 +691,50 @@ body {
 }
 
 /*
+ * ============================ Mission Overdrive =========================
+ * A single marker travelling the measured path on the Overdrive overview. It is
+ * decoration over real stage numbers, never a progress claim, and it is removed
+ * outright under reduced motion (the element also carries `motion-reduce:hidden`
+ * so the preference is honoured before this rule is even consulted).
+ */
+
+.path-tracer {
+  animation: path-travel 5.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  left: 0;
+}
+
+@keyframes path-travel {
+  0%,
+  8% {
+    left: 0;
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  50% {
+    left: 50%;
+    opacity: 1;
+  }
+  84% {
+    left: calc(100% - 5px);
+    opacity: 1;
+  }
+  92%,
+  100% {
+    left: calc(100% - 5px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .path-tracer {
+    animation: none;
+    display: none;
+  }
+}
+
+/*
  * ============================ Aether surface =============================
  * The "premium / otherworldly" layer for the VPN → Aether tab. Every rule is
  * opt-in via its own class, so no other page's appearance changes. Motion is

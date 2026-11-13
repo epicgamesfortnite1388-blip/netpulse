@@ -6,6 +6,8 @@ import { AppError, badRequest, newNotFound } from '../util/appError';
 import { replyApiError } from '../util/apiError';
 import { adminStatus, invalidatePrivilegeCache } from '../util/privileges';
 import { engineSupports, findEngineBinary } from '../services/proxyCores';
+import { proxyEngineStatus } from '../services/proxyEngineRunner';
+import { MAX_CONCURRENCY, MAX_PROBES, SmartConnectService } from '../services/smartConnect';
 import { nodeLabel } from '../services/nodeView';
 import {
   deleteCloudBackup,
@@ -64,6 +66,21 @@ const FromNodeSchema = z.object({
     .max(128)
     .regex(/^[^\u0000-\u001f\u007f<>]*$/, 'must not contain control characters or angle brackets')
     .optional(),
+});
+
+const SmartConnectBodySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  // Ceiling matches the `network:verify-traffic` per-call cap (10) in the agent
+  // permission layer: the route must not accept a budget the policy will refuse.
+  maxProbes: z.coerce.number().int().min(1).max(MAX_PROBES).optional(),
+  /** cores dialled at once; 1 is sequential, the service clamps to 1..3 */
+  concurrency: z.coerce.number().int().min(1).max(MAX_CONCURRENCY).optional(),
+});
+
+const SmartTrainBodySchema = z.object({
+  /** how many candidates this batch probes — charged against the same allowance */
+  size: z.coerce.number().int().min(1).max(MAX_PROBES).optional(),
+  concurrency: z.coerce.number().int().min(1).max(MAX_CONCURRENCY).optional(),
 });
 
 type ImportProviderId = 'wireguard' | 'openvpn' | 'singbox' | 'aether';
@@ -472,6 +489,145 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
       const profileWithoutEndpoint = { ...profile, endpoint: undefined };
       reply.status(201);
       return { profile: profileWithoutEndpoint, node: { id: node.id, protocol: node.protocol } };
+    },
+  );
+
+  /**
+   * Smart Connect — choose a stored public configuration, and optionally prove
+   * it works before offering it.
+   *
+   * GET ranks only and opens no sockets. POST dials at most a handful of
+   * candidates through `nodes.testNode('proxy')`, which reaches `done` only
+   * when traffic traversed the node; that same call writes the outcome to the
+   * node row, so the evidence this decision used is inspectable afterwards.
+   * Neither method connects a tunnel: a third-party endpoint needs the user's
+   * explicit authorisation, so the response names the profile/connect routes
+   * the UI should call after showing the privacy warning.
+   */
+  const smartConnect = () =>
+    new SmartConnectService({
+      listCandidates: (limit) =>
+        ctx.repos.publicNodes.list({ limit, sortField: 'score', sortDir: 'desc' }).rows,
+      engines: () =>
+        proxyEngineStatus(ctx.services.settings.get().proxyEngine?.preferred ?? 'auto')
+          .engines.filter((e) => e.available)
+          .map((e) => e.id),
+      probe: async (nodeId) => {
+        const result = await ctx.services.nodes.testNode(nodeId, 'proxy');
+        const engine =
+          result.engine === 'xray' || result.engine === 'sing-box' || result.engine === 'v2ray' || result.engine === 'hysteria'
+            ? result.engine
+            : null;
+        return {
+          status: result.status === 'done' ? 'done' : result.status === 'error' ? 'error' : 'failed',
+          latencyMs: result.latencyMs,
+          httpStatus: result.httpStatus,
+          engine,
+          error: result.error,
+        };
+      },
+      adaptive: {
+        status: () => ctx.services.adaptive.status(),
+        observe: (outcome) => ctx.services.adaptive.observe(outcome),
+      },
+    });
+
+  app.get('/api/v1/vpn/smart-connect', async (req) => {
+    const limit = (req.query as { limit?: string }).limit;
+    return smartConnect().plan({ limit: limit ? Number(limit) : undefined });
+  });
+
+  app.post(
+    '/api/v1/vpn/smart-connect',
+    { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      // Verification dials real third-party endpoints, so it passes the same
+      // capability policy as the unattended prober — as a user action (never
+      // paused), charged against the hourly verification allowance. The check
+      // runs BEFORE the first candidate is dialled, so a refusal costs no traffic.
+      const parsed = SmartConnectBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) throw parsed.error;
+      const reserved = parsed.data.maxProbes ?? 3;
+      const gate = ctx.services.agent.authorize('network:verify-traffic', {
+        origin: 'user',
+        count: reserved,
+        detail: 'smart-connect verification',
+      });
+      if (!gate.allowed) {
+        return replyApiError(
+          reply,
+          429,
+          'agent_budget',
+          `${gate.reason}. ${gate.remaining ?? 0} verification(s) left this hour.`,
+        );
+      }
+      const result = await smartConnect().verify({
+        limit: parsed.data.limit,
+        maxProbes: parsed.data.maxProbes,
+        concurrency: parsed.data.concurrency,
+      });
+      // The pool stops at the first verified candidate, so it usually dials
+      // fewer endpoints than it reserved. Give the unused allowance back rather
+      // than charging for probes that never happened.
+      ctx.services.agent.release('network:verify-traffic', reserved - result.probesRun);
+      ctx.services.events.record(
+        'info',
+        'vpn',
+        result.verified
+          ? `Smart Connect verified ${result.chosen?.nodeId} (${result.probesRun} probe${result.probesRun === 1 ? '' : 's'})`
+          : `Smart Connect probed ${result.probesRun} candidate(s); none carried traffic`,
+      );
+      return {
+        ...result,
+        next: result.verified
+          ? {
+              createProfile: `POST /api/v1/vpn/profiles/from-node {\"nodeId\":\"${result.chosen?.nodeId}\"}`,
+              connect: 'POST /api/v1/vpn/connect {\"profileId\":\"<created profile id>\"}',
+              note: 'Connecting a third-party endpoint needs the user to accept the privacy warning first.',
+            }
+          : null,
+      };
+    },
+  );
+
+  /**
+   * Train the adaptive model on a batch of real attempts.
+   *
+   * Deliberately separate from verification: a connection stops at the first
+   * working endpoint, a model needs outcomes from the whole batch, failures
+   * included. Same allowances, same ceilings — the caller reserves `size` and
+   * only the attempts that actually happened are charged.
+   */
+  app.post(
+    '/api/v1/vpn/smart-connect/train',
+    { config: { rateLimit: { max: 4, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const parsed = SmartTrainBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) throw parsed.error;
+
+      const size = parsed.data.size ?? 6;
+      const gate = ctx.services.agent.authorize('network:verify-traffic', {
+        origin: 'user',
+        count: size,
+        detail: 'smart-connect training batch',
+      });
+      if (!gate.allowed) {
+        return replyApiError(
+          reply,
+          429,
+          'agent_budget',
+          `${gate.reason}. ${gate.remaining ?? 0} verification(s) left this hour.`,
+        );
+      }
+
+      const result = await smartConnect().train({ size, concurrency: parsed.data.concurrency });
+      ctx.services.agent.release('network:verify-traffic', size - result.attempted);
+      ctx.services.events.record(
+        'info',
+        'vpn',
+        `Model training batch: ${result.attempted} probed, ${result.verified} carried traffic`,
+      );
+      return result;
     },
   );
 

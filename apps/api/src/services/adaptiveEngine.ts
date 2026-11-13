@@ -1,6 +1,7 @@
 import {
   applyManifestPolicy,
   applyObservation,
+  calibrationOf,
   censorshipHintOf,
   classifyConnectFailure,
   contextBucketOf,
@@ -9,12 +10,14 @@ import {
   parseAdaptiveState,
   rankStrategies,
   resetAdaptiveState,
+  sanitizeAppliedManifest,
   serializeAdaptiveState,
   strategyAllowed,
   strategyIdFor,
   summarizeState,
   verifyAdaptiveManifest,
   DEFAULT_ADAPTIVE_POLICY,
+  type AdaptiveCalibration,
   type AdaptiveContextSignals,
   type AdaptiveDecision,
   type AdaptiveManifestEnvelope,
@@ -97,12 +100,24 @@ export interface AdaptiveAttemptOutcome {
   engine: ProxyEngineId;
   /** the context this attempt was taken under (from `plan`, or derived here) */
   context?: string;
+  /**
+   * The strategy id the caller actually planned to dial (from `plan().decisions`).
+   * Preferred over re-deriving it from the current DNS setting, so a setting
+   * change between planning and the outcome cannot attribute the result to a
+   * different strategy.
+   */
+  strategyId?: string;
   /** a tunnel was VERIFIED to carry traffic (an exit IP was read through it) */
   ok: boolean;
   /** ms to the verified tunnel; ignored for failures */
   timeToWorkingMs?: number | null;
   /** raw failure description; classified here */
   failure?: (ConnectFailureInput & { reasonCode?: string }) | null;
+  /**
+   * The probability the engine gave this strategy when it decided, if the
+   * caller took its choice from `plan()`. Recorded so calibration can be scored.
+   */
+  predicted?: number | null;
 }
 
 export interface AdaptivePlan {
@@ -128,6 +143,8 @@ export interface AdaptiveStatus {
   stateVersion: number;
   entries: AdaptiveStateRow[];
   observationsKept: number;
+  /** Brier score over attempts that carried a prediction; null until one exists */
+  calibration: AdaptiveCalibration | null;
   /** coarse context the engine would use right now, and what it means */
   context: string;
   contextSummary: string;
@@ -382,7 +399,14 @@ export class AdaptiveEngine {
   observe(outcome: AdaptiveAttemptOutcome): AdaptiveObservation {
     const at = this.now();
     const context = outcome.context ?? contextBucketOf(this.signals());
-    const strategyId = strategyIdFor(outcome.engine, this.deps.settings.get().vpn?.dnsThroughVpn !== false);
+    // An explicit strategy id from the plan wins over a setting that may have
+    // changed since the decision; an invalid one is ignored rather than stored.
+    const planned =
+      typeof outcome.strategyId === 'string' && /^[a-z0-9][a-z0-9.+-]{0,63}$/i.test(outcome.strategyId)
+        ? outcome.strategyId
+        : null;
+    const strategyId =
+      planned ?? strategyIdFor(outcome.engine, this.deps.settings.get().vpn?.dnsThroughVpn !== false);
 
     const verdict = outcome.ok
       ? null
@@ -398,6 +422,10 @@ export class AdaptiveEngine {
       // A caller that already classified the failure (the tunnel knows which
       // stage it failed at) keeps its own, more specific code.
       reasonCode: outcome.failure?.reasonCode ?? verdict?.reasonCode ?? null,
+      predicted:
+        outcome.predicted != null && Number.isFinite(outcome.predicted) && outcome.predicted >= 0 && outcome.predicted <= 1
+          ? outcome.predicted
+          : null,
     };
 
     try {
@@ -434,6 +462,7 @@ export class AdaptiveEngine {
       stateVersion: state.version,
       entries: summarizeState(state, now, this.policy()),
       observationsKept: state.observations.length,
+      calibration: calibrationOf(state.observations),
       context,
       contextSummary: describeContextBucket(context),
       signals,
@@ -470,10 +499,15 @@ export class AdaptiveEngine {
     if (this.manifestCache) return this.manifestCache;
     try {
       const raw = this.deps.store.get(MANIFEST_KEY);
-      this.manifestCache = {
-        applied: (raw?.['applied'] as AppliedManifest | undefined) ?? null,
-        previous: (raw?.['previous'] as AppliedManifest | undefined) ?? null,
-      };
+      // Re-validate on load, not just at install: a partial write or a record
+      // from an older build must not widen a bound past this build's limits,
+      // and must never touch a field the signed patch cannot change.
+      const applied = sanitizeAppliedManifest(raw?.['applied']);
+      const previous = sanitizeAppliedManifest(raw?.['previous']);
+      if ((raw?.['applied'] != null && applied == null) || (raw?.['previous'] != null && previous == null)) {
+        this.deps.log?.warn('adaptive policy manifest: dropped an invalid stored record');
+      }
+      this.manifestCache = { applied, previous };
     } catch {
       this.manifestCache = { applied: null, previous: null };
     }

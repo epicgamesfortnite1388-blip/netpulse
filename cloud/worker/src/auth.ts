@@ -48,6 +48,10 @@ export interface Env {
   /** The deployment origin used to validate reset link hostnames, preventing
    * attacker-controlled reset URLs. Set in wrangler.toml as a string binding. */
   EXPECTED_ORIGIN?: string;
+  /** Abystral AI worker origin for the desktop Copilot proxy (var). */
+  ABYSTRAL_AI_BASE_URL?: string;
+  /** Abystral AI admin secret for the desktop Copilot proxy (Wrangler secret). */
+  ABYSTRAL_AI_KEY?: string;
 }
 
 export interface SessionRow {

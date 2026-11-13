@@ -1,0 +1,2532 @@
+{
+  "generatedAt": "2026-11-03T16:02:27.745Z",
+  "probeUrl": "https://www.cloudflare.com/cdn-cgi/trace",
+  "timeoutMs": 12000,
+  "engine": "xray (installed 26.10.31)",
+  "perSource": {
+    "barry-far": {
+      "discovered": 9595,
+      "valid": 9507,
+      "sampled": 30,
+      "ok": 7
+    },
+    "0xRadikal": {
+      "discovered": 4769,
+      "valid": 4765,
+      "sampled": 30,
+      "ok": 3
+    },
+    "mahdibland": {
+      "discovered": 4733,
+      "valid": 4672,
+      "sampled": 30,
+      "ok": 0
+    },
+    "mheidari98": {
+      "discovered": 14944,
+      "valid": 14879,
+      "sampled": 30,
+      "ok": 0
+    },
+    "ALIILAPRO": {
+      "discovered": 4168,
+      "valid": 4123,
+      "sampled": 30,
+      "ok": 1
+    },
+    "ermaozi": {
+      "discovered": 560,
+      "valid": 550,
+      "sampled": 30,
+      "ok": 1
+    },
+    "MhdiTaheri": {
+      "discovered": 2045,
+      "valid": 1156,
+      "sampled": 30,
+      "ok": 4
+    },
+    "peasoft": {
+      "discovered": 502,
+      "valid": 470,
+      "sampled": 30,
+      "ok": 0
+    },
+    "ts-sf": {
+      "discovered": 201,
+      "valid": 199,
+      "sampled": 30,
+      "ok": 0
+    }
+  },
+  "totals": {
+    "sampled": 270,
+    "reachable": 16,
+    "rate": 0.059,
+    "latencyMs": {
+      "min": 350,
+      "median": 1179,
+      "max": 10579
+    }
+  },
+  "byProtocol": {
+    "shadowsocks": {
+      "sampled": 32,
+      "ok": 6
+    },
+    "trojan": {
+      "sampled": 29,
+      "ok": 1
+    },
+    "vless": {
+      "sampled": 118,
+      "ok": 4
+    },
+    "vmess": {
+      "sampled": 83,
+      "ok": 5
+    },
+    "hysteria2": {
+      "sampled": 8,
+      "ok": 0
+    }
+  },
+  "byFailureKind": {
+    "handshake_failed": 170,
+    "engine_start_failed": 36,
+    "target_failed": 21,
+    "engine_unavailable": 27
+  },
+  "results": [
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 350,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 557,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 986,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 1139,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 1179,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:26:54.563632 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:10.008317 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 622,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 6062,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "barry-far",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "barry-far",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-XG5Fuv\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:25.261451 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:25.306205 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:29.019245 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 7666,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:32.996908 [Warning] common/errors: The feature HTTPUpgrade transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 1218,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:27:36.745287 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-Wf8Q9g\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 1433,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "0xRadikal",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core cannot run the shadowsocks cipher \"aes-256-cfb\" (not AEAD — the v2ray family dropped those; use sing-box for this node)"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core cannot run the shadowsocks cipher \"aes-256-cfb\" (not AEAD — the v2ray family dropped those; use sing-box for this node)"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core cannot run the shadowsocks cipher \"aes-256-cfb\" (not AEAD — the v2ray family dropped those; use sing-box for this node)"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core cannot run the shadowsocks cipher \"aes-256-cfb\" (not AEAD — the v2ray family dropped those; use sing-box for this node)"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mahdibland",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core cannot run the shadowsocks cipher \"aes-256-cfb\" (not AEAD — the v2ray family dropped those; use sing-box for this node)"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:28:39.997105 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:28:52.310101 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:28:52.926013 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "mheidari98",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 767,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ALIILAPRO",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:29:58.817314 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-fElRtC\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-LQvppY\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "640A0000:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number:openssl\\ssl\\record\\methods\\tlsany_meth.c:78:\n"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 10579,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "ermaozi",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-z2QlgY\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-wUSmDz\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-UGHbDv\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-2M9zZk\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-jdBmQM\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-qYBkxl\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-sAJ9Vn\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-w4mPlV\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-96B5j2\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-9DrDv4\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-oM6Aci\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-lulGpo\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-dV2Ekl\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-lQrAZd\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-j4YAaj\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-P40gfx\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: failed to build stream settings for outbound detour > infra/conf: Failed to build REALITY config. > infra/conf: empty \"password\""
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-rMbUpW\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-miKfBe\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-VShlMJ\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 1404,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 554,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 362,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": true,
+      "latencyMs": 5778,
+      "failureKind": null,
+      "error": null
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "MhdiTaheri",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — 2026/11/03 19:30:54.557813 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible."
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "640A0000:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number:openssl\\ssl\\record\\methods\\tlsany_meth.c:78:\n"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_start_failed",
+      "error": "xray rejected the config: core exited during startup (code 23) — Failed to start: main: failed to load config files: [C:\\Users\\RADIN\\AppData\\Local\\Temp\\netpulse-xray-Te4see\\core.json] > infra/conf: failed to build outbound config with tag np-node > infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "hysteria2",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "no installed core supports protocol hysteria2"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "engine_unavailable",
+      "error": "xray-core removed allowInsecure (it now requires pinnedPeerCertSha256), so it cannot dial a node that turns certificate checks off (use sing-box for this node)"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "shadowsocks",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "vless",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "peasoft",
+      "protocol": "trojan",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "target_failed",
+      "error": "Client network socket disconnected before secure TLS connection was established"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "read ECONNRESET"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    },
+    {
+      "source": "ts-sf",
+      "protocol": "vmess",
+      "host": "?",
+      "ok": false,
+      "latencyMs": null,
+      "failureKind": "handshake_failed",
+      "error": "probe timed out"
+    }
+  ]
+}

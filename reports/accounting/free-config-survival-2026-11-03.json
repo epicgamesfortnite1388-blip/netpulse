@@ -1,0 +1,173 @@
+{
+  "generatedAt": "2026-11-03T16:04:55.545Z",
+  "finishedAt": "2026-11-03T16:31:06.249Z",
+  "gapMinutes": 25,
+  "timeoutMs": 12000,
+  "sources": [
+    "barry-far",
+    "0xRadikal",
+    "MhdiTaheri"
+  ],
+  "discovered": {
+    "barry-far": 9595,
+    "0xRadikal": 4769,
+    "MhdiTaheri": 2045
+  },
+  "round1": {
+    "sampled": 75,
+    "reachable": 7,
+    "rate": 0.093,
+    "bySource": {
+      "barry-far": {
+        "sampled": 25,
+        "ok": 1
+      },
+      "0xRadikal": {
+        "sampled": 25,
+        "ok": 3
+      },
+      "MhdiTaheri": {
+        "sampled": 25,
+        "ok": 3
+      }
+    },
+    "byProtocol": {
+      "shadowsocks": {
+        "sampled": 8,
+        "ok": 2
+      },
+      "trojan": {
+        "sampled": 5,
+        "ok": 0
+      },
+      "vless": {
+        "sampled": 57,
+        "ok": 2
+      },
+      "vmess": {
+        "sampled": 5,
+        "ok": 3
+      }
+    }
+  },
+  "round2": {
+    "retried": 7,
+    "survived": 6,
+    "survivalRate": 0.857,
+    "endpoints": [
+      {
+        "source": "barry-far",
+        "protocol": "vmess",
+        "round1": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 9268,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 7852,
+          "failureKind": null
+        }
+      },
+      {
+        "source": "0xRadikal",
+        "protocol": "vmess",
+        "round1": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 597,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 592,
+          "failureKind": null
+        }
+      },
+      {
+        "source": "0xRadikal",
+        "protocol": "vless",
+        "round1": {
+          "protocol": "vless",
+          "ok": true,
+          "latencyMs": 11399,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "vless",
+          "ok": false,
+          "latencyMs": null,
+          "failureKind": "target_failed"
+        }
+      },
+      {
+        "source": "0xRadikal",
+        "protocol": "vless",
+        "round1": {
+          "protocol": "vless",
+          "ok": true,
+          "latencyMs": 1190,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "vless",
+          "ok": true,
+          "latencyMs": 11663,
+          "failureKind": null
+        }
+      },
+      {
+        "source": "MhdiTaheri",
+        "protocol": "vmess",
+        "round1": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 6289,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "vmess",
+          "ok": true,
+          "latencyMs": 2852,
+          "failureKind": null
+        }
+      },
+      {
+        "source": "MhdiTaheri",
+        "protocol": "shadowsocks",
+        "round1": {
+          "protocol": "shadowsocks",
+          "ok": true,
+          "latencyMs": 383,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "shadowsocks",
+          "ok": true,
+          "latencyMs": 955,
+          "failureKind": null
+        }
+      },
+      {
+        "source": "MhdiTaheri",
+        "protocol": "shadowsocks",
+        "round1": {
+          "protocol": "shadowsocks",
+          "ok": true,
+          "latencyMs": 364,
+          "failureKind": null
+        },
+        "round2": {
+          "protocol": "shadowsocks",
+          "ok": true,
+          "latencyMs": 356,
+          "failureKind": null
+        }
+      }
+    ]
+  },
+  "note": "round 2 run after 25 min"
+}

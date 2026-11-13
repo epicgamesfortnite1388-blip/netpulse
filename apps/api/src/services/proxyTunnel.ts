@@ -58,6 +58,7 @@ import {
 } from './proxyCores';
 import { TunGatewayHandle, type TunGatewayEvent } from './tunGatewayHandle';
 import { nodeLabel } from './nodeView';
+import { tunnelDns } from './tunnelDns';
 
 import type { NodeSecretVault } from './nodeSecretVault';
 
@@ -549,6 +550,12 @@ export class ProxyTunnelService {
       inboundPort: exit.run.inboundPort,
       startedAt: Date.now(),
     };
+    // Route all DNS through tunnel when using proxy cores too (they use SOCKS)
+    try {
+      tunnelDns.forceTunnelDns(exit.run.inboundPort);
+    } catch {
+      /* best effort */
+    }
 
     // 3) Verify by fetching a real trace THROUGH the final hop (not a TCP check
     //    — that would light "active" for a core that cannot actually relay).
@@ -797,6 +804,11 @@ export class ProxyTunnelService {
     // (also covers disconnecting while the switch was engaged).
     void this.deps.killSwitch?.onTunnelStopped().catch(() => undefined);
     this.killAll();
+    try {
+      tunnelDns.allowDirectDns();
+    } catch {
+      /* best effort */
+    }
 
     if (!o.keepStatus) {
       this.status = { ...IDLE };

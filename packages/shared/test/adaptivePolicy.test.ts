@@ -4,6 +4,7 @@ import {
   ADAPTIVE_STATE_VERSION,
   DEFAULT_ADAPTIVE_POLICY,
   applyObservation,
+  calibrationOf,
   contextBucketOf,
   decayStats,
   emptyAdaptiveState,
@@ -26,6 +27,52 @@ import {
  * reproduce the behaviour the app had before it existed. That is what makes it
  * safe to ship enabled, and it is asserted rather than assumed.
  */
+
+describe('calibration scoring', () => {
+  const obs = (ok: boolean, predicted?: number | null): AdaptiveObservation => ({
+    at: 1,
+    context: 'network:unknown|isp:unknown',
+    strategyId: 'xray',
+    ok,
+    timeToWorkingMs: ok ? 500 : null,
+    failureKind: ok ? null : 'transport',
+    reasonCode: ok ? null : 'x',
+    predicted,
+  });
+
+  it('returns null when no attempt carried a prediction', () => {
+    expect(calibrationOf([obs(true), obs(false)])).toBeNull();
+    expect(calibrationOf([])).toBeNull();
+  });
+
+  it('scores perfect predictions at 0 and reports positive skill', () => {
+    const c = calibrationOf([obs(true, 1), obs(false, 0)])!;
+    expect(c.samples).toBe(2);
+    expect(c.brier).toBe(0);
+    expect(c.baselineBrier).toBe(0.25);
+    expect(c.skill).toBe(0.25);
+  });
+
+  it('scores a coin-flip forecaster at exactly the baseline', () => {
+    const c = calibrationOf([obs(true, 0.5), obs(false, 0.5), obs(true, 0.5), obs(false, 0.5)])!;
+    expect(c.brier).toBe(0.25);
+    expect(c.skill).toBe(0);
+    expect(c.meanPredicted).toBe(0.5);
+    expect(c.observedRate).toBe(0.5);
+  });
+
+  it('goes negative when the model is confidently wrong', () => {
+    const c = calibrationOf([obs(false, 0.9), obs(false, 0.9), obs(true, 0.9)])!;
+    expect(c.skill).toBeLessThan(0);
+    expect(c.meanPredicted).toBe(0.9);
+  });
+
+  it('ignores predictions outside 0..1 rather than clamping them into a better score', () => {
+    const c = calibrationOf([obs(true, 1.4), obs(true, -0.2), obs(true, 0.8)])!;
+    expect(c.samples).toBe(1);
+    expect(c.brier).toBeCloseTo(0.04, 5);
+  });
+});
 
 const signals = (over: Partial<AdaptiveContextSignals> = {}): AdaptiveContextSignals => ({
   dnsFailing: false,
@@ -496,6 +543,25 @@ describe('persistence', () => {
     expect(parsed.state.entries).toEqual(state.entries);
   });
 
+  it('keeps each observation’s prediction, so calibration survives a restart', () => {
+    const observation = {
+      at: 1,
+      context: CONTEXT,
+      strategyId: 'xray+doh',
+      ok: false,
+      timeToWorkingMs: null,
+      failureKind: 'not-verified' as const,
+      reasonCode: 'traffic-not-verified',
+      predicted: 0.267,
+    };
+    const state = { ...stateWith([], 1), observations: [observation] };
+
+    const parsed = parseAdaptiveState(serializeAdaptiveState(state));
+
+    expect(parsed.state.observations[0]?.predicted).toBe(0.267);
+    expect(calibrationOf(parsed.state.observations)?.samples).toBe(1);
+  });
+
   it('degrades to no evidence on garbage rather than throwing', () => {
     for (const raw of [null, 42, 'nope', [], { version: ADAPTIVE_STATE_VERSION }]) {
       const parsed = parseAdaptiveState(raw);
@@ -531,6 +597,159 @@ describe('persistence', () => {
 
     expect(parsed.state.entries.map((e) => e.strategyId)).toEqual(['v2ray']);
     expect(parsed.warnings.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('property: posteriors never become NaN for arbitrary persisted counts', () => {
+    const edges = [
+      NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      -Number.MAX_VALUE,
+      -1e308,
+      -1,
+      -0,
+      0,
+      1e-9,
+      1,
+      999,
+      1_000_000,
+      1_000_001,
+      1e100,
+      1e308,
+      Number.MAX_VALUE,
+      Number.MAX_SAFE_INTEGER,
+    ];
+    let seed = 0x9e3779b9;
+    const next = (): number => {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      return seed;
+    };
+    const arbitrary = (): number => {
+      const r = next();
+      if ((r & 7) === 0) return edges[r % edges.length]!;
+      if ((r & 7) === 1) return (r / 0xffff_ffff) * 1_000_000;
+      const exponent = (next() % 617) - 308;
+      const sign = (next() & 1) === 1 ? -1 : 1;
+      const mantissa = 0.5 + (next() % 1_000) / 1_000;
+      return sign * Math.pow(10, exponent) * mantissa;
+    };
+    const now = Date.now();
+    const statsFor = (successes: number, failures: number) => ({
+      successes,
+      failures,
+      meanSuccessMs: null,
+      consecutiveFailures: 0,
+      updatedAt: now,
+    });
+
+    for (let i = 0; i < 2_000; i++) {
+      const successes = arbitrary();
+      const failures = arbitrary();
+      const parsed = parseAdaptiveState({
+        version: ADAPTIVE_STATE_VERSION,
+        entries: [
+          {
+            context: CONTEXT,
+            strategyId: 'xray',
+            stats: { successes, failures, meanSuccessMs: null, consecutiveFailures: 0, updatedAt: now },
+          },
+        ],
+        observations: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      for (const entry of parsed.state.entries) {
+        const posterior = posteriorOf(entry.stats, now, DEFAULT_ADAPTIVE_POLICY);
+        expect(Number.isFinite(posterior.alpha)).toBe(true);
+        expect(Number.isFinite(posterior.beta)).toBe(true);
+        expect(Number.isFinite(posterior.evidence)).toBe(true);
+        expect(Number.isFinite(posterior.probability)).toBe(true);
+        expect(Number.isNaN(posterior.probability)).toBe(false);
+        expect(posterior.probability).toBeGreaterThanOrEqual(0);
+        expect(posterior.probability).toBeLessThanOrEqual(1);
+      }
+
+      const direct = posteriorOf(statsFor(successes, failures), now, DEFAULT_ADAPTIVE_POLICY);
+      expect(Number.isFinite(direct.alpha)).toBe(true);
+      expect(Number.isFinite(direct.beta)).toBe(true);
+      expect(Number.isFinite(direct.evidence)).toBe(true);
+      expect(Number.isFinite(direct.probability)).toBe(true);
+      expect(Number.isNaN(direct.probability)).toBe(false);
+      expect(direct.probability).toBeGreaterThanOrEqual(0);
+      expect(direct.probability).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('uncertainty-adjusted ranking', () => {
+  it('ranks a well-evidenced record above a thin perfect one', () => {
+    const now = Date.now();
+    const state = stateWith(
+      [
+        // 5/5 looks better by mean (0.857 vs 0.738) and is exactly at minSamples.
+        { strategyId: 'xray', successes: 5, failures: 0, meanSuccessMs: 1_000 },
+        { strategyId: 'sing-box', successes: 30, failures: 10, meanSuccessMs: 1_000 },
+      ],
+      now,
+    );
+
+    const decisions = rankStrategies({
+      state,
+      context: CONTEXT,
+      strategies: BASELINE.map(strategy),
+      baselineOrder: BASELINE,
+      now,
+    });
+
+    const xray = decisions.find((d) => d.strategyId === 'xray')!;
+    const singBox = decisions.find((d) => d.strategyId === 'sing-box')!;
+
+    // The mean still favours the thin record; the bound the order uses does not.
+    expect(xray.successProbability).toBeGreaterThan(singBox.successProbability);
+    expect(singBox.lowerBound).toBeGreaterThan(xray.lowerBound);
+    expect(decisions[0]!.strategyId).toBe('sing-box');
+    expect(decisions[0]!.reason).toBe('learned-best');
+  });
+
+  it('exposes the lower bound so the number in the UI is the number used', () => {
+    const now = Date.now();
+    const state = stateWith([{ strategyId: 'xray', successes: 5, failures: 0 }], now);
+    const decisions = rankStrategies({
+      state,
+      context: CONTEXT,
+      strategies: BASELINE.map(strategy),
+      baselineOrder: BASELINE,
+      now,
+    });
+    const top = decisions.find((d) => d.strategyId === 'xray')!;
+    expect(top.lowerBound).toBeLessThan(top.successProbability);
+    expect(top.lowerBound).toBeGreaterThan(0);
+  });
+
+  it('restores point-estimate ordering exactly when the margin is switched off', () => {
+    const now = Date.now();
+    const state = stateWith(
+      [
+        { strategyId: 'xray', successes: 5, failures: 0 },
+        { strategyId: 'sing-box', successes: 30, failures: 10 },
+      ],
+      now,
+    );
+
+    const decisions = rankStrategies({
+      state,
+      context: CONTEXT,
+      strategies: BASELINE.map(strategy),
+      baselineOrder: BASELINE,
+      now,
+      options: { uncertaintyZ: 0 },
+    });
+
+    // This is the pre-change behaviour, kept reachable so the replay comparison
+    // can measure the two policies against the same corpus.
+    expect(decisions[0]!.strategyId).toBe('xray');
+    expect(decisions[0]!.lowerBound).toBeCloseTo(decisions[0]!.successProbability, 10);
   });
 });
 

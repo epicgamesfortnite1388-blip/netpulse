@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-10-27T13:28:46.990Z",
+  "iterations": 20000,
+  "policyBounds": {
+    "maxContexts": 32,
+    "maxStrategiesPerContext": 12,
+    "maxObservations": 200,
+    "halfLifeMs": 1209600000,
+    "minSamples": 5
+  },
+  "state": {
+    "entries": 256,
+    "contexts": 32,
+    "strategiesPerContext": 8,
+    "strategiesInRegistry": 8,
+    "observationsStored": 200,
+    "contextsAvailableInSignals": 80,
+    "entriesAfterRun": 256,
+    "observationsAfterRun": 200,
+    "serializedBytes": 79481,
+    "bytesPerEntry": 310.5,
+    "serializedBytesAfterOneMoreObservation": 79508,
+    "bytesAddedByOneObservation": 27
+  },
+  "buildMs": 47,
+  "rankStrategies": {
+    "p50Us": 4,
+    "p95Us": 6.8,
+    "maxUs": 479.7,
+    "meanUs": 4.93
+  },
+  "applyObservation": {
+    "p50Us": 54.9,
+    "p95Us": 70.7,
+    "maxUs": 844.5,
+    "meanUs": 58.29
+  },
+  "parseAdaptiveState": {
+    "p50Us": 320,
+    "p95Us": 443.7,
+    "maxUs": 3649.1,
+    "meanUs": 306.88
+  },
+  "heap": {
+    "measuredWithForcedGc": true,
+    "deltaBytesAfterBuildingMaxState": 123000,
+    "deltaPerEntryBytes": 480.5
+  },
+  "warmup": "excluded from the samples",
+  "sink": 5333056
+}

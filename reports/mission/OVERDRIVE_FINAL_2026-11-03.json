@@ -1,0 +1,186 @@
+{
+  "mission": "NETPULSE_OVERDRIVE_FINAL",
+  "title": "NetPulse Overdrive — verified evidence ledger and Mission Control",
+  "generatedAt": "2026-11-03T17:25:41.920Z",
+  "workspace": "E:\\Code\\Project\\Vpn_app",
+  "vantage": "non-Iranian lab network (Windows 11, direct HTTPS egress 83.229.87.141, AS204548)",
+  "summary": "Mission Control gained an evidence-first surface (/overdrive) that reads measured artifacts, the 37-entry registry and the acceptance roadmap instead of restating them. This cycle also closed the DNS leak it had just documented: names now resolve over DNS-over-TCP through the tunnel (15/15, 80 ms), IPv6 was shown to be carried inside the tunnel, and a hard-kill recovery was measured at 3.0 s. The project still cannot demonstrate an Iranian-network result, server-issued credentials, WhiteDNS or a payment path, and the grade says so.",
+  "acceptance": [
+    {
+      "objective": "Inventory the actual accessible project and infrastructure",
+      "status": "PASS",
+      "evidence": "repo tree, apps/*, docs/**, reports/** read; siblings listed under E:/Code/Project (Abystral, Abystral-ledger, 3x-ui-fork, ...). Host/D1/Worker state NOT re-queried"
+    },
+    {
+      "objective": "Inspect the existing research and evidence",
+      "status": "PASS",
+      "evidence": "docs/research/dpi/mission-journal.md, ROADMAP.md, reports/mission/MISSION_CONTROL_2026-11-02.md, reports/accounting/*"
+    },
+    {
+      "objective": "Internet research with traceable sources",
+      "status": "PASS",
+      "evidence": "docs/research/dpi/bibliography.md — 37 entries; S36 Psiphon and S37 Tor anti-censorship added and verified against live GitHub/GitLab APIs on 2026-11-03"
+    },
+    {
+      "objective": "Evaluate relevant VPN and DNS methods",
+      "status": "PASS",
+      "evidence": "docs/research/dpi/protocol-comparison.md, circumvention-techniques.md, dns-circumvention-analysis.md, tls-sni-ech-analysis.md; candidate states recorded in ROADMAP W1-W4. No new method was evaluated this cycle"
+    },
+    {
+      "objective": "Adaptive AI present in the real application",
+      "status": "PASS",
+      "evidence": "GET /api/v1/mission/overdrive -> adaptive {enabled:true, context:'balanced profile', approved:0, observations:0}; engine refuses to rank without evidence"
+    },
+    {
+      "objective": "Evaluate a concrete candidate through controlled testing",
+      "status": "PASS",
+      "evidence": "Aether (W1): 4 run attempts, 1 working (-masque --noize gfw); 20/20 staged rounds through the tunnel; free-config catalog 34,150 parsed, 16/270 dialled OK"
+    },
+    {
+      "objective": "Connect through the strongest viable authorized candidate",
+      "status": "PASS",
+      "evidence": "reports/accounting/AETHER_TUNNEL_PROOF_2026-11-03.md — exit 104.28.197.9 (AS13335) vs baseline 83.229.87.141 (AS204548)"
+    },
+    {
+      "objective": "Verify real tunnel traffic, not only a handshake",
+      "status": "PASS",
+      "evidence": "reports/accounting/TUNNEL_STAGES_2026-11-03.json — 20/20 HTTP responses arrived through SOCKS5; TLS 92 ms median, first byte 197 ms"
+    },
+    {
+      "objective": "Test egress, DNS, leaks and reconnection",
+      "status": "PARTIAL",
+      "evidence": "egress PASS; DNS measured AND found leaking outside the tunnel (ATYP 0x03 refused, DNS 1 ms local); IPv6 leak NOT TESTED; reconnection NOT TESTED"
+    },
+    {
+      "objective": "Verify subscription and credential enforcement",
+      "status": "BLOCKED",
+      "evidence": "the only VPN host (206.1.96.89) was retired 2026-11-02 (reports/accounting/VPS_LOSS_ACCOUNTING_2026-11-02.md); no server-issued identity exists to reconcile or revoke"
+    },
+    {
+      "objective": "Test WHITEDNS to the extent the infrastructure supports it",
+      "status": "BLOCKED",
+      "evidence": "D-01: zone withdrawn with the retired host; no nameserver serves it (docs/research/dpi/DECISIONS_2026-11-02.md)"
+    },
+    {
+      "objective": "Audit payment integration and test the sandbox path",
+      "status": "BLOCKED",
+      "evidence": "reports/mission/PAYMENT_GO_NO_GO_2026-10-27.md + STARS_PAYMENT_IMPLEMENTATION_2026-10-28.md: owner-gated merchant eligibility, XTR_ENABLED unset, no provider credentials"
+    },
+    {
+      "objective": "Build a working Mission Control interface with real telemetry",
+      "status": "PASS",
+      "evidence": "apps/web/src/features/mission/OverdrivePage.tsx + GET /api/v1/mission/overdrive; verified in the running app: 5/5 artifacts, 37 sources, 0/5 requirements"
+    },
+    {
+      "objective": "Integrate useful animations and accessibility behaviour",
+      "status": "PASS",
+      "evidence": "path-tracer animation is decoration over measured medians and is removed under prefers-reduced-motion (CSS media query + motion-reduce:hidden); Radix tabs are keyboard-operable (ArrowRight verified)"
+    },
+    {
+      "objective": "Generate the detailed final report",
+      "status": "PASS",
+      "evidence": "reports/mission/OVERDRIVE_FINAL_2026-11-03.md + this JSON"
+    },
+    {
+      "objective": "Preserve evidence for critical results",
+      "status": "PASS",
+      "evidence": "reports/accounting/*.json (connect rates, survival, stages, controls, census), all cited by path in the dashboard"
+    },
+    {
+      "objective": "Document unresolved external blockers",
+      "status": "PASS",
+      "evidence": "Iranian vantage, host access, WhiteDNS zone, payment credentials, sing-box pin — each named with the exact missing dependency"
+    },
+    {
+      "objective": "Verify any production deployment performed",
+      "status": "NOT TESTED",
+      "evidence": "no deployment was attempted or authorised in this cycle; changes are local (working tree only)"
+    },
+    {
+      "objective": "Demonstrate censorship resistance on an Iranian ISP",
+      "status": "NOT TESTED",
+      "evidence": "no Iranian vantage on this machine; 0/5 Iran-ready requirements met"
+    }
+  ],
+  "grade": {
+    "total": 56,
+    "letter": "F",
+    "scale": "95-100 A+, 90-94 A, 85-89 B+, 80-84 B, 75-79 C+, 70-74 C, 60-69 D, 0-59 F",
+    "note": "Honest readiness assessment, not a code-volume score. Three weighted categories (VPS provisioning, WhiteDNS, payments) are near-zero because those subsystems do not exist in a usable form, which is 30% of the weight.",
+    "categories": [
+      {
+        "name": "VPN functionality and real connectivity",
+        "weight": 20,
+        "score": 72,
+        "evidence": "Aether tunnel verified with data-plane traffic, differing exit AS, IPv6 through the tunnel, 20/20 staged rounds, recovery in 3.0 s; free-source path 16/270 connect, 6/7 survival at 25 min. No own infrastructure, no throughput measurement, no server-issued credentials."
+      },
+      {
+        "name": "Security, privacy and access control",
+        "weight": 15,
+        "score": 72,
+        "evidence": "Loopback + browser-origin session gating; dashboard regression-tested for key/subscription leakage; DNS leak closed at client level; IPv6 not leaking here. Residual: DNS-through-tunnel is opt-in per caller, one default helper still resolves locally, no independent audit."
+      },
+      {
+        "name": "DPI research and censorship resilience",
+        "weight": 15,
+        "score": 55,
+        "evidence": "37 sources with limitations and confidence, layered threat model, failure taxonomy, stage-level lab baselines. Zero Iranian measurements: 0/5 Iran-ready requirements, so no censorship-resistance claim is available."
+      },
+      {
+        "name": "Adaptive AI and measurable learning",
+        "weight": 10,
+        "score": 55,
+        "evidence": "Real deterministic engine with approved/refused strategies, confidence, explanations and a trust anchor; refuses to rank with zero observations. No demonstrated improvement over baseline (0 observations recorded)."
+      },
+      {
+        "name": "VPS infrastructure and provisioning",
+        "weight": 10,
+        "score": 25,
+        "evidence": "The single host 206.1.96.89 was retired 2026-11-02; no provisioning, reconciliation, backup or revocation path exists today. Earlier reconciler tests are documented but not reproducible now."
+      },
+      {
+        "name": "WHITEDNS and DNS reliability",
+        "weight": 10,
+        "score": 30,
+        "evidence": "Zone withdrawn with the retired host (D-01); no data plane. The new in-tunnel resolver is a real DNS reliability gain but is not the WHITEDNS product path."
+      },
+      {
+        "name": "Accounting, payments and subscriptions",
+        "weight": 10,
+        "score": 30,
+        "evidence": "No payment provider integrated; Telegram Stars disabled by decision and owner-gated. Subscription entitlements cannot be enforced or revoked because no host-side identity exists. Nothing here is commercially usable."
+      },
+      {
+        "name": "UI/UX and Mission Control",
+        "weight": 5,
+        "score": 85,
+        "evidence": "Two real dashboards on live data, six-tab evidence surface, keyboard-operable tabs, reduced-motion honoured, no synthetic values, every figure traceable to an artifact. No Persian RTL layout."
+      },
+      {
+        "name": "Testing, observability, documentation and recovery",
+        "weight": 5,
+        "score": 88,
+        "evidence": "1120 API + 461 web tests passing, typecheck/lint/build clean, seven measured artifacts with timestamps, journal and decision records, recovery measured rather than asserted."
+      }
+    ],
+    "caps": {
+      "connectivityCapApplied": false,
+      "connectivityNote": "The \"no verified tunnel\" cap (≤59) does not bind because a tunnel carrying real traffic was verified; the score is below the cap on its own merits.",
+      "subscriptionCapApplied": false,
+      "subscriptionNote": "The subscription-enforcement cap (≤69) would also not bind; entitlements genuinely cannot be enforced, which is reflected in the low payment/infra categories instead of a cap.",
+      "iranNote": "No Iranian-network measurement exists, so Iran-specific resilience earns no credit beyond documentation."
+    },
+    "readiness": {
+      "production": "NOT READY — no server-side identity issuance, no entitlement enforcement, no monitored infrastructure.",
+      "security": "PARTIAL — strong local controls and no observed leak on this host; DNS-in-tunnel is opt-in and un-audited.",
+      "commercial": "NOT READY — no payment provider, no purchase-to-provision path, no revocation."
+    },
+    "topImprovements": [
+      "Route every name lookup through the tunnelled resolver by default (close the remaining opt-in leak).",
+      "Obtain a consenting Iranian vantage and run the 5-requirement protocol; without it no resilience claim exists.",
+      "Restore a provisioning path (host or per-user serverless identity) so entitlements can be issued and revoked.",
+      "Integrate one real payment provider in sandbox and prove purchase → entitlement → config end to end.",
+      "Measure throughput and soak-test recovery, not just latency and one kill cycle."
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-11-03T17:21:32.657Z",
+  "tunnelPort": 1819,
+  "relay": true,
+  "ipv4Exit": "104.28.197.9",
+  "ipv6Egress": {
+    "reachable": false,
+    "address": null,
+    "note": "fetch failed"
+  },
+  "tunnelAcceptsIpv6": true,
+  "tunnelIpv6Reply": 0,
+  "tunnelIpv6Detail": "CONNECT accepted",
+  "ipv6DataPlane": {
+    "tls": true,
+    "note": "TLS ok over IPv6, cert CN=cloudflare-dns.com"
+  },
+  "findings": [
+    "This host has no direct IPv6 egress, but the tunnel carried an IPv6 TLS handshake to 2606:4700:4700::1111 (TLS ok over IPv6, cert CN=cloudflare-dns.com). IPv6 is covered *through* the tunnel — there is no v6 path outside it to leak onto, and no v6 coverage gap in the tunnel itself.",
+    "DNS was measured separately (DNS_TUNNEL_PROOF): resolution now happens through the tunnel on TCP/53, so names no longer go to the local resolver."
+  ],
+  "notCovered": [
+    "IPv6 through the tunnel (no coverage to test until IPv6 targets are accepted).",
+    "UDP/QUIC leak behaviour — the SOCKS listener is TCP-only here.",
+    "Traffic from another interface or a second resolver configured by the OS."
+  ]
+}

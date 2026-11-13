@@ -1,0 +1,204 @@
+{
+  "generatedAt": "2026-11-03T16:14:10.146Z",
+  "tunnelPort": 1819,
+  "target": "api.ipify.org",
+  "repeats": 20,
+  "completed": 20,
+  "dnsRunsThrough": "local resolver (tunnel refuses ATYP 0x03)",
+  "domainFormAccepted": false,
+  "stages": {
+    "dns": {
+      "min": 0,
+      "median": 1,
+      "p90": 1,
+      "max": 89
+    },
+    "socksConnect": {
+      "min": 76,
+      "median": 80,
+      "p90": 87,
+      "max": 95
+    },
+    "tlsHandshake": {
+      "min": 82,
+      "median": 92,
+      "p90": 100,
+      "max": 100
+    },
+    "httpFirstByte": {
+      "min": 186,
+      "median": 197,
+      "p90": 278,
+      "max": 361
+    },
+    "endToEnd": {
+      "min": 352,
+      "median": 372,
+      "p90": 467,
+      "max": 535
+    }
+  },
+  "failures": [],
+  "samples": [
+    {
+      "dnsMs": 89,
+      "socksMs": 80,
+      "tlsMs": 91,
+      "httpMs": 207,
+      "totalMs": 467,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 78,
+      "tlsMs": 93,
+      "httpMs": 192,
+      "totalMs": 363,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 78,
+      "tlsMs": 86,
+      "httpMs": 198,
+      "totalMs": 363,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 78,
+      "tlsMs": 95,
+      "httpMs": 361,
+      "totalMs": 535,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 85,
+      "tlsMs": 100,
+      "httpMs": 199,
+      "totalMs": 384,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 82,
+      "tlsMs": 94,
+      "httpMs": 194,
+      "totalMs": 370,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 83,
+      "tlsMs": 84,
+      "httpMs": 193,
+      "totalMs": 362,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 85,
+      "tlsMs": 95,
+      "httpMs": 224,
+      "totalMs": 404,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 95,
+      "tlsMs": 92,
+      "httpMs": 191,
+      "totalMs": 379,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 81,
+      "tlsMs": 98,
+      "httpMs": 189,
+      "totalMs": 369,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 77,
+      "tlsMs": 89,
+      "httpMs": 186,
+      "totalMs": 354,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 76,
+      "tlsMs": 86,
+      "httpMs": 189,
+      "totalMs": 352,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 76,
+      "tlsMs": 90,
+      "httpMs": 187,
+      "totalMs": 353,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 77,
+      "tlsMs": 96,
+      "httpMs": 208,
+      "totalMs": 382,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 77,
+      "tlsMs": 95,
+      "httpMs": 188,
+      "totalMs": 361,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 76,
+      "tlsMs": 82,
+      "httpMs": 198,
+      "totalMs": 357,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 80,
+      "tlsMs": 100,
+      "httpMs": 191,
+      "totalMs": 372,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 87,
+      "tlsMs": 90,
+      "httpMs": 215,
+      "totalMs": 393,
+      "error": null
+    },
+    {
+      "dnsMs": 0,
+      "socksMs": 86,
+      "tlsMs": 90,
+      "httpMs": 197,
+      "totalMs": 373,
+      "error": null
+    },
+    {
+      "dnsMs": 1,
+      "socksMs": 80,
+      "tlsMs": 91,
+      "httpMs": 278,
+      "totalMs": 451,
+      "error": null
+    }
+  ]
+}

@@ -118,6 +118,19 @@ export interface AdaptiveObservation {
   failureKind: FailureKind | null;
   /** stable machine code for why it failed; null on success */
   reasonCode: string | null;
+  /**
+   * The probability this engine assigned to the strategy when it chose it.
+   *
+   * Present only when the attempt came from a model decision the engine was
+   * willing to make (not `confidence: 'none'`). Stored so the model can be
+   * SCORED against what actually happened — a Brier score needs the prediction,
+   * and counting successes without keeping predictions is how a model looks
+   * trained while nobody can prove it is calibrated.
+   *
+   * Absent on observations recorded before this field existed, which is why it
+   * is optional rather than required.
+   */
+  predicted?: number | null;
 }
 
 /* ---------------------------------- stats --------------------------------- */
@@ -171,6 +184,20 @@ export interface AdaptivePolicyOptions {
   explorationShare: number;
   /** how much time-to-verified-working-tunnel is allowed to oppose success probability */
   costWeight: number;
+  /**
+   * One-sided z for the lower confidence bound the ranking actually sorts on.
+   *
+   * 0 would rank on the posterior mean, which is what a thin, lucky record looks
+   * best under: with the Beta(1,1) prior, 5/5 has a mean of 0.857 and 30/40 a mean
+   * of 0.738, so five attempts would displace forty. At 2 (the 95% one-sided
+   * normal quantile) the same pair ranks 0.593 vs 0.602 and the better-evidenced
+   * core leads. A wider z is deliberately conservative: it takes real evidence to
+   * displace the default order.
+   *
+   * Deliberately NOT part of the signed policy patch: a remote update may widen or
+   * narrow most bounds, but it must not be able to switch this guard off.
+   */
+  uncertaintyZ: number;
   /** the time cost that counts as "the whole budget" (normalization) */
   costReferenceMs: number;
   /** consecutive failures after which a strategy is treated as broken now */
@@ -195,6 +222,7 @@ export const DEFAULT_ADAPTIVE_POLICY: AdaptivePolicyOptions = {
   explorationShare: 0.25,
   costWeight: 0.25,
   costReferenceMs: 8_000,
+  uncertaintyZ: 2,
   flopThreshold: 3,
   maxContexts: 32,
   maxStrategiesPerContext: 12,
@@ -221,7 +249,9 @@ export interface AdaptiveDecision {
   label: string;
   /** posterior mean of "this reaches the internet under this context" */
   successProbability: number;
-  /** successProbability minus the normalized time cost */
+  /** what the order was actually decided on: successProbability minus an uncertainty margin */
+  lowerBound: number;
+  /** lowerBound minus the normalized time cost */
   score: number;
   /** decayed observation count behind the estimate */
   evidence: number;

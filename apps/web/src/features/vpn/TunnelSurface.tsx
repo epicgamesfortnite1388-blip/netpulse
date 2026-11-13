@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/Badge';
 import { DiscoveryCard } from './DiscoveryCard';
 import { PROXY_CORE_META } from './engineMeta';
 import { ProxyTunnelCard } from './ProxyTunnelCard';
+import { SmartConnectCard } from './SmartConnectCard';
+import { AgentAutonomyCard } from './AgentAutonomyCard';
 import { EngineGlyph, EngineHero, MetricStrip, Notice } from '@/components/ui/Surface';
 import { VpnHistoryCard } from './VpnHistoryCard';
 import { useProxyEngines } from './useVpnData';
@@ -72,6 +74,8 @@ export function TunnelSurface() {
 
       <div className="stagger space-y-7">
         <ProxyTunnelCard />
+        <SmartConnectCard />
+        <AgentAutonomyCard />
         <DiscoveryCard />
         <VpnHistoryCard />
       </div>

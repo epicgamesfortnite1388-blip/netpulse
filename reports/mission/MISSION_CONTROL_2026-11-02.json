@@ -1,0 +1,67 @@
+{
+  "mission": "NETPULSE_MISSION_CONTROL",
+  "date": "2026-11-02",
+  "workspace": "E:\\Code\\Project\\Vpn_app",
+  "report": "reports/mission/MISSION_CONTROL_2026-11-02.md",
+  "gates": {
+    "apiTests": { "files": 103, "tests": 1113, "failed": 0, "status": "PASS" },
+    "webTests": { "files": 51, "tests": 461, "failed": 0, "status": "PASS" },
+    "targetedTests": { "files": 6, "tests": 55, "failed": 0, "status": "PASS" },
+    "apiTypecheck": "PASS",
+    "webTypecheck": "PASS",
+    "eslintTouchedFiles": "PASS (0 findings)",
+    "webBuild": "PASS (7.36 s)"
+  },
+  "defectsFixed": [
+    {
+      "id": "route-wiring-adaptive-status",
+      "file": "apps/web/src/features/vpn/AdaptiveRecoveryCard.tsx",
+      "guard": "apps/api/test/routeWiring.test.ts",
+      "summary": "Ternary inside the fetch template produced an unmatched pseudo-path; the wiring gate could not tell a bad request from a missing route."
+    },
+    {
+      "id": "adaptive-error-envelope",
+      "file": "apps/api/src/routes/adaptive.ts",
+      "guard": "apps/api/test/httpSemantics.test.ts",
+      "summary": "Two handlers hand-wrote a flat error body the client drops, so the user saw the HTTP status text instead of the reason. Routed through replyApiError()."
+    }
+  ],
+  "implemented": {
+    "api": ["apps/api/src/services/missionControl.ts", "apps/api/src/routes/mission.ts", "apps/api/src/app.ts (registration)"],
+    "web": [
+      "apps/web/src/features/mission/MissionControlPage.tsx",
+      "apps/web/src/app/router.tsx (/mission)",
+      "apps/web/src/app/AppShell.tsx (Overview nav entry)"
+    ],
+    "tests": ["apps/api/test/missionControl.test.ts (6 tests)"],
+    "endpoint": "GET /api/v1/mission/status",
+    "evidenceClasses": ["verified", "observed", "not_tested", "unavailable", "blocked"]
+  },
+  "statuses": {
+    "projectInventory": "PASS",
+    "existingResearchReviewed": "PASS",
+    "preExistingFailuresFixed": "PASS",
+    "missionControlImplemented": "PASS",
+    "missionControlStreamsRealTelemetry": "PASS (local process)",
+    "newLiveVpnProof": "NOT TESTED",
+    "iranIspFieldMeasurement": "BLOCKED",
+    "hostReconciliation": "BLOCKED",
+    "whitednsDataPlane": "NOT TESTED",
+    "payments": "BLOCKED",
+    "researchSweep30Sources": "NOT DONE",
+    "desktopPackagedBuild": "NOT RUN",
+    "deployment": "NOT PERFORMED"
+  },
+  "blockers": [
+    "SSH access to 206.1.96.89 from this workstation is recorded as lost; host-side reconciliation and revocation cannot be re-probed.",
+    "WHITEDNS has no per-user identity (no_per_user_identity), so issuance stays withheld and no DNS entitlement can be exercised.",
+    "Payments remain owner-gated (Stars availability for the audience, payout eligibility, local-law position); XTR_ENABLED is unset."
+  ],
+  "nextActions": [
+    "Run npm run proof:vpn with an xray core and let the tunnel row become 'verified' from a real egress check.",
+    "Restore host access and re-run the reconciler failure/removal verifiers on the live host.",
+    "Give WHITEDNS a per-user identity or keep issuance withheld.",
+    "Obtain a voluntary Iranian-ISP vantage for a field measurement.",
+    "Run the packaged desktop build and the CDP/webview audit for the new lazy route."
+  ]
+}

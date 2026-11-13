@@ -1,0 +1,11 @@
+--- emulation: src-tauri/backend is an empty dir, WebView2Loader.dll is a 0-byte placeholder
+-rw-r--r-- 1 RADIN 197609 0 Oct 27 17:37 src-tauri/WebView2Loader.dll
+
+src-tauri/backend:
+total 4
+drwxr-xr-x 1 RADIN 197609 0 Oct 27 17:36 .
+drwxr-xr-x 1 RADIN 197609 0 Oct 27 17:37 ..
+--- cargo build:
+   Compiling netpulse-desktop v1.1.1 (E:\Code\Project\Vpn_app\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.38s
+BUILD_EXIT=0

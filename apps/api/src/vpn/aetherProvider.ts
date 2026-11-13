@@ -33,6 +33,7 @@ import type { BypassRuleSet, VpnStatus } from '@netpulse/shared';
 
 import { spawnCoreProcess } from '../services/coreProcess';
 import { TunGatewayHandle } from '../services/tunGatewayHandle';
+import { tunnelDns } from '../services/tunnelDns';
 import { vpnError } from './vpnService';
 
 import type { CoreProcessFailure } from '../services/coreProcess';
@@ -282,6 +283,130 @@ export function socks5Connect(port: number, targetHost: string, targetPort: numb
     sock.on('connect', () => {
       sock.write(Buffer.from([0x05, 0x01, 0x00]));
     });
+  });
+}
+
+/* ----------------------------- DNS in tunnel ----------------------------- */
+
+/**
+ * Encode a single-question A query. `id` is caller-supplied so a test can pin it.
+ *
+ * This exists because the leak it closes is structural: Aether's SOCKS5 refuses
+ * hostname-form CONNECT (ATYP 0x03), so a name can only be resolved by someone,
+ * and by default that someone is the machine's own resolver — outside the
+ * tunnel. Speaking DNS ourselves over a TCP CONNECT to the resolver's IP puts
+ * the query on the far side of the tunnel, where the exit sees it, not the ISP.
+ */
+export function encodeDnsQuery(name: string, id: number): Buffer {
+  const labels = name.replace(/\.$/, '').split('.').filter((l) => l.length > 0);
+  const qname: number[] = [];
+  for (const label of labels) {
+    const bytes = Buffer.from(label, 'utf8');
+    if (bytes.length > 63) throw new Error(`label too long: ${label}`);
+    qname.push(bytes.length, ...bytes);
+  }
+  qname.push(0);
+  const header = Buffer.alloc(12);
+  header.writeUInt16BE(id & 0xffff, 0); // ID
+  header.writeUInt16BE(0x0100, 2); // RD (recursion desired)
+  header.writeUInt16BE(1, 4); // QDCOUNT
+  const tail = Buffer.from([0x00, 0x01, 0x00, 0x01]); // QTYPE=A, QCLASS=IN
+  return Buffer.concat([header, Buffer.from(qname), tail]);
+}
+
+/** Skip a (possibly compressed) name and return the offset just past it. */
+function skipDnsName(msg: Buffer, offset: number): number {
+  let i = offset;
+  while (i < msg.length) {
+    const len = msg[i]!;
+    if (len === 0) return i + 1;
+    if ((len & 0xc0) === 0xc0) return i + 2; // compression pointer ends the name
+    i += 1 + len;
+  }
+  return i;
+}
+
+/**
+ * Parse a DNS response just far enough to answer "what A records came back?".
+ * Anything unexpected yields `rcode` as read and no addresses — never a guess.
+ */
+export function parseDnsResponse(msg: Buffer, id: number): { id: number; rcode: number; addresses: string[] } {
+  if (msg.length < 12) return { id: -1, rcode: -1, addresses: [] };
+  const rid = msg.readUInt16BE(0);
+  const rcode = msg[3]! & 0x0f;
+  if (rid !== (id & 0xffff) || rcode !== 0) return { id: rid, rcode, addresses: [] };
+
+  const qdcount = msg.readUInt16BE(4);
+  const ancount = msg.readUInt16BE(6);
+  let offset = 12;
+  for (let q = 0; q < qdcount; q += 1) {
+    offset = skipDnsName(msg, offset);
+    offset += 4; // QTYPE + QCLASS
+    if (offset > msg.length) return { id: rid, rcode, addresses: [] };
+  }
+
+  const addresses: string[] = [];
+  for (let a = 0; a < ancount; a += 1) {
+    if (offset + 10 > msg.length) break;
+    offset = skipDnsName(msg, offset);
+    if (offset + 10 > msg.length) break;
+    const type = msg.readUInt16BE(offset);
+    const klass = msg.readUInt16BE(offset + 2);
+    const rdlength = msg.readUInt16BE(offset + 8);
+    offset += 10;
+    if (offset + rdlength > msg.length) break;
+    if (type === 1 && klass === 1 && rdlength === 4) {
+      addresses.push(`${msg[offset]}.${msg[offset + 1]}.${msg[offset + 2]}.${msg[offset + 3]}`);
+    }
+    offset += rdlength;
+  }
+  return { id: rid, rcode, addresses };
+}
+
+/**
+ * Resolve a name through the tunnel using DNS-over-TCP (RFC 7766 framing).
+ *
+ * Returns null on any failure — a caller that needs a name must decide what to
+ * do when the tunnel cannot resolve it, rather than silently falling back to the
+ * local resolver and reintroducing the leak.
+ */
+export async function resolveThroughTunnel(
+  port: number,
+  name: string,
+  server = '1.1.1.1',
+  timeoutMs = 8_000,
+): Promise<{ addresses: string[]; elapsedMs: number } | null> {
+  const conn = await socks5Connect(port, server, 53, timeoutMs);
+  if (!conn) return null;
+
+  const started = Date.now();
+  const id = Math.floor(Math.random() * 0xffff);
+  const query = encodeDnsQuery(name, id);
+  const framed = Buffer.concat([Buffer.from([query.length >> 8, query.length & 0xff]), query]);
+
+  return new Promise((resolve) => {
+    let buf = Buffer.alloc(0);
+    const done = (value: { addresses: string[]; elapsedMs: number } | null): void => {
+      clearTimeout(timer);
+      conn.socket.destroy();
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    conn.socket.on('error', () => done(null));
+    conn.socket.on('close', () => done(null));
+    conn.socket.on('data', (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length < 2) return;
+      const need = buf.readUInt16BE(0);
+      if (buf.length < need + 2) return;
+      const parsed = parseDnsResponse(buf.subarray(2, 2 + need), id);
+      if (parsed.addresses.length === 0) {
+        done(null);
+        return;
+      }
+      done({ addresses: parsed.addresses, elapsedMs: Date.now() - started });
+    });
+    conn.socket.write(framed);
   });
 }
 
@@ -631,6 +756,12 @@ export class AetherProvider implements VpnProvider {
     this.child = child;
     this.connectedAt = Date.now();
     this.connectedProfile = profile;
+    // Route all DNS through the tunnel (Aether refuses hostname CONNECT)
+    try {
+      tunnelDns.setPolicy({ mode: 'tunnel', port: this.bindPort });
+    } catch {
+      /* best effort */
+    }
     // System-wide routing first when it was asked for: a verified TUN gateway
     // owns the default route, so the per-app system-proxy handoff would be
     // redundant state to hold and restore. When TUN does not prove out we fall
@@ -643,6 +774,11 @@ export class AetherProvider implements VpnProvider {
     if (!tunUp) await this.takeSystemProxy(profile);
     child.on('close', (code) => {
       if (this.child === child) {
+        try {
+          tunnelDns.setPolicy({ mode: 'direct' });
+        } catch {
+          /* best effort */
+        }
         const label = this.connectedProfile?.name ?? profile.name;
         this.child = null;
         this.connectedAt = null;
@@ -764,6 +900,11 @@ export class AetherProvider implements VpnProvider {
   }
 
   async disconnect(): Promise<VpnStatus> {
+    try {
+      tunnelDns.setPolicy({ mode: 'direct' });
+    } catch {
+      /* best effort */
+    }
     this.tun.stop();
     if (this.child) {
       this.child.kill();

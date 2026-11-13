@@ -212,6 +212,9 @@ export async function quickConnectCore(ctx: AppContext, opts: {
     for (const engine of plan?.order ?? []) push(engine);
 
     for (const engine of engines) {
+      // The decision this attempt came from, so the outcome is stored under the
+      // strategy that was planned even if the DNS setting changes mid-attempt.
+      const decided = plan?.decisions.find((d) => d.engine === engine) ?? null;
       emit('adaptive-choice', `Adaptive agent selected ${engine}`, {
         engine,
         node: name ?? node.remark ?? nodeId,
@@ -227,6 +230,12 @@ export async function quickConnectCore(ctx: AppContext, opts: {
           nodeId,
           engine,
           ...(plan ? { context: plan.context } : {}),
+          ...(decided ? { strategyId: decided.strategyId } : {}),
+          // Only a decision the engine was willing to stand behind is scored.
+          predicted:
+            decided && !decided.exploratory && decided.confidence !== 'none'
+              ? decided.successProbability
+              : null,
           ok: verified,
           timeToWorkingMs: verified ? Date.now() - startedAt : null,
           failure: verified

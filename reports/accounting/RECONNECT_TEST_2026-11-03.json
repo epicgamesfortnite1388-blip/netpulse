@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-11-03T17:22:16.078Z",
+  "tunnelPort": 1819,
+  "stoppedPid": 25996,
+  "upBefore": true,
+  "exitBefore": "104.28.197.9",
+  "confirmedDown": true,
+  "downAfterMs": 93,
+  "confirmedUp": true,
+  "reconnectMs": 3032,
+  "totalOutageMs": 3125,
+  "exitAfter": "104.28.197.9",
+  "exitStable": true,
+  "verdict": "PASS — down detected in 93 ms, back in 3032 ms, exit 104.28.197.9",
+  "notes": [
+    "Recovery used the cached identity and gateway; a cold start (no cache) takes longer and is NOT measured here.",
+    "The process was killed hard (SIGKILL equivalent), which is the harsher of the two failure modes."
+  ]
+}

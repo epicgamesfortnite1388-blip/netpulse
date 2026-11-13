@@ -149,6 +149,16 @@ export interface AppSettings {
       enabled: boolean;
       intervalMinutes: number;
     };
+    /**
+     * The discovery agent's autonomy budget. `paused` stops unattended work only;
+     * hourly caps bound both autonomous and user-triggered network actions.
+     */
+    agent: {
+      paused: boolean;
+      fetchPerHour: number;
+      probesPerHour: number;
+      verifyPerHour: number;
+    };
   };
   /**
    * Adaptive connectivity.

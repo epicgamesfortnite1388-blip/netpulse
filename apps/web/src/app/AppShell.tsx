@@ -2,12 +2,14 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 
 import {
   Activity,
+  Bot,
   ChevronDown,
   Cloud,
   CloudCog,
   Cpu,
   Download,
   Flag,
+  FlaskConical,
   Gauge,
   Gamepad2,
   Globe,
@@ -18,6 +20,7 @@ import {
   Radio,
   Radar,
   Route,
+  Satellite,
   Search,
   Server,
   Settings,
@@ -83,6 +86,8 @@ const NAV: NavGroup[] = [
     heading: 'Overview',
     items: [
       { to: '/', label: 'Dashboard', icon: <Gauge size={16} />, end: true },
+      { to: '/mission', label: 'Mission Control', icon: <Satellite size={16} /> },
+      { to: '/overdrive', label: 'Mission Overdrive', icon: <FlaskConical size={16} /> },
       { to: '/map', label: 'Live Map', icon: <Globe size={16} /> },
       { to: '/health', label: 'System Health', icon: <Stethoscope size={16} /> },
     ],
@@ -135,6 +140,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/account', label: 'Account', icon: <CloudCog size={16} /> },
       { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
+      { to: '/copilot', label: 'Copilot', icon: <Bot size={16} /> },
     ],
   },
 ];

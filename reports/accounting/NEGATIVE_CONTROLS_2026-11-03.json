@@ -1,0 +1,73 @@
+{
+  "generatedAt": "2026-11-03T16:06:08.941Z",
+  "binary": "E:\\Code\\Project\\Vpn_app\\aether\\aether.exe",
+  "baselineBefore": "83.229.87.141",
+  "baselineAfter": "83.229.87.141",
+  "cases": [
+    {
+      "id": "C1",
+      "intent": "blocked peer (TEST-NET-1) must not yield a tunnel",
+      "portOpen": true,
+      "relay": false,
+      "exitIp": null,
+      "processExitedEarly": false,
+      "logTail": [
+        "[2026-11-03T16:05:42.854Z INFO  aether] [+] using cloudflare edge 192.0.2.1:443",
+        "[2026-11-03T16:05:42.855Z INFO  aether] [+] obfuscation profile: firewall",
+        "[2026-11-03T16:05:42.855Z INFO  aether] [+] [masque] MASQUE transport: HTTP/3 (QUIC) to 192.0.2.1:443 (inner mtu 1280, datagram 1350)",
+        "[2026-11-03T16:05:44.078Z INFO  aether::tls] tls verification: disabled (--tls-verify enables pinning; on by default with --team)"
+      ],
+      "verdict": "PASS",
+      "why": "port answered but no tunnel was certified"
+    },
+    {
+      "id": "C2",
+      "intent": "a port we opened ourselves must not be certified as a tunnel",
+      "portOpen": true,
+      "relay": false,
+      "exitIp": null,
+      "processExitedEarly": false,
+      "logTail": [
+        "[2026-11-03T16:05:58.405Z INFO  aether] Aether v2.4.0",
+        "[2026-11-03T16:05:58.405Z INFO  aether::sysprofile] [*] performance profile: High (cpus=20 mem=16121MB); scan concurrency cap=unlimited, udp socket buffer=7168KB, netstack tcp buffers=2048KB rx/512KB ",
+        "Error: Other(\"the socks5 listener cannot use 127.0.0.1:2920: Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048); another program already list",
+        "\")"
+      ],
+      "verdict": "PASS",
+      "why": "port answered but no tunnel was certified"
+    },
+    {
+      "id": "C3",
+      "intent": "a corrupt identity file must not produce a tunnel",
+      "portOpen": false,
+      "relay": false,
+      "exitIp": null,
+      "processExitedEarly": true,
+      "logTail": [
+        "[2026-11-03T16:06:05.950Z INFO  aether] Aether v2.4.0",
+        "[2026-11-03T16:06:05.950Z INFO  aether::sysprofile] [*] performance profile: High (cpus=20 mem=16121MB); scan concurrency cap=unlimited, udp socket buffer=7168KB, netstack tcp buffers=2048KB rx/512KB ",
+        "Error: Other(\"config parse: TOML parse error at line 1, column 6\\n  |\\n1 | this is not valid toml [[[\\n  |      ^\\nkey with no value, expected `=`\\n; the damaged file was moved to C:\\\\Users\\\\RADIN\\\\Ap",
+        "np-negctl-c3-jFDSyE\\\\aether-masque.toml.corrupt so a fresh identity can be provisioned\")"
+      ],
+      "verdict": "PASS",
+      "why": "no listener, no tunnel — nothing to certify"
+    },
+    {
+      "id": "C4",
+      "intent": "a failed tunnel must leave the machine on its normal egress",
+      "portOpen": false,
+      "relay": false,
+      "exitIp": "83.229.87.141",
+      "processExitedEarly": false,
+      "logTail": [],
+      "verdict": "PASS",
+      "why": "egress unchanged at 83.229.87.141"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "verdict": "PASS"
+  }
+}

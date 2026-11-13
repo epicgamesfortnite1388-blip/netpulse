@@ -1,0 +1,423 @@
+/**
+ * NANI service — orchestrates the adaptive network intelligence engine inside
+ * the live NetPulse API.
+ *
+ * Side effects are confined here: health checks, recovery activation, route
+ * changes. The NANI core (packages/shared/src/nani) is pure.
+ */
+
+import type {
+  ApiClassification,
+  ApiHealthStatus,
+  ApiProbeResult,
+  ApiRegistry,
+  ApiRegistryEntry,
+  ApiUpstreamRoute,
+  DiagnosticObservation,
+  DiagnosticTest,
+  HypothesisPosterior,
+  RecoveryObservation,
+  RecoveryPolicy,
+  RecoveryStep,
+  RouteCandidate,
+  RouteFeatures,
+  StepStatus,
+} from '@netpulse/shared';
+import {
+  assessApiHealth,
+  classifyApiFailure,
+  closeCircuit,
+  createApiRegistry,
+  DEFAULT_RECOVERY_POLICY,
+  DEFAULT_ROUTE_CONSTRAINTS,
+  DEFAULT_TESTS,
+  diagnose,
+  failRoute,
+  filterCandidates,
+  getApi,
+  listApis,
+  openCircuit,
+  planRecovery,
+  RecoveryController,
+  registerApi,
+  selectNextTest,
+  setApiHealth,
+  verifyRoute,
+} from '@netpulse/shared';
+
+import type { PlatformNetworkController } from '../providers/platform/types';
+import type { EventService } from './eventService';
+import type { RealtimeBus } from '../realtime/bus';
+import type { Logger } from '../logger';
+import { runDiagnosticTest } from './naniProbeAdapter';
+
+export interface NaniServiceDeps {
+  controller: PlatformNetworkController;
+  bus: RealtimeBus;
+  events: EventService;
+  log: Logger;
+}
+
+interface ApiRuntimeState {
+  entry: ApiRegistryEntry;
+  failures: number;
+  successes: number;
+  lastProbe: ApiProbeResult | null;
+  lastDiagnosis: HypothesisPosterior | null;
+  knownGoodRouteId: string | null;
+  recoveryId: string | null;
+}
+
+export interface NaniHealthCheckOptions {
+  apiId: string;
+  target: string;
+  layers?: Array<'dns' | 'tcp' | 'tls' | 'http' | 'auth' | 'application'>;
+}
+
+export interface NaniDiagnosisResult {
+  target: string;
+  posterior: HypothesisPosterior;
+  top: string | null;
+  confidence: number;
+  entropy: number;
+  insufficientEvidence: boolean;
+  action: string;
+  explanation: string;
+  recommendedTest: string | null;
+}
+
+export interface NaniRecoveryPlan {
+  recoveryId: string;
+  apiId: string;
+  status: 'ready' | 'requires-permission' | 'insufficient-evidence';
+  reason?: string;
+  steps: Array<{ id: string; kind: string; routeId: string; requiresAuthorization: boolean }>;
+  rejected: Array<{ id: string; reason: string }>;
+}
+
+export interface NaniRecoveryStepResult {
+  recoveryId: string;
+  stepId: string;
+  status: StepStatus;
+  snapshot: any;
+  nextStepId: string | null;
+}
+
+export class NaniService {
+  private readonly apis = new Map<string, ApiRuntimeState>();
+  private readonly registry: ApiRegistry;
+  private seq = 0;
+  private readonly deps: NaniServiceDeps;
+  private recoveryPolicy: RecoveryPolicy;
+
+  constructor(deps: NaniServiceDeps, policy: Partial<RecoveryPolicy> = {}) {
+    this.deps = deps;
+    this.registry = createApiRegistry();
+    this.recoveryPolicy = { ...DEFAULT_RECOVERY_POLICY, ...policy };
+  }
+
+  getRegistry(): ApiRegistry {
+    return this.registry;
+  }
+
+  registerApi(entry: Omit<ApiRegistryEntry, 'dependedBy'> & { dependedBy?: string[] }): void {
+    registerApi(this.registry, entry);
+    this.apis.delete(entry.id);
+    this.deps.log.info({ apiId: entry.id, provider: entry.provider }, 'nani api registered');
+  }
+
+  listApis(): Array<{ entry: ApiRegistryEntry; health: ApiHealthStatus; failures: number; successes: number }> {
+    return Array.from(this.apis.entries()).map(([id, state]) => ({
+      entry: state.entry,
+      health: state.entry.health as ApiHealthStatus,
+      failures: state.failures,
+      successes: state.successes,
+    }));
+  }
+
+  async checkApiHealth(opts: NaniHealthCheckOptions): Promise<{
+    classification: ApiClassification;
+    probe: ApiProbeResult;
+  }> {
+    const now = Date.now();
+    const entry = this.registry.entries.get(opts.apiId);
+    if (!entry) throw new Error(`unknown api: ${opts.apiId}`);
+    const state = this.getRuntimeState(entry);
+
+    const probe: ApiProbeResult = { at: now };
+    const layers = opts.layers ?? ['dns', 'tcp', 'tls', 'http'];
+
+    for (const layer of layers) {
+      const test = DEFAULT_TESTS.find((t) => t.layer === layer);
+      if (!test) continue;
+      const obs = await runDiagnosticTest(
+        this.deps.controller,
+        undefined as any,
+        test,
+        opts.target,
+        now,
+        this.deps.log,
+      );
+      if (obs.outcome === 'success') {
+        if (obs.testId === 'dns-lookup') probe.dns = true;
+        if (obs.testId === 'tcp-connect') probe.tcp = true;
+        if (obs.testId === 'tls-handshake') probe.tls = true;
+      } else if (obs.outcome === 'failure' || obs.outcome === 'timeout') {
+        if (obs.testId === 'dns-lookup') probe.dns = false;
+        if (obs.testId === 'tcp-connect') probe.tcp = false;
+        if (obs.testId === 'tls-handshake') probe.tls = false;
+        probe.timedOut = obs.outcome === 'timeout';
+        break;
+      }
+    }
+
+    probe.status = probe.status ?? (probe.tcp === false ? 0 : 200);
+    probe.latencyMs = probe.latencyMs ?? 200;
+
+    const classification = classifyApiFailure(probe);
+
+    if (classification.category === 'dns' || classification.category === 'tcp' || classification.category === 'tls') {
+      state.failures += 1;
+      state.successes = 0;
+    } else if (classification.category === 'auth' || classification.category === 'forbidden') {
+      state.failures += 1;
+    } else if (classification.category === 'server' || classification.category === 'timeout' || classification.category === 'reset') {
+      state.failures += 1;
+    } else {
+      state.successes += 1;
+      state.failures = 0;
+    }
+
+    const healthy = classification.status as ApiHealthStatus;
+    setApiHealth(this.registry, opts.apiId, healthy, {
+      lastFailureCategory: classification.category,
+      lastVerifiedAt: now,
+      consecutiveFailures: state.failures,
+    });
+    state.lastProbe = probe;
+
+    this.publish('nani:health:updated', {
+      apiId: opts.apiId,
+      status: healthy,
+      category: classification.category,
+      action: classification.action,
+      latencyMs: probe.latencyMs,
+      retryAfterSeconds: probe.retryAfterSeconds,
+      circuitState: state.failures >= 5 ? 'open' : 'closed',
+      directReachable: probe.tcp ?? false,
+      upstreamReachable: undefined,
+      at: now,
+    } as any);
+
+    this.deps.events.record(
+      classification.retryable ? 'warn' : 'error',
+      'connectivity',
+      `API ${opts.apiId}: ${classification.explanation}`,
+      { apiId: opts.apiId, category: classification.category, action: classification.action },
+    );
+
+    return { classification, probe };
+  }
+
+  diagnoseTarget(target: string, observations: DiagnosticObservation[]): NaniDiagnosisResult {
+    const now = Date.now();
+    const result = diagnose(observations, DEFAULT_TESTS, now);
+
+    let action = 'none';
+    let explanation = 'Insufficient evidence to diagnose.';
+
+    if (!result.insufficientEvidence && result.top) {
+      switch (result.top) {
+        case 'dns':
+          action = 'switch-route';
+          explanation = 'DNS resolution appears to be the cause. Try an approved DNS resolver.';
+          break;
+        case 'tcp':
+        case 'routing':
+        case 'gateway':
+        case 'local-interface':
+          action = 'switch-route';
+          explanation = 'Transport or routing failure detected. An alternative route may help.';
+          break;
+        case 'tls':
+          action = 'none';
+          explanation = 'TLS verification failed. Certificate checks remain enabled; do not disable verification.';
+          break;
+        case 'api-auth':
+          action = 'fix-credentials';
+          explanation = 'Authentication failure. Refresh or replace credentials; a route change will not help.';
+          break;
+        case 'api-rate-limit':
+          action = 'backoff';
+          explanation = 'Rate limited by the provider. Wait before retrying.';
+          break;
+        case 'server-application':
+          action = 'retry';
+          explanation = 'Server-side failure. Retry with backoff or use a fallback provider.';
+          break;
+        case 'upstream-proxy':
+          action = 'switch-route';
+          explanation = 'Upstream proxy failure. Try a different authorized upstream.';
+          break;
+        default:
+          explanation = `Diagnosis points to ${result.top} with ${Math.round(result.confidence * 100)}% confidence.`;
+      }
+    }
+
+    const excluded = new Set(observations.map((o) => o.testId));
+    const nextTest = selectNextTest(result.posterior, DEFAULT_TESTS, excluded, now);
+
+    this.publish('nani:diagnosis:completed', {
+      target,
+      top: result.top,
+      confidence: result.confidence,
+      action,
+      explanation,
+    } as any);
+
+    return {
+      target,
+      posterior: result.posterior,
+      top: result.top,
+      confidence: result.confidence,
+      entropy: result.entropy,
+      insufficientEvidence: result.insufficientEvidence,
+      action,
+      explanation,
+      recommendedTest: nextTest?.test.id ?? null,
+    };
+  }
+
+  planRecovery(
+    apiId: string,
+    routes: RouteCandidate[],
+    knownGoodRouteId: string | null = null,
+  ): NaniRecoveryPlan {
+    const entry = this.registry.entries.get(apiId);
+    if (!entry) throw new Error(`unknown api: ${apiId}`);
+    const state = this.getRuntimeState(entry);
+    const now = Date.now();
+
+    const plan = planRecovery(routes, this.recoveryPolicy, DEFAULT_ROUTE_CONSTRAINTS, knownGoodRouteId);
+    const recoveryId = `nani-recovery-${apiId}-${now}`;
+    state.recoveryId = recoveryId;
+
+    // Create the recovery controller only when there are actionable steps.
+    if (plan.status === 'ready' && plan.steps.length > 0) {
+      const controller = new RecoveryController(plan as any, this.recoveryPolicy);
+      this.attachRecoveryController(apiId, controller);
+    }
+
+    this.publish('nani:recovery:planned', {
+      recoveryId,
+      target: apiId,
+      status: plan.status,
+      reason: plan.reason,
+      steps: plan.steps.map((s) => ({ id: s.id, kind: s.kind, routeId: s.routeId, requiresAuthorization: s.requiresAuthorization })),
+      rejected: plan.rejected,
+    } as any);
+
+    return {
+      recoveryId,
+      apiId,
+      status: plan.status as 'ready' | 'requires-permission' | 'insufficient-evidence',
+      reason: plan.reason,
+      steps: plan.steps.map((s) => ({ id: s.id, kind: s.kind, routeId: s.routeId, requiresAuthorization: s.requiresAuthorization })),
+      rejected: plan.rejected.map((r) => ({ id: r.id, reason: r.reason })),
+    };
+  }
+
+  nextRecoveryStep(apiId: string, now: number = Date.now()): { step: RecoveryStep | null; snapshot: any } {
+    const state = this.apis.get(apiId);
+    if (!state) return { step: null, snapshot: null };
+    if (!state.recoveryId) return { step: null, snapshot: null };
+    // Lazily create controller on first step request.
+    if (!(state as any)._controller) {
+      // Re-derive plan from known routes is not possible here; controller must
+      // be created by planRecovery. We store it on the state via a symbol.
+      return { step: null, snapshot: null };
+    }
+    const controller = (state as any)._controller;
+    const step = controller.next(now);
+    return { step, snapshot: controller.snapshot() };
+  }
+
+  recordRecoveryStep(apiId: string, observation: RecoveryObservation, now: number = Date.now()): NaniRecoveryStepResult {
+    const state = this.apis.get(apiId);
+    if (!state || !(state as any)._controller) throw new Error(`no active recovery controller for ${apiId}`);
+    const controller = (state as any)._controller;
+    controller.record(observation, now);
+    const snapshot = controller.snapshot();
+
+    this.publish(`nani:recovery:step:${observation.status}`, {
+      recoveryId: state.recoveryId ?? '',
+      stepId: observation.stepId,
+      kind: observation.stepId.split(':')[1] as any,
+      routeId: observation.stepId.split(':')[0],
+      status: observation.status,
+      latencyMs: observation.latencyMs,
+      message: observation.message,
+    } as any);
+
+    if (observation.status === 'succeeded' && observation.stepId.includes('verify')) {
+      const routeId = observation.stepId.split(':')[0] ?? '';
+      verifyRoute(this.registry, apiId, routeId, { successPrior: 0.9 }, now);
+      this.publish('nani:route:activated', {
+        apiId,
+        routeId,
+        kind: 'direct',
+        successProbability: 0.9,
+      } as any);
+    }
+
+    if (snapshot.exhausted) {
+      this.publish('nani:recovery:exhausted', {
+        recoveryId: state.recoveryId ?? '',
+        target: apiId,
+        reason: 'max attempts reached',
+        attempts: snapshot.attempts,
+      } as any);
+    }
+
+    const next = controller.next(now);
+    return {
+      recoveryId: state.recoveryId ?? '',
+      stepId: observation.stepId,
+      status: observation.status,
+      snapshot,
+      nextStepId: next?.id ?? null,
+    };
+  }
+
+  /** Attach a recovery controller to an API's runtime state (called by planRecovery). */
+  attachRecoveryController(apiId: string, controller: RecoveryController): void {
+    const state = this.apis.get(apiId);
+    if (state) (state as any)._controller = controller;
+  }
+
+  private getRuntimeState(entry: ApiRegistryEntry): ApiRuntimeState {
+    let state = this.apis.get(entry.id);
+    if (!state) {
+      state = {
+        entry,
+        failures: 0,
+        successes: 0,
+        lastProbe: null,
+        lastDiagnosis: null,
+        knownGoodRouteId: null,
+        recoveryId: null,
+      };
+      this.apis.set(entry.id, state);
+    }
+    return state;
+  }
+
+  private publish<T extends any>(type: string, payload: T): void {
+    this.seq += 1;
+    const env = { seq: this.seq, at: Date.now(), type: type as any, payload, version: 1 };
+    const topic = type.split(':').slice(1).join(':');
+    this.deps.bus.publish(`nani:${topic}`, env as any);
+    this.deps.events.record('info', 'connectivity', `event: ${type}`, { type });
+  }
+
+}
