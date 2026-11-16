@@ -11,7 +11,7 @@ Machine-readable source: `reports/FABLE_MASTER_FINDINGS.json`. Confidence levels
 | FABLE-MATH-002 | MEDIUM | math | Brier/ECE calibration machinery exists but is not run continuously on real investigations | OPEN |
 | FABLE-UI-001 | MEDIUM | ui | `features/nani-reports/` dead page (unrouted, unimported) | OPEN |
 | FABLE-UI-002 | LOW | ui | `naniApi.ts` claims web mode serves "the same capabilities" as the Rust engine — false (subset) | OPEN |
-| FABLE-BUILD-001 | MEDIUM | build | 36 files of in-flight uncommitted work (+2,656/−493) at review baseline | OPEN |
+| FABLE-BUILD-001 | **CRITICAL** (was MEDIUM) | build | 36 files of in-flight uncommitted work (+2,656/−493) at review baseline; 21 NANI Rust files/dirs untracked incl. `commands/`, `foundation.rs`, `investigation.rs`, `sequential.rs` | **RESOLVED** (W0-1: commit `384f7f9`, 262 files, +30,523/−516; backup+restore verified 317/317 ×2; engine restorable from Git) |
 | FABLE-BUILD-002 | LOW | hygiene | Committed junk: `aether-*.zip` stubs, stale dist chunks, scratch dirs, 144 KB dev log | OPEN |
 | FABLE-BUILD-003 | LOW | build | No enforced bundle-freshness fingerprint in `desktop:package` | OPEN |
 | FABLE-VPN-001 | MEDIUM | vpn | sing-box pin refusals are invisible to the user (correct security, poor explainability) | OPEN |

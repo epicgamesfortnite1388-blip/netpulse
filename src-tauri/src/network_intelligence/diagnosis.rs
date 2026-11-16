@@ -1140,63 +1140,6 @@ mod tests {
         }
     }
 
-    /// TEMPORARY measurement harness, not an assertion: times the fast ranking
-    /// against the clone-per-outcome reference on one engine so the speedup can
-    /// be quoted for the release profile. Run with
-    /// `cargo test --release tmp_rank_speedup -- --nocapture`.
-    #[test]
-    fn tmp_rank_speedup_measurement() {
-        use crate::network_intelligence::simulation::{NetworkCondition, NetworkSimulator};
-        use std::hint::black_box;
-        use std::time::Instant;
-
-        let mut engine = DiagnosticEngine::new();
-        let mut sim = NetworkSimulator::new(11, NetworkCondition::Healthy);
-        for i in 0..200u64 {
-            let mut r = sim.probe(&DiagnosticTest::DnsResolve);
-            r.timestamp = i + 1;
-            engine.observe(&r);
-        }
-        black_box(&engine);
-
-        let tests = [
-            DiagnosticTest::InterfaceCheck,
-            DiagnosticTest::DnsResolve,
-            DiagnosticTest::GatewayPing,
-            DiagnosticTest::TcpConnect,
-            DiagnosticTest::TlsHandshake,
-            DiagnosticTest::HttpGet,
-            DiagnosticTest::MtuProbe,
-            DiagnosticTest::Traceroute,
-        ];
-        let iterations = 200usize;
-        let mut best_fast = f64::INFINITY;
-        let mut best_slow = f64::INFINITY;
-        for _ in 0..3 {
-            let start = Instant::now();
-            for _ in 0..iterations {
-                black_box(rank_tests(black_box(&engine)));
-            }
-            best_fast = best_fast.min(start.elapsed().as_secs_f64() * 1e6 / iterations as f64);
-
-            let start = Instant::now();
-            for _ in 0..iterations {
-                let mut acc = 0.0;
-                for t in &tests {
-                    acc += expected_information_gain_by_cloning(&engine, t);
-                }
-                black_box(acc);
-            }
-            best_slow = best_slow.min(start.elapsed().as_secs_f64() * 1e6 / iterations as f64);
-        }
-        println!(
-            "rank release: fast {:.1}us, clone-reference {:.1}us, speedup {:.1}x",
-            best_fast,
-            best_slow,
-            best_slow / best_fast
-        );
-    }
-
     #[test]
     fn information_gain_fast_path_matches_the_cloning_reference() {
         use crate::network_intelligence::simulation::{NetworkCondition, NetworkSimulator};
