@@ -41,10 +41,18 @@ fn host_port(endpoint: &str) -> Option<(String, u16)> {
 }
 
 /// DNS resolution probe.
-fn probe_dns(host: &str, timeout: Duration) -> (LayerResult, Option<f64>) {
+///
+/// N0 correction (NANI-019): this used to call `to_socket_addrs()` on the
+/// BARE host. `str::to_socket_addrs` requires a `host:port` form, so a bare
+/// hostname or IP ALWAYS errored and every probe's DNS layer was recorded
+/// `Failed` — false evidence on healthy networks, `dns_ok: false` into the
+/// failure classifier, and (once investigations observed real APIs) a false
+/// 100%-confidence "dns" hypothesis. Resolution now uses the same
+/// `(host, port)` form the TCP probe uses: name resolution only, no connect.
+fn probe_dns(host: &str, port: u16, _timeout: Duration) -> (LayerResult, Option<f64>) {
     let start = std::time::Instant::now();
     let result = (|| {
-        let addrs: Vec<_> = host
+        let addrs: Vec<_> = (host, port)
             .to_socket_addrs()
             .ok()?
             .collect();
@@ -144,7 +152,7 @@ pub fn probe_api(entry: &ApiEntry, _state: Option<&ApiState>) -> ProbeOutcomeRec
     let timeout = Duration::from_millis(entry.timeout_ms);
 
     // Layer 1: DNS
-    let (dns_result, dns_latency) = probe_dns(&host, timeout);
+    let (dns_result, dns_latency) = probe_dns(&host, port, timeout);
     // Layer 2: TCP
     let (tcp_result, tcp_latency) = probe_tcp(&host, port, timeout);
     // Layer 3-6: HTTP/TLS/auth/app

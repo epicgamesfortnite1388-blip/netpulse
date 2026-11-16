@@ -197,6 +197,47 @@ impl InvestigationManager {
         }
     }
 
+    /// Re-wire the manager onto the canonical application event bus.
+    ///
+    /// N0 fix (FABLE/NANI-002): `NaniState` is managed before the Tauri setup
+    /// hook runs, so the manager is originally built with a placeholder bus.
+    /// `main.rs` setup calls this with the real bus (the one wired to the
+    /// AppHandle and to the `nani_poll_events` replay buffer) so every
+    /// lifecycle event reaches the frontend through the canonical pipeline.
+    ///
+    /// `EventBus` is `Arc`-internally: this shares the SAME bus instance —
+    /// one sequence space, one replay buffer, no duplicate delivery. Call
+    /// this before any investigation starts (setup time), never mid-run: a
+    /// running lifecycle already cloned the bus it emits on.
+    pub fn set_event_bus(&mut self, bus: EventBus) {
+        self.events = bus;
+    }
+
+    /// Point the manager at the authoritative application API registry.
+    ///
+    /// N0 fix (FABLE/NANI-001): the manager must observe the SAME registry
+    /// the health-check and monitor paths use. `ApiRegistry` is
+    /// `Arc`-internally, so this clone SHARES registration state — APIs
+    /// registered later (by the app or the user) are visible to every
+    /// investigation started afterwards. Call once at setup; there is
+    /// deliberately no per-investigation re-sync: one registry, one truth.
+    pub fn set_registry(&mut self, registry: ApiRegistry) {
+        self.registry = registry;
+    }
+
+    /// Test-only: does this manager observe the same registry instance as
+    /// `other`? Proves sharing (Arc identity) rather than a snapshot clone.
+    #[cfg(test)]
+    pub fn shares_registry_with(&self, other: &ApiRegistry) -> bool {
+        self.registry.shares_state_with(other)
+    }
+
+    /// Test-only: does this manager publish on the same bus instance?
+    #[cfg(test)]
+    pub fn shares_event_bus_with(&self, other: &EventBus) -> bool {
+        self.events.shares_state_with(other)
+    }
+
     /// Start a new investigation. Returns the investigation id. Spawns a
     /// background thread that runs the stages and emits lifecycle events.
     pub fn start(&self, query: String) -> String {
@@ -963,5 +1004,269 @@ mod tests {
         }
         let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
         assert!(inner.history.len() <= 50);
+    }
+
+    // ===================================================================
+    // N0 integration wiring tests (NANI-001, NANI-002).
+    //
+    // The forensic audit established that the production InvestigationManager
+    // was built with its OWN empty ApiRegistry and its OWN placeholder
+    // EventBus: investigations observed zero APIs and their lifecycle events
+    // never reached the webview. These tests exercise the production wiring
+    // shape (shared registry + shared canonical bus) against a real local
+    // HTTP endpoint, and a guard documents the original defect.
+    // ===================================================================
+
+    /// Serialized `kind` tag of an event (the serde tag the frontend
+    /// reducer consumes - same contract, same names).
+    fn event_kind(e: &crate::network_intelligence::events::Event) -> String {
+        serde_json::to_value(e)
+            .ok()
+            .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(String::from))
+            .unwrap_or_default()
+    }
+
+    /// Minimal deterministic HTTP responder for 127.0.0.1 (no internet).
+    /// Answers 200 to every request, then keeps listening until dropped.
+    fn spawn_local_http() -> (u16, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind localhost");
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                // Drain the request head (bounded); answer 200.
+                let mut buf = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        });
+        (port, handle)
+    }
+
+    fn wait_terminal(mgr: &InvestigationManager, id: &str) -> InvestigationStatus {
+        for _ in 0..600 {
+            if let Some(st) = mgr.status(id) {
+                if st.outcome.is_some() {
+                    return st;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("investigation {id} did not reach a terminal state in 6s");
+    }
+
+    /// THE N0 ACCEPTANCE GATE: the production wiring shape, end to end.
+    ///
+    /// Builds the application-equivalent dependencies (one shared registry,
+    /// one canonical bus with a collectable receiver), registers a test API
+    /// through the SAME mechanism `netpulse-cloud` uses, constructs the
+    /// manager, applies the same setup re-wiring main.rs performs, starts a
+    /// real investigation, and asserts the full honest lifecycle: real probe
+    /// execution against the local endpoint, lifecycle events on the shared
+    /// bus, replay presence, matching ids, and no silent loss.
+    ///
+    /// This test FAILS against the original broken wiring: with the old
+    /// construction the manager observes an empty registry (no observations,
+    /// no probe events) and emits on a bus this receiver never sees.
+    #[test]
+    fn n0_end_to_end_investigation_through_shared_registry_and_canonical_bus() {
+        use crate::network_intelligence::events::Event;
+
+        // 1. Canonical application bus + collectable receiver.
+        let (bus, rx) = EventBus::new();
+        // 2. THE shared API registry (one instance for the whole app).
+        let registry = ApiRegistry::new(bus.clone());
+        // 3. Deterministic local endpoint (no internet, no credentials).
+        let (port, server) = spawn_local_http();
+        // 4. Register through the production mechanism (same call that
+        //    registers netpulse-cloud in main.rs setup).
+        assert!(registry.register(ApiEntry::new(
+            "n0-test-api",
+            "test",
+            &format!("http://127.0.0.1:{port}/healthz"),
+        )));
+        // 5. Manager over the shared dependencies...
+        let mut mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        // 6. ...and the same setup re-wiring main.rs performs.
+        mgr.set_registry(registry.clone());
+        mgr.set_event_bus(bus.clone());
+        // Sharing is by Arc identity, not snapshot copies.
+        assert!(mgr.shares_registry_with(&registry));
+        assert!(mgr.shares_event_bus_with(&bus));
+
+        // 7. Real investigation through the production entry point.
+        let id = mgr.start("n0 integration check".into());
+        let status = wait_terminal(&mgr, &id);
+
+        // 8. The registered API was discovered AND actually invoked.
+        assert_eq!(status.outcome.as_deref(), Some("Completed"));
+        assert!(status.observation_count > 0, "no observations: the manager did not see the registered API");
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let record = inner
+                .history
+                .iter()
+                .find(|r| r.id == id)
+                .expect("completed investigation must be in history");
+            assert!(record
+                .observations
+                .iter()
+                .all(|o| o.api_id == "n0-test-api"));
+            assert!(record
+                .observations
+                .iter()
+                .any(|o| o.layer == "dns" && o.ok));
+            assert!(record
+                .observations
+                .iter()
+                .any(|o| o.layer == "tcp" && o.ok));
+        }
+
+        // 9. Lifecycle events on the CANONICAL bus, correctly identified.
+        let events = bus.replay_session(&id, 0);
+        assert!(!events.is_empty(), "no lifecycle events on the shared bus");
+        assert!(events
+            .iter()
+            .all(|(_, e)| e.investigation_id() == Some(id.as_str())),
+            "event identity mismatch: foreign investigation events leaked");
+        let kinds: Vec<String> = events
+            .iter()
+            .map(|(_, e)| event_kind(e))
+            .collect();
+        for expected in [
+            "InvestigationStarted",
+            "InvestigationStageStarted",
+            "ProbeStarted",
+            "ProbeCompleted",
+            "EvidenceAdded",
+            "AnalysisCompleted",
+            "InvestigationCompleted",
+        ] {
+            assert!(
+                kinds.iter().any(|k| k == expected),
+                "lifecycle event {expected} missing from the canonical bus (kinds: {kinds:?})"
+            );
+        }
+        // Healthy endpoint: the verify stage is HONESTLY SKIPPED (nothing
+        // to verify without a failure hypothesis) — VerificationCompleted
+        // must NOT be fabricated out of a success.
+        assert!(
+            !kinds.iter().any(|k| k == "VerificationCompleted"),
+            "verify event must not appear for a failure-free investigation"
+        );
+
+        // Evidence events really exist and reference this investigation.
+        assert!(events
+            .iter()
+            .any(|(_, e)| matches!(e, Event::EvidenceAdded { investigation_id, .. } if investigation_id == &id)));
+        // No duplicate delivery: seq strictly increasing per event.
+        let seqs: Vec<u64> = events.iter().map(|(s, _)| *s).collect();
+        let mut sorted = seqs.clone();
+        sorted.sort_unstable();
+        assert_eq!(seqs, sorted, "replay sequence out of order or duplicated");
+
+        // 10. The replay adapter (what nani_poll_events serves) has them.
+        let replayed = bus.replay_since(0);
+        assert!(replayed
+            .iter()
+            .any(|(_, e)| e.investigation_id() == Some(id.as_str())));
+
+        // 10b. FAILING endpoint leg: a closed port produces a real failure
+        // hypothesis, and the verify stage RUNS and reports honestly.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_port = closed.local_addr().unwrap().port();
+        drop(closed); // nothing listens there now: connect is refused, deterministically
+        assert!(registry.register(ApiEntry::new(
+            "n0-failing-api",
+            "test",
+            &format!("http://127.0.0.1:{closed_port}/healthz"),
+        )));
+        let idf = mgr.start("failing endpoint check".into());
+        let stf = wait_terminal(&mgr, &idf);
+        assert_eq!(stf.outcome.as_deref(), Some("Completed"));
+        let evf = bus.replay_session(&idf, 0);
+        let kinds_f: Vec<String> = evf.iter().map(|(_, e)| event_kind(e)).collect();
+        assert!(kinds_f.iter().any(|k| k == "AnalysisCompleted"));
+        assert!(kinds_f.iter().any(|k| k == "VerificationCompleted"),
+            "verify stage must run when a failure hypothesis exists (kinds: {kinds_f:?})");
+        assert!(evf.iter().any(|(_, e)| matches!(e,
+            crate::network_intelligence::events::Event::EvidenceAdded { investigation_id, kind, .. }
+            if investigation_id == &idf && kind == "verify")),
+            "verify-stage evidence missing");
+        // The failure observation really exists (not a fabricated fault).
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let record = inner.history.iter().find(|r| r.id == idf).unwrap();
+            assert!(record.observations.iter().any(|o| o.api_id == "n0-failing-api" && !o.ok));
+        }
+
+        // 11. A LATER registration is visible through the shared registry.
+        let (port2, server2) = spawn_local_http();
+        assert!(registry.register(ApiEntry::new(
+            "n0-late-api",
+            "test",
+            &format!("http://127.0.0.1:{port2}/healthz"),
+        )));
+        let id2 = mgr.start("late registration check".into());
+        let st2 = wait_terminal(&mgr, &id2);
+        assert!(st2.observation_count > 0, "late registration invisible to the manager");
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let record = inner.history.iter().find(|r| r.id == id2).unwrap();
+            assert!(record
+                .observations
+                .iter()
+                .any(|o| o.api_id == "n0-late-api"));
+        }
+
+        // 12. An unregistered API is never reported as observed.
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            for record in &inner.history {
+                assert!(
+                    record.observations.iter().all(|o| o.api_id != "never-registered"),
+                    "unregistered API was probed"
+                );
+            }
+        }
+
+        // The responder threads run until the test process ends (their
+        // `incoming()` loop never returns); dropping the handles detaches
+        // them. Joining would block forever — a bug this test will not have.
+        drop(server);
+        drop(server2);
+        let _ = rx; // receiver kept alive for the duration (events collected above)
+    }
+
+    /// Regression guard for the ORIGINAL defect: constructing the manager
+    /// old-style (placeholder bus + own empty registry, exactly as
+    /// `NaniState` did before N0) reproduces the failure the fix addresses.
+    /// If this test's BUG assertions ever stop holding, the construction
+    /// changed — re-read main.rs and the wiring test above.
+    #[test]
+    fn n0_guard_old_wiring_produces_the_audited_defect() {
+        let (real_bus, real_rx) = EventBus::new();
+        let registry = ApiRegistry::new(real_bus.clone());
+        registry.register(ApiEntry::new("app-api", "test", "https://example.invalid"));
+        // Old wiring: manager with a DIFFERENT (empty) registry + placeholder bus.
+        let mgr = InvestigationManager::new(
+            EventBus::default(),
+            ApiRegistry::new(EventBus::default()),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        assert!(!mgr.shares_registry_with(&registry), "guard premise: registries were separate");
+        assert!(!mgr.shares_event_bus_with(&real_bus), "guard premise: buses were separate");
+        let id = mgr.start("guard".into());
+        let status = wait_terminal(&mgr, &id);
+        // The audited defect: zero observations, nothing on the app bus.
+        assert_eq!(status.observation_count, 0, "old wiring unexpectedly saw an API");
+        assert!(real_rx.try_recv().is_err(), "old wiring unexpectedly delivered events to the app bus");
     }
 }

@@ -221,6 +221,12 @@ impl EventBus {
         )
     }
 
+    /// Test-only: does this bus share state with `other` (Arc identity)?
+    #[cfg(test)]
+    pub fn shares_state_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Wire the Tauri AppHandle so events reach the frontend. Call once from
     /// `main.rs` setup after the AppHandle is available.
     pub fn set_app(&self, app: AppHandle) {

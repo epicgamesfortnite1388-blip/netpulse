@@ -420,6 +420,21 @@ fn main() {
                     ));
                 }
 
+                // N0 fixes (FABLE/NANI-001, NANI-002): the investigation
+                // manager must observe the SAME registry the health-check
+                // and monitor paths use, and publish lifecycle events on the
+                // SAME bus the frontend subscribes to. Both are Arc-shared:
+                // `set_registry` clones the authoritative handle (later
+                // registrations are visible), `set_event_bus` shares one
+                // sequence space and replay buffer. This runs before the
+                // monitor loop and before any UI can start an investigation.
+                {
+                    let mut investigations = nani_state.investigations.lock().unwrap();
+                    investigations
+                        .set_registry(nani_state.registry.lock().unwrap().clone());
+                    investigations.set_event_bus(nani_bus.clone());
+                }
+
                 // Spawn the live monitor loop: polls each registered API,
                 // respects circuit breakers, applies bounded retries with
                 // jitter, and triggers recovery on breaker trips.

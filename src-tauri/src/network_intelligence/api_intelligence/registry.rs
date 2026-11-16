@@ -209,6 +209,13 @@ impl ApiRegistry {
     }
 
     /// Register an API. Returns false if the id already exists (no overwrite).
+    /// Test-only: does this registry share state with `other` (Arc identity)?
+    /// Proves sharing rather than a snapshot clone (N0 wiring test support).
+    #[cfg(test)]
+    pub fn shares_state_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     pub fn register(&self, entry: ApiEntry) -> bool {
         let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         if inner.entries.contains_key(&entry.api_id) {
