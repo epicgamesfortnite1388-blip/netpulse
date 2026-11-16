@@ -936,3 +936,71 @@ body {
     opacity: 0;
   }
 }
+
+/*
+ * ============================ brand layer ==============================
+ * Additive identity layer for the "instrument grade" NetPulse look.
+ *
+ * Everything here is additive: it redefines `.app-backdrop` (a later rule of
+ * equal specificity wins for the dark theme; the light override below is also
+ * re-stated so both themes get the richer field) and introduces three opt-in
+ * utilities. The pinned motion contracts (`.stagger`, `card-in`, `.nav-pill`,
+ * `.page-enter`) are untouched — see cardStagger.test.ts.
+ *
+ * The aurora is pure `background` on the existing backdrop element: no extra
+ * DOM layer, no fixed-position pseudo-element that could paint over content.
+ */
+
+/* A deeper, multi-source ambient field: cyan key light, emerald floor glow and
+   a faint violet rim, over a vertical falloff that grounds the bottom edge. */
+.app-backdrop {
+  background:
+    radial-gradient(1100px 520px at 72% -12%, rgba(34, 211, 238, 0.11), transparent 62%),
+    radial-gradient(900px 460px at 6% 108%, rgba(52, 211, 153, 0.07), transparent 60%),
+    radial-gradient(760px 400px at 98% 84%, rgba(168, 85, 247, 0.055), transparent 62%),
+    linear-gradient(180deg, rgba(5, 8, 13, 0) 42%, rgba(5, 8, 13, 0.38) 100%);
+}
+
+html[data-theme='light'] .app-backdrop {
+  background:
+    radial-gradient(1100px 520px at 72% -12%, rgba(8, 145, 178, 0.075), transparent 62%),
+    radial-gradient(900px 460px at 6% 108%, rgba(5, 150, 105, 0.05), transparent 60%),
+    radial-gradient(760px 400px at 98% 84%, rgba(124, 58, 237, 0.045), transparent 62%);
+}
+
+/* The signature accent sweep: used by the brand mark fill and the hairline
+   under the command bar. References tokens, so it follows the active theme. */
+@utility brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
+}
+
+/* A lit edge for primary surfaces: a 1px accent ring plus an accent bloom. */
+@utility shadow-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 26%, transparent),
+    0 10px 34px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* Frosted panel for the command bar and hero band: translucent surface over the
+   aurora, with the floating elevation step so it still reads as a layer. */
+@utility surface-glass {
+  background-color: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: blur(16px) saturate(130%);
+  box-shadow: var(--shadow-floating), var(--edge-highlight);
+}
+
+/* A one-pixel accent hairline that fades at both ends. */
+@utility hairline-brand {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-accent) 55%, transparent),
+    transparent
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No brand-layer animation is introduced today; this block exists so any
+     future ambient motion added here inherits the same opt-out. */
+}
