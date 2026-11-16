@@ -219,7 +219,7 @@ async function parseError(res: Response): Promise<CloudError> {
 
 /** Device identity sent with every session-creating call. */
 export function deviceDescriptor(): { name: string; os: string; appVersion: string } {
-  return { name: `Desktop ${deviceId().slice(0, 8)}`, os: navigator.platform || 'Windows', appVersion: import.meta.env.PROD ? '1.0.2' : 'dev' };
+  return { name: `Desktop ${deviceId().slice(0, 8)}`, os: navigator.platform || 'Windows', appVersion: import.meta.env.PROD ? __APP_VERSION__ : 'dev' };
 }
 
 /**

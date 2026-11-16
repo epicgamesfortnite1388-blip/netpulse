@@ -10,12 +10,13 @@
 // features.
 
 use crate::network_intelligence::math::{clamp_probability, sigmoid};
+use serde::{Deserialize, Serialize};
 use crate::network_intelligence::probability::BetaBernoulli;
 use std::collections::HashMap;
 
 /// Categorization of an API failure, used to route the correct recovery
 /// action rather than blindly retrying.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FailureCategory {
     /// DNS could not resolve the host.
     DnsFailure,
@@ -93,7 +94,7 @@ pub struct ApiOutcome {
 }
 
 /// Whether a call went direct or through an approved upstream.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RouteKind {
     Direct,
     Upstream(String), // identifier of the upstream/proxy

@@ -138,7 +138,7 @@ describe('fault-injection: network diagnosis', () => {
         ['http-reachability', 'success'],
         ['app-operation', 'failure'],
       ]),
-      expected: 'server-application',
+      expected: 'application',
     },
     {
       name: 'Healthy path yields no confident cause',
@@ -289,7 +289,7 @@ describe('fault-injection: drift and learning', () => {
     const adaptiveBrier = brierScore(adaptive);
     const baselineBrier = brierScore(baseline);
     expect(adaptiveBrier).toBeLessThan(baselineBrier);
-    expect(expectedCalibrationError(adaptive, 10)).toBeLessThan(0.2);
+    expect(expectedCalibrationError(adaptive, 10)).toBeLessThan(0.05);
     expect(Number.isFinite(adaptiveBrier)).toBe(true);
   });
 });

@@ -78,7 +78,7 @@ export class BayesianLogistic {
   private readonly precision: number[];
   private readonly priorPrecision: number;
 
-  constructor(dimension: number, priorVariance = 4) {
+  constructor(dimension: number, priorVariance = 9) {
     const n = Math.max(1, Math.floor(dimension));
     this.w = new Array(n).fill(0);
     this.precision = new Array(n).fill(1 / Math.max(1e-6, priorVariance));

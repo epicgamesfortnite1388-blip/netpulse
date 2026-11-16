@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-11-16",
+  "repository": "E:/Code/Project/Vpn_app",
+  "branch": "main",
+  "head_commit": "b0311fb",
+  "method": "filesystem traversal excluding node_modules, target, .git, dist, gen, .wrangler, backend; wc -l by extension; git status for ownership",
+  "totals": {
+    "source_lines_by_language": {
+      "rust_rs": 27117,
+      "typescript_ts": 119848,
+      "typescript_tsx": 28105,
+      "javascript_js": 166931,
+      "javascript_mjs": 17918,
+      "sql": 1128,
+      "toml": 158
+    },
+    "total_source_lines": 722410,
+    "total_source_files_measured": 859,
+    "tracked_files": 908,
+    "modified_tracked_files_at_audit_start": 37,
+    "untracked_entries_at_audit_start": 142,
+    "note": "The prompt's '200,000 lines' figure is an underestimate; measured source is ~722k lines. JS dominates (generated/vendored scripts included); Rust core is 27,117 lines."
+  },
+  "toolchain": {
+    "node": "v22.22.2",
+    "npm": "10.9.7",
+    "rustc": "1.98.1",
+    "cargo": "1.98.1",
+    "clippy": "not installed",
+    "rustfmt": "not installed"
+  },
+  "workspaces": [
+    { "name": "packages/shared", "type": "shared types + NANI TS engine", "scripts": ["test", "typecheck"] },
+    { "name": "apps/api", "type": "Node/Fastify sidecar backend", "scripts": ["dev", "build", "test", "typecheck", "db:generate"] },
+    { "name": "apps/web", "type": "React/Vite frontend", "scripts": ["dev", "build", "test", "typecheck"] },
+    { "name": "cloud/worker", "type": "Cloudflare Workers backend", "scripts": ["dev", "deploy", "test", "typecheck", "db:migrate:local", "db:migrate:remote"] }
+  ],
+  "subsystems": [
+    {
+      "name": "rust-shell",
+      "root": "src-tauri/src",
+      "language": "rust",
+      "file_count": 74,
+      "responsibility": "Tauri commands, sidecar supervision, DPAPI, elevation, NANI engine, tray/updater/logging",
+      "test_files": 58,
+      "status": "working-with-defects",
+      "key_files": ["main.rs", "sidecar.rs", "dpapi.rs", "elevation.rs", "diagnostics.rs", "network_intelligence/mod.rs"]
+    },
+    {
+      "name": "nani-rust-engine",
+      "root": "src-tauri/src/network_intelligence",
+      "language": "rust",
+      "responsibility": "Bayesian diagnosis, evidence validation/correlation, information theory, Bayesian bandits, drift/changepoint, hierarchical learning, context profiling, local LLM explanation",
+      "status": "mixed",
+      "ownership": "mostly untracked (user work)",
+      "module_groups": {
+        "core_math": ["math.rs", "probability.rs", "robust_stats.rs", "bayesian.rs", "information_theory.rs", "sequential.rs", "changepoint.rs", "drift.rs", "hierarchical.rs"],
+        "diagnosis": ["diagnosis.rs", "api_model.rs", "evaluation.rs", "validation.rs", "foundation.rs", "investigation.rs", "simulation.rs", "route.rs", "recovery.rs", "bandit.rs", "causal.rs"],
+        "evidence": ["evidence/measurements.rs", "evidence/validation.rs", "evidence/correlation.rs", "evidence/provenance.rs", "evidence/telemetry_pipeline.rs"],
+        "learning_context": ["learning.rs", "episodes.rs", "recovery_memory.rs", "context/**", "config_intelligence.rs", "hardware.rs", "timeseries.rs", "graph.rs"],
+        "api_intelligence": ["api_intelligence/**", "events/mod.rs", "ai/**", "persistence.rs"]
+      }
+    },
+    {
+      "name": "node-api-sidecar",
+      "root": "apps/api/src",
+      "language": "typescript",
+      "responsibility": "Fastify REST+WS, SQLite persistence, VPN engine orchestration, config sources, adaptive engine, NANI web-mode services",
+      "status": "working",
+      "key_dirs": ["routes", "services", "vpn", "db", "util"],
+      "status_notes": "typecheck clean; test suite result see ULTIMATE_TEST_AND_REGRESSION_REPORT"
+    },
+    {
+      "name": "vpn-engines",
+      "root": "apps/api/src/vpn + apps/api/src/services",
+      "language": "typescript",
+      "responsibility": "engine lifecycle and verification",
+      "binaries": [
+        { "name": "xray", "path": "cores/xray.exe", "present": true, "size_bytes": 34455392 },
+        { "name": "aether", "path": "aether/aether.exe", "present": true, "size_bytes": 24467456 }
+      ],
+      "external_requirements": ["wireguard.exe (official, Program Files)", "openvpn (PATH)"],
+      "installable": ["sing-box", "v2ray", "hysteria2"],
+      "stubs": ["CustomProvider (501 not_implemented)"]
+    },
+    {
+      "name": "react-frontend",
+      "root": "apps/web/src",
+      "language": "typescript-react",
+      "responsibility": "26 routes, real API/WS integration, NANI UI, VPN controls, account/subscription",
+      "status": "working",
+      "route_count": 26,
+      "notable": ["features/nani (1316-line page)", "features/copilot", "features/nani-reports (unrouted)", "features/nani-memory (orphan, extensionless)"]
+    },
+    {
+      "name": "cloud-worker",
+      "root": "cloud/worker/src",
+      "language": "typescript",
+      "responsibility": "auth, D1 persistence, Telegram link/claim, entitlement mirror, provisioning, ops console, AI endpoints",
+      "status": "working-unverified-runtime",
+      "migrations": ["0001_init.sql", "0002_profile_vaults.sql", "0003_telegram_integration.sql", "0005_reset_atomic.sql", "0005_vpn_credentials.sql"]
+    },
+    {
+      "name": "tests-scripts-reports",
+      "root": "scripts + reports + docs",
+      "language": "mixed",
+      "responsibility": "release pipeline, live VPN proofs, benchmarks, field scripts, ~100 pre-existing audit reports",
+      "status": "mixed",
+      "note": "Pre-existing reports preserved; new ULTIMATE_* reports written alongside them."
+    }
+  ],
+  "external_repositories": [
+    { "path": "E:/Code/Project/Abystral", "branch": "feat/iran-connection-diagnostics", "head": "20f10f9", "scope": "identity only" },
+    { "path": "E:/Code/Project/Abystral-ledger", "branch": "feat/ledger-rearchitecture", "head": "7593256", "scope": "identity only" },
+    { "path": "E:/Code/Project/abystral-agent", "branch": "main", "head": "ee238db", "scope": "identity only" },
+    { "path": "E:/Code/Project/Bot/Abystral", "branch": "main", "head": "92329b0", "scope": "identity only" }
+  ],
+  "known_gaps": [
+    "No machine-wide semantic index existed before this audit; line counts include some generated script code.",
+    "Untracked files have no git recovery point.",
+    "clippy and rustfmt components are unavailable, so lint/format checks could not be run."
+  ]
+}

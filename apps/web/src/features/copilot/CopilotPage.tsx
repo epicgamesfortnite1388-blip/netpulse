@@ -1,60 +1,118 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Bot, Copy, Loader2, RotateCw, Send, Sparkles, Trash2 } from 'lucide-react';
 
-import { ArrowRight, Bot, Copy, Loader2, RotateCw, Send, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/Toaster';
 import { Button } from '@/components/ui/Button';
-import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Field, Input } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ErrorState, LoadingState } from '@/components/ui/States';
-import { askAi, streamAi, type AiAskResponse, type AiMessage } from './aiApi';
+import { isRetryableError } from '@/lib/api';
+
+import { getAiStatus, streamAi, type AiMessage, type AiStatus } from './aiApi';
 
 /**
- * NetPulse Copilot — premium integrated AI assistant for the desktop app.
+ * NetPulse Copilot — integrated AI assistant for the desktop app.
  *
  * Connects through the authenticated NetPulse cloud API (/api/v1/ai/ask,
- * /api/v1/ai/stream). The desktop application never holds a provider API key;
- * all model calls are mediated by the cloud backend which runs the centralized
- * AI service.
+ * /api/v1/ai/stream). The desktop application never holds a provider API key.
  *
- * Features:
- *   - Streaming chat responses (SSE) with non-streaming fallback
- *   - Conversation history (session-scoped, in-memory)
- *   - Loading, failure and retry states
- *   - Copy and clear actions
- *
- * UI contract: no fake model responses. Every answer comes from a real API
- * call; when the backend is unreachable the failure state is shown honestly.
+ * No fake model responses: every answer comes from a real API call; when the
+ * backend is unreachable the failure state is shown honestly.
  */
 
-const EMPTY: AiMessage[] = [];
+const INITIAL_MESSAGE: AiMessage = {
+  id: crypto.randomUUID(),
+  role: 'assistant',
+  content:
+    "I'm NetPulse Copilot, your network intelligence assistant. I can help diagnose connection issues, analyze configuration profiles, explain protocols, recommend servers, and troubleshoot errors.\n\nWhat would you like to investigate today?",
+  createdAt: Date.now(),
+};
 
-function isRetryable(err: unknown): boolean {
-  if (err instanceof Error) {
-    const m = err.message.toLowerCase();
-    return m.includes('failed') || m.includes('aborted') || m.includes('network') || m.includes('fetch');
-  }
-  return true;
+const QUICK_QUESTIONS = [
+  'Why is my connection slow?',
+  'Diagnose my connection',
+  'Explain my VPN configuration',
+  'Compare server performance',
+  'Troubleshoot connection error',
+  'Recommend the best server',
+  'Explain protocol differences',
+  'Analyze connection stability',
+];
+
+function formatTimestamp(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function MessageBubble({ message }: { message: AiMessage }) {
+  const isUser = message.role === 'user';
+  return (
+    <div className={`mb-4 flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+          isUser
+            ? 'rounded-tr-sm bg-accent text-accent-foreground'
+            : 'rounded-tl-sm border border-line bg-surface text-text'
+        }`}
+      >
+        <div className="whitespace-pre-wrap break-words text-sm">{message.content}</div>
+        <div className="mt-1 text-micro text-faint">{formatTimestamp(message.createdAt)}</div>
+      </div>
+    </div>
+  );
+}
+
+function AiStatusBadge({ status }: { status: AiStatus | null }) {
+  const healthy = status?.available === true;
+  return (
+    <div
+      className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
+        healthy ? 'bg-green-500/10 text-green-500' : 'border border-line bg-surface text-faint'
+      }`}
+    >
+      <div className={`h-2 w-2 rounded-full ${healthy ? 'bg-green-500' : 'bg-muted'}`} />
+      {healthy ? 'AI Copilot Online' : 'Offline'}
+    </div>
+  );
+}
+
+function QuickAction({ text, onClick }: { text: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-accent hover:text-accent-foreground"
+      onClick={onClick}
+    >
+      <Sparkles className="h-3 w-3 text-faint" />
+      <span>{text}</span>
+    </button>
+  );
 }
 
 export function CopilotPage() {
-  const [messages, setMessages] = useState<AiMessage[]>(EMPTY);
+  const [messages, setMessages] = useState<AiMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [streamError, setStreamError] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const toast = useToast();
-
   const abortRef = useRef<AbortController | null>(null);
 
-  const addMessage = useCallback((msg: AiMessage) => {
-    setMessages((prev) => [...prev, msg]);
+  useEffect(() => {
+    let cancelled = false;
+    void getAiStatus().then((status) => {
+      if (!cancelled) setAiStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const clearConversation = useCallback(() => {
-    setMessages(EMPTY);
+    setMessages([{ ...INITIAL_MESSAGE, id: crypto.randomUUID(), createdAt: Date.now() }]);
     setError(null);
-    setStreamError(null);
+    setStreaming(false);
+    abortRef.current?.abort();
+    abortRef.current = null;
   }, []);
 
   const sendQuestion = useCallback(
@@ -63,26 +121,25 @@ export function CopilotPage() {
       const trimmed = question.trim();
       setInput('');
       setError(null);
-      setStreamError(null);
+
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() },
+      ]);
 
       const assistantId = crypto.randomUUID();
-      const userMsg: AiMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() };
-      addMessage(userMsg);
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setStreaming(true);
-
       setMessages((prev) => [
         ...prev,
         { id: assistantId, role: 'assistant', content: '', createdAt: Date.now() },
       ]);
 
-      let completed = false;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStreaming(true);
+
       try {
         await streamAi({
           question: trimmed,
-          role: 'admin',
           onDelta: (delta: string) => {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
@@ -90,38 +147,11 @@ export function CopilotPage() {
           },
           signal: controller.signal,
         });
-        completed = true;
       } catch (err) {
-        // Stream failed (e.g. backend without SSE support) — fall back to
-        // non-streaming ask.
-        try {
-          const res: AiAskResponse = await askAi({ question: trimmed, role: 'admin' });
-          completed = true;
-          if (res.kind === 'error') {
-            setError(res.text);
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: res.text } : m)),
-            );
-          } else if (res.kind === 'needs_confirmation') {
-            const text = `⚠️ ${res.preview ?? res.tool ?? 'action'} requires admin confirmation.\n\n${res.text}`;
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: text } : m)),
-            );
-            setError('A write action was proposed and awaits your confirmation in the admin console.');
-          } else {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: res.text } : m)),
-            );
-          }
-        } catch (fallbackErr) {
-          const msg = fallbackErr instanceof Error ? fallbackErr.message : 'AI request failed';
-          setError(msg);
-          setStreamError(msg);
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: msg } : m)),
-          );
-          toast('error', 'Copilot request failed', msg);
-        }
+        const msg = err instanceof Error ? err.message : 'AI request failed';
+        setError(msg);
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: msg } : m)));
+        toast('error', 'Copilot request failed', msg);
       } finally {
         if (abortRef.current === controller) {
           setStreaming(false);
@@ -129,13 +159,12 @@ export function CopilotPage() {
         }
       }
     },
-    [streaming, addMessage, toast, askAi, streamAi],
+    [streaming, toast],
   );
 
   const retryLast = useCallback(() => {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    if (!lastUser) return;
-    void sendQuestion(lastUser.content);
+    if (lastUser) void sendQuestion(lastUser.content);
   }, [messages, sendQuestion]);
 
   const handleSubmit = useCallback(
@@ -147,91 +176,103 @@ export function CopilotPage() {
   );
 
   const handleStop = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      setStreaming(false);
-      abortRef.current = null;
-    }
+    abortRef.current?.abort();
+    setStreaming(false);
+    abortRef.current = null;
   }, []);
 
-  const hasContent = messages.length > 0;
-  const canRetry = hasContent && (error != null || streamError != null) && isRetryable(error ?? streamError ?? '');
+  const hasContent = messages.length > 1;
+  const canRetry = hasContent && error != null && isRetryableError(new Error(error));
 
   return (
-    <div className="flex flex-col h-full">
-      <PageHeader title="Copilot" description="AI-powered network intelligence and troubleshooting" />
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4">
-          {streaming && <LoadingState label="Copilot is thinking" />}
-          {(!streaming) && error && <ErrorState error={error} retry={retryLast} />}
-          {(!streaming) && streamError && <ErrorState error={streamError} retry={retryLast} />}
-          {messages.length === 0 && !streaming && !error && !streamError && (
-            <div className="flex flex-col items-center justify-center h-64 text-center text-muted">
-              <Bot size={32} className="mb-2 opacity-50" />
-              <p className="text-sm">Ask Copilot about your network — connection issues, profile analysis, performance recommendations.</p>
+    <div className="flex h-full flex-col bg-background">
+      <PageHeader
+        title="Copilot"
+        description={
+          aiStatus
+            ? aiStatus.available
+              ? `Local explanations — ${aiStatus.runtime} ready`
+              : `Local explanations — model unavailable (${aiStatus.message})`
+            : 'Local explanations — initializing…'
+        }
+        actions={<AiStatusBadge status={aiStatus} />}
+      />
+
+      <div className="flex-1 overflow-y-auto space-y-4 p-4 lg:p-6">
+        {streaming && messages[messages.length - 1]?.content === '' && (
+          <div className="flex h-64 items-center justify-center">
+            <LoadingState label="Copilot is thinking" />
+          </div>
+        )}
+        {!streaming && error && <ErrorState error={new Error(error)} retry={canRetry ? retryLast : undefined} />}
+        {messages.length === 1 && messages[0]?.id === INITIAL_MESSAGE.id && (
+          <div className="flex flex-col items-center justify-center gap-4 py-8 text-center text-muted">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+              <Sparkles className="h-6 w-6" />
             </div>
-          )}
-          {messages.map((m) => (
-            <Card key={m.id} className={`p-4 ${m.role === 'user' ? 'bg-surface-2 border-border/60' : 'bg-surface border-border'}`}>
-              <div className="flex items-start gap-2.5 mb-2">
-                <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full shrink-0 ${
-                    m.role === 'user' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'
-                  }`}
+            <p className="text-sm font-medium text-text">Ask Copilot anything</p>
+            <p className="max-w-md text-sm text-muted">
+              I can diagnose connections, analyze profiles, explain protocols, recommend servers, and
+              troubleshoot errors.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {QUICK_QUESTIONS.map((q) => (
+                <QuickAction key={q} text={q} onClick={() => void sendQuestion(q)} />
+              ))}
+            </div>
+          </div>
+        )}
+        {messages.map((m) => (
+          <div key={m.id}>
+            <MessageBubble message={m} />
+            {m.role === 'assistant' && m.content !== '' && (
+              <div className="mt-1 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void navigator.clipboard.writeText(m.content)}
                 >
-                  {m.role === 'user' ? <ArrowRight size={14} /> : <Bot size={14} />}
-                </div>
-                <span className="text-micro font-semibold uppercase tracking-wider text-faint">
-                  {m.role === 'user' ? 'You' : 'Copilot'}
-                </span>
+                  <Copy size={12} /> Copy
+                </Button>
               </div>
-              <div className="whitespace-pre-wrap break-whitespace text-text">{m.content}</div>
-              {m.role === 'assistant' && (
-                <div className="mt-3 flex items-center gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(m.content)}>
-                    <Copy size={12} className="mr-1" /> Copy
-                  </Button>
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-        <div className="border-t border-line bg-surface/50 backdrop-blur p-4">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <div className="flex-1">
-              <Field label="Message">
-                <Input
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-line bg-surface p-4">
+        <form onSubmit={handleSubmit} className="flex items-end gap-2">
+          <div className="flex-1">
+            <Field label="Message">
+              <Input
                 placeholder="Ask about your connection, a profile, or diagnostics…"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 disabled={streaming}
                 autoFocus
               />
-              </Field>
-            </div>
-            <Button type="submit" disabled={streaming || !input.trim()} className="px-4">
-              {streaming ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" /> Stop
-                </>
-              ) : (
-                <>
-                  <Send size={14} className="mr-2" /> Send
-                </>
-              )}
+            </Field>
+          </div>
+          {streaming ? (
+            <Button type="button" variant="secondary" onClick={handleStop}>
+              <Loader2 size={14} className="animate-spin" /> Stop
             </Button>
-            {!streaming && hasContent && (
-              <>
-                <Button type="button" size="sm" variant="ghost" onClick={clearConversation}>
-                  <Trash2 size={12} className="mr-1" /> Clear
-                </Button>
-                <Button type="button" size="sm" variant="ghost" disabled={!canRetry} onClick={retryLast}>
-                  <RotateCw size={12} className="mr-1" /> Retry
-                </Button>
-              </>
-            )}
-          </form>
-        </div>
+          ) : (
+            <Button type="submit" disabled={!input.trim()}>
+              <Send size={14} /> Send
+            </Button>
+          )}
+          {hasContent && !streaming && (
+            <Button type="button" size="sm" variant="ghost" onClick={clearConversation}>
+              <Trash2 size={12} /> Clear
+            </Button>
+          )}
+          {hasContent && !streaming && canRetry && (
+            <Button type="button" size="sm" variant="ghost" onClick={retryLast}>
+              <RotateCw size={12} /> Retry
+            </Button>
+          )}
+        </form>
       </div>
     </div>
   );

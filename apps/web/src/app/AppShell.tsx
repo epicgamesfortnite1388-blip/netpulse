@@ -3,6 +3,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import {
   Activity,
   Bot,
+  Brain,
   ChevronDown,
   Cloud,
   CloudCog,
@@ -141,6 +142,7 @@ const NAV: NavGroup[] = [
       { to: '/account', label: 'Account', icon: <CloudCog size={16} /> },
       { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
       { to: '/copilot', label: 'Copilot', icon: <Bot size={16} /> },
+      { to: '/nani', label: 'NANI', icon: <Brain size={16} /> },
     ],
   },
 ];

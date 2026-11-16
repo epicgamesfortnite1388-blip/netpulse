@@ -21,36 +21,44 @@
  * failure, because the correct response differs.
  */
 export type NetworkHypothesis =
-  | 'local-interface'
   | 'gateway'
   | 'dns'
+  | 'dns-inconsistency'
   | 'routing'
   | 'ipv4'
   | 'ipv6'
   | 'tcp'
   | 'tls'
+  | 'udp'
   | 'mtu'
-  | 'upstream-proxy'
+  | 'congestion'
+  | 'filtering'
   | 'remote-endpoint'
   | 'api-auth'
   | 'api-rate-limit'
-  | 'server-application';
+  | 'application'
+  | 'server'
+  | 'unknown';
 
 export const NETWORK_HYPOTHESES: readonly NetworkHypothesis[] = [
-  'local-interface',
   'gateway',
   'dns',
+  'dns-inconsistency',
   'routing',
   'ipv4',
   'ipv6',
   'tcp',
   'tls',
+  'udp',
   'mtu',
-  'upstream-proxy',
+  'congestion',
+  'filtering',
   'remote-endpoint',
   'api-auth',
   'api-rate-limit',
-  'server-application',
+  'application',
+  'server',
+  'unknown',
 ] as const;
 
 /** Network layer a probe exercises. Each layer is observed independently. */

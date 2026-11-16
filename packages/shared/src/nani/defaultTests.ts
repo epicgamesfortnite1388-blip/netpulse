@@ -64,36 +64,39 @@ export const DEFAULT_TESTS: readonly DiagnosticTest[] = [
     layer: 'dns',
     label: 'Resolve the hostname',
     cost: 0.1,
-    failure: { dns: 0.95, 'local-interface': 0.4, 'upstream-proxy': 0.3, routing: 0.2 },
+    // A lookup that fails outright is far more likely plain DNS failure than
+    // inconsistent answers from multiple resolvers; keeping inconsistency near
+    // 0.9 made the two hypotheses indistinguishable from one observation.
+    failure: { dns: 0.95, 'dns-inconsistency': 0.2, gateway: 0.2, routing: 0.2 },
   }),
   buildTest({
     id: 'gateway-ping',
     layer: 'tcp',
     label: 'Reach the local gateway',
     cost: 0.15,
-    failure: { gateway: 0.9, 'local-interface': 0.85, routing: 0.35, ipv4: 0.4 },
+    failure: { gateway: 0.9, routing: 0.35, ipv4: 0.4 },
   }),
   buildTest({
     id: 'ipv6-connect',
     layer: 'tcp',
     label: 'Connect over IPv6',
     cost: 0.2,
-    failure: { ipv6: 0.9, routing: 0.25, 'local-interface': 0.2 },
+    failure: { ipv6: 0.9, routing: 0.25 },
   }),
   buildTest({
     id: 'tcp-connect',
     layer: 'tcp',
     label: 'Open a TCP connection',
     cost: 0.3,
-    failure: { tcp: 0.78, routing: 0.6, 'remote-endpoint': 0.7, 'upstream-proxy': 0.5, mtu: 0.2, ipv4: 0.35 },
-    timeout: { tcp: 0.2, routing: 0.2, 'remote-endpoint': 0.15, 'upstream-proxy': 0.15 },
+    failure: { tcp: 0.78, routing: 0.6, 'remote-endpoint': 0.7, mtu: 0.2, ipv4: 0.35, congestion: 0.5, filtering: 0.4 },
+    timeout: { tcp: 0.2, routing: 0.2, 'remote-endpoint': 0.15, congestion: 0.1, filtering: 0.1 },
   }),
   buildTest({
     id: 'tls-handshake',
     layer: 'tls',
     label: 'Complete the TLS handshake',
     cost: 0.4,
-    failure: { tls: 0.95, mtu: 0.45, 'upstream-proxy': 0.4, 'remote-endpoint': 0.2 },
+    failure: { tls: 0.95, mtu: 0.45, 'remote-endpoint': 0.2, filtering: 0.1, congestion: 0.1 },
   }),
   buildTest({
     id: 'mtu-probe',
@@ -102,36 +105,36 @@ export const DEFAULT_TESTS: readonly DiagnosticTest[] = [
     cost: 0.35,
     // A black-holed MTU usually hangs rather than returning an error, so the
     // signal lives in the timeout outcome, not the failure outcome.
-    failure: { mtu: 0.35, tls: 0.1, routing: 0.15 },
-    timeout: { mtu: 0.55 },
+    failure: { mtu: 0.35, tls: 0.1, routing: 0.15, 'filtering': 0.1, 'congestion': 0.1 },
+    timeout: { mtu: 0.55, 'filtering': 0.1 },
   }),
   buildTest({
     id: 'http-reachability',
     layer: 'http',
     label: 'Receive an HTTP response',
     cost: 0.5,
-    failure: { 'remote-endpoint': 0.8, 'upstream-proxy': 0.5, 'server-application': 0.35, tcp: 0.3, 'api-auth': 0.05, 'api-rate-limit': 0.05 },
+    failure: { 'remote-endpoint': 0.8, 'server': 0.35, tcp: 0.3, 'api-auth': 0.05, 'api-rate-limit': 0.05, 'dns-inconsistency': 0.1, congestion: 0.2, filtering: 0.15 },
   }),
   buildTest({
     id: 'auth-check',
     layer: 'auth',
     label: 'Authenticate the API request',
     cost: 0.55,
-    failure: { 'api-auth': 0.9, 'remote-endpoint': 0.05, 'server-application': 0.1 },
+    failure: { 'api-auth': 0.9, 'remote-endpoint': 0.05, 'application': 0.1, 'dns-inconsistency': 0.05, 'filtering': 0.05 },
   }),
   buildTest({
     id: 'rate-limit-check',
     layer: 'application',
     label: 'Check the provider rate limit',
     cost: 0.55,
-    failure: { 'api-rate-limit': 0.85, 'server-application': 0.1 },
+    failure: { 'api-rate-limit': 0.85, 'application': 0.1, 'congestion': 0.1, 'filtering': 0.05 },
   }),
   buildTest({
     id: 'app-operation',
     layer: 'application',
     label: 'Perform the real API operation',
     cost: 0.9,
-    failure: { 'server-application': 0.85, 'api-auth': 0.3, 'api-rate-limit': 0.3, 'remote-endpoint': 0.3 },
+    failure: { 'application': 0.85, 'api-auth': 0.3, 'api-rate-limit': 0.3, 'remote-endpoint': 0.3, 'dns-inconsistency': 0.1, 'congestion': 0.2, 'filtering': 0.15 },
   }),
 ] as const;
 

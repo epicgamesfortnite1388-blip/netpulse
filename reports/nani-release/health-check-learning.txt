@@ -1,0 +1,68 @@
+NetPulse
+NETWORK INTELLIGENCE
+OVERVIEW
+Dashboard
+Mission Control
+Mission Overdrive
+Live Map
+System Health
+DIAGNOSTICS
+Quick Check
+Speed Test
+DNS
+IP
+Routes
+Cloudflare
+GAMING
+Gaming
+IRAN
+Iran Connectivity
+INFRASTRUCTURE
+Servers
+VPN
+Optimizer
+Nodes
+Explorer
+Sources
+Engines
+DATA
+History
+Events
+SYSTEM
+Account
+Settings
+Copilot
+NANI
+Local network diagnostics workspace
+Commands
+Ctrl K
+Connect
+Ctrl ⇧ K
+Ready
+NANI
+
+NetPulse Adaptive Network Intelligence — observe, investigate, understand, improve.
+
+Overview
+Live Investigation
+Recovery
+AI Workspace
+Hypotheses
+Evidence
+Network Intel
+Learning
+History
+Settings
+Learning & memory
+
+Verified outcomes only
+
+ACCEPTED
+722
+REJECTED
+0
+PROFILES
+—
+RELIABILITY
+50.0%
+Drift events: 16

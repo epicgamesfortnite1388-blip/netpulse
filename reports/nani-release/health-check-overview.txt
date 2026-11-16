@@ -1,0 +1,119 @@
+NetPulse
+NETWORK INTELLIGENCE
+OVERVIEW
+Dashboard
+Mission Control
+Mission Overdrive
+Live Map
+System Health
+DIAGNOSTICS
+Quick Check
+Speed Test
+DNS
+IP
+Routes
+Cloudflare
+GAMING
+Gaming
+IRAN
+Iran Connectivity
+INFRASTRUCTURE
+Servers
+VPN
+Optimizer
+Nodes
+Explorer
+Sources
+Engines
+DATA
+History
+Events
+SYSTEM
+Account
+Settings
+Copilot
+NANI
+Local network diagnostics workspace
+Commands
+Ctrl K
+Connect
+Ctrl ⇧ K
+Ready
+NANI
+
+NetPulse Adaptive Network Intelligence — observe, investigate, understand, improve.
+
+Overview
+Live Investigation
+Recovery
+AI Workspace
+Hypotheses
+Evidence
+Network Intel
+Learning
+History
+Settings
+AI activity
+
+Live engine state
+
+Failed
+
+Circuit breaker tripped (netpulse-cloud)
+
+event stream connected
+Engine status
+
+Authoritative Rust core / API
+
+Refresh
+HEALTHY APIS
+0
+TOTAL APIS
+1
+EVENTS (SEQ)
+35
+RECOVERY
+1
+Run health check
+health_check_complete: 0/1 healthy
+What would you like NANI to investigate?
+
+Natural-language requests
+
+Why is my connection unstable?
+Investigate unusually high latency.
+Compare my current network against previous sessions.
+Find which connection method performs best.
+Diagnose repeated connection failures.
+Analyze packet loss and jitter.
+Explain why a connection is failing.
+Run a network health investigation.
+Recent events
+
+Actual backend activity
+
+#37
+CircuitBreakerTripped
+#36
+CircuitBreakerTripped
+#35
+CircuitBreakerTripped
+#34
+CircuitBreakerTripped
+#33
+CircuitBreakerTripped
+#32
+CircuitBreakerTripped
+#31
+CircuitBreakerTripped
+#30
+RecoveryStarted
+#29
+CircuitBreakerTripped
+#28
+RecoveryCompleted
+#27
+RecoveryStepCompleted
+#26
+CircuitBreakerTripped

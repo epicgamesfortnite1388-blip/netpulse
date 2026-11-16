@@ -69,9 +69,11 @@ import { UpdateFeedHistoryService } from './services/updateFeedHistory';
 import { registerUpdateFeedRoutes } from './routes/updateFeed';
 import { registerUpdateHistoryRoutes } from './routes/updateHistory';
 import { registerNaniRoutes } from './routes/nani';
+import { registerNaniDiagnosticRoutes } from './routes/naniDiagnostics';
 
 import { DiagnosticsService } from './services/diagnosticsService';
 import { NaniService } from './services/naniService';
+import { NaniShadowHealthLoop } from './services/naniShadowHealthLoop';
 import { DnsService } from './services/dnsService';
 import { GamingService } from './services/gamingService';
 import { EndpointService } from './services/endpointService';
@@ -627,32 +629,6 @@ export async function buildApp(opts: BuildOptions = {}) {
       dependsOn: [],
     },
     {
-      id: 'xkiro',
-      provider: 'xkiro',
-      endpoint: 'api.xkiro.ai:443',
-      authType: 'bearer' as const,
-      authKeyId: 'xkiro-api-key',
-      healthCheck: 'https-get' as const,
-      healthCheckPath: '/v1/health',
-      timeoutMs: 8_000,
-      directPermitted: true,
-      autoRecoveryPermitted: true,
-      dependsOn: [],
-    },
-    {
-      id: 'deepseek',
-      provider: 'deepseek',
-      endpoint: 'api.deepseek.com:443',
-      authType: 'bearer' as const,
-      authKeyId: 'deepseek-api-key',
-      healthCheck: 'https-get' as const,
-      healthCheckPath: '/v1/models',
-      timeoutMs: 8_000,
-      directPermitted: true,
-      autoRecoveryPermitted: true,
-      dependsOn: [],
-    },
-    {
       id: 'telegram',
       provider: 'telegram-bot',
       endpoint: 'api.telegram.org:443',
@@ -669,6 +645,13 @@ export async function buildApp(opts: BuildOptions = {}) {
   for (const api of defaultApis) {
     nani.registerApi(api as any);
   }
+
+  // Advisory shadow health: assess configured providers on a timer without
+  // changing registry health, circuit state, events, or recovery.
+  const naniShadowHealth = new NaniShadowHealthLoop(
+    () => nani.runShadowHealthPass(),
+    log,
+  );
 
   const services = {
     events,
@@ -833,6 +816,11 @@ export async function buildApp(opts: BuildOptions = {}) {
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
+  // Public liveness endpoint used by NANI's default provider health check.
+  // It exposes no state, and it intentionally lives outside `/api/` so the
+  // auth hook below does not require a token for a liveness probe.
+  app.get('/healthz', async () => ({ ok: true, service: 'netpulse-api', at: Date.now() }));
+
   app.addHook('onRequest', async (req) => {
     const urlPath = req.url.split('?')[0] ?? '';
     if (!urlPath.startsWith('/api/')) return;
@@ -877,6 +865,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   registerWhitednsRoutes(app, ctx);
   registerNodesRoutes(app, ctx);
   registerNaniRoutes(app, ctx);
+  registerNaniDiagnosticRoutes(app, ctx);
   // Local update feed (public — the updater is not the webview; see route docs).
   registerUpdateFeedRoutes(app, ctx);
   registerUpdateHistoryRoutes(app, ctx);
@@ -905,6 +894,7 @@ export async function buildApp(opts: BuildOptions = {}) {
       log.warn({ err }, 'initial retention sweep failed (continuing)');
     }
     nodeTestScheduler.start();
+    naniShadowHealth.start();
     // User geo overrides: <dataDir>/geo-overrides.json is hot-reloaded by the
     // guard; register its path before the scrub so user corrections apply to
     // this boot immediately.
@@ -942,6 +932,7 @@ export async function buildApp(opts: BuildOptions = {}) {
   app.addHook('onClose', async () => {
     vpnWatchdog.stop();
     nodeTestScheduler.stop();
+    naniShadowHealth.stop();
     if (retentionTimer) clearInterval(retentionTimer);
     if (geoTimer) clearInterval(geoTimer);
     // A deliberate shutdown must not leave managed tunnels behind: disconnect

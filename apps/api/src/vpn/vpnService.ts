@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { spawnCoreProcess, startupReason } from '../services/coreProcess';
 import { runCommand } from '../util/exec';
-import { createVaultKeyStore, type VaultKeyStore } from './keychain';
+import { createVaultKeyStore, removeKeyFile, type VaultKeyStore } from './keychain';
 
 import type { CoreProcess } from '../services/coreProcess';
 import type { ChildProcess } from 'node:child_process';
@@ -233,7 +233,10 @@ export class FileSecretVault {
       if (again.state === 'ok' && again.value.equals(value)) {
         if (legacy) {
           try {
-            fs.rmSync(this.legacyKeyFile(), { force: true });
+            // The key file carries a read-only Windows ACL (see keychain.ts),
+            // so a plain rmSync fails with EPERM and would leave the plaintext
+            // key behind. removeKeyFile clears the ACL before deleting.
+            removeKeyFile(this.legacyKeyFile());
           } catch {
             // Leaving it is harmless — the store is now authoritative.
           }

@@ -147,3 +147,85 @@ export function binaryClassification(
     falseNegatives,
   };
 }
+
+/* ------------------------ reliability diagrams by class --------------------- */
+
+/** A prediction annotated with the network and destination classes it belongs to. */
+export interface ClassifiedPrediction extends Prediction {
+  /** Network condition / class label (e.g. "dns", "tcp", "tls"). */
+  networkClass?: string;
+  /** Destination class label (e.g. "remote-endpoint", "api", "gateway"). */
+  destinationClass?: string;
+}
+
+/** A reliability diagram plus its summary statistics. */
+export interface ReliabilityDiagram {
+  bins: ReliabilityBin[];
+  ece: number;
+  count: number;
+}
+
+/** Build one reliability diagram from a set of predictions. */
+export function reliabilityDiagram(
+  predictions: readonly Prediction[],
+  bins = 10,
+): ReliabilityDiagram {
+  return {
+    bins: reliabilityBins(predictions, bins),
+    ece: expectedCalibrationError(predictions, bins),
+    count: predictions.length,
+  };
+}
+
+/** Group predictions by a caller-supplied class key and diagram each group. */
+export function reliabilityDiagramByClass(
+  predictions: readonly Prediction[],
+  classOf: (prediction: Prediction) => string,
+  bins = 10,
+): Record<string, ReliabilityDiagram> {
+  const groups = new Map<string, Prediction[]>();
+  for (const prediction of predictions) {
+    const key = classOf(prediction);
+    const list = groups.get(key);
+    if (list) list.push(prediction);
+    else groups.set(key, [prediction]);
+  }
+  const out: Record<string, ReliabilityDiagram> = {};
+  for (const [key, list] of groups) {
+    out[key] = reliabilityDiagram(list, bins);
+  }
+  return out;
+}
+
+/**
+ * Evaluate reliability diagrams separately for every network class and
+ * destination class combination present in `predictions`. Missing classes are
+ * reported as `"unknown"` so callers always get a complete, keyed result.
+ */
+export function reliabilityDiagramByNetworkAndDestination(
+  predictions: readonly ClassifiedPrediction[],
+  bins = 10,
+): Record<string, Record<string, ReliabilityDiagram>> {
+  const networks = new Set<string>();
+  const destinations = new Set<string>();
+  for (const prediction of predictions) {
+    networks.add(prediction.networkClass ?? 'unknown');
+    destinations.add(prediction.destinationClass ?? 'unknown');
+  }
+  if (networks.size === 0) networks.add('unknown');
+  if (destinations.size === 0) destinations.add('unknown');
+
+  const out: Record<string, Record<string, ReliabilityDiagram>> = {};
+  for (const network of networks) {
+    out[network] = {};
+    for (const destination of destinations) {
+      const subset = predictions.filter(
+        (prediction) =>
+          (prediction.networkClass ?? 'unknown') === network &&
+          (prediction.destinationClass ?? 'unknown') === destination,
+      );
+      out[network]![destination] = reliabilityDiagram(subset, bins);
+    }
+  }
+  return out;
+}

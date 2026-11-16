@@ -5,8 +5,8 @@
 // smoothing, no invented pseudo-counts unless the caller asks for them.
 
 use crate::network_intelligence::math::{
-    bernoulli_entropy, clamp_probability, finite_or_default, kl_divergence, js_divergence,
-    log_sum_exp, softmax,
+    bernoulli_entropy, clamp_probability, entropy_of, finite_or_default, kl_divergence,
+    js_divergence, log_sum_exp, softmax,
 };
 use crate::network_intelligence::probability::BetaBernoulli;
 
@@ -89,22 +89,14 @@ impl Prior {
 
     /// Entropy of the prior, in nats.
     pub fn entropy(&self) -> f64 {
-        let probs = match softmax(&self.log_probs) {
-            Some(p) => p,
-            None => return 0.0,
-        };
-        let mut acc = 0.0;
-        for p in probs {
-            if p > 0.0 {
-                acc -= p * p.ln();
-            }
-        }
-        acc
+        softmax(&self.log_probs).map_or(0.0, |probs| entropy_of(&probs))
     }
 
     /// Apply multiplicative evidence: add `log_likelihood` to hypothesis `i`.
     pub fn add_evidence(&mut self, i: usize, log_likelihood: f64) {
-        if i < self.log_probs.len() && log_likelihood.is_finite() {
+        // -inf is meaningful: the outcome is impossible under this hypothesis
+        // and must eliminate it. Only NaN (undefined evidence) is ignored.
+        if i < self.log_probs.len() && !log_likelihood.is_nan() {
             self.log_probs[i] += log_likelihood;
         }
     }
@@ -173,6 +165,28 @@ impl Posterior {
     }
 }
 
+/// Posterior movement a single probe outcome contributes, given the
+/// correlation weight the engine assigned to that probe.
+///
+/// This is the ONLY expression of the weighting rule. A probe of weight `w`
+/// moves the posterior by `w²` — the correlation discount is applied once to the
+/// log-likelihood and once as the evidence confidence — and a NaN
+/// log-likelihood carries no evidence at all, so it moves nothing. `observe`
+/// folds this value into the evidence it records, and
+/// `DiagnosticEngine::entropy_if_observed` adds it directly when estimating the
+/// posterior without cloning:
+/// both ask here, so a change to the discount cannot be made in one path and
+/// silently missed in the other.
+pub fn evidence_movement(log_likelihood: f64, weight: f64) -> f64 {
+    if log_likelihood.is_nan() {
+        // Undefined evidence is not evidence; only NaN is discarded here.
+        // ±infinity is meaningful (impossible / certain outcome) and is kept.
+        0.0
+    } else {
+        log_likelihood * weight * weight
+    }
+}
+
 /// Bayesian update: combine a prior with a list of evidence to form a
 /// posterior. Each evidence item adds its log-likelihood to the matching
 /// hypothesis. Evidence whose `source` has already been counted is skipped
@@ -193,7 +207,10 @@ pub fn bayesian_update(prior: &Prior, evidence: &[Evidence]) -> Posterior {
             continue;
         }
         seen.push(key);
-        let ll = finite_or_default(e.log_likelihood, 0.0);
+        // Preserve -inf (impossible outcome) and +inf (certain outcome); only
+        // an undefined NaN likelihood is treated as no evidence. Replacing
+        // -inf with 0 kept hypotheses that the observation had ruled out.
+        let ll = if e.log_likelihood.is_nan() { 0.0 } else { e.log_likelihood };
         // Weight by confidence if available: scale the log-likelihood so a
         // low-confidence observation moves the posterior less.
         let weighted_ll = match e.confidence {

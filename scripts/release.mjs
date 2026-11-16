@@ -118,7 +118,7 @@ if (conf.version !== version) {
 const cargoPath = path.join(root, 'src-tauri', 'Cargo.toml');
 const cargo = fs.readFileSync(cargoPath, 'utf8');
 const updated = cargo.replace(
-  /^(\[package\]\nname = "netpulse-desktop"\nversion = )"([^"]+)"/m,
+  /^(\[package\]\r?\nname = "netpulse-desktop"\r?\nversion = )"([^"]+)"/m,
   `$1"${version}"`,
 );
 if (updated !== cargo) {

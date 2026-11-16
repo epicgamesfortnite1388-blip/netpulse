@@ -181,6 +181,8 @@ impl NetworkSimulator {
             },
             NetworkCondition::TcpTimeout => match test {
                 InterfaceCheck | GatewayPing | DnsResolve | Traceroute => ok(rng, 15.0, 60.0),
+                // Path-MTU probing (ICMP/DF) still works when TCP is blocked.
+                MtuProbe => ok(rng, 15.0, 60.0),
                 TcpConnect => {
                     if rng.gen_bool(0.3) {
                         ok(rng, 100.0, 300.0)

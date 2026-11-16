@@ -3,6 +3,7 @@
  *
  * Endpoints:
  *   GET    /api/v1/nani/apis              list registered APIs + health
+ *   GET    /api/v1/nani/health/shadow     buffered shadow health vs live health
  *   POST   /api/v1/nani/apis              register an API provider
  *   POST   /api/v1/nani/check             run a layered health check for one API
  *   POST   /api/v1/nani/diagnose          run Bayesian diagnosis for a target
@@ -10,6 +11,7 @@
  *   POST   /api/v1/nani/recovery/step     record a recovery step outcome
  *   GET    /api/v1/nani/recovery/next     get the next runnable recovery step
  *   POST   /api/v1/nani/recovery/reset    reset learned data for an API
+ *   POST   /api/v1/nani/recovery/rollback revert the plan to the last verified route
  *
  * All bodies are validated with zod. No secrets are accepted or returned.
  */
@@ -80,6 +82,7 @@ const RecordStepBody = z.object({
   status: z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped', 'requires-permission', 'insufficient-evidence']),
   latencyMs: z.coerce.number().min(0).optional(),
   message: z.string().optional(),
+  cause: z.enum(['dns', 'gateway', 'routing', 'ipv4', 'ipv6', 'tcp', 'tls', 'udp', 'mtu', 'congestion', 'filtering', 'upstream-proxy', 'remote-endpoint', 'api-auth', 'api-rate-limit', 'application', 'server', 'unknown', 'unspecified']).optional(),
 });
 
 const NextStepQuery = z.object({ apiId: z.string().trim().min(1), now: z.coerce.number().optional() });
@@ -87,8 +90,46 @@ const NextStepQuery = z.object({ apiId: z.string().trim().min(1), now: z.coerce.
 export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void {
   const nani = ctx.services.nani;
 
+  // Compact status for the cockpit/reports pages. `lastDiagnosis` is null
+  // until a diagnosis has actually run; the UI must not be shown a fabricated
+  // health percentage or cause.
+  app.get('/api/v1/nani/status', async () => {
+    const apis = nani.listApis();
+    return {
+      enabled: true,
+      intelligenceLevel: apis.length > 0 ? 'active' : 'idle',
+      lastDiagnosis: null,
+    };
+  });
+
   app.get('/api/v1/nani/apis', async () => {
     return { apis: nani.listApis(), count: nani.listApis().length };
+  });
+
+  // Read-only comparison for the UI. Serves the last advisory shadow pass from
+  // memory; it never probes, writes registry health, or publishes events.
+  // `ageMs` makes stale shadow comparisons visible without mutating anything.
+  app.get('/api/v1/nani/health/shadow', async (_req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const now = Date.now();
+    const live = nani.listApis();
+    const assessments = nani.shadowSnapshot().map((assessment) => {
+      const current = live.find((entry) => entry.entry.id === assessment.apiId);
+      return {
+        apiId: assessment.apiId,
+        at: assessment.at,
+        ageMs: Math.max(0, now - assessment.at),
+        shadow: assessment.classification,
+        live: current
+          ? {
+              health: current.health,
+              failures: current.failures,
+              successes: current.successes,
+            }
+          : null,
+      };
+    });
+    return { assessments, count: assessments.length };
   });
 
   app.post('/api/v1/nani/apis', async (req, reply) => {
@@ -155,10 +196,39 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
     const parsed = NextStepQuery.safeParse(req.query);
     if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
     try {
-      const { step, snapshot } = nani.nextRecoveryStep(parsed.data.apiId, parsed.data.now ?? Date.now());
-      return { ok: true, step, snapshot };
+      // knownGoodRouteId travels with every step poll: the UI needs it to offer
+      // the rollback action and to plan the rollback step. Destructuring it away
+      // here silently disabled both.
+      const { step, snapshot, knownGoodRouteId } = nani.nextRecoveryStep(
+        parsed.data.apiId,
+        parsed.data.now ?? Date.now(),
+      );
+      return { ok: true, step, snapshot, knownGoodRouteId };
     } catch (err) {
       return replyApiError(reply, 500, 'next_step_failed', err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  // Roll back to the last route this engine verified. A state change, so it is
+  // an explicit operator request; the service refuses when no route has been
+  // verified rather than inventing a target.
+  app.post('/api/v1/nani/recovery/rollback', async (req, reply) => {
+    const parsed = z.object({ apiId: z.string().trim().min(1) }).safeParse(req.body);
+    if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
+    try {
+      const result = nani.rollbackToKnownGood(parsed.data.apiId);
+      return { ok: true, ...result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith('unknown api')) {
+        return replyApiError(reply, 404, 'unknown_api', message);
+      }
+      if (message.startsWith('no known-good route')) {
+        return replyApiError(reply, 409, 'no_known_good_route', message, {
+          hint: 'Verify a route first: a route recorded as a verified success becomes the rollback target.',
+        });
+      }
+      return replyApiError(reply, 500, 'rollback_failed', message);
     }
   });
 
@@ -166,7 +236,14 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
     const parsed = z.object({ apiId: z.string() }).safeParse(req.body);
     if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
     try {
-      return { ok: true, apiId: parsed.data.apiId, message: 'runtime state cleared' };
+      const result = nani.resetRecovery(parsed.data.apiId);
+      return {
+        ok: true,
+        ...result,
+        message: result.cleared
+          ? `cleared recovery ${result.previousRecoveryId}`
+          : 'no active recovery state to clear',
+      };
     } catch (err) {
       return replyApiError(reply, 500, 'reset_failed', err instanceof Error ? err.message : String(err));
     }

@@ -9,10 +9,11 @@
 // the first action only, observe, and replan (model predictive control).
 
 use crate::network_intelligence::math::clamp_probability;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Circuit breaker state machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BreakerState {
     /// Normal operation: requests pass through.
     Closed,
@@ -34,7 +35,7 @@ impl std::fmt::Display for BreakerState {
 
 /// A circuit breaker that trips on consecutive failures and recovers
 // gradually via half-open trials.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitBreaker {
     pub state: BreakerState,
     /// Failures required to trip.
@@ -175,6 +176,9 @@ pub struct RecoveryPlanner {
     pub breaker: CircuitBreaker,
     pub plans: Vec<RecoveryPlan>,
     pub active_plan: Option<String>,
+    /// API id the active plan belongs to, so the control plane can route
+    /// recovery steps to the right endpoint.
+    pub active_api: Option<String>,
 }
 
 impl RecoveryPlanner {
@@ -183,14 +187,19 @@ impl RecoveryPlanner {
             breaker: CircuitBreaker::new(),
             plans: Vec::new(),
             active_plan: None,
+            active_api: None,
         }
     }
 
     /// Create a recovery plan from candidate actions, ordered by estimated
     /// success. The first step is the least intrusive (verify known-good
     /// route), then progressively more intrusive.
+    ///
+    /// `api_id` is recorded so recovery steps can be routed to the right
+    /// endpoint during execution.
     pub fn build_plan(
         &mut self,
+        api_id: &str,
         plan_id: &str,
         actions: Vec<(String, f64)>, // (action, estimated_success)
         max_total_time_sec: u64,
@@ -199,7 +208,7 @@ impl RecoveryPlanner {
             .into_iter()
             .enumerate()
             .map(|(i, (action, est))| RecoveryStep {
-                id: format!("{}-step-{}", plan_id, i),
+                id: format!("{plan_id}-step-{i}"),
                 action,
                 estimated_success: clamp_probability(est),
                 timeout_sec: 30,
@@ -221,6 +230,7 @@ impl RecoveryPlanner {
             completed: false,
             succeeded: None,
         };
+        self.active_api = Some(api_id.to_string());
         self.plans.push(plan.clone());
         self.active_plan = Some(plan.id.to_string());
         plan.id
@@ -319,6 +329,12 @@ impl RecoveryPlanner {
         self.breaker.consecutive_failures = 0;
         self.breaker.tripped_at_unix = None;
         self.active_plan = None;
+        self.active_api = None;
+    }
+
+    /// API id the active recovery plan belongs to, if any.
+    pub fn active_api(&self) -> Option<&str> {
+        self.active_api.as_deref()
     }
 
     /// Whether the active plan has completed (succeeded or failed).
@@ -399,6 +415,7 @@ mod tests {
     fn build_plan_orders_by_success() {
         let mut p = RecoveryPlanner::new();
         let id = p.build_plan(
+            "api-1",
             "plan-1",
             vec![
                 ("mtu_experiment".into(), 0.4),
@@ -416,7 +433,7 @@ mod tests {
     #[test]
     fn next_step_returns_first_unexecuted() {
         let mut p = RecoveryPlanner::new();
-        p.build_plan("plan-2", vec![("a".into(), 0.5), ("b".into(), 0.6)], 120);
+        p.build_plan("api-1", "plan-2", vec![("a".into(), 0.5), ("b".into(), 0.6)], 120);
         let step = p.next_step(0).expect("first step");
         // Steps are sorted by estimated success descending, so "b" (0.6) is first
         assert_eq!(step.action, "b");
@@ -426,7 +443,7 @@ mod tests {
     #[test]
     fn completing_step_succeeds_plan() {
         let mut p = RecoveryPlanner::new();
-        p.build_plan("plan-3", vec![("a".into(), 0.5)], 120);
+        p.build_plan("api-1", "plan-3", vec![("a".into(), 0.5)], 120);
         let step = p.next_step(0).expect("step");
         let step_id = step.id.clone();
         p.complete_step(&step_id, true, 0);
@@ -437,7 +454,7 @@ mod tests {
     #[test]
     fn failing_all_steps_fails_plan() {
         let mut p = RecoveryPlanner::new();
-        p.build_plan("plan-4", vec![("a".into(), 0.5), ("b".into(), 0.6)], 120);
+        p.build_plan("api-1", "plan-4", vec![("a".into(), 0.5), ("b".into(), 0.6)], 120);
         let s1 = p.next_step(0).expect("s1").id.clone();
         p.complete_step(&s1, false, 0);
         let s2 = p.next_step(0).expect("s2").id.clone();
@@ -451,7 +468,7 @@ mod tests {
     fn rollback_resets_plan_and_breaker() {
         let mut p = RecoveryPlanner::new();
         p.breaker.failure_threshold = 1;
-        p.build_plan("plan-5", vec![("a".into(), 0.5)], 120);
+        p.build_plan("api-1", "plan-5", vec![("a".into(), 0.5)], 120);
         let s = p.next_step(0).expect("s").id.clone();
         p.complete_step(&s, false, 100);
         assert_eq!(p.breaker.state, BreakerState::Open);

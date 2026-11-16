@@ -45,6 +45,12 @@ export async function runDiagnosticTest(
   target: string,
   now: number,
   log: Logger,
+  /**
+   * Path to request for the HTTP-bearing layers. API health checks need a
+   * provider's own health path (`/healthz`), while a generic reachability probe
+   * legitimately asks for `/`. Absent means the layer default.
+   */
+  pathOverride?: string,
 ): Promise<DiagnosticObservation> {
   const parts = target.split(':');
   const host = parts[0];
@@ -94,7 +100,7 @@ export async function runDiagnosticTest(
       case 'http': {
         if (!ip) { outcome = 'failure'; break; }
         const http = await import('node:http');
-        const req = http.request({ host: ip, port, path: '/', method: 'GET', timeout: 5_000 });
+        const req = http.request({ host: ip, port, path: pathOverride ?? '/', method: 'GET', timeout: 5_000 });
         const res = await new Promise<{ statusCode: number | null; timedOut: boolean }>((resolve, reject) => {
           let timedOut = false;
           req.on('response', (resp) => { resolve({ statusCode: resp.statusCode ?? null, timedOut: false }); resp.resume(); });

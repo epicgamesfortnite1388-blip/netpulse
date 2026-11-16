@@ -100,6 +100,11 @@ export function registerApi(
   const previous = registry.entries.get(entry.id);
   const normalized: ApiRegistryEntry = {
     ...entry,
+    // An entry registered over the API carries no routes yet, and every route
+    // helper (`verifyRoute`, `failRoute`) reads this array. Without the default
+    // a verified recovery step crashed with "cannot read properties of
+    // undefined" instead of recording the route.
+    routes: entry.routes ?? [],
     dependedBy: entry.dependedBy ?? [],
     consecutiveFailures: entry.consecutiveFailures ?? 0,
     autoRecoveryPermitted: entry.autoRecoveryPermitted ?? true,

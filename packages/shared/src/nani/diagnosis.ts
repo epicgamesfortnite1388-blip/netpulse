@@ -173,7 +173,6 @@ export function diagnose(
   }
 
   const entropy = entropyOf(posterior);
-  const maxEntropy = Math.log2(NETWORK_HYPOTHESES.length);
   let top: NetworkHypothesis | null = null;
   let confidence = 0;
   for (const h of NETWORK_HYPOTHESES) {
@@ -185,8 +184,13 @@ export function diagnose(
 
   // One clear leader is needed for a diagnosis; a flat distribution is not one,
   // and a leader with little posterior mass is a guess. Both are rejected.
-  const insufficientEvidence =
-    evidenceCount === 0 || entropy > maxEntropy * 0.9 || confidence < options.minConfidence;
+  //
+  // The confidence threshold is the actual discriminator: a flat posterior over
+  // `n` hypotheses has top mass `1/n`, which is below `minConfidence` for every
+  // supported hypothesis count. A fixed "entropy > 90% of maximum" gate was
+  // redundant and broke whenever the hypothesis space grew (adding three
+  // hypotheses made one strong DNS observation look "insufficient").
+  const insufficientEvidence = evidenceCount === 0 || confidence < options.minConfidence;
   const ranked = NETWORK_HYPOTHESES.map((h) => ({ hypothesis: h, probability: posterior[h] })).sort(
     (a, b) => b.probability - a.probability,
   );

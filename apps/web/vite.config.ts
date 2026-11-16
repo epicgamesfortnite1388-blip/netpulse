@@ -1,11 +1,19 @@
 /// <reference types="vitest/config" />
+import fs from 'node:fs';
 import path from 'node:path';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+// The single release version (root package.json) is injected at build time so
+// the client never reports a stale hard-coded app version to the cloud.
+const appVersion = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8'),
+).version as string;
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react(), tailwindcss()],
   // react-globe.gl's dependency three-conic-polygon-geometry touches `window`
   // at import time; pure-logic map tests import from the page module, so give

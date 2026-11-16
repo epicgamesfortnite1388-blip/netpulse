@@ -1,0 +1,66 @@
+/**
+ * NANI Action History Hook
+ * 
+ * Tracks NANI recovery actions and their causes, persisting across tab unmounts
+ * and full app reloads using sessionStorage. Each entry records the action, outcome,
+ * cause, timestamp, and whether it was verified.
+ * 
+ * Usage:
+ * const { history, addAction, clearHistory } = useNaniActionHistory()
+ * 
+ * // Add an action after a recovery step
+ * addAction({
+ *   stepId: 'r1:activate',
+ *   status: 'succeeded',
+ *   cause: 'dns',  // optional - the diagnosed cause
+ *   latencyMs: 42,
+ *   message: 'Connection restored'
+ * })
+ */
+export function useNaniActionHistory() {
+  const [history, setHistory] = usePersistentState<NaniActionHistory[]>('nani-action-history', []);
+
+  const addAction = useCallback((action: NaniAction) => {
+    const newEntry: NaniActionHistory = {
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      ...action,
+    };
+    setHistory((prev) => {
+      // Keep last 50 entries to avoid unbounded growth
+      const updated = [newEntry, ...prev].slice(0, 50);
+      return updated;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
+
+  return { history, addAction, clearHistory };
+}
+
+/** A single recorded NANI action. */
+interface NaniAction {
+  /** Unique step identifier (e.g. 'r1:activate') */
+  stepId: string;
+  /** Outcome status */
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'requires-permission' | 'insufficient-evidence';
+  /** Optional diagnosed cause - why this step was needed */
+  cause?: 'dns' | 'gateway' | 'routing' | 'ipv4' | 'ipv6' | 'tcp' | 'tls' | 'udp' | 'mtu' | 'congestion' | 'filtering' | 'upstream-proxy' | 'remote-endpoint' | 'api-auth' | 'api-rate-limit' | 'application' | 'server' | 'unknown' | 'unspecified';
+  /** Measured latency in ms */
+  latencyMs?: number;
+  /** Human-readable message */
+  message?: string;
+}
+
+/** A persisted history entry. */
+interface NaniActionHistory {
+  id: string;
+  timestamp: number;
+  stepId: string;
+  status: NaniAction['status'];
+  cause?: NaniAction['cause'];
+  latencyMs?: number;
+  message?: string;
+}

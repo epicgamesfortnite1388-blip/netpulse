@@ -1,4 +1,4 @@
-import { api } from '@/lib/api';
+import { tauriInvoke } from '@/lib/transport';
 
 export interface AiMessage {
   id: string;
@@ -9,102 +9,97 @@ export interface AiMessage {
 
 export interface AiAskRequest {
   question: string;
-  role?: 'support' | 'admin' | 'diagnostics' | 'developer';
 }
 
 export interface AiAskResponse {
-  kind: 'answer' | 'needs_confirmation' | 'error';
+  kind: 'answer' | 'error';
   text: string;
-  tool?: string;
-  requestId?: string;
-  nonce?: string;
-  preview?: string;
-  html?: boolean;
-  undoId?: string;
-  undoImpact?: string;
+  /** The deterministic text from the Rust engine, always present on success. */
+  deterministic?: string;
+  source?: 'deterministic' | 'local_model';
+  grounded?: boolean;
+  warning?: string;
 }
 
 export interface AiStreamRequest {
   question: string;
-  role?: 'support' | 'admin' | 'diagnostics' | 'developer';
   onDelta: (delta: string) => void;
   signal?: AbortSignal;
 }
 
-export interface AiUsage {
-  totalRequests: number;
-  failedRequests: number;
-  failureRatePct: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  avgLatencyMs: number | null;
+/** Local model configuration status. Contains no model path or file contents. */
+export interface AiStatus {
+  enabled: boolean;
+  available: boolean;
+  runtime: string;
+  binary_configured: boolean;
+  model_configured: boolean;
+  model_name: string | null;
+  timeout_ms: number;
+  max_tokens: number;
+  message: string;
+}
+
+interface RustExplanation {
+  deterministic: string;
+  narrative: string | null;
+  source: 'deterministic' | 'local_model';
+  grounded: boolean;
+  warning: string | null;
 }
 
 /**
- * Ask the AI a question through the authenticated NetPulse cloud API.
- * The desktop never holds a provider API key — it calls the cloud endpoint
- * which forwards to the centralized AI service (Abystral).
+ * Ask NANI to explain its current state.
+ *
+ * Everything comes from the local Rust engine. The optional local model only
+ * rewrites the deterministic explanation; when it is off, the deterministic
+ * text is returned. There is no cloud AI request in this path.
  */
 export async function askAi(req: AiAskRequest): Promise<AiAskResponse> {
-  return api.post<AiAskResponse>('/ai/ask', {
-    question: req.question,
-    role: req.role ?? 'admin',
-  });
+  const invoke = tauriInvoke<RustExplanation>('nani_explain', { question: req.question });
+  if (!invoke) {
+    return {
+      kind: 'error',
+      text: 'NANI Copilot runs in the desktop application. Local diagnostics remain available in web mode.',
+    };
+  }
+  try {
+    const res = await invoke;
+    const warning = res.warning ? `\n\nLocal model note: ${res.warning}` : '';
+    return {
+      kind: 'answer',
+      text: `${res.narrative ?? res.deterministic}${warning}`,
+      deterministic: res.deterministic,
+      source: res.source,
+      grounded: res.grounded,
+      warning: res.warning ?? undefined,
+    };
+  } catch (err) {
+    return {
+      kind: 'error',
+      text: err instanceof Error ? err.message : 'NANI could not build an explanation.',
+    };
+  }
 }
 
 /**
- * Stream an AI answer as SSE text deltas through the cloud API.
+ * Deliver the answer as one delta. The local engine answers in one result;
+ * the UI does not pretend to stream tokens it does not have.
  */
 export async function streamAi(req: AiStreamRequest): Promise<void> {
-  const t = (await import('@/lib/transport')).transport();
-  const url = `${t.apiBase}/ai/stream`;
-  const init: RequestInit = {
-    method: 'POST',
-    headers: {
-      ...t.authHeaders(),
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ question: req.question, role: req.role ?? 'admin' }),
-    signal: req.signal,
-  };
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`AI stream failed (${res.status}): ${text}`);
-  }
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('AI stream returned no body');
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    if (req.signal?.aborted) {
-      reader.releaseLock();
-      throw new Error('AI stream aborted by caller');
-    }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (line.startsWith('data:')) {
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') continue;
-        try {
-          const data = JSON.parse(payload);
-          if (typeof data.delta === 'string') req.onDelta(data.delta);
-        } catch {
-          // tolerate partial/malformed SSE chunks
-        }
-      }
-    }
-  }
+  if (req.signal?.aborted) throw new Error('NANI request aborted by caller');
+  const res = await askAi({ question: req.question });
+  if (res.kind === 'error') throw new Error(res.text);
+  req.onDelta(res.text);
 }
 
-/**
- * Fetch AI usage stats for the current admin (usage tracking / observability).
- */
-export async function getAiUsage(): Promise<AiUsage> {
-  return api.get<AiUsage>('/ai/usage');
+/** Local LLM status, or null outside the desktop app. */
+export async function getAiStatus(): Promise<AiStatus | null> {
+  const invoke = tauriInvoke<AiStatus>('nani_ai_status');
+  if (!invoke) return null;
+  try {
+    return await invoke;
+  } catch {
+    return null;
+  }
 }

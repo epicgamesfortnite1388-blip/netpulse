@@ -45,6 +45,7 @@ const SystemHealthPage = lazy(() => import('@/features/health/SystemHealthPage')
 const MissionControlPage = lazy(() => import('@/features/mission/MissionControlPage'));
 const OverdrivePage = lazy(() => import('@/features/mission/OverdrivePage'));
 const CopilotPage = lazy(() => import('@/features/copilot/CopilotPage'));
+const NaniPage = lazy(() => import('@/features/nani/NaniPage'));
 
 export const router = createBrowserRouter([
   {
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <SettingsPage /> },
       { path: 'health', element: <SystemHealthPage /> },
       { path: 'copilot', element: <CopilotPage /> },
+      { path: 'nani', element: <NaniPage /> },
       // Last child, so it only matches what nothing above claimed. Without it
       // an unmatched URL escapes to React Router's own boundary and replaces
       // the whole shell with a developer-facing error screen.

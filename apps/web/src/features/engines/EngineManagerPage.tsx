@@ -101,6 +101,12 @@ export default function EngineManagerPage() {
     staleTime: 20_000,
   });
 
+  const naniQuery = useQuery({
+    queryKey: ['nani', 'status'],
+    queryFn: () => api.get<{enabled: boolean; intelligenceLevel: string; lastDiagnosis: {cause?: string; confidence?: string; latencyMs?: number} | null}>('/nani/status'),
+    staleTime: 30_000,
+  });
+
   const install = useMutation({
     mutationFn: (engine: ProxyEngineId) =>
       api.post<InstallOutcomeDto>('/nodes/engines/install', { engine }),
@@ -303,10 +309,31 @@ export default function EngineManagerPage() {
         </div>
       )}
 
+      {/* NANI Status Bar — persistent intelligence display */}
+      {naniQuery?.data && (
+        <Card className="mt-2 max-w-full">
+          <CardHeader title="NANI" subtitle="Adaptive network intelligence engine" />
+          <CardBody className="text-xs text-muted">
+            {naniQuery.data.enabled && naniQuery.data.lastDiagnosis ? (
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-ok">● Active</span>
+                <Badge tone="ok" className="text-xs ml-2">{naniQuery.data.intelligenceLevel}</Badge>
+                <span className="text-muted/60 ml-2"> • {naniQuery.data.lastDiagnosis.cause}</span>
+              </div>
+            ) : null}
+            {(!naniQuery.data || !naniQuery.data.enabled || !naniQuery.data.lastDiagnosis) && (
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-muted">● No recent diagnosis</span>
+                <span className="text-muted/60 ml-2"> • engine {naniQuery.data?.enabled ? 'active' : 'inactive'}</span>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
       <Card
         className="mt-4"
-        fold={{
-          id: 'update-method',
+      fold={{
+        id: 'update-method',
           defaultOpen: false,
           summary: 'official CDN only · digest verified when published · binary must answer its own version command',
         }}

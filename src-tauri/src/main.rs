@@ -34,6 +34,7 @@ mod network_intelligence;
 mod os_open;
 mod paths;
 mod ports;
+mod commands;
 mod safe_mode;
 mod sidecar;
 mod status;
@@ -43,9 +44,19 @@ mod webview_gc;
 mod window;
 
 use serde::Serialize;
+use std::path::Path;
+use std::sync::{Arc, mpsc, Mutex};
 use logging::{log_error, log_info, log_warn};
 use tauri::{AppHandle, Manager};
 use window::present_main_window;
+
+use commands::nani::NaniState;
+use network_intelligence::api_intelligence::registry::{ApiEntry, ApiRegistry};
+use network_intelligence::api_intelligence::monitor_loop::MonitorLoop;
+use network_intelligence::events::EventBus;
+use network_intelligence::foundation::NaniMathEngine;
+use network_intelligence::persistence::PersistenceStore;
+use network_intelligence::recovery::RecoveryPlanner;
 
 /// Everything the webview needs to talk to the backend. Delivered exactly once
 /// at startup through this typed command — the token never touches disk or any
@@ -224,6 +235,25 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .manage(sidecar::SidecarState::new())
         .manage(safe_mode::SafeModeState::new())
+        .manage(NaniState {
+            events: Mutex::new(None),
+            persistence: Mutex::new(PersistenceStore::default()),
+            registry: Mutex::new(ApiRegistry::new(EventBus::default())),
+            recovery: Arc::new(Mutex::new(RecoveryPlanner::new())),
+            learning: Arc::new(Mutex::new(network_intelligence::learning::LearningEngine::new())),
+            investigations: Arc::new(Mutex::new(
+                network_intelligence::investigation::InvestigationManager::new(
+                    EventBus::default(),
+                    ApiRegistry::new(EventBus::default()),
+                    Arc::new(Mutex::new(
+                        network_intelligence::learning::LearningEngine::new(),
+                    )),
+                ),
+            )),
+            ai: Mutex::new(network_intelligence::ai::LocalLlm::from_env()),
+            math: Arc::new(Mutex::new(NaniMathEngine::new())),
+            events_rx: Mutex::new(None),
+        })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             paths::data_paths,
@@ -241,7 +271,31 @@ fn main() {
             updater_feed::feed_check,
             updater_feed::feed_install,
             dpapi::secret_protect,
-            dpapi::secret_unprotect
+            dpapi::secret_unprotect,
+            commands::nani::nani_poll_events,
+            commands::nani::nani_status,
+            commands::nani::nani_health_check_all,
+            commands::nani::nani_learning_status,
+            commands::nani::nani_learning_drift,
+            commands::nani::nani_learning_reset,
+            commands::nani::nani_personalization_status,
+            commands::nani::nani_personalization_transitions,
+            commands::nani::nani_context_observe,
+            commands::nani::nani_personalization_delete,
+            commands::nani::nani_ai_status,
+            commands::nani::nani_explain,
+            commands::nani::nani_start_investigation,
+            commands::nani::nani_cancel_investigation,
+            commands::nani::nani_investigation_status,
+            commands::nani::nani_investigations,
+            commands::nani::nani_math_entropy,
+            commands::nani::nani_math_rank_hypotheses,
+            commands::nani::nani_math_select_probe,
+            commands::nani::nani_math_hypothesis_view,
+            commands::nani::nani_math_should_stop,
+            commands::nani::nani_math_drift_analysis,
+            commands::nani::nani_math_changepoint_analysis,
+            commands::nani::nani_math_mutual_information,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -251,6 +305,36 @@ fn main() {
             let data_dir = paths::data_dir(&handle);
             std::env::set_var("NETPULSE_DATA_DIR", &data_dir);
             log_info!("data dir: {data_dir}");
+
+            // Load local network profiles before the monitor loop starts. A
+            // corrupt file is reported through learning status and starts
+            // clean; it is never interpreted as valid evidence.
+            {
+                let state = handle.state::<NaniState>();
+                let loaded = network_intelligence::learning::LearningEngine::with_data_dir(Path::new(&data_dir));
+                if let Some(err) = loaded.storage_error() {
+                    log_warn!("personalization storage ignored: {err}");
+                }
+                *state.learning.lock().unwrap_or_else(|p| p.into_inner()) = loaded;
+            }
+
+            // Read-only context watchdog: every 2 minutes classify the active
+            // adapter and select the matching local profile. Failure is
+            // silent; NANI never invents a context.
+            {
+                let learning = handle.state::<NaniState>().learning.clone();
+                std::thread::spawn(move || loop {
+                    if let Some(signals) =
+                        network_intelligence::context::collector::collect_context()
+                    {
+                        let _ = learning
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .observe_network(&signals);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(120));
+                });
+            }
 
             // Safe Mode: `--safe-mode` on the command line launches with the
             // network stack disabled (null controller) so a wedged networking
@@ -299,6 +383,58 @@ fn main() {
                 log_error!("sidecar failed to start on first attempt (GUI stays up): {e}");
             }
             sidecar::start_watchdog(&handle);
+
+            // NANI reactive event bus: wire the AppHandle so Rust-emitted
+            // events reach the webview via the `nani:event` Tauri channel
+            // (web mode polls `nani_poll_events` instead).
+            let (nani_bus, nani_rx) = network_intelligence::events::EventBus::new();
+            nani_bus.set_app(app.handle().clone());
+            {
+                let nani_state = app.state::<NaniState>();
+                *nani_state.events.lock().unwrap() = Some(nani_bus.clone());
+                *nani_state.events_rx.lock().unwrap() = Some(nani_rx);
+                // Replace the placeholder event bus (built at .manage() time)
+                // with the real bus wired to the AppHandle.
+                nani_state
+                    .registry
+                    .lock()
+                    .unwrap()
+                    .set_event_bus(nani_bus.clone());
+
+                // Register the APIs the desktop depends on. Endpoints are
+                // descriptive only; no secrets are stored here.
+                {
+                    let mut registry = nani_state.registry.lock().unwrap();
+                    // Only APIs the product actually depends on are monitored.
+                    // External AI providers are not part of the default
+                    // execution path and must not generate background probes.
+                    // Point at the public health route, not the API root. The
+                    // root answers 401 (it requires auth), which the probe
+                    // classifies as an authentication failure and can therefore
+                    // never report Healthy — every health check used to return
+                    // 0/1 and trip the circuit breaker on a reachable service.
+                    registry.register(ApiEntry::new(
+                        "netpulse-cloud",
+                        "NetPulse Cloud",
+                        "https://netpulse-cloud.shuridehradin.workers.dev/api/v1/health",
+                    ));
+                }
+
+                // Spawn the live monitor loop: polls each registered API,
+                // respects circuit breakers, applies bounded retries with
+                // jitter, and triggers recovery on breaker trips.
+                let recovery = nani_state.recovery.clone();
+                let events = nani_bus.clone();
+                let registry = nani_state.registry.lock().unwrap().clone();
+
+                // Persist observations and model state to the app data dir.
+                *nani_state.persistence.lock().unwrap() =
+                    PersistenceStore::new(Path::new(&data_dir))?;
+
+                let learning = nani_state.learning.clone();
+                let monitor = MonitorLoop::new(registry, events, recovery, learning);
+                monitor.spawn();
+            }
 
             // Window presentation is deliberately NOT done here — see
             // `window::present_main_window`, which runs on RunEvent::Ready.

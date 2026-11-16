@@ -8,68 +8,83 @@
 // ignored — we never invent hypotheses. Missing observations are treated as
 // missing, never as zero.
 
-use crate::network_intelligence::bayesian::{bayesian_update, decay_log_likelihood, Evidence, Posterior, Prior};
-use crate::network_intelligence::math::{kl_divergence, log_sum_exp, softmax};
+use crate::network_intelligence::bayesian::{
+    bayesian_update, decay_log_likelihood, evidence_movement, Evidence, Posterior, Prior,
+};
+use crate::network_intelligence::evidence::correlation::CorrelationModel;
+use crate::network_intelligence::math::{entropy_of, kl_divergence, log_sum_exp, softmax};
 
 /// The diagnostic hypothesis space. Each variant represents a distinct failure
 /// mode the system can believe in. `Unknown` covers failure patterns not yet
 /// seen — it is never assigned high confidence without evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Hypothesis {
-    LocalInterface,
     Gateway,
     Dns,
+    DnsInconsistency,
     Routing,
     Ipv4,
     Ipv6,
     Tcp,
     Tls,
     Mtu,
+    QuicUdpFailure,
     UpstreamProxy,
     RemoteEndpoint,
     AuthFailure,
     RateLimit,
+    ApplicationFailure,
     ServerFailure,
+    CongestionOrPacketLoss,
+    NetworkInterferenceOrFiltering,
     Unknown,
 }
 
 impl Hypothesis {
     pub fn label(&self) -> &'static str {
         match self {
-            Hypothesis::LocalInterface => "local_interface",
             Hypothesis::Gateway => "gateway",
             Hypothesis::Dns => "dns",
+            Hypothesis::DnsInconsistency => "dns_inconsistency",
             Hypothesis::Routing => "routing",
             Hypothesis::Ipv4 => "ipv4",
             Hypothesis::Ipv6 => "ipv6",
             Hypothesis::Tcp => "tcp",
             Hypothesis::Tls => "tls",
             Hypothesis::Mtu => "mtu",
+            Hypothesis::QuicUdpFailure => "quic_udp_failure",
             Hypothesis::UpstreamProxy => "upstream_proxy",
             Hypothesis::RemoteEndpoint => "remote_endpoint",
             Hypothesis::AuthFailure => "auth_failure",
             Hypothesis::RateLimit => "rate_limit",
+            Hypothesis::ApplicationFailure => "application_failure",
             Hypothesis::ServerFailure => "server_failure",
+            Hypothesis::CongestionOrPacketLoss => "congestion_or_packet_loss",
+            Hypothesis::NetworkInterferenceOrFiltering => "network_interference_or_filtering",
             Hypothesis::Unknown => "unknown",
         }
     }
 
     pub fn all() -> Vec<Hypothesis> {
         vec![
-            Hypothesis::LocalInterface,
             Hypothesis::Gateway,
             Hypothesis::Dns,
+            Hypothesis::DnsInconsistency,
             Hypothesis::Routing,
             Hypothesis::Ipv4,
             Hypothesis::Ipv6,
             Hypothesis::Tcp,
             Hypothesis::Tls,
             Hypothesis::Mtu,
+            Hypothesis::QuicUdpFailure,
             Hypothesis::UpstreamProxy,
             Hypothesis::RemoteEndpoint,
             Hypothesis::AuthFailure,
             Hypothesis::RateLimit,
+            Hypothesis::ApplicationFailure,
             Hypothesis::ServerFailure,
+            Hypothesis::CongestionOrPacketLoss,
+            Hypothesis::NetworkInterferenceOrFiltering,
             Hypothesis::Unknown,
         ]
     }
@@ -115,6 +130,24 @@ pub enum DiagnosticTest {
     InterfaceCheck,
     MtuProbe,
     Traceroute,
+}
+
+impl DiagnosticTest {
+    /// Stable id used by the correlated-evidence model. Independent of the
+    /// Rust variant name so the dependency structure can be configured without
+    /// changing the diagnostic enum.
+    pub fn correlation_id(&self) -> &'static str {
+        match self {
+            DiagnosticTest::DnsResolve => "dns-lookup",
+            DiagnosticTest::TcpConnect => "tcp-connect",
+            DiagnosticTest::TlsHandshake => "tls-handshake",
+            DiagnosticTest::HttpGet => "http-reachability",
+            DiagnosticTest::GatewayPing => "gateway-ping",
+            DiagnosticTest::InterfaceCheck => "interface-check",
+            DiagnosticTest::MtuProbe => "mtu-probe",
+            DiagnosticTest::Traceroute => "traceroute",
+        }
+    }
 }
 
 /// Likelihood table: log P(evidence_outcome | hypothesis).
@@ -202,7 +235,7 @@ impl LikelihoodTable {
                     p[0] = rest * 0.06;
                     p[5] = rest * 0.02;
                 }
-                Hypothesis::ServerFailure => {
+                Hypothesis::ApplicationFailure | Hypothesis::ServerFailure => {
                     p[5] = rest * 0.92;
                     p[0] = rest * 0.06;
                     p[3] = rest * 0.02;
@@ -235,84 +268,133 @@ impl LikelihoodTable {
     fn signature(test: &DiagnosticTest, h: &Hypothesis) -> f64 {
         use DiagnosticTest::*;
         use Hypothesis::*;
+        // Failure propagates upward: a dead interface breaks DNS, TCP, TLS,
+        // HTTP and MTU probes; a TLS-only fault leaves every lower layer
+        // healthy. These numbers are structural priors for recalibration by
+        // `validation`, not measured frequencies.
         match test {
             DnsResolve => match h {
-                Dns => 0.95,
-                LocalInterface => 0.55,
-                Gateway => 0.45,
-                Routing => 0.55,
-                Ipv4 | Ipv6 => 0.40,
-                Tcp | Tls => 0.30,
-                Mtu => 0.35,
-                UpstreamProxy => 0.25,
-                RemoteEndpoint | AuthFailure | RateLimit | ServerFailure => 0.15,
-                Unknown => 0.25,
-            },
-            GatewayPing => match h {
-                Gateway => 0.90,
-                LocalInterface => 0.80,
-                Routing => 0.40,
-                Ipv4 => 0.35,
-                Ipv6 => 0.20,
-                Tcp | Mtu => 0.15,
-                Dns | Tls | RemoteEndpoint => 0.10,
-                UpstreamProxy => 0.15,
-                AuthFailure | RateLimit | ServerFailure => 0.02,
+                Dns => 0.97,
+                DnsInconsistency => 0.95,
+                Gateway => 0.55,
+                Routing => 0.50,
+                Ipv4 | Ipv6 => 0.15,
+                Tcp => 0.05,
+                Tls | Mtu => 0.05,
+                UpstreamProxy => 0.05,
+                RemoteEndpoint | AuthFailure | RateLimit | ApplicationFailure | ServerFailure => 0.02,
+                QuicUdpFailure => 0.10,
+                CongestionOrPacketLoss => 0.30,
+                NetworkInterferenceOrFiltering => 0.30,
                 Unknown => 0.20,
             },
+            GatewayPing => match h {
+                Gateway => 0.95,
+                Routing => 0.45,
+                Ipv4 => 0.40,
+                Ipv6 => 0.25,
+                Tcp | UpstreamProxy => 0.20,
+                Mtu => 0.15,
+                Dns => 0.15,
+                Tls => 0.10,
+                RemoteEndpoint => 0.02,
+                DnsInconsistency => 0.30,
+                QuicUdpFailure => 0.30,
+                AuthFailure | RateLimit | ApplicationFailure | ServerFailure => 0.02,
+                CongestionOrPacketLoss => 0.30,
+                NetworkInterferenceOrFiltering => 0.30,
+                Unknown => 0.20,
+            },
+            // The `LocalInterface` hypothesis was removed in the 19-hypothesis
+            // refactor. A leftover `LocalInterface => ...` arm here was parsed by
+            // Rust as an irrefutable binding, giving EVERY hypothesis a 0.97
+            // failure probability and making the arms below unreachable. An
+            // interface failure now points weakly at the gateway (the closest
+            // surviving lower-layer hypothesis) and is otherwise non-specific.
             InterfaceCheck => match h {
-                LocalInterface => 0.95,
-                Gateway => 0.20,
+                Gateway => 0.25,
                 _ => 0.05,
             },
             TcpConnect => match h {
                 Tcp => 0.90,
-                Routing => 0.60,
-                RemoteEndpoint => 0.65,
-                UpstreamProxy => 0.55,
-                LocalInterface => 0.60,
-                Gateway => 0.50,
-                Mtu => 0.20,
+                Gateway => 0.85,
+                Routing => 0.85,
+                RemoteEndpoint => 0.80,
+                // Direct probes bypass an upstream proxy, so a dead proxy does
+                // not make direct TCP fail. Only HTTP (which is proxied) does.
+                UpstreamProxy => 0.05,
+                Mtu => 0.30,
                 Ipv4 => 0.35,
                 Ipv6 => 0.10,
-                Dns | Tls => 0.10,
-                AuthFailure | RateLimit | ServerFailure => 0.05,
+                Dns => 0.10,
+                DnsInconsistency => 0.20,
+                Tls => 0.05,
+                AuthFailure | RateLimit | ApplicationFailure | ServerFailure => 0.05,
+                QuicUdpFailure => 0.40,
+                CongestionOrPacketLoss => 0.30,
+                NetworkInterferenceOrFiltering => 0.30,
                 Unknown => 0.30,
             },
             TlsHandshake => match h {
-                Tls => 0.95,
-                Mtu => 0.40,
-                UpstreamProxy => 0.45,
-                RemoteEndpoint => 0.20,
-                Routing => 0.15,
-                Tcp | LocalInterface | Gateway => 0.10,
-                Dns | Ipv4 | Ipv6 | ServerFailure => 0.05,
+                Tls | Gateway | Tcp => 0.95,
+                Routing | RemoteEndpoint => 0.90,
+                Mtu => 0.60,
+                UpstreamProxy => 0.05,
+                Dns => 0.10,
+                Ipv4 | Ipv6 => 0.10,
+                DnsInconsistency => 0.20,
+                ApplicationFailure | ServerFailure => 0.05,
+                QuicUdpFailure => 0.40,
                 AuthFailure | RateLimit => 0.03,
+                CongestionOrPacketLoss => 0.30,
+                NetworkInterferenceOrFiltering => 0.30,
                 Unknown => 0.25,
             },
             MtuProbe => match h {
-                Mtu => 0.85,
-                Tls | Routing => 0.20,
-                Tcp => 0.15,
+                Mtu => 0.90,
+                Gateway => 0.90,
+                Routing => 0.80,
+                RemoteEndpoint => 0.10,
+                Tcp => 0.50,
+                UpstreamProxy => 0.05,
+                Tls => 0.20,
+                Dns => 0.30,
+                DnsInconsistency => 0.40,
+                QuicUdpFailure => 0.40,
+                CongestionOrPacketLoss => 0.80,
+                NetworkInterferenceOrFiltering => 0.50,
                 _ => 0.08,
             },
             Traceroute => match h {
-                Routing => 0.80,
-                Gateway => 0.50,
-                LocalInterface => 0.40,
+                Routing | Gateway => 0.90,
+                RemoteEndpoint => 0.70,
+                Ipv4 | Ipv6 => 0.50,
+                Dns => 0.30,
+                DnsInconsistency => 0.40,
+                QuicUdpFailure => 0.40,
+                CongestionOrPacketLoss => 0.80,
+                NetworkInterferenceOrFiltering => 0.50,
                 _ => 0.15,
             },
             HttpGet => match h {
-                RemoteEndpoint => 0.75,
-                ServerFailure => 0.70,
-                UpstreamProxy => 0.50,
-                Tcp | Routing => 0.30,
-                Tls | Mtu => 0.20,
-                AuthFailure => 0.12,
-                RateLimit => 0.15,
-                Dns | LocalInterface | Gateway => 0.10,
-                Ipv4 | Ipv6 => 0.15,
-                Unknown => 0.25,
+                Gateway | Routing => 0.95,
+                UpstreamProxy | RemoteEndpoint => 0.90,
+                Tls => 0.90,
+                Tcp => 0.85,
+                // A 5xx is observed as ProbeOutcome::ServerError, not as a
+                // transport failure; expecting Failure here made every HTTP
+                // failure look like a server application error.
+                ApplicationFailure | ServerFailure => 0.10,
+                Mtu => 0.60,
+                Ipv4 | Ipv6 => 0.50,
+                Dns => 0.30,
+                DnsInconsistency => 0.30,
+                QuicUdpFailure => 0.40,
+                RateLimit => 0.02,
+                AuthFailure => 0.02,
+                CongestionOrPacketLoss => 0.30,
+                NetworkInterferenceOrFiltering => 0.40,
+                Unknown => 0.30,
             },
         }
     }
@@ -342,6 +424,33 @@ impl LikelihoodTable {
             .and_then(|row| row.get(o_idx))
             .copied()
             .unwrap_or(f64::NEG_INFINITY)
+    }
+
+    /// Override the log-likelihood of a single (test, hypothesis, outcome)
+    /// cell. Used by the likelihood calibrator to fold observed outcomes back
+    /// into the diagnostic model.
+    pub fn set_log_likelihood(
+        &mut self,
+        test: &DiagnosticTest,
+        hypothesis: &Hypothesis,
+        outcome: &ProbeOutcome,
+        log_prob: f64,
+    ) {
+        let t_idx = Self::test_index(test);
+        let h_idx = Hypothesis::all()
+            .iter()
+            .position(|h| h == hypothesis)
+            .unwrap_or_else(|| panic!("unknown hypothesis {:?}", hypothesis));
+        let o_idx = match outcome {
+            ProbeOutcome::Success => 0,
+            ProbeOutcome::Failure => 1,
+            ProbeOutcome::Missing => 2,
+            ProbeOutcome::AuthRejected => 3,
+            ProbeOutcome::RateLimited => 4,
+            ProbeOutcome::ServerError => 5,
+        };
+        let lp = log_prob.clamp(f64::NEG_INFINITY, 0.0);
+        self.table[t_idx][h_idx][o_idx] = lp;
     }
 }
 
@@ -401,20 +510,53 @@ pub struct DiagnosticEngine {
     pub likelihood: LikelihoodTable,
     pub transition: TransitionModel,
     pub previous_timestamp: Option<u64>,
+    /// Explicit dependency structure over recently observed probes. Correlated
+    /// probes share a causal path and must not each multiply the posterior as
+    /// independent proof.
+    pub correlation: CorrelationModel,
+    /// Recently observed correlation ids, bounded so memory cannot grow with
+    /// the length of the session. `&'static str` keeps the hot Bayesian update
+    /// allocation-free.
+    observation_history: Vec<&'static str>,
+    /// Weight applied to the most recent observation (1.0 = independent).
+    pub last_evidence_weight: f64,
+    /// The distribution this engine started from, kept unchanged so the UI can
+    /// show how far each belief moved. `posterior.prior` is the *current*
+    /// distribution and is rewritten by every update.
+    initial_prior: Prior,
 }
+
+/// Most recent probes whose dependency structure is considered. Older probes
+/// have already been decayed by the transition model; keeping the window
+/// bounded keeps `observe` O(1) in session length.
+const MAX_CORRELATION_HISTORY: usize = 32;
+
+/// A gap longer than this starts a new diagnostic window: evidence from an
+/// earlier incident must not discount probes taken hours later.
+const CORRELATION_WINDOW_MS: u64 = 5 * 60 * 1_000;
 
 impl DiagnosticEngine {
     /// Create a new engine with a uniform prior over all hypotheses.
     pub fn new() -> Self {
         let labels: Vec<String> = Hypothesis::all().iter().map(|h| h.label().to_string()).collect();
         let prior = Prior::uniform(labels.clone());
-        let posterior = Posterior::from_prior(prior);
+        let posterior = Posterior::from_prior(prior.clone());
         Self {
             posterior,
+            initial_prior: prior,
             likelihood: LikelihoodTable::default(),
             transition: TransitionModel::default(),
             previous_timestamp: None,
+            correlation: CorrelationModel::new(),
+            observation_history: Vec::new(),
+            last_evidence_weight: 1.0,
         }
+    }
+
+    /// Replace the correlated-evidence model (used by tests and calibration).
+    pub fn with_correlation(mut self, correlation: CorrelationModel) -> Self {
+        self.correlation = correlation;
+        self
     }
 
     /// Create with a custom prior.
@@ -422,9 +564,13 @@ impl DiagnosticEngine {
         let posterior = Posterior::from_prior(prior.clone());
         Self {
             posterior,
+            initial_prior: prior,
             likelihood: LikelihoodTable::default(),
             transition: TransitionModel::default(),
             previous_timestamp: None,
+            correlation: CorrelationModel::new(),
+            observation_history: Vec::new(),
+            last_evidence_weight: 1.0,
         }
     }
 
@@ -473,14 +619,34 @@ impl DiagnosticEngine {
 
     /// Update step: incorporate a probe result into the posterior.
     pub fn observe(&mut self, result: &ProbeResult) {
-        // Time-based decay of old evidence before adding new.
-        if let Some(prev_ts) = self.previous_timestamp {
+        // Capture the previous timestamp BEFORE advancing it. The gap check
+        // below must measure the elapsed time since the last observation, not
+        // since the value we are about to write (which would always be zero).
+        let previous = self.previous_timestamp;
+        if let Some(prev_ts) = previous {
             if result.timestamp >= prev_ts {
                 let delta = (result.timestamp - prev_ts) as f64;
                 self.predict(delta as f64);
             }
         }
+
+        // Correlated probes are real evidence, but not independent evidence.
+        // Discount this observation when a different earlier probe shares its
+        // causal path; the first member of a cluster keeps full weight. A long
+        // gap starts a new window, and repeating the same test over time is new
+        // evidence rather than correlation.
+        if previous.is_some_and(|prev| result.timestamp.saturating_sub(prev) > CORRELATION_WINDOW_MS)
+        {
+            self.observation_history.clear();
+        }
         self.previous_timestamp = Some(result.timestamp);
+        let test_id = result.test.correlation_id();
+        let weight = self.evidence_weight(&result.test);
+        self.last_evidence_weight = weight;
+        self.observation_history.push(test_id);
+        if self.observation_history.len() > MAX_CORRELATION_HISTORY {
+            self.observation_history.remove(0);
+        }
 
         // Build evidence: log-likelihood of this outcome under each hypothesis.
         let mut evidence = Vec::new();
@@ -488,14 +654,65 @@ impl DiagnosticEngine {
             let ll = self.likelihood.log_likelihood(&result.test, &h, &result.outcome);
             evidence.push(Evidence {
                 hypothesis: h.label().to_string(),
-                log_likelihood: ll,
+                // The correlation discount is already inside this value
+                // (`evidence_movement` applies it once for the whole rule), so
+                // the confidence is final: 1.0 stops `bayesian_update` scaling
+                // the same weight in a second time.
+                log_likelihood: evidence_movement(ll, weight),
                 timestamp: result.timestamp,
                 source: format!("{:?}", result.test),
-                confidence: None,
+                confidence: Some(1.0),
             });
         }
         let updated = bayesian_update(&self.posterior.prior, &evidence);
         self.posterior = updated;
+    }
+
+    /// Evidence weight the next observation of `test` would receive.
+    ///
+    /// Full weight while the engine is still uncertain: a corrective probe must
+    /// never be weakened. The discount grows only as the leading hypothesis
+    /// approaches certainty, which is exactly where correlated probes would
+    /// otherwise manufacture false confidence. Shared by `observe` and the
+    /// information-gain estimator so the two cannot drift apart.
+    fn evidence_weight(&self, test: &DiagnosticTest) -> f64 {
+        let raw_weight = self
+            .correlation
+            .weight_for(&self.observation_history, test.correlation_id());
+        let map_prob = self
+            .posterior
+            .map()
+            .map(|idx| self.posterior.prob(idx))
+            .unwrap_or(0.0);
+        let gate = ((map_prob - 0.5) / 0.5).clamp(0.0, 1.0);
+        1.0 - (1.0 - raw_weight) * gate
+    }
+
+    /// Entropy of the posterior this engine would hold after observing
+    /// `outcome` of `test`, computed on the log-probability vector alone.
+    ///
+    /// Same update math as `observe` for a probe whose timestamp equals the
+    /// engine's current one (the predict step is the identity): the movement
+    /// comes from [`evidence_movement`], the one owner of the correlation
+    /// discount and the NaN rule, and normalization/entropy come from
+    /// `softmax`/`entropy_of`. The only thing this avoids is cloning the whole
+    /// engine once per candidate outcome, which made a single ranking cost
+    /// milliseconds.
+    fn entropy_if_observed(
+        &self,
+        test: &DiagnosticTest,
+        outcome: &ProbeOutcome,
+        weight: f64,
+    ) -> f64 {
+        let mut log_probs = self.posterior.prior.log_probs.clone();
+        for (i, h) in Hypothesis::all().iter().enumerate() {
+            if i >= log_probs.len() {
+                break;
+            }
+            let ll = self.likelihood.log_likelihood(test, h, outcome);
+            log_probs[i] += evidence_movement(ll, weight);
+        }
+        softmax(&log_probs).map_or(0.0, |probs| entropy_of(&probs))
     }
 
     /// Current diagnostic entropy, in nats. High = uncertain.
@@ -514,6 +731,21 @@ impl DiagnosticEngine {
     /// All hypotheses ranked by posterior probability.
     pub fn ranked(&self) -> Vec<(&str, f64)> {
         self.posterior.ranked()
+    }
+
+    /// Prior probability of every hypothesis, in the declared hypothesis order.
+    ///
+    /// Paired with [`Self::ranked`] by label this shows how far the evidence
+    /// moved each belief from where it started. `observe` rewrites the live
+    /// distribution but never this starting one.
+    pub fn priors(&self) -> Vec<(&str, f64)> {
+        let probs = softmax(&self.initial_prior.log_probs).unwrap_or_default();
+        self.initial_prior
+            .labels
+            .iter()
+            .zip(probs)
+            .map(|(label, p)| (label.as_str(), p))
+            .collect()
     }
 }
 
@@ -539,6 +771,9 @@ pub fn expected_information_gain(
 ) -> Option<TestScore> {
     let current_entropy = engine.uncertainty();
     let priors: Vec<f64> = softmax(&engine.posterior.prior.log_probs)?;
+    // The weight `observe` would apply to this probe. Constant across outcomes:
+    // it depends on the engine state and the test, not on what comes back.
+    let weight = engine.evidence_weight(test).clamp(0.0, 1.0);
 
     // Enumerate possible outcomes and their predictive probabilities.
     let outcomes = [
@@ -566,17 +801,9 @@ pub fn expected_information_gain(
             continue;
         }
 
-        // Posterior after observing this outcome: clone engine and observe.
-        let mut clone = engine.clone();
-        let probe = ProbeResult {
-            test: test.clone(),
-            outcome: outcome.clone(),
-            timestamp: engine.previous_timestamp.unwrap_or(0),
-            source: format!("{:?}", test),
-            cost: 0.0,
-        };
-        clone.observe(&probe);
-        let post_entropy = clone.uncertainty();
+        // Posterior after observing this outcome, computed on the log-probability
+        // vector instead of cloning the whole engine per outcome.
+        let post_entropy = engine.entropy_if_observed(test, &outcome, weight);
         expected_post_entropy += pred_p * post_entropy;
     }
 
@@ -623,6 +850,119 @@ pub fn rank_tests(engine: &DiagnosticEngine) -> Vec<TestScore> {
     scores
 }
 
+/// Dirichlet-multinomial calibrator for the likelihood table.
+///
+/// Tracks, per (test, hypothesis), how often each outcome was observed when
+/// that hypothesis was the true state. Applying the calibrator rewrites each
+/// row of the likelihood table (P(outcome | hypothesis, test) over outcomes)
+/// from the observed relative frequencies, so the diagnostic model adapts to
+/// real measurements instead of relying only on structural priors.
+///
+/// Rows with no observations keep their prior.
+#[derive(Debug, Clone, Default)]
+pub struct LikelihoodCalibrator {
+    /// Per (test_idx, hyp_idx) Dirichlet counts over the 6 outcomes, seeded
+    /// with a prior of 1.0 per outcome.
+    counts: std::collections::HashMap<(usize, usize), [f64; 6]>,
+}
+
+impl LikelihoodCalibrator {
+    pub fn new() -> Self {
+        Self {
+            counts: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Record one observation: running `test` while the true state was
+    /// `true_hypothesis` produced `outcome`. Only updates the row for the
+    /// true hypothesis (we only learn P(outcome | H=true_hyp, test) from
+    /// observations made in that state).
+    pub fn observe(
+        &mut self,
+        test: &DiagnosticTest,
+        _hypothesis: &Hypothesis,
+        outcome: &ProbeOutcome,
+        true_hypothesis: &Hypothesis,
+    ) {
+        let t_idx = LikelihoodTable::test_index(test);
+        let h_idx = Hypothesis::all()
+            .iter()
+            .position(|h| h == true_hypothesis)
+            .expect("known hypothesis");
+        let o_idx = match outcome {
+            ProbeOutcome::Success => 0,
+            ProbeOutcome::Failure => 1,
+            ProbeOutcome::Missing => 2,
+            ProbeOutcome::AuthRejected => 3,
+            ProbeOutcome::RateLimited => 4,
+            ProbeOutcome::ServerError => 5,
+        };
+        let key = (t_idx, h_idx);
+        let counts = self.counts.entry(key).or_insert([1.0; 6]);
+        counts[o_idx] += 1.0;
+    }
+
+    /// Apply the accumulated counts to `table`, rewriting each observed row's
+    /// log-probabilities to the normalized relative frequencies
+    /// `P(outcome | hypothesis, test) = count_o / sum_o count_o`. Rows with no
+    /// observations are left at their prior.
+    pub fn apply(&self, table: &mut LikelihoodTable) {
+        for ((t_idx, h_idx), counts) in &self.counts {
+            let total: f64 = counts.iter().map(|c| *c).sum();
+            if total <= 0.0 {
+                continue;
+            }
+            let test = &LikelihoodTable::tests()[*t_idx];
+            let hypothesis = &Hypothesis::all()[*h_idx];
+            for (o_idx, &count) in counts.iter().enumerate() {
+                let p = count / total;
+                let outcome = match o_idx {
+                    0 => ProbeOutcome::Success,
+                    1 => ProbeOutcome::Failure,
+                    2 => ProbeOutcome::Missing,
+                    3 => ProbeOutcome::AuthRejected,
+                    4 => ProbeOutcome::RateLimited,
+                    _ => ProbeOutcome::ServerError,
+                };
+                table.set_log_likelihood(test, hypothesis, &outcome, p.ln());
+            }
+        }
+    }
+}
+
+/// Sequential Probability Ratio Test (SPRT) stopping boundary.
+///
+/// Between two simple hypotheses H0 and H1 with log-likelihood ratio
+/// accumulated as `llr = log(P(E|H1)/P(E|H0))`, stop and accept H1 when
+/// `llr >= log((1-beta)/alpha)` and accept H0 when `llr <= log(beta/(1-alpha))`,
+/// where `alpha` is the false-positive and `beta` the false-negative rate.
+/// Continue sampling while the LLR lies strictly between the two bounds.
+///
+/// Returns `Some(true)` if H1 should be accepted, `Some(false)` if H0 should
+/// be accepted, or `None` if more evidence is needed.
+pub fn sprt_stop(llr: f64, alpha: f64, beta: f64) -> Option<bool> {
+    let alpha = alpha.clamp(1e-9, 1.0 - 1e-9);
+    let beta = beta.clamp(1e-9, 1.0 - 1e-9);
+    let upper = ((1.0 - beta) / alpha).ln();
+    let lower = (beta / (1.0 - alpha)).ln();
+    if llr >= upper {
+        Some(true)
+    } else if llr <= lower {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// Heuristic stopping rule for diagnostic testing: stop when the posterior
+/// entropy has fallen below `threshold` nats, OR when the MAP hypothesis has
+/// posterior probability at least `confidence`. Returns `Some(true)` when the
+/// diagnosis is confident enough to stop, `None` to continue testing.
+pub fn should_stop_testing(entropy: f64, map_prob: f64, entropy_threshold: f64) -> bool {
+    let map_prob = map_prob.clamp(0.0, 1.0);
+    entropy <= entropy_threshold || map_prob >= (1.0 - entropy_threshold)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,12 +970,13 @@ mod tests {
     #[test]
     fn engine_starts_uncertain() {
         let e = DiagnosticEngine::new();
-        // Uniform over 15 hypotheses: entropy = ln(15)
-        assert!((e.uncertainty() - 15.0f64.ln()).abs() < 1e-9);
-        // MAP picks the first hypothesis but with uniform probability
+        let n = Hypothesis::all().len() as f64;
+        // Uniform over the declared hypothesis space: entropy = ln(n).
+        assert!((e.uncertainty() - n.ln()).abs() < 1e-9);
+        // MAP picks the first hypothesis but with uniform probability.
         let (label, prob) = e.diagnosis().expect("some diagnosis");
-        assert_eq!(label, "local_interface");
-        assert!((prob - 1.0 / 15.0).abs() < 1e-9);
+        assert_eq!(label, "gateway");
+        assert!((prob - 1.0 / n).abs() < 1e-9);
     }
 
     #[test]
@@ -653,6 +994,58 @@ mod tests {
         let (label, prob) = e.diagnosis().expect("some diagnosis");
         assert!(prob > 1.0 / Hypothesis::all().len() as f64);
         assert!(e.uncertainty() < h_before);
+    }
+
+    #[test]
+    fn interface_check_failure_is_not_uniformly_shared() {
+        // Regression: a leftover `LocalInterface => 0.97` match arm (from a
+        // refactor that removed that hypothesis) was an irrefutable Rust
+        // binding, so EVERY hypothesis received the 0.97 failure signature and
+        // the Gateway/other arms were unreachable — the probe was uninformative.
+        let sig_gateway =
+            LikelihoodTable::signature(&DiagnosticTest::InterfaceCheck, &Hypothesis::Gateway);
+        let sig_dns = LikelihoodTable::signature(&DiagnosticTest::InterfaceCheck, &Hypothesis::Dns);
+        assert!((sig_gateway - 0.25).abs() < 1e-12, "gateway signature = {sig_gateway}");
+        assert!((sig_dns - 0.05).abs() < 1e-12, "dns signature = {sig_dns}");
+        assert!(sig_gateway > sig_dns, "interface check must be discriminating");
+    }
+
+    #[test]
+    fn long_gap_starts_a_fresh_correlation_window() {
+        // Regression: `previous_timestamp` was overwritten before the gap
+        // check, so the elapsed gap was always zero and old evidence was never
+        // discarded — probes from hours earlier kept discounting new ones.
+        let mut e = DiagnosticEngine::new();
+        e.observe(&ProbeResult {
+            test: DiagnosticTest::DnsResolve,
+            outcome: ProbeOutcome::Failure,
+            timestamp: 1_000,
+            source: "dns".into(),
+            cost: 1.0,
+        });
+        assert_eq!(e.observation_history.len(), 1);
+        e.observe(&ProbeResult {
+            test: DiagnosticTest::TcpConnect,
+            outcome: ProbeOutcome::Failure,
+            timestamp: 2_000,
+            source: "tcp".into(),
+            cost: 1.0,
+        });
+        assert_eq!(e.observation_history.len(), 2);
+
+        let later = 2_000 + CORRELATION_WINDOW_MS + 1;
+        e.observe(&ProbeResult {
+            test: DiagnosticTest::TlsHandshake,
+            outcome: ProbeOutcome::Failure,
+            timestamp: later,
+            source: "tls".into(),
+            cost: 1.0,
+        });
+        assert_eq!(
+            e.observation_history,
+            vec!["tls-handshake"],
+            "a long gap must discard probes from the earlier incident"
+        );
     }
 
     #[test]
@@ -701,6 +1094,216 @@ mod tests {
         assert!((e.uncertainty() - h_before).abs() < 0.5);
     }
 
+    /// The clone-per-outcome estimator the fast path replaced, kept verbatim
+    /// as the reference the new one is proved against.
+    fn expected_information_gain_by_cloning(engine: &DiagnosticEngine, test: &DiagnosticTest) -> f64 {
+        let current_entropy = engine.uncertainty();
+        let priors: Vec<f64> = softmax(&engine.posterior.prior.log_probs).expect("priors");
+        let outcomes = [
+            ProbeOutcome::Success,
+            ProbeOutcome::Failure,
+            ProbeOutcome::Missing,
+            ProbeOutcome::AuthRejected,
+            ProbeOutcome::RateLimited,
+            ProbeOutcome::ServerError,
+        ];
+        let mut expected_post_entropy = 0.0;
+        for &outcome in &outcomes {
+            let mut pred_log_terms = Vec::new();
+            for (h, &prior_p) in Hypothesis::all().iter().zip(priors.iter()) {
+                if prior_p <= 0.0 {
+                    continue;
+                }
+                let ll = engine.likelihood.log_likelihood(test, &h, &outcome);
+                pred_log_terms.push(prior_p.ln() + ll);
+            }
+            let pred_p = log_sum_exp(&pred_log_terms).exp();
+            if pred_p <= 0.0 || !pred_p.is_finite() {
+                continue;
+            }
+            let mut clone = engine.clone();
+            let probe = ProbeResult {
+                test: test.clone(),
+                outcome,
+                timestamp: engine.previous_timestamp.unwrap_or(0),
+                source: format!("{:?}", test),
+                cost: 0.0,
+            };
+            clone.observe(&probe);
+            expected_post_entropy += pred_p * clone.uncertainty();
+        }
+        let ig = current_entropy - expected_post_entropy;
+        if ig < 0.0 {
+            0.0
+        } else {
+            ig
+        }
+    }
+
+    /// TEMPORARY measurement harness, not an assertion: times the fast ranking
+    /// against the clone-per-outcome reference on one engine so the speedup can
+    /// be quoted for the release profile. Run with
+    /// `cargo test --release tmp_rank_speedup -- --nocapture`.
+    #[test]
+    fn tmp_rank_speedup_measurement() {
+        use crate::network_intelligence::simulation::{NetworkCondition, NetworkSimulator};
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        let mut engine = DiagnosticEngine::new();
+        let mut sim = NetworkSimulator::new(11, NetworkCondition::Healthy);
+        for i in 0..200u64 {
+            let mut r = sim.probe(&DiagnosticTest::DnsResolve);
+            r.timestamp = i + 1;
+            engine.observe(&r);
+        }
+        black_box(&engine);
+
+        let tests = [
+            DiagnosticTest::InterfaceCheck,
+            DiagnosticTest::DnsResolve,
+            DiagnosticTest::GatewayPing,
+            DiagnosticTest::TcpConnect,
+            DiagnosticTest::TlsHandshake,
+            DiagnosticTest::HttpGet,
+            DiagnosticTest::MtuProbe,
+            DiagnosticTest::Traceroute,
+        ];
+        let iterations = 200usize;
+        let mut best_fast = f64::INFINITY;
+        let mut best_slow = f64::INFINITY;
+        for _ in 0..3 {
+            let start = Instant::now();
+            for _ in 0..iterations {
+                black_box(rank_tests(black_box(&engine)));
+            }
+            best_fast = best_fast.min(start.elapsed().as_secs_f64() * 1e6 / iterations as f64);
+
+            let start = Instant::now();
+            for _ in 0..iterations {
+                let mut acc = 0.0;
+                for t in &tests {
+                    acc += expected_information_gain_by_cloning(&engine, t);
+                }
+                black_box(acc);
+            }
+            best_slow = best_slow.min(start.elapsed().as_secs_f64() * 1e6 / iterations as f64);
+        }
+        println!(
+            "rank release: fast {:.1}us, clone-reference {:.1}us, speedup {:.1}x",
+            best_fast,
+            best_slow,
+            best_slow / best_fast
+        );
+    }
+
+    #[test]
+    fn information_gain_fast_path_matches_the_cloning_reference() {
+        use crate::network_intelligence::simulation::{NetworkCondition, NetworkSimulator};
+
+        let conditions = [
+            NetworkCondition::Healthy,
+            NetworkCondition::DnsFailure,
+            NetworkCondition::GatewayFailure,
+            NetworkCondition::RoutingFailure,
+            NetworkCondition::Ipv4Only,
+            NetworkCondition::Ipv6Only,
+            NetworkCondition::TcpTimeout,
+            NetworkCondition::TlsFailure,
+            NetworkCondition::MtuIssue,
+            NetworkCondition::UpstreamProxyDown,
+            NetworkCondition::RemoteEndpointDown,
+            NetworkCondition::AuthRejected,
+            NetworkCondition::RateLimited,
+            NetworkCondition::ServerError,
+            NetworkCondition::IntermittentLoss,
+        ];
+        let tests = [
+            DiagnosticTest::InterfaceCheck,
+            DiagnosticTest::GatewayPing,
+            DiagnosticTest::DnsResolve,
+            DiagnosticTest::TcpConnect,
+            DiagnosticTest::TlsHandshake,
+            DiagnosticTest::HttpGet,
+            DiagnosticTest::MtuProbe,
+            DiagnosticTest::Traceroute,
+        ];
+
+        // The two paths differ only in how many times they renormalize: the
+        // cloning path runs `predict(0)` (a mathematically identity step) and
+        // `bayesian_update`'s normalization before reading entropy, so the last
+        // bits can differ. 1e-9 is far below any decision-relevant change.
+        const TOLERANCE: f64 = 1e-9;
+        let mut compared = 0usize;
+        let mut max_diff = 0.0_f64;
+        for condition in conditions {
+            for seed in 0..2u64 {
+                let mut sim = NetworkSimulator::new(seed, condition);
+                let mut engine = DiagnosticEngine::new();
+                for step in 0..=tests.len() {
+                    // Compare every test at every prefix of the probe sequence:
+                    // fresh engine, mid-diagnosis, and engine with a full history
+                    // (where the correlation discount is active and non-trivial).
+                    for test in tests.iter() {
+                        let fast = expected_information_gain(&engine, test)
+                            .expect("score")
+                            .information_gain;
+                        let reference = expected_information_gain_by_cloning(&engine, test);
+                        let diff = (fast - reference).abs();
+                        max_diff = max_diff.max(diff);
+                        assert!(
+                            diff < TOLERANCE,
+                            "{condition:?} seed {seed} step {step} {test:?}: fast {fast} vs reference {reference}"
+                        );
+                        compared += 1;
+                    }
+                    if step == tests.len() {
+                        break;
+                    }
+                    let mut result = sim.probe(&tests[step]);
+                    result.timestamp = step as u64 + 1;
+                    engine.observe(&result);
+                }
+            }
+        }
+        println!("IG fast path vs cloning reference: {compared} comparisons, max |diff| = {max_diff:e}");
+        // 15 conditions x 2 seeds x 9 prefix states x 8 tests.
+        assert!(compared >= 2160, "only {compared} comparisons ran");
+    }
+
+    #[test]
+    fn priors_stay_at_the_starting_distribution_after_evidence() {
+        let mut engine = DiagnosticEngine::new();
+        let before: Vec<(String, f64)> = engine
+            .priors()
+            .into_iter()
+            .map(|(l, p)| (l.to_string(), p))
+            .collect();
+        assert!((before.iter().map(|(_, p)| p).sum::<f64>() - 1.0).abs() < 1e-9);
+
+        engine.observe(&ProbeResult {
+            test: DiagnosticTest::DnsResolve,
+            outcome: ProbeOutcome::Success,
+            timestamp: 1_000,
+            source: "dns".into(),
+            cost: 0.0,
+        });
+
+        let after = engine.priors();
+        assert_eq!(after.len(), before.len());
+        for ((_, was), (_, now)) in before.iter().zip(after.iter()) {
+            assert!((was - now).abs() < 1e-12, "prior moved after evidence");
+        }
+        // The posterior did move, so prior and posterior are genuinely distinct.
+        let ranked = engine.ranked();
+        assert!(
+            ranked
+                .iter()
+                .any(|(label, p)| before.iter().any(|(l, q)| l == label && (p - q).abs() > 1e-6)),
+            "posterior identical to the prior after a conclusive probe"
+        );
+    }
+
     #[test]
     fn information_gain_is_non_negative() {
         let e = DiagnosticEngine::new();
@@ -735,8 +1338,8 @@ mod tests {
             source: format!("{:?}", DiagnosticTest::DnsResolve),
             cost: 1.0,
         });
-        // After DNS fails, uncertainty should decrease from ln(15)
-        assert!(e.uncertainty() < 15.0f64.ln());
+        // After DNS fails, uncertainty should decrease from the full hypothesis space.
+        assert!(e.uncertainty() < (Hypothesis::all().len() as f64).ln());
 
         // Now TCP works: different source, so it's counted separately.
         // TCP success under DNS is very unlikely, so DNS suspicion should drop.
@@ -750,7 +1353,105 @@ mod tests {
         });
         // Uncertainty should continue to decrease with more evidence
         assert!(e.uncertainty() <= unc_before + 1e-6);
-        assert!(e.uncertainty() < 15.0f64.ln());
+        assert!(e.uncertainty() < (Hypothesis::all().len() as f64).ln());
     }
+
+    #[test]
+    fn calibrator_shifts_likelihood_toward_observed_outcomes() {
+        let mut table = LikelihoodTable::default();
+        let mut cal = LikelihoodCalibrator::new();
+
+        // Observe DNS-resolve failures under the DNS hypothesis many times,
+        // and a few successes.
+        let test = DiagnosticTest::DnsResolve;
+        let hyp = Hypothesis::Dns;
+        for _ in 0..90 {
+            cal.observe(&test, &hyp, &ProbeOutcome::Failure, &hyp);
+        }
+        for _ in 0..10 {
+            cal.observe(&test, &hyp, &ProbeOutcome::Success, &hyp);
+        }
+
+        let before = table.log_likelihood(&test, &hyp, &ProbeOutcome::Failure);
+        cal.apply(&mut table);
+        let after = table.log_likelihood(&test, &hyp, &ProbeOutcome::Failure);
+
+        // 90 failures, 10 successes (plus prior of 1 per outcome) =>
+        // P(Failure | DNS) = 91 / 106 ≈ 0.858.
+        assert!(after < before, "calibration moved failure log-prob: {before} -> {after}");
+        let expected: f64 = (91.0_f64 / 106.0).ln();
+        assert!((after - expected).abs() < 1e-6, "after {after} ~ {expected}");
+    }
+
+    #[test]
+    fn sprt_stop_accepts_h1_when_llr_high() {
+        assert!(sprt_stop(5.0, 0.05, 0.1) == Some(true));
+        assert!(sprt_stop(10.0, 0.01, 0.01) == Some(true));
+    }
+
+    #[test]
+    fn sprt_stop_accepts_h0_when_llr_low() {
+        assert!(sprt_stop(-5.0, 0.05, 0.1) == Some(false));
+        assert!(sprt_stop(-10.0, 0.01, 0.01) == Some(false));
+    }
+
+    #[test]
+    fn sprt_stop_continues_in_between() {
+        assert!(sprt_stop(0.0, 0.05, 0.1) == None);
+        assert!(sprt_stop(1.0, 0.05, 0.1) == None);
+    }
+
+    #[test]
+    fn should_stop_testing_thresholds() {
+        // Low entropy -> stop.
+        assert!(should_stop_testing(0.05, 0.9, 0.1));
+        // High map_prob -> stop.
+        assert!(should_stop_testing(2.0, 0.99, 0.1));
+        // Neither -> continue.
+        assert!(!should_stop_testing(1.0, 0.6, 0.1));
+    }
+    #[test]
+    fn correlated_transport_failures_do_not_triple_confidence() {
+        let mut independent = DiagnosticEngine::new()
+            .with_correlation(CorrelationModel::with_groups(Vec::new()));
+        let mut correlated = DiagnosticEngine::new();
+
+        // Establish a confident DNS diagnosis, then add an HTTP failure that
+        // shares the resolver path. The HTTP observation is real evidence, but
+        // it must not act as an independent second confirmation of DNS.
+        for ts in 1..=6 {
+            for engine in [&mut independent, &mut correlated] {
+                engine.observe(&ProbeResult {
+                    test: DiagnosticTest::DnsResolve,
+                    outcome: ProbeOutcome::Failure,
+                    timestamp: ts,
+                    source: "test".into(),
+                    cost: 0.0,
+                });
+            }
+        }
+        for engine in [&mut independent, &mut correlated] {
+            engine.observe(&ProbeResult {
+                test: DiagnosticTest::HttpGet,
+                outcome: ProbeOutcome::Failure,
+                timestamp: 7,
+                source: "test".into(),
+                cost: 0.0,
+            });
+        }
+
+        assert!(independent.diagnosis().is_some());
+        assert!(correlated.diagnosis().is_some());
+        assert_eq!(independent.last_evidence_weight, 1.0);
+        assert!(
+            correlated.last_evidence_weight < 1.0,
+            "shared-resolver evidence must be discounted, got {}",
+            correlated.last_evidence_weight
+        );
+        // The first six DNS probes repeat the same test and keep full weight;
+        // only the HTTP probe sharing the resolver is discounted.
+        assert!(correlated.last_evidence_weight >= 0.5);
+    }
+
 }
 

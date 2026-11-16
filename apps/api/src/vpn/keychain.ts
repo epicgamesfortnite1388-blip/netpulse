@@ -66,6 +66,14 @@ export interface VaultKeyStore {
  * ACL: it replaces the existing entries with one entry granting access to the
  * current user only (Everyone and SYSTEM are removed).
  *
+ * The grant is `(F)` full control, not `(R)` read-only. Read-only would also
+ * deny DELETE and overwrite, so the owner could neither rotate the key
+ * (`writeFileSync` over a read-only file fails with EPERM) nor delete the
+ * vault — and a leftover plaintext key file is exactly what the keychain
+ * migration exists to eliminate. The security goal is "current user only", which
+ * `/inheritance:r` + `/grant:r` still achieves; it does not require denying the
+ * owner write/delete on their own file.
+ *
  * Failure is deliberately silent — a vault that cannot be hardened is still
  * better than no vault, and a noisy failure would make the app unusable on
  * locked-down WinPE/AD environments where the current user lacks icacls rights.
@@ -73,9 +81,34 @@ export interface VaultKeyStore {
 function enforceWindowsAcl(filePath: string): void {
   if (process.platform !== 'win32') return;
   try {
-    execSync(`icacls "${filePath}" /inheritance:r /grant:r "%USERNAME%:(R)" /c`, { stdio: 'ignore' });
+    execSync(`icacls "${filePath}" /inheritance:r /grant:r "%USERNAME%:(F)" /c`, { stdio: 'ignore' });
   } catch {
     // best-effort: non-zero exit on restricted environments
+  }
+}
+
+/**
+ * Delete a key file, clearing the read-only ACL first.
+ *
+ * `enforceWindowsAcl` grants the current user only `(R)` (read). On Windows a
+ * read-only ACL also denies DELETE, so a plain `fs.rmSync(file, { force: true })`
+ * fails with `EPERM` and leaves the plaintext key behind — exactly the outcome
+ * the keychain migration exists to prevent. Granting `(F)` for the current user
+ * immediately before removal restores the delete right without weakening the
+ * file while it is in use. Best-effort: a failure is left to the caller.
+ */
+export function removeKeyFile(filePath: string): void {
+  try {
+    if (process.platform === 'win32' && fs.existsSync(filePath)) {
+      try {
+        execSync(`icacls "${filePath}" /grant:r "%USERNAME%:(F)" /c`, { stdio: 'ignore' });
+      } catch {
+        // fall through to rmSync; it may still succeed on a non-ACL-restricted file
+      }
+    }
+    fs.rmSync(filePath, { force: true });
+  } catch {
+    // best effort: leaving a key file is harmless — the store is authoritative
   }
 }
 
@@ -107,11 +140,7 @@ export class FileKeyStore implements VaultKeyStore {
   }
 
   delete(): void {
-    try {
-      fs.rmSync(this.keyFile, { force: true });
-    } catch {
-      // best effort
-    }
+    removeKeyFile(this.keyFile);
   }
 }
 

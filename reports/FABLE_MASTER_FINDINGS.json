@@ -1,0 +1,433 @@
+{
+  "meta": {
+    "generated": "2026-11-16",
+    "generator": "FABLE 5.2 principal-architect audit",
+    "baseline": "working tree at HEAD b0311fb + 36 uncommitted files (+2656/-493)",
+    "verification_runs": {
+      "api_tests": "1264 passed",
+      "web_tests": "502 passed",
+      "shared_tests": "212 passed",
+      "rust_tests": "529 passed, 0 failed, 2 ignored",
+      "web_build": "ok 10.55s",
+      "bot_pytest": "collection error tests/test_resilience.py"
+    }
+  },
+  "findings": [
+    {
+      "id": "FABLE-ARCH-001",
+      "severity": "CRITICAL",
+      "category": "architecture/duplication",
+      "files": [
+        "apps/api/src/app.ts:608,651,897",
+        "apps/api/src/services/naniService.ts",
+        "apps/api/src/services/naniShadowHealthLoop.ts",
+        "src-tauri/src/main.rs",
+        "src-tauri/src/commands/nani.rs",
+        "apps/web/src/features/nani/naniApi.ts"
+      ],
+      "evidence": "naniShadowHealth.start() runs unconditionally; Rust MonitorLoop wired in main.rs; TS NANI core 2419 LOC vs Rust 19315 LOC",
+      "root_cause": "Web-mode NANI never disabled in desktop mode",
+      "impact": "Double probing of the same APIs; two divergent sources of diagnostic truth; every NANI feature must be built twice",
+      "fix": "Gate Node NANI loops behind NETPULSE_DESKTOP != '1'; consolidate math to Rust; TS retains event contracts + DTOs",
+      "dependencies": [],
+      "verification": "Integration test asserting no Node NANI timers under NETPULSE_DESKTOP=1; event-log diff run",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-RUST-001",
+      "severity": "HIGH",
+      "category": "rust/dead-code-disconnected",
+      "files": [
+        "src-tauri/src/network_intelligence/sequential.rs",
+        "src-tauri/src/network_intelligence/information_theory.rs",
+        "src-tauri/src/network_intelligence/investigation.rs"
+      ],
+      "evidence": "cargo check: value_of_information, should_stop, cost_adjusted_gain never used (2 occurrences each)",
+      "root_cause": "Phase 7 built theory layer; lifecycle integration not completed",
+      "impact": "Investigation loop does not use adaptive stopping or IG-driven ordering; claims about IG selection hold only in the display path",
+      "fix": "Wire select_best_probe + should_stop into run_observe_stage behind NANI_ADAPTIVE_STOPPING flag, or delete the layer",
+      "dependencies": [
+        "FABLE-ARCH-001"
+      ],
+      "verification": "Simulator test: mean probes-to-diagnosis lower than fixed plan",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-RUST-002",
+      "severity": "MEDIUM",
+      "category": "rust/dead-code",
+      "files": [
+        "src-tauri/src/network_intelligence/*"
+      ],
+      "evidence": "~55 cargo-check dead-code warnings: 15x new, 7x observe, 3x predict/update, identity, hazard, survival, wilson_interval, with_correlation, with_groups, fit, apply_all",
+      "root_cause": "Accumulated shelf implementations across phases",
+      "impact": "Maintenance load; misleading capability surface",
+      "fix": "Delete unused exports per compiler list; keep modules whose production consumers exist",
+      "dependencies": [],
+      "verification": "cargo check warning count -> 0 dead-code in network_intelligence",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-MATH-001",
+      "severity": "MEDIUM",
+      "category": "math/method",
+      "files": [
+        "src-tauri/src/network_intelligence/bayesian.rs:205-208"
+      ],
+      "evidence": "log_likelihood * confidence pseudo-likelihood heuristic",
+      "root_cause": "Confidence weighting implemented as likelihood scaling instead of noise-mixture",
+      "impact": "Posteriors directionally sane; numeric values not strictly calibrated probabilities",
+      "fix": "Replace with mixture likelihood P_obs=(1-eps)P+eps*P_uninformative, eps=1-confidence; document",
+      "dependencies": [],
+      "verification": "Property test: low-confidence evidence moves posterior less than high-confidence for identical ll",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-MATH-002",
+      "severity": "MEDIUM",
+      "category": "math/calibration",
+      "files": [
+        "src-tauri/src/network_intelligence/evaluation.rs",
+        "src-tauri/src/commands/nani.rs"
+      ],
+      "evidence": "Brier/ECE machinery tested but not run continuously on real investigations",
+      "root_cause": "Calibration wired to simulation/eval runs only",
+      "impact": "Posterior numbers presented to user without continuous calibration evidence",
+      "fix": "Per-investigation calibration update persisted via PersistenceStore; expose nani_math_calibration; UI labels scores until ECE<0.10",
+      "dependencies": [
+        "FABLE-RUST-001"
+      ],
+      "verification": "Command returns rolling ECE/Brier over >=100 real investigations",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-UI-001",
+      "severity": "MEDIUM",
+      "category": "ui/dead-surface",
+      "files": [
+        "apps/web/src/features/nani-reports/nani-reports-page.tsx"
+      ],
+      "evidence": "Not in router.tsx; not imported anywhere",
+      "root_cause": "Abandoned feature left in tree",
+      "impact": "Misleads contributors/auditors; implies nonexistent feature",
+      "fix": "DELETE",
+      "dependencies": [],
+      "verification": "grep -r nani-reports apps/web/src returns nothing after deletion",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-UI-002",
+      "severity": "LOW",
+      "category": "ui/claim-accuracy",
+      "files": [
+        "apps/web/src/features/nani/naniApi.ts:6"
+      ],
+      "evidence": "Claims web mode serves 'the same capabilities' as Rust",
+      "root_cause": "Documentation optimism",
+      "impact": "Future contributors assume feature parity",
+      "fix": "Reword to state the actual subset",
+      "dependencies": [
+        "FABLE-ARCH-001"
+      ],
+      "verification": "review comment",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-BUILD-001",
+      "severity": "CRITICAL",
+      "category": "build/in-flight-work",
+      "files": [
+        "36 files, +2656/-493 (diagnosis.rs, validation.rs, main.rs, copilot, naniService...)"
+      ],
+      "evidence": "git status 2026-11-16 (evening): 39 modified tracked files (+2696/-501) AND 187 untracked paths; 21 NANI Rust files/dirs UNTRACKED incl. commands/, foundation.rs, investigation.rs, sequential.rs - engine never committed",
+      "root_cause": "In-flight phase work uncommitted",
+      "impact": "Accidental checkout/clean destroys the NANI engine; no commit trail for prior phases",
+      "fix": "Commit to a branch before any cleanup tickets",
+      "dependencies": [],
+      "verification": "git status clean (or in-flight branch merged)",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-BUILD-002",
+      "severity": "LOW",
+      "category": "hygiene",
+      "files": [
+        "aether-*.zip (4 tracked stubs)",
+        "scripts/__pycache__",
+        ".scratch-* (tracked parts)",
+        ".gitignore additions"
+      ],
+      "evidence": "dist-desktop/.staging-dist/apps/api dist REMOVED from manifest - referenced by prepare-desktop.mjs:55 and e2e scripts, all gitignored",
+      "root_cause": "Artifacts committed by earlier runs",
+      "impact": "Audit noise, repo bloat",
+      "fix": "Reviewed per-file manifest: FABLE_T11_HYGIENE_CLEANUP_MANIFEST.md",
+      "dependencies": [],
+      "verification": "git status clean after cleanup; build unaffected",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-BUILD-003",
+      "severity": "LOW",
+      "category": "build/packaging",
+      "files": [
+        "scripts/prepare-desktop.mjs",
+        "scripts/desktop-package.mjs"
+      ],
+      "evidence": "Bundle freshness is manual discipline (0 newer files today, but no enforced check)",
+      "root_cause": "No fingerprint gate in packaging",
+      "impact": "Stale-bundle field bugs possible",
+      "fix": "Fail desktop:package if any apps/api/src file is newer than src-tauri/backend/netpulse-backend.js",
+      "dependencies": [],
+      "verification": "touch a source file, run packaging, expect failure",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-VPN-001",
+      "severity": "MEDIUM",
+      "category": "vpn/ux-transparency",
+      "files": [
+        "apps/api/src/services/engineManager.ts",
+        "apps/web/src/features/engines/EngineManagerPage.tsx"
+      ],
+      "evidence": "Unpinned new sing-box releases are refused silently to the user (correct security, poor explainability)",
+      "root_cause": "Pin table maintenance contract has no UI surfacing",
+      "impact": "Engine updates appear 'broken' without explanation",
+      "fix": "Surface 'new release unpinned' state from EngineReleaseCheck.latestTag vs pin table",
+      "dependencies": [],
+      "verification": "UI test with mocked release newer than pins",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-VPN-002",
+      "severity": "LOW",
+      "category": "vpn/ux",
+      "files": [
+        "apps/api/src/services/engineManager.ts (version cache 30s)"
+      ],
+      "evidence": "installedEngineVersions caches 30s; post-install may show stale absence",
+      "root_cause": "Cache not forced after install",
+      "impact": "Confusing 30s window after install",
+      "fix": "Pass force:true (or invalidate cache) after successful install",
+      "dependencies": [],
+      "verification": "unit test: install -> immediate versions reflect new binary",
+      "status": "OPEN",
+      "confidence": "medium"
+    },
+    {
+      "id": "FABLE-SEC-001",
+      "severity": "MEDIUM",
+      "category": "security/supply-chain",
+      "files": [
+        "src-tauri/backend/node.exe",
+        "scripts/desktop-package.mjs"
+      ],
+      "evidence": "Full Node runtime ships with app; no documented version pin/CVE policy",
+      "root_cause": "Runtime vendoring without policy",
+      "impact": "Node 0-days apply until manual action",
+      "fix": "Document Node version pin; add release checklist item for CVE review",
+      "dependencies": [],
+      "verification": "SECURITY.md or RELEASING.md contains the policy",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-SEC-002",
+      "severity": "LOW",
+      "category": "security/data",
+      "files": [
+        "evidence/leak-live-20261112/"
+      ],
+      "evidence": "Field evidence committed to repo",
+      "root_cause": "Evidence dirs not covered by policy",
+      "impact": "Possible user-identifying data in VCS",
+      "fix": "Inspect contents; redact or move to ignored location",
+      "dependencies": [],
+      "verification": "manual review of dir contents",
+      "status": "OPEN",
+      "confidence": "medium"
+    },
+    {
+      "id": "FABLE-INFRA-001",
+      "severity": "MEDIUM",
+      "category": "infra/migrations",
+      "files": [
+        "cloud/worker/migrations/0005_reset_atomic.sql",
+        "cloud/worker/migrations/0005_vpn_credentials.sql"
+      ],
+      "evidence": "Local wrangler migrations list: both 0005 files pending (distinct entries by filename - convention issue not schema conflict); remote journal UNKNOWN (D1 quota error 7500); README.md:128 ambiguous",
+      "root_cause": "Parallel branch numbering collision",
+      "impact": "Possible migration-ordering hazard on D1 (unproven)",
+      "fix": "Decision tree in FABLE_CLOUD_MIGRATION_REMEDIATION.md; renumber only if remote has not applied the file",
+      "dependencies": [],
+      "verification": "wrangler d1 migrations list netpulse-cloud shows ordered application",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-TEST-001",
+      "severity": "MEDIUM",
+      "category": "test/ergonomics",
+      "files": [
+        "apps/api/vitest.config",
+        "apps/web/vitest.config"
+      ],
+      "evidence": "API suite 360s; web jsdom creation 90.35s (58% of tracked time)",
+      "root_cause": "Per-file isolation + jsdom churn",
+      "impact": "Slow red-green loops encourage batched risky changes",
+      "fix": "Unit/integration split; isolate:false or vmThreads for unit pool",
+      "dependencies": [],
+      "verification": "suite duration before/after",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-ECO-001",
+      "severity": "MEDIUM",
+      "category": "ecosystem/abystral-bot",
+      "files": [
+        "E:/Code/Project/Bot/Abystral/tests/test_resilience.py"
+      ],
+      "evidence": "pytest collection error (verified by run)",
+      "root_cause": "Unknown (deeper inspection not authorized)",
+      "impact": "Bot test suite unusable as regression gate",
+      "fix": "Fix collection error in the Bot repo (separate workstream)",
+      "dependencies": [],
+      "verification": "pytest tests passes in Bot repo",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-ARCH-002",
+      "severity": "MEDIUM",
+      "category": "architecture/duplication",
+      "files": [
+        "src-tauri/src/network_intelligence/api_intelligence/failure_classifier.rs",
+        "apps/web/src/lib/failureIntelligence.ts",
+        "apps/api/src/services/naniDiagnosticAdapter.ts"
+      ],
+      "evidence": "Failure classification implemented in two languages",
+      "root_cause": "Parallel evolution of web and desktop NANI",
+      "impact": "Silent divergence of failure taxonomies",
+      "fix": "Rust authoritative; TS becomes display mapping; shared taxonomy data in packages/shared",
+      "dependencies": [
+        "FABLE-ARCH-001"
+      ],
+      "verification": "golden classification test set run against both, then single impl",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-PERSIST-001",
+      "severity": "MEDIUM",
+      "category": "persistence/dual-truth",
+      "files": [
+        "src-tauri/src/network_intelligence/persistence.rs",
+        "apps/api/src/services/naniService.ts"
+      ],
+      "evidence": "Rust JSON persistence + SQLite shadow state both hold NANI knowledge",
+      "root_cause": "Consequence of FABLE-ARCH-001",
+      "impact": "Two answers to 'what does NANI know'",
+      "fix": "Resolved by FABLE-ARCH-001",
+      "dependencies": [
+        "FABLE-ARCH-001"
+      ],
+      "verification": "single persistence path exercised in desktop",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-DOC-001",
+      "severity": "LOW",
+      "category": "docs/staleness",
+      "files": [
+        "NETPULSE_FINAL_GRADE.md",
+        "NETPULSE_NEW_ACCEPTANCE_MATRIX.md",
+        "reports/*"
+      ],
+      "evidence": "Grades predate current discoveries",
+      "root_cause": "No report supersession index",
+      "impact": "Stale claims circulate",
+      "fix": "Add reports/INDEX.md marking CURRENT/SUPERSEDED",
+      "dependencies": [],
+      "verification": "index exists",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-ECO-002",
+      "severity": "MEDIUM",
+      "category": "ecosystem/audit-gap",
+      "files": [
+        "E:/Code/Project/Abystral-ledger"
+      ],
+      "evidence": "92,284 LOC; never deep-audited in the FABLE mission",
+      "root_cause": "Mission scope centered on NetPulse desktop",
+      "impact": "Unknown quality/risk in the ledger component of the ecosystem",
+      "fix": "Dedicated audit pass for the ledger repo",
+      "dependencies": [],
+      "verification": "per-repo audit report",
+      "status": "OPEN",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-MATH-003",
+      "severity": "INFORMATIONAL",
+      "category": "math/verification",
+      "files": [
+        "packages/shared/src/nani/diagnosis.ts",
+        "src-tauri/src/network_intelligence/diagnosis.rs"
+      ],
+      "evidence": "Both implement dynamic transition kernels (Rust: time-scaled TransitionModel; TS: mean-reverting epsilon kernel)",
+      "root_cause": "",
+      "impact": "TS core confirmed a faithful subset - consolidation loses no math",
+      "fix": "None needed; recorded to prevent false alarm about feature loss during T-06/T-05 consolidation",
+      "dependencies": [
+        "FABLE-ARCH-001"
+      ],
+      "verification": "source comparison 2026-11-16",
+      "status": "CLOSED",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-INFRA-002",
+      "severity": "MEDIUM",
+      "category": "infra/quota",
+      "files": [
+        "cloud/worker (D1 netpulse-cloud)"
+      ],
+      "evidence": "wrangler d1 migrations list --remote failed 2026-11-16 with D1 error 7500: free-tier daily row read limit exceeded",
+      "root_cause": "Unknown read consumer; must be quantified from CF metrics",
+      "impact": "Cloud features (sessions/entitlements/telegram link) can fail late in the UTC day",
+      "fix": "Read reduction first (measure per-route reads, cache session checks); upgrade only on user decision after measurement",
+      "dependencies": [],
+      "verification": "CF dashboard metrics + successful --remote call after UTC reset",
+      "status": "OPEN",
+      "confidence": "medium"
+    },
+    {
+      "id": "FABLE-T13-REG",
+      "severity": "INFORMATIONAL",
+      "category": "process/ticket-id",
+      "files": [],
+      "evidence": "T-11 dual definition resolved: T-11 = hygiene manifest (mission numbering); test-suite split re-registered as T-13",
+      "root_cause": "",
+      "impact": "ID hygiene",
+      "fix": "",
+      "dependencies": [],
+      "verification": "",
+      "status": "CLOSED",
+      "confidence": "high"
+    }
+  ]
+}

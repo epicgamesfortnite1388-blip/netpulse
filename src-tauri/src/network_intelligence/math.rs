@@ -13,8 +13,13 @@ use std::f64::EPSILON;
 /// log(0) without meaningfully moving well-behaved values.
 ///
 /// This is applied only where a zero probability would otherwise make a
-/// computation undefined (e.g. `log(0)`). It is NOT used to paper over missing
-/// data — missing data stays missing (`None`), never becomes `0.0` or `EPS`.
+/// computation undefined (e.g. `log(0)`), and only to *probability inputs* —
+/// [`clamp_probability`] is the usual door. It is deliberately NOT applied to
+/// [`softmax`] outputs: an outcome the evidence rules out is reported as
+/// exactly `0.0`, because inventing `1e-12` of mass would make an impossible
+/// hypothesis indistinguishable from a merely improbable one. It is NOT used to
+/// paper over missing data either — missing data stays missing (`None`), never
+/// becomes `0.0` or `EPS`.
 pub const PROB_FLOOR: f64 = 1e-12;
 
 /// Clamp a value into the open interval (0, 1) for use as a probability.
@@ -103,13 +108,26 @@ pub fn log_sum_exp(values: &[f64]) -> f64 {
 /// Convert log-probabilities to normalized probabilities via softmax.
 ///
 /// Returns `None` for an empty input or when no finite normalizer exists (every
-/// entry `-inf`). Outputs are strictly positive and sum to 1 within
+/// entry `-inf`). Outputs are finite and non-negative and sum to 1 within
 /// floating-point tolerance; a single-element input therefore returns `1.0`.
 ///
-/// Extreme log-probability gaps underflow to exactly `0.0` in plain `exp` (a
-/// 2000-nat gap is `e^-2000`). Each output is floored at [`PROB_FLOOR`] before
-/// renormalizing, so downstream `ln(p)` and belief updates never receive a hard
-/// zero — the floor is what makes `adversarial_softmax_extreme_log_probs` hold.
+/// **An impossible outcome keeps exactly `0.0`, and that is the contract.** A
+/// log-probability more than ~745 nats below the maximum underflows `exp` past
+/// the smallest subnormal (`[1000.0, -1000.0]` is `e^-2000`), and zero is the
+/// arithmetically honest answer for "the evidence rules this outcome out" —
+/// not a rounding accident to paper over. [`PROB_FLOOR`] is therefore not
+/// applied here: fabricating `1e-12` of mass per underflowed outcome would make
+/// every impossible hypothesis indistinguishable from a merely improbable one,
+/// and would put a number in front of an operator that no measurement supports.
+///
+/// Zero is safe to return because every consumer of a probability distribution
+/// in this engine already represents impossibility explicitly:
+/// [`super::information_theory::entropy`] and
+/// [`super::diagnosis::DiagnosticEngine::entropy_if_observed`] skip `p <= 0`
+/// terms (so `0 * ln(0)` never becomes `NaN`), `BayesianFilter` stores
+/// impossibility as a `-inf` log-probability, and `validation::log_loss`
+/// clamps through [`clamp_probability`]. A caller that needs a positive number
+/// for `ln(p)` must make that decision itself with [`clamp_probability`].
 pub fn softmax(log_probs: &[f64]) -> Option<Vec<f64>> {
     if log_probs.is_empty() {
         return None;
@@ -118,19 +136,13 @@ pub fn softmax(log_probs: &[f64]) -> Option<Vec<f64>> {
     if !lse.is_finite() {
         return None;
     }
-    let mut probs: Vec<f64> = log_probs
-        .iter()
-        .copied()
-        .map(|lp| (lp - lse).exp().max(PROB_FLOOR))
-        .collect();
-    let total: f64 = probs.iter().sum();
-    if !total.is_finite() || total <= 0.0 {
-        return None;
-    }
-    for p in &mut probs {
-        *p /= total;
-    }
-    Some(probs)
+    Some(
+        log_probs
+            .iter()
+            .copied()
+            .map(|lp| (lp - lse).exp())
+            .collect(),
+    )
 }
 
 /// Normalize a slice of non-negative weights so they sum to 1.
@@ -168,6 +180,22 @@ pub fn sample_categorical<R: rand::Rng + ?Sized>(
     }
     // Floating-point drift: fall back to the last index rather than panic.
     Some(probs.len().saturating_sub(1))
+}
+
+/// Shannon entropy of a discrete distribution, in nats: `-Σ p ln p`.
+///
+/// Terms with `p <= 0` (and non-finite terms) are skipped, because `0 * ln 0`
+/// is `0` by continuity and a distribution may legitimately contain impossible
+/// outcomes — [`softmax`] reports them as exactly `0.0`. Returns `0.0` for an
+/// empty slice. This is the one owner of that zero convention: every entropy
+/// consumer (Bayesian priors, the diagnostic engine, information theory) calls
+/// it, so none of them can disagree about what a zero probability contributes.
+pub fn entropy_of(probs: &[f64]) -> f64 {
+    probs
+        .iter()
+        .filter(|p| p.is_finite() && **p > 0.0)
+        .map(|p| -p * p.ln())
+        .sum()
 }
 
 /// Binary entropy of a Bernoulli with success probability `p`.
@@ -297,6 +325,18 @@ mod tests {
     }
 
     #[test]
+    fn entropy_of_skips_impossible_outcomes() {
+        // Uniform over 4 is ln 4; an impossible outcome contributes nothing
+        // (0 * ln 0 is 0 by continuity, not NaN), so a degenerate distribution
+        // has zero entropy rather than an undefined one.
+        let uniform = entropy_of(&[0.25, 0.25, 0.25, 0.25]);
+        assert!((uniform - 4.0f64.ln()).abs() < 1e-12, "{uniform}");
+        assert!(entropy_of(&[1.0, 0.0]).abs() < 1e-12);
+        assert!(entropy_of(&[0.0, 1.0]).abs() < 1e-12);
+        assert_eq!(entropy_of(&[]), 0.0);
+    }
+
+    #[test]
     fn softmax_normalizes_and_sums_to_one() {
         let log_probs = vec![0.0, 1.0, 2.0];
         let probs = softmax(&log_probs).expect("softmax of non-empty input");
@@ -316,17 +356,24 @@ mod tests {
     }
 
     #[test]
-    fn softmax_is_strictly_positive_on_extreme_spread() {
-        // A 2000-nat gap underflows to 0.0 without the PROB_FLOOR pass, which is
-        // what the foundation adversarial suite checks.
+    fn softmax_lets_an_impossible_outcome_be_exactly_zero() {
+        // e^-2000 is below the smallest subnormal: zero is the correct answer
+        // for "the evidence rules this out", not a defect to be floored away.
         let probs = softmax(&[1000.0, -1000.0]).expect("extreme log-probs");
-        assert_eq!(probs.len(), 2);
-        assert!(
-            probs.iter().all(|p| p.is_finite() && *p > 0.0 && *p <= 1.0),
-            "{probs:?}"
-        );
+        assert_eq!(probs, vec![1.0, 0.0]);
+        assert!(probs.iter().all(|p| p.is_finite() && *p >= 0.0 && *p <= 1.0));
         assert!((probs.iter().sum::<f64>() - 1.0).abs() < 1e-12);
-        assert!(probs[0] > probs[1]);
+
+        // A gap f64 can still represent keeps both outcomes positive, so the
+        // zero above comes from underflow, not from the subtraction:
+        let close = softmax(&[0.0, -1.0]).expect("representable gap");
+        assert!(close.iter().all(|p| *p > 0.0), "{close:?}");
+        assert!((close.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+
+        // The zero is left for consumers to interpret: `entropy` skips zero
+        // terms (proving `0 * ln(0)` never becomes NaN), `log_loss` clamps via
+        // `clamp_probability`. This test stays inside `math` so the module keeps
+        // no dependency on those consumers.
     }
 
     #[test]
@@ -335,9 +382,10 @@ mod tests {
         assert_eq!(softmax(&[0.0]), Some(vec![1.0]));
         // No finite normalizer when every entry is -inf.
         assert!(softmax(&[f64::NEG_INFINITY; 3]).is_none());
-        // One -inf entry still normalizes, and stays positive.
+        // One -inf entry normalizes to certainty for the survivor; the
+        // impossible outcome is exactly 0.0 rather than invented mass.
         let mixed = softmax(&[f64::NEG_INFINITY, 0.0]).expect("one impossible outcome");
-        assert!(mixed.iter().all(|p| *p > 0.0 && *p <= 1.0), "{mixed:?}");
+        assert_eq!(mixed, vec![0.0, 1.0]);
         assert!((mixed.iter().sum::<f64>() - 1.0).abs() < 1e-12);
     }
 
