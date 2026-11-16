@@ -16,7 +16,7 @@ Updated: 2026-11-16 (Phase-2 kickoff). This file is the campaign's status board;
 
 | Ticket | Status | Gate reached | Evidence |
 |---|---|---|---|
-| W0-1 baseline commit | **BLOCKING — awaiting user** | — | git status (39 M + 187 ??) |
+| W0-1 baseline commit | **DONE — PASS** (2026-11-16) | Gates A–F complete | commit `384f7f9` (262 files); backup verified 317/317 ×2; engine restorable (54 rs from git-archive); 368 Rust NANI tests + 3× tsc green; reports/W0_1_FINAL_REPORT.md |
 | T-01 desktop gate | READY (after W0-1) | contract written | FABLE_T01_EXECUTION_CONTRACT.md |
 | T-02 adaptive stopping | READY (after W0-1) | contract from Phase-1 blueprint | — |
 | T-03 shelf deletion | POSTPONED (needs T-02) | — | — |
@@ -40,13 +40,15 @@ Updated: 2026-11-16 (Phase-2 kickoff). This file is the campaign's status board;
 |---|---|---|
 | 2026-11-16 | Phase-1 audit | 8.4/10 (A−) established |
 | 2026-11-16 | Phase-2 re-validation | BUILD-001 ↑ CRITICAL; INFRA-002 added; T-10/T-11 scope corrected; **no score change** (no verified remediation yet) |
+| 2026-11-16 | **W0-1 executed** | BUILD-001 → RESOLVED (CRITICAL defused); baseline recoverable from Git + external backup; BUILD-004 (CRLF) registered; **no score change yet** (re-rate at milestone) |
 
 ## Next action queue
 
-1. **User**: land W0-1 (commit/branch in-flight work). Everything else is blocked on it.
+1. ~~User: land W0-1~~ → **DONE** (commit `384f7f9`; unblocker cleared).
 2. **User**: after UTC midnight — one read-only `wrangler d1 migrations list --remote` (M-1 gate) + investigate the D1 read-quota consumer.
-3. **Terra**: T-01 first (safest, smallest, highest-leverage), then T-02.
-4. **Gemini**: review T-01 diff on arrival.
+3. **User**: authorize push of `main` (recovery point currently local + external backup only).
+4. **Terra**: T-01 first (safest, smallest, highest-leverage), then T-02.
+5. **Gemini**: review T-01 diff on arrival.
 
 ## Completion discipline
 

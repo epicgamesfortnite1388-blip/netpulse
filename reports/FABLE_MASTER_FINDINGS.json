@@ -151,9 +151,10 @@
       "impact": "Accidental checkout/clean destroys the NANI engine; no commit trail for prior phases",
       "fix": "Commit to a branch before any cleanup tickets",
       "dependencies": [],
-      "verification": "git status clean (or in-flight branch merged)",
-      "status": "OPEN",
-      "confidence": "high"
+      "verification": "git ls-tree HEAD; git archive extraction; sha256sum -c; cargo test network_intelligence",
+      "status": "RESOLVED",
+      "confidence": "high",
+      "resolution_evidence": "W0-1 commit 384f7f9 (262 files, +30523/-516): entire NANI engine committed; backup E:/Code/Project/Vpn_app-W0-1-backup-20261116T2112 verified 317/317 SHA-256 twice incl. post-commit; fresh git-archive extraction of engine = 54 rs files; build+tests green (368 Rust NANI tests, 3x tsc exit 0). Reports: reports/W0_1_*.md"
     },
     {
       "id": "FABLE-BUILD-002",
@@ -427,6 +428,23 @@
       "dependencies": [],
       "verification": "",
       "status": "CLOSED",
+      "confidence": "high"
+    },
+    {
+      "id": "FABLE-BUILD-004",
+      "severity": "LOW",
+      "category": "build/crlf",
+      "files": [
+        ".gitattributes (absent)",
+        "38 tracked files"
+      ],
+      "evidence": "git status shows CRLF-phantom modifications (e.g. AdaptiveRecoveryCard.tsx: status M, diff empty); LF/CRLF churn warnings on every git operation",
+      "root_cause": "No .gitattributes with eol normalization on a Windows-primary repo",
+      "impact": "Diff noise; phantom dirty states confuse preservation audits",
+      "fix": "Add .gitattributes with text=auto + explicit eol rules for *.rs/*.ts (separate hygiene ticket; needs user decision on renormalization commit)",
+      "dependencies": [],
+      "verification": "git status clean after renormalize commit",
+      "status": "OPEN",
       "confidence": "high"
     }
   ]
