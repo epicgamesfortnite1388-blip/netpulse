@@ -102,8 +102,14 @@ pub fn log_sum_exp(values: &[f64]) -> f64 {
 
 /// Convert log-probabilities to normalized probabilities via softmax.
 ///
-/// Returns `None` for an empty input. Each output is in (0, 1) and the outputs
-/// sum to 1 within floating-point tolerance.
+/// Returns `None` for an empty input or when no finite normalizer exists (every
+/// entry `-inf`). Outputs are strictly positive and sum to 1 within
+/// floating-point tolerance; a single-element input therefore returns `1.0`.
+///
+/// Extreme log-probability gaps underflow to exactly `0.0` in plain `exp` (a
+/// 2000-nat gap is `e^-2000`). Each output is floored at [`PROB_FLOOR`] before
+/// renormalizing, so downstream `ln(p)` and belief updates never receive a hard
+/// zero — the floor is what makes `adversarial_softmax_extreme_log_probs` hold.
 pub fn softmax(log_probs: &[f64]) -> Option<Vec<f64>> {
     if log_probs.is_empty() {
         return None;
@@ -112,13 +118,19 @@ pub fn softmax(log_probs: &[f64]) -> Option<Vec<f64>> {
     if !lse.is_finite() {
         return None;
     }
-    Some(
-        log_probs
-            .iter()
-            .copied()
-            .map(|lp| (lp - lse).exp())
-            .collect(),
-    )
+    let mut probs: Vec<f64> = log_probs
+        .iter()
+        .copied()
+        .map(|lp| (lp - lse).exp().max(PROB_FLOOR))
+        .collect();
+    let total: f64 = probs.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    for p in &mut probs {
+        *p /= total;
+    }
+    Some(probs)
 }
 
 /// Normalize a slice of non-negative weights so they sum to 1.
@@ -301,6 +313,32 @@ mod tests {
     #[test]
     fn softmax_empty_returns_none() {
         assert!(softmax(&[]).is_none());
+    }
+
+    #[test]
+    fn softmax_is_strictly_positive_on_extreme_spread() {
+        // A 2000-nat gap underflows to 0.0 without the PROB_FLOOR pass, which is
+        // what the foundation adversarial suite checks.
+        let probs = softmax(&[1000.0, -1000.0]).expect("extreme log-probs");
+        assert_eq!(probs.len(), 2);
+        assert!(
+            probs.iter().all(|p| p.is_finite() && *p > 0.0 && *p <= 1.0),
+            "{probs:?}"
+        );
+        assert!((probs.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!(probs[0] > probs[1]);
+    }
+
+    #[test]
+    fn softmax_degenerate_inputs() {
+        // Single element: the only valid distribution is certainty.
+        assert_eq!(softmax(&[0.0]), Some(vec![1.0]));
+        // No finite normalizer when every entry is -inf.
+        assert!(softmax(&[f64::NEG_INFINITY; 3]).is_none());
+        // One -inf entry still normalizes, and stays positive.
+        let mixed = softmax(&[f64::NEG_INFINITY, 0.0]).expect("one impossible outcome");
+        assert!(mixed.iter().all(|p| *p > 0.0 && *p <= 1.0), "{mixed:?}");
+        assert!((mixed.iter().sum::<f64>() - 1.0).abs() < 1e-12);
     }
 
     #[test]
