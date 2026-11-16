@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Gauge as GaugeIcon, Globe as Globe2Icon, Play, Sparkles, TriangleAlert, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
+import { BrandMark } from '@/components/BrandMark';
 import { Gauge } from '@/components/charts/Gauge';
 import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
@@ -145,6 +146,25 @@ export default function DashboardPage() {
   const jitterStatus = !lastPing?.jitterMs ? 'idle' : lastPing.jitterMs <= 3 ? 'good' : lastPing.jitterMs <= 10 ? 'warn' : 'bad';
   const lossStatus = lastPing == null ? 'idle' : lastPing.lossPct === 0 ? 'good' : lastPing.lossPct <= 2 ? 'warn' : 'bad';
 
+  /*
+   * The hero band's live verdict. Derived only from state the page already
+   * fetches — never a fabricated "all good": loading, error, no-score and each
+   * score band are distinct, and the tone class is the same semantic colour the
+   * rest of the app uses, so the band can never disagree with the health card.
+   */
+  const healthScore = statusQuery.data?.health?.score ?? null;
+  const heroStatus = statusQuery.isLoading
+    ? { word: 'Measuring', hint: 'Sampling the connection…', tone: 'text-muted' }
+    : statusQuery.isError
+      ? { word: 'Offline', hint: 'Backend unreachable', tone: 'text-danger' }
+      : healthScore == null
+        ? { word: 'Awaiting data', hint: 'Run a quick test to measure', tone: 'text-muted' }
+        : healthScore >= 80
+          ? { word: 'Nominal', hint: statusQuery.data?.health?.label ?? 'All measured components healthy', tone: 'text-ok' }
+          : healthScore >= 50
+            ? { word: 'Degraded', hint: statusQuery.data?.health?.label ?? 'Some components need attention', tone: 'text-warn' }
+            : { word: 'Critical', hint: statusQuery.data?.health?.label ?? 'Multiple components failing', tone: 'text-danger' };
+
   return (
     <DisclosureScope name="dashboard">
       <PageHeader
@@ -159,6 +179,54 @@ export default function DashboardPage() {
       />
 
       <DisclosureToolbar className="-mt-3 mb-2" />
+
+      {/* Command-center hero: the live verdict of the connection, at a glance.
+          Values are the same ones the cards below render, so it can never
+          disagree with them; the tone is the shared semantic colour. */}
+      <div className="surface-glass relative mb-6 overflow-hidden rounded-2xl">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px hairline-brand" />
+        <div className="flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <BrandMark size={46} />
+            <div className="min-w-0">
+              <div className="text-micro font-semibold uppercase tracking-[0.2em] text-faint">Network command</div>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className={`text-2xl font-semibold tracking-tight ${heroStatus.tone}`}>{heroStatus.word}</span>
+                <span className="text-mini text-muted">{heroStatus.hint}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-x-7 gap-y-4">
+            <div>
+              <div className="text-micro uppercase tracking-[0.16em] text-faint">Health</div>
+              <div className={`metric-num text-3xl font-semibold leading-none ${heroStatus.tone}`}>
+                {healthScore ?? '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-micro uppercase tracking-[0.16em] text-faint">Ping</div>
+              <div className="metric-num text-xl font-medium leading-none text-text">
+                {lastPing?.avg ?? statusQuery.data?.latencyTcpMs ?? '—'}
+                <span className="ml-1 text-micro text-faint">ms</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-micro uppercase tracking-[0.16em] text-faint">DNS</div>
+              <div className="metric-num text-xl font-medium leading-none text-text">
+                {bestDnsMs ?? '—'}
+                <span className="ml-1 text-micro text-faint">ms</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-micro uppercase tracking-[0.16em] text-faint">Download</div>
+              <div className="metric-num text-xl font-medium leading-none text-text">
+                {lastDownload ?? '—'}
+                <span className="ml-1 text-micro text-faint">Mbps</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* First thing on the page: what the machine already knows is broken.
           Renders nothing at all when nothing needs attention. */}

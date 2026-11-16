@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
+import { BrandMark } from '@/components/BrandMark';
 import { CommandPalette } from '@/components/CommandPalette';
 import { QuickConnectOverlay } from '@/components/QuickConnectOverlay';
 import { startSyncLoop, stopSyncLoop } from '@/lib/cloud/syncEngine';
@@ -354,13 +355,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav className="flex h-full flex-col">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/40 bg-accent-soft">
-          <Activity size={16} className="text-accent" />
-        </div>
-        <div>
+      <div className="flex items-center gap-2.5 px-4 py-5">
+        <BrandMark size={34} />
+        <div className="min-w-0">
           <div className="text-sm font-semibold tracking-tight">NetPulse</div>
-          <div className="text-micro uppercase tracking-[0.18em] text-faint">Network intelligence</div>
+          <div className="text-micro uppercase tracking-[0.2em] text-faint">Network intelligence</div>
         </div>
       </div>
       <div ref={listRef} className="relative flex-1 overflow-y-auto px-3 pb-4">
@@ -518,6 +517,10 @@ export function AppShell() {
             scrolled ? 'border-line-strong shadow-floating' : 'border-line shadow-raised'
           }`}
         >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-px hairline-brand opacity-70"
+          />
           <div className="flex items-center gap-3">
             <button
               className="rounded-lg border border-line bg-surface-2 p-2 text-muted lg:hidden"
