@@ -30,3 +30,7 @@ cd <target> && sha256sum -c <manifest>   # must print 317 OK, 0 failed
 ```
 
 Target must be an empty directory. Files restore with original relative paths from the repo root.
+
+## Addendum — post-backup deltas (2026-11-16, commit `1fc8875`)
+
+This backup is an immutable point-in-time snapshot (HEAD `b0311fb`, 21:52). It is **not** overwritten. Two coherent in-flight deltas post-dated it: the release-profile ranking measurements in `reports/NANI_PERFORMANCE.md`, and removal of the temporary `tmp_rank_speedup_measurement` harness from `diagnosis.rs`. Per mission §3 ("do not overwrite an existing backup"), these were preserved durably via commit `1fc8875` rather than by re-archiving. The live worktree therefore diverges from the manifest in four files (2 registry + `NANI_PERFORMANCE.md` + `diagnosis.rs`), all committed to Git. Extraction re-verification of the untouched archive still yields **317/317 OK** (performed this session into `E:\Code\Project\Vpn_app-W0-1-restore-20261116T215455`).

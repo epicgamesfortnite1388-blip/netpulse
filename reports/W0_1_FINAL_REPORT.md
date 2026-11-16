@@ -30,7 +30,11 @@
 
 ## Constraint compliance
 
-No algorithm/behavior modifications, no deletions, no cleans, no resets, no amends, no force-push, no push, no deploys, no migrations, no credential rotation. Two commits total: `384f7f9` (recovery) + the deliverables commit (manifests/reports/registry). History untouched otherwise.
+No algorithm/behavior modifications, no deletions of user work, no cleans, no resets, no amends, no force-push, no push, no deploys, no migrations, no credential rotation. **Three commits total:** `384f7f9` (recovery baseline), `624daef` (deliverables/registry), `1fc8875` (in-flight deltas — release perf evidence in `NANI_PERFORMANCE.md` plus removal of a *temporary benchmark harness* `tmp_rank_speedup_measurement`, a test-only change that does not alter any algorithm or product behaviour; build re-verified 530 pass). History untouched otherwise.
+
+## Addendum — final state after post-backup deltas (2026-11-16)
+
+The backup snapshot was taken at 21:52 (HEAD `b0311fb`). Two coherent in-flight deltas appeared afterwards and were **not** in that snapshot: the release-profile ranking measurements recorded in `reports/NANI_PERFORMANCE.md`, and removal of the temporary `tmp_rank_speedup_measurement` harness from `diagnosis.rs`. Because the mission forbids overwriting an existing backup, these were made durable by commit `1fc8875` instead. Consequently the live worktree now diverges from the 317-file backup manifest in exactly four files — `reports/FABLE_MASTER_FINDINGS.json`, `reports/FABLE_MASTER_FINDINGS.md`, `reports/NANI_PERFORMANCE.md`, `src-tauri/src/network_intelligence/diagnosis.rs` — all of which are committed to Git. The backup itself remains intact and re-verifies 317/317 on extraction. A fourth commit `1fc8875` also aligned the Markdown findings registry (only the JSON had been updated in `624daef`).
 
 ## Residual items for the human (none blocking)
 
