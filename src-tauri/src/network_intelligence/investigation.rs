@@ -12,7 +12,9 @@
 //!
 //! No secrets enter events or persisted records.
 
-use crate::network_intelligence::api_intelligence::monitor::{diagnostic_probes, probe_api};
+use crate::network_intelligence::api_intelligence::monitor::{
+    diagnostic_probes, observe_diagnostic_probes_matching, probe_api,
+};
 use crate::network_intelligence::api_intelligence::registry::{
     ApiRegistry, Health, LayerResult, ProbeOutcomeRecord,
 };
@@ -716,21 +718,7 @@ impl InvestigationManager {
         // now applied to a real posterior): a leader below this probability is
         // not a justified conclusion, even after verification.
         const CONCLUSION_FLOOR: f64 = 0.25;
-        let result = if confidence < CONCLUSION_FLOOR {
-            "Insufficient evidence to reach a conclusion.".to_string()
-        } else if failure_reproduced {
-            // K-3: a re-measured failure is a REPRODUCTION — the strongest
-            // confirmation available for a failure hypothesis. Never call it
-            // "unverified".
-            format!("Investigation complete: {top:?} reproduced on re-measurement (confidence {:.0}%); failure confirmed.", confidence * 100.0)
-        } else if verified {
-            // The implicated layer passed on re-measurement: the failure did
-            // not reproduce. The leader may still hold the posterior (flaky
-            // faults do), so the verdict stays uncertain, stated honestly.
-            format!("Investigation complete: {top:?} not reproduced on re-measurement (confidence {:.0}%); treat as uncertain.", confidence * 100.0)
-        } else {
-            format!("Investigation complete: {top:?} not verified (implicated layer unmeasured); treat as uncertain.",)
-        };
+        let result = Self::verify_result_text(&top, confidence, verified, failure_reproduced);
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
             i.result = result.clone();
@@ -788,16 +776,11 @@ impl InvestigationManager {
             let outcome = probe_api(&entry, None);
             let ok = matches!(outcome.health, Health::Healthy);
 
-            // N1.1: the same measured record the observations come from is the
-            // engine's evidence. Timestamps are converted to seconds: the
-            // transition kernel's predict step (`exp(-0.001 * delta)`) is
-            // calibrated for seconds, so probes of one bounded investigation
-            // stay inside a single correlation window and short gaps barely
-            // mix the posterior. See N1_01 for the unit analysis.
-            for mut probe_result in diagnostic_probes(&outcome) {
-                probe_result.timestamp /= 1000;
-                engine.observe(&probe_result);
-            }
+            // N1.1/N1.2: the same measured record the observations come from
+            // is the engine's evidence, fed through THE canonical boundary
+            // (`observe_diagnostic_probes`), which owns the ms→seconds
+            // conversion. See N1_01/N1_2_01 for the unit analysis.
+            observe_diagnostic_probes_matching(engine, &outcome, |_| true);
 
             // Record per-layer observations from the probe result.
             for probe in &outcome.layers {
@@ -1015,12 +998,7 @@ impl InvestigationManager {
         // engine, so a verification rerun cannot count as fresh independent
         // proof.
         let test = Self::verify_test_for(layer);
-        for mut probe_result in diagnostic_probes(&outcome) {
-            if probe_result.test.correlation_id() == test {
-                probe_result.timestamp /= 1000;
-                engine.observe(&probe_result);
-            }
-        }
+        observe_diagnostic_probes_matching(engine, &outcome, |id| id == test);
 
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
@@ -1050,6 +1028,49 @@ impl InvestigationManager {
         });
 
         (verified, failure_reproduced)
+    }
+
+    /// Human-readable verification explanation — the single semantic
+    /// mapping from the re-measurement outcome to what the user is told
+    /// (N1.2, K-3). Cases:
+    /// - **A — reproduced:** the implicated layer failed again; the
+    ///   re-measurement SUPPORTS the hypothesis. Worded as support, never as
+    ///   root-cause proof (reproducing a symptom is not proving the cause).
+    /// - **B — not reproduced:** the layer passed; the observation
+    ///   challenges the leader and the posterior was updated accordingly;
+    ///   the verdict stays explicitly uncertain.
+    /// - **C — unavailable / unmeasured:** no re-measurement of the
+    ///   implicated layer exists. Absence of verification is NEVER success.
+    /// - **D — inconclusive:** with boolean layer outcomes there is no
+    ///   distinct fourth outcome; a measurement that cannot discriminate
+    ///   competes only through its posterior weight, so D shares B's
+    ///   explicit-uncertainty wording and the posterior carries the nuance
+    ///   (documented in N1_2_03).
+    fn verify_result_text(
+        top: &Option<String>,
+        confidence: f64,
+        verified: bool,
+        failure_reproduced: bool,
+    ) -> String {
+        const CONCLUSION_FLOOR: f64 = 0.25;
+        let label = top.as_deref().unwrap_or("unknown");
+        if confidence < CONCLUSION_FLOOR {
+            "Insufficient evidence to reach a conclusion.".to_string()
+        } else if failure_reproduced {
+            format!(
+                "Investigation complete: {label:?} reproduced on re-measurement (confidence {:.0}%); the re-measurement supports this hypothesis, though it does not by itself prove the complete root cause.",
+                confidence * 100.0
+            )
+        } else if verified {
+            format!(
+                "Investigation complete: {label:?} not reproduced on re-measurement (confidence {:.0}%); the observation challenges this hypothesis and the posterior was updated accordingly — treat the verdict as uncertain.",
+                confidence * 100.0
+            )
+        } else {
+            format!(
+                "Investigation complete: {label:?} could not be verified (the implicated layer was not re-measured); absence of verification is not success — treat the verdict as uncertain.",
+            )
+        }
     }
 
     /// The network layer whose re-measurement can confirm or refute a
@@ -1867,6 +1888,81 @@ mod tests {
         assert!(elapsed.as_secs() < 5, "analysis cycle unexpectedly slow: {elapsed:?}");
     }
 
+    /// K-3 case A — predicted failure REPRODUCED: the explanation says the
+    /// re-measurement supports the hypothesis, explicitly not root-cause
+    /// proof, and never "unverified".
+    #[test]
+    fn k3_case_a_reproduced_failure_is_described_as_support() {
+        let text = InvestigationManager::verify_result_text(
+            &Some("dns".into()),
+            0.62,
+            false,
+            true,
+        );
+        assert!(text.contains("reproduced on re-measurement"), "{text}");
+        assert!(text.contains("supports this hypothesis"), "{text}");
+        assert!(text.contains("does not by itself prove"), "{text}");
+        assert!(!text.contains("unverified") && !text.contains("not verified"), "{text}");
+    }
+
+    /// K-3 case B — predicted failure NOT reproduced: the observation is
+    /// described as challenging the hypothesis, with the posterior update
+    /// acknowledged and the verdict explicitly uncertain.
+    #[test]
+    fn k3_case_b_contradicted_failure_stays_uncertain() {
+        let text = InvestigationManager::verify_result_text(
+            &Some("dns".into()),
+            0.30,
+            true,
+            false,
+        );
+        assert!(text.contains("not reproduced on re-measurement"), "{text}");
+        assert!(text.contains("challenges this hypothesis"), "{text}");
+        assert!(text.contains("posterior was updated"), "{text}");
+        assert!(text.contains("uncertain"), "{text}");
+    }
+
+    /// K-3 case C — verification UNAVAILABLE: absence of verification is
+    /// never success, and the verdict is explicitly uncertain.
+    #[test]
+    fn k3_case_c_unavailable_verification_is_not_success() {
+        let text = InvestigationManager::verify_result_text(
+            &Some("dns".into()),
+            0.30,
+            false,
+            false,
+        );
+        assert!(text.contains("could not be verified"), "{text}");
+        assert!(text.contains("absence of verification is not success"), "{text}");
+        assert!(text.contains("uncertain"), "{text}");
+        assert!(!text.contains("confirmed"), "{text}");
+    }
+
+    /// K-3 case D — the floor still governs: whatever the re-measurement
+    /// showed, a posterior below the established conclusion floor is the
+    /// preserved refusal, never a verification-flavored conclusion.
+    #[test]
+    fn k3_case_d_floor_overrides_verification_wording() {
+        for (verified, reproduced) in [(true, false), (false, true), (false, false)] {
+            let text = InvestigationManager::verify_result_text(
+                &Some("dns".into()),
+                0.24,
+                verified,
+                reproduced,
+            );
+            assert_eq!(text, "Insufficient evidence to reach a conclusion.", "{text}");
+        }
+    }
+
+    /// K-3 boundary: at exactly the established floor (0.25) a conclusion is
+    /// justified (strict less-than refusal) — documented semantics.
+    #[test]
+    fn k3_boundary_exactly_at_floor_is_a_conclusion() {
+        let text =
+            InvestigationManager::verify_result_text(&Some("dns".into()), 0.25, true, false);
+        assert!(text.contains("not reproduced"), "{text}");
+    }
+
     /// Healthy endpoint: no failure evidence → the refusal is preserved
     /// verbatim, the verify stage is honestly skipped, and no conclusion is
     /// manufactured from a valid-but-uninformative posterior.
@@ -2003,5 +2099,81 @@ mod tests {
         let done = events.iter().any(|(_, e)| matches!(e, Event::InvestigationCompleted { .. }));
         assert!(!done, "a panic must never be converted into a completion");
         let _ = rx;
+    }
+
+    /// K-2 stress: 100 threads released by a deterministic barrier
+    /// simultaneously call `start`. Admission is atomic (check + reservation
+    /// in one critical section), so EXACTLY 4 are admitted and 96 are
+    /// honestly rejected — never more than 4 active. Terminal paths release
+    /// capacity (covered by the completion/cancel/panic tests above).
+    #[test]
+    fn k2_hundred_simultaneous_starts_never_exceed_the_cap() {
+        use std::sync::Barrier;
+        let port = spawn_hanging_http();
+        let (bus, _rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        let mut entry = ApiEntry::new("k2-hang", "test", &format!("http://127.0.0.1:{port}/healthz"));
+        entry.timeout_ms = 60_000; // admitted investigations stay active for the assertion
+        registry.register(entry);
+        let mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+
+        const N: usize = 100;
+        let barrier = Arc::new(Barrier::new(N));
+        let mut handles = Vec::with_capacity(N);
+        for _ in 0..N {
+            let barrier = barrier.clone();
+            let mgr = mgr.clone();
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                mgr.start("stress".into())
+            }));
+        }
+        let ids: Vec<String> = handles.into_iter().map(|h| h.join().expect("thread")).collect();
+        assert_eq!(ids.len(), N);
+
+        // Accounting: exactly `cap` ids are ACTIVE; every other recorded
+        // start is the honest rejection. Rejections land in bounded history
+        // (max 50), so early reject records may already have been truncated —
+        // the deterministic invariants are the ACTIVE count, that every
+        // RECOVERABLE non-active start is a marked rejection, and that the
+        // id allocator issued exactly N identities.
+        let mut admitted = 0usize;
+        let mut rejected_seen = 0usize;
+        for id in &ids {
+            match mgr.status(id) {
+                Some(st) if st.result.contains("concurrency limit") => rejected_seen += 1,
+                Some(_) => admitted += 1,
+                None => {} // truncated from bounded history (rejected, old)
+            }
+        }
+        assert_eq!(
+            admitted,
+            InvestigationManager::MAX_ACTIVE_INVESTIGATIONS,
+            "exactly the cap admitted under simultaneous load"
+        );
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            assert_eq!(inner.next_id as usize, N + 1, "every start was admitted or rejected (ids allocate from 1)");
+            assert_eq!(
+                inner.active.len(),
+                InvestigationManager::MAX_ACTIVE_INVESTIGATIONS,
+                "maximum observed concurrency must equal the cap"
+            );
+            assert!(rejected_seen >= 1, "rejections must be recorded and visible");
+            for r in &inner.history {
+                if inner.active.contains_key(&r.id) {
+                    continue;
+                }
+                assert!(
+                    r.result.contains("concurrency limit"),
+                    "every non-active record must be an honest rejection, got: {}",
+                    r.result
+                );
+            }
+        }
     }
 }

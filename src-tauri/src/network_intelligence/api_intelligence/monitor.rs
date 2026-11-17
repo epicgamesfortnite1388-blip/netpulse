@@ -14,7 +14,9 @@ use crate::network_intelligence::api_intelligence::registry::{
 };
 use crate::network_intelligence::api_model::FailureCategory;
 use crate::network_intelligence::api_model::RouteKind;
-use crate::network_intelligence::diagnosis::{DiagnosticTest, ProbeOutcome, ProbeResult};
+use crate::network_intelligence::diagnosis::{
+    DiagnosticEngine, DiagnosticTest, ProbeOutcome, ProbeResult,
+};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use url::Url;
@@ -274,9 +276,150 @@ pub fn diagnostic_probes(outcome: &ProbeOutcomeRecord) -> Vec<ProbeResult> {
     probes
 }
 
+/// Feed one measured probe record into the Bayesian engine — THE canonical
+/// observation entry point (N1.2, K-1/NANI-022).
+///
+/// Every production feeder MUST use this instead of calling `engine.observe`
+/// directly. It owns the one non-obvious contract: `diagnostic_probes`
+/// stamps measurements with unix MILLISECONDS, while the engine's predict
+/// step is calibrated for SECONDS (`mix = exp(-0.001 * delta)` — a ms delta
+/// of 5000 erases ~99% of the accumulated posterior). This helper performs
+/// the conversion exactly once, at the boundary, so no caller can get the
+/// unit wrong and no engine code changes.
+///
+/// Probes whose timestamp does not advance the engine's clock are still
+/// observed (the predict step is an identity at zero delta, per the engine's
+/// own contract); out-of-order timestamps follow the engine's existing
+/// behavior (a negative delta is not predicted on).
+pub fn observe_diagnostic_probes(engine: &mut DiagnosticEngine, outcome: &ProbeOutcomeRecord) {
+    observe_diagnostic_probes_matching(engine, outcome, |_| true)
+}
+
+/// Same as [`observe_diagnostic_probes`], restricted to the diagnostic tests
+/// matching `keep` (used by verification, which targets one claim). The unit
+/// conversion boundary is identical — a filtered feed must not differ.
+pub fn observe_diagnostic_probes_matching(
+    engine: &mut DiagnosticEngine,
+    outcome: &ProbeOutcomeRecord,
+    keep: impl Fn(&str) -> bool,
+) {
+    for mut probe in diagnostic_probes(outcome) {
+        if !keep(probe.test.correlation_id()) {
+            continue;
+        }
+        probe.timestamp /= 1000;
+        engine.observe(&probe);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-1 contract: the canonical helper converts ms -> seconds. The engine's
+    /// clock must receive the SECOND value, not the raw millisecond stamp.
+    #[test]
+    fn k1_helper_converts_ms_to_seconds() {
+        let mut engine = DiagnosticEngine::new();
+        let mut rec = record(vec![("dns", LayerResult::Ok, None)]);
+        rec.timestamp_ms = 1_700_000_000_123;
+        observe_diagnostic_probes(&mut engine, &rec);
+        assert_eq!(
+            engine.previous_timestamp,
+            Some(1_700_000_000),
+            "the engine clock must be in seconds"
+        );
+    }
+
+    /// K-1 contract: a five-SECOND delta preserves accumulated posterior
+    /// information (the transition kernel barely mixes over such a gap).
+    #[test]
+    fn k1_five_second_delta_preserves_the_posterior() {
+        let mut engine = DiagnosticEngine::new();
+        let base = 1_700_000_000_000u64;
+        let mut fail = record(vec![("tcp", LayerResult::Failed, None)]);
+        fail.timestamp_ms = base;
+        observe_diagnostic_probes(&mut engine, &fail);
+        let (_, before) = engine.diagnosis().expect("posterior");
+        let mut again = record(vec![("tcp", LayerResult::Failed, None)]);
+        again.timestamp_ms = base + 5_000;
+        observe_diagnostic_probes(&mut engine, &again);
+        let (_, after) = engine.diagnosis().expect("posterior");
+        assert!(
+            after >= before,
+            "confirming evidence 5s later must not weaken the belief: {before} -> {after}"
+        );
+        assert!(
+            after > 0.2,
+            "the accumulated belief must survive a five-second gap: {after}"
+        );
+    }
+
+    /// K-1 tripwire: the ORIGINAL bug (ms deltas fed to the seconds-calibrated
+    /// predict) collapses the posterior toward stationary over a five-second
+    /// gap, so identical confirming evidence accumulates FAR less belief than
+    /// under the correct unit contract. Comparative assertion: the buggy feed
+    /// must reach a materially lower posterior than the converted feed for
+    /// the same measurements - if this stops holding, either the boundary or
+    /// the kernel calibration changed; re-read both.
+    #[test]
+    fn k1_millisecond_delta_would_erase_the_posterior() {
+        let base = 1_700_000_000_000u64;
+        // Six identical confirming probes, five seconds apart: the converted
+        // feed ACCUMULATES across all of them; the buggy feed (ms deltas)
+        // erases toward stationary before each one, so every probe starts
+        // from roughly uniform again.
+        let build = |converted: bool| {
+            let mut engine = DiagnosticEngine::new();
+            for k in 0..10 {
+                let mut fail = record(vec![("tcp", LayerResult::Failed, None)]);
+                fail.timestamp_ms = base + k * 5_000;
+                for mut probe in diagnostic_probes(&fail) {
+                    if converted {
+                        probe.timestamp /= 1000;
+                    }
+                    engine.observe(&probe);
+                }
+            }
+            engine.diagnosis().expect("posterior").1
+        };
+        let converted = build(true);
+        let buggy = build(false);
+        assert!(
+            buggy < converted * 0.80,
+            "the ms-unit bug must materially degrade accumulation: converted {converted}, buggy {buggy}"
+        );
+    }
+
+    /// K-1 parity: the helper's filtered form (verification path) applies the
+    /// SAME unit conversion - no feeder may differ.
+    #[test]
+    fn k1_filtered_helper_uses_the_same_conversion() {
+        let mut engine = DiagnosticEngine::new();
+        let mut rec = record(vec![("dns", LayerResult::Ok, None)]);
+        rec.timestamp_ms = 1_700_000_000_123;
+        observe_diagnostic_probes_matching(&mut engine, &rec, |id| id == "tcp-connect");
+        assert_eq!(engine.previous_timestamp, None, "filtered-out probes must not observe");
+        observe_diagnostic_probes_matching(&mut engine, &rec, |_| true);
+        assert_eq!(engine.previous_timestamp, Some(1_700_000_000));
+    }
+
+    /// K-1 / mission section 3: zero elapsed time is an identity predict (the
+    /// engine's own contract), exercised through the helper.
+    #[test]
+    fn k1_zero_elapsed_time_is_an_identity_predict() {
+        let mut engine = DiagnosticEngine::new();
+        let base = 1_700_000_000_000u64;
+        let mut fail = record(vec![("tcp", LayerResult::Failed, None)]);
+        fail.timestamp_ms = base;
+        observe_diagnostic_probes(&mut engine, &fail);
+        let (_, before) = engine.diagnosis().expect("posterior");
+        let mut again = record(vec![("tcp", LayerResult::Failed, None)]);
+        again.timestamp_ms = base; // same millisecond -> same second -> delta 0
+        observe_diagnostic_probes(&mut engine, &again);
+        let (_, after) = engine.diagnosis().expect("posterior");
+        assert!(after >= before, "zero-delta confirmations must not weaken: {before} -> {after}");
+    }
 
     #[test]
     fn host_port_parses_https() {
