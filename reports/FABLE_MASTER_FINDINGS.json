@@ -611,7 +611,59 @@
    "fix": "deferred: harmonize units inside diagnosis.rs (N5 hygiene) — call-site resolution documented in N1_01",
    "dependencies": [],
    "verification": "unit analysis in reports/N1_01_BAYESIAN_ENGINE_INTEGRATION_MAP.md",
-   "status": "OPEN",
+   "status": "PARTIALLY RESOLVED",
+   "confidence": "high",
+   "resolution_evidence": "N1.2 (d46ece9): the ms->seconds conversion now lives at ONE canonical boundary (observe_diagnostic_probes[_matching], monitor.rs); both production feeders route through it - the investigation path committed, the manual health-check path (concurrent author WIP, commands/nani.rs) converted in its working tree, commit pending with that author. Regression tests: k1_* suite incl. the comparative tripwire (converted ~0.42 vs buggy ~0.24 over ten confirming probes). STILL OPEN: the engine-internal unit ambiguity (delta_seconds calibration vs CORRELATION_WINDOW_MS in ms) - engine untouched by design; a newtype (Seconds/Timestamp wrapper) is the durable fix, deferred to N5 hygiene."
+  },
+  {
+   "id": "N1R-K2",
+   "severity": "MEDIUM",
+   "category": "nani/runtime",
+   "files": [
+    "src-tauri/src/network_intelligence/investigation.rs (InvestigationManager::start)"
+   ],
+   "evidence": "N1_REVIEW_01: cap check and active.insert were in separate lock acquisitions; simultaneous starts could transiently exceed MAX_ACTIVE_INVESTIGATIONS.",
+   "root_cause": "admission split across two critical sections",
+   "impact": "concurrency cap was not a hard invariant under simultaneous starts",
+   "fix": "check + id allocation + reservation now ONE critical section in start()",
+   "dependencies": [],
+   "verification": "k2_hundred_simultaneous_starts_never_exceed_the_cap: 100 barrier-synchronized starts admit exactly 4, 96 honest rejections, active count == cap, allocator total exact; 4 repeat runs green; full suite 552/0 x3",
+   "status": "RESOLVED",
+   "confidence": "high"
+  },
+  {
+   "id": "N1R-K3",
+   "severity": "MEDIUM",
+   "category": "nani/ux-truth",
+   "files": [
+    "src-tauri/src/network_intelligence/investigation.rs (verify_result_text)"
+   ],
+   "evidence": "N1_REVIEW_01: a reproduced failure (implicated layer failed again) was worded \"not verified; treat as uncertain\" - the opposite of what the measurement demonstrated.",
+   "root_cause": "verified boolean (layer Ok) conflated \"failure did not reproduce\" with \"hypothesis unverified\"",
+   "impact": "users were told a confirmed failure was unconfirmed, undermining trust in real diagnoses",
+   "fix": "pure three-way mapping verify_result_text: reproduced (supports the hypothesis, not root-cause proof) / not-reproduced (challenges; posterior updated) / unmeasured (absence of verification is not success); floor precedence preserved",
+   "dependencies": [],
+   "verification": "k3_case_a/b/c/d + boundary tests; event schema and verified boolean unchanged; frontend renders the backend string",
+   "status": "RESOLVED",
+   "confidence": "high"
+  },
+  {
+   "id": "N1R-K1",
+   "severity": "HIGH",
+   "category": "nani/runtime",
+   "files": [
+    "src-tauri/src/commands/nani.rs (~L313 manual health-check engine feed - concurrent author WIP)",
+    "src-tauri/src/network_intelligence/api_intelligence/monitor.rs (observe_diagnostic_probes boundary)"
+   ],
+   "evidence": "N1_REVIEW_01: the manual health-check feeder supplied ms deltas to the seconds-calibrated predict (5s gap erased ~99% of the shared state.math posterior).",
+   "root_cause": "second production feeder bypassed the unit conversion; no single owner of the boundary",
+   "impact": "nani_math diagnosis could not accumulate evidence across manual checks",
+   "fix": "canonical boundary observe_diagnostic_probes[_matching] owns the conversion (committed, d46ece9); the manual-check call site converted in its working tree (one line + rationale), commit pending with the concurrent author",
+   "dependencies": [
+    "NANI-022"
+   ],
+   "verification": "k1_* suite (5 tests) incl. the comparative ms-bug tripwire; caller map in N1_2_01 section 1 (exactly two production feeders); full suite 552/0 x3 with the working-tree edit in place",
+   "status": "RESOLVED IN WORKING TREE - COMMIT PENDING CONCURRENT AUTHOR",
    "confidence": "high"
   }
  ]
