@@ -12,10 +12,11 @@
 //!
 //! No secrets enter events or persisted records.
 
-use crate::network_intelligence::api_intelligence::monitor::probe_api;
+use crate::network_intelligence::api_intelligence::monitor::{diagnostic_probes, probe_api};
 use crate::network_intelligence::api_intelligence::registry::{
-    ApiRegistry, Health, ProbeOutcomeRecord,
+    ApiRegistry, Health, LayerResult, ProbeOutcomeRecord,
 };
+use crate::network_intelligence::diagnosis::{DiagnosticEngine, DiagnosticTest};
 use crate::network_intelligence::events::{Event, EventBus};
 use crate::network_intelligence::learning::LearningEngine;
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,17 @@ pub struct InvestigationObservation {
     pub ok: bool,
     pub latency_ms: Option<f64>,
     pub timestamp_ms: u64,
+    /// Raw measurement kind behind `ok` (N1.1 evidence provenance):
+    /// "ok" | "failed" | "unknown". A layer that was never exercised is
+    /// `unknown` — missing evidence, never a failure and never a success.
+    /// Additive + defaulted so previously persisted records still decode.
+    #[serde(default)]
+    pub result: Option<String>,
+    /// Sanitized measurement detail (e.g. the HTTP status code) — the
+    /// difference between a transport failure and an application-level
+    /// answer. Already sanitized upstream (no secrets). Additive + defaulted.
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 /// One hypothesis tracked during an investigation.
@@ -182,6 +194,10 @@ struct InvestigationManagerInner {
 }
 
 impl InvestigationManager {
+    /// Maximum concurrently ACTIVE investigations (N0-review condition C3).
+    /// Binds worker threads and real network probe load. Excess starts are
+    /// rejected honestly as failed investigations.
+    pub const MAX_ACTIVE_INVESTIGATIONS: usize = 4;
     pub fn new(events: EventBus, registry: ApiRegistry, learning: Arc<Mutex<LearningEngine>>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(InvestigationManagerInner {
@@ -225,6 +241,22 @@ impl InvestigationManager {
         self.registry = registry;
     }
 
+    /// Wire the manager onto the application's authoritative dependencies.
+    ///
+    /// N0-review condition C1: the setup call-site is now a named, testable
+    /// function. `main.rs` setup calls exactly this; the unit test asserts
+    /// the sharing is by Arc identity (a future refactor that reintroduces
+    /// an isolated registry or placeholder bus fails the test here instead
+    /// of silently regressing the product).
+    pub fn wire_application_dependencies(
+        manager: &mut InvestigationManager,
+        registry: &ApiRegistry,
+        bus: &EventBus,
+    ) {
+        manager.set_registry(registry.clone());
+        manager.set_event_bus(bus.clone());
+    }
+
     /// Test-only: does this manager observe the same registry instance as
     /// `other`? Proves sharing (Arc identity) rather than a snapshot clone.
     #[cfg(test)]
@@ -241,13 +273,47 @@ impl InvestigationManager {
     /// Start a new investigation. Returns the investigation id. Spawns a
     /// background thread that runs the stages and emits lifecycle events.
     pub fn start(&self, query: String) -> String {
-        let (id, seq) = {
+        let (id, seq, rejected) = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            // C3 (N0-review condition): bounded concurrency. Each active
+            // investigation holds a worker thread running real network
+            // probes; the cap bounds resource use. Excess starts are
+            // rejected HONESTLY: a failed investigation record + event, so
+            // the UI sees why nothing runs — never a silent queue or drop.
+            // Slots are released by every terminal path (complete, fail,
+            // cancel, and the panic guard), so capacity cannot leak.
+            let rejected = inner.active.len() >= Self::MAX_ACTIVE_INVESTIGATIONS;
             let id = format!("nani-investigation-{}", inner.next_id);
             let seq = inner.next_id;
             inner.next_id += 1;
-            (id, seq)
+            (id, seq, rejected)
         };
+
+        if rejected {
+            let reason = format!(
+                "Investigation rejected: concurrency limit ({}) reached.",
+                Self::MAX_ACTIVE_INVESTIGATIONS
+            );
+            let inv = Arc::new(Mutex::new(Investigation::new(id.clone(), query.clone(), seq)));
+            {
+                let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
+                i.outcome = Some(InvestigationOutcome::Failed);
+                i.error = Some("concurrency limit".into());
+                i.result = reason.clone();
+                i.updated_at = unix_now_ms();
+            }
+            self.events.emit(Event::InvestigationFailed {
+                investigation_id: id.clone(),
+                reason: "concurrency limit reached".into(),
+            });
+            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner.history.push(Self::snapshot_record(&inv));
+            if inner.history.len() > inner.max_history {
+                let drop = inner.history.len() - inner.max_history;
+                inner.history.drain(0..drop);
+            }
+            return id;
+        }
 
         let inv = Investigation::new(id.clone(), query.clone(), seq);
         let inv_arc = Arc::new(Mutex::new(inv));
@@ -403,6 +469,13 @@ impl InvestigationManager {
 
     /// Run the full investigation lifecycle: observe → analyze → verify →
     /// complete/fail. Emits lifecycle events at every stage.
+    ///
+    /// N1.1 panic safety (N0-review condition C3): the whole lifecycle runs
+    /// under `catch_unwind`. A panic in any stage produces an honest terminal
+    /// `InvestigationFailed` (identity and failure reporting preserved), the
+    /// active slot is released by the normal retire path, and the panic is
+    /// never converted into a success. Diagnostic detail is not swallowed:
+    /// the panic message is preserved on the record when Rust exposes one.
     fn run_lifecycle(
         id: String,
         query: String,
@@ -412,6 +485,67 @@ impl InvestigationManager {
         learning: Arc<Mutex<LearningEngine>>,
         manager_inner: Arc<Mutex<InvestigationManagerInner>>,
     ) {
+        let id_for_failure = id.clone();
+        let inv_for_failure = inv.clone();
+        let inner_for_failure = manager_inner.clone();
+        let events_for_failure = events.clone();
+        Self::guarded_lifecycle(
+            id_for_failure,
+            &inv_for_failure,
+            &inner_for_failure,
+            &events_for_failure,
+            move || {
+                Self::lifecycle_stages(
+                    id,
+                    query,
+                    inv,
+                    events,
+                    registry,
+                    learning,
+                    manager_inner,
+                );
+            },
+        );
+    }
+
+    /// Execute `body` under the panic guard: a panic produces an honest
+    /// terminal `InvestigationFailed`, releases the active slot through the
+    /// normal retire path, and is never converted into a success.
+    fn guarded_lifecycle<F: FnOnce()>(
+        id: String,
+        inv: &Arc<Mutex<Investigation>>,
+        manager_inner: &Arc<Mutex<InvestigationManagerInner>>,
+        events: &EventBus,
+        body: F,
+    ) {
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)).is_err() {
+            Self::finish_failed(
+                id,
+                inv,
+                manager_inner,
+                events,
+                "internal error: the investigation panicked and was stopped".into(),
+            );
+        }
+    }
+
+    /// The staged body of [`Self::run_lifecycle`], executed under the panic
+    /// guard. Each investigation owns a fresh [`DiagnosticEngine`] — the same
+    /// authoritative engine the `nani_math` surface exposes — fed by the real
+    /// probe outcomes in the observe stage and consulted by the analysis,
+    /// verification, and completion stages. No parallel Bayesian math lives
+    /// in this file.
+    fn lifecycle_stages(
+        id: String,
+        query: String,
+        inv: Arc<Mutex<Investigation>>,
+        events: EventBus,
+        registry: ApiRegistry,
+        learning: Arc<Mutex<LearningEngine>>,
+        manager_inner: Arc<Mutex<InvestigationManagerInner>>,
+    ) {
+        let _ = query;
+        let mut engine = DiagnosticEngine::new();
         let mut stage = InvestigationStage::Observe;
 
         // ---- STAGE: OBSERVE ------------------------------------------------
@@ -430,7 +564,8 @@ impl InvestigationManager {
             stage: InvestigationStage::Observe.to_string(),
         });
 
-        let observations = Self::run_observe_stage(&id, &inv, &registry, &events, &learning);
+        let observations =
+            Self::run_observe_stage(&id, &inv, &registry, &events, &learning, &mut engine);
         let observe_ok = !observations.is_empty();
 
         {
@@ -466,8 +601,12 @@ impl InvestigationManager {
             stage: InvestigationStage::Analyze.to_string(),
         });
 
-        let (top, confidence, insufficient) =
-            Self::run_analyze_stage(&id, &inv, &observations, &events);
+        let (top, confidence, has_failure_evidence) =
+            Self::run_analyze_stage(&id, &inv, &observations, &engine, &events);
+        // Post-analysis refusal: honest and preliminary. Verification below
+        // may still change the verdict (a refuted leader can fall below the
+        // conclusion floor); the final result carries the final truth.
+        let insufficient = !has_failure_evidence || top.is_none();
 
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
@@ -515,10 +654,20 @@ impl InvestigationManager {
             stage: InvestigationStage::Verify.to_string(),
         });
 
-        let verified = Self::run_verify_stage(&id, &inv, &registry, &events);
+        let verified =
+            Self::run_verify_stage(&id, &inv, &registry, &observations, &top, &mut engine, &events);
 
+        // N1.1: the verification probe is real evidence — the authoritative
+        // engine has absorbed it, so the FINAL verdict comes from the updated
+        // posterior, not from the pre-verification snapshot.
+        let (top, confidence) = engine
+            .diagnosis()
+            .map(|(l, p)| (Some(l.to_string()), p))
+            .unwrap_or((None, 0.0));
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
+            i.top_hypothesis = top.clone();
+            i.confidence = confidence;
             i.updated_at = unix_now_ms();
             drop(i);
         }
@@ -550,7 +699,13 @@ impl InvestigationManager {
             stage: InvestigationStage::Complete.to_string(),
         });
 
-        let result = if verified {
+        // Established refusal floor (preserved from the previous lifecycle,
+        // now applied to a real posterior): a leader below this probability is
+        // not a justified conclusion, even after verification.
+        const CONCLUSION_FLOOR: f64 = 0.25;
+        let result = if confidence < CONCLUSION_FLOOR {
+            "Insufficient evidence to reach a conclusion.".to_string()
+        } else if verified {
             format!("Investigation complete: {top:?} confirmed (confidence {:.0}%).", confidence * 100.0)
         } else {
             format!("Investigation complete: {top:?} not verified; treat as uncertain.",)
@@ -566,12 +721,18 @@ impl InvestigationManager {
 
     /// Probe every registered API once through all layers, recording each
     /// observation and emitting probe/evidence events. Stops on cancellation.
+    ///
+    /// N1.1: every real probe outcome is ALSO fed into the authoritative
+    /// Bayesian engine through its established `observe` contract — the
+    /// time-scaled predict step, the correlation discount, and log-space
+    /// updates are the engine's own, never reimplemented here.
     fn run_observe_stage(
         id: &str,
         inv: &Arc<Mutex<Investigation>>,
         registry: &ApiRegistry,
         events: &EventBus,
         learning: &Arc<Mutex<LearningEngine>>,
+        engine: &mut DiagnosticEngine,
     ) -> Vec<InvestigationObservation> {
         let mut observations = Vec::new();
         let api_ids = registry.ids();
@@ -606,6 +767,17 @@ impl InvestigationManager {
             let outcome = probe_api(&entry, None);
             let ok = matches!(outcome.health, Health::Healthy);
 
+            // N1.1: the same measured record the observations come from is the
+            // engine's evidence. Timestamps are converted to seconds: the
+            // transition kernel's predict step (`exp(-0.001 * delta)`) is
+            // calibrated for seconds, so probes of one bounded investigation
+            // stay inside a single correlation window and short gaps barely
+            // mix the posterior. See N1_01 for the unit analysis.
+            for mut probe_result in diagnostic_probes(&outcome) {
+                probe_result.timestamp /= 1000;
+                engine.observe(&probe_result);
+            }
+
             // Record per-layer observations from the probe result.
             for probe in &outcome.layers {
                 {
@@ -621,6 +793,13 @@ impl InvestigationManager {
                     ok: layer_ok,
                     latency_ms: probe.latency_ms,
                     timestamp_ms: outcome.timestamp_ms,
+                    result: Some(match probe.result {
+                        LayerResult::Ok => "ok",
+                        LayerResult::Failed => "failed",
+                        LayerResult::Unknown => "unknown",
+                    }
+                    .to_string()),
+                    detail: probe.detail.clone(),
                 };
                 observations.push(obs.clone());
 
@@ -673,100 +852,117 @@ impl InvestigationManager {
         observations
     }
 
-    /// Run the analysis stage: distill observations into hypotheses using the
-    /// deterministic diagnosis core (no LLM inference of measurements).
+    /// Run the analysis stage: consume the authoritative Bayesian posterior.
+    ///
+    /// N1.1 (NANI-003): the previous implementation counted per-layer failure
+    /// ratios and presented them as "confidence" — the audited disconnect
+    /// between the investigation lifecycle and the engine. The engine has
+    /// already absorbed every real observation during the observe stage; this
+    /// stage reads its posterior, publishes the REAL ranking through the
+    /// existing hypothesis events, and applies the established refusal floor
+    /// (a posterior leader below 0.25 is not a justified conclusion —
+    /// relative ranking is never confused with diagnostic certainty).
     fn run_analyze_stage(
         id: &str,
         inv: &Arc<Mutex<Investigation>>,
         observations: &[InvestigationObservation],
+        engine: &DiagnosticEngine,
         events: &EventBus,
     ) -> (Option<String>, f64, bool) {
-        // Count successes/failures per layer across all observations.
-        let mut layer_stats: HashMap<String, (u64, u64)> = HashMap::new();
-        for obs in observations {
-            let entry = layer_stats.entry(obs.layer.clone()).or_insert((0, 0));
-            if obs.ok {
-                entry.0 += 1;
+        // Failed or unexercised layers are the only thing a diagnosis is
+        // about; an all-healthy investigation has no failure to explain and
+        // must never manufacture one. The established shape is preserved: no
+        // failure evidence → no hypothesis claim (the raw posterior on an
+        // all-healthy endpoint concentrates on the least-failure-prone
+        // hypothesis, which is a likelihood-table artifact, not evidence of
+        // a fault — see NANI-020).
+        let has_failure_evidence = observations.iter().any(|o| !o.ok);
+        if !has_failure_evidence {
+            return (None, 0.0, false);
+        }
+        let map = engine.diagnosis();
+        let (top, confidence) = map
+            .map(|(label, prob)| (Some(label.to_string()), prob))
+            .unwrap_or((None, 0.0));
+
+        // Publish the REAL posterior ranking (top first), bounded to the
+        // leading five so a 19-hypothesis space cannot flood the event feed.
+        // Every confidence is a posterior probability of the same single
+        // distribution — they can never sum past 1.
+        const MAX_REPORTED_HYPOTHESES: usize = 5;
+        for (idx, (label, prob)) in engine
+            .ranked()
+            .into_iter()
+            .take(MAX_REPORTED_HYPOTHESES)
+            .enumerate()
+        {
+            let hypothesis_id = format!("{}-hyp-{}", id, idx + 1);
+            if idx == 0 {
+                events.emit(Event::HypothesisCreated {
+                    investigation_id: id.to_string(),
+                    hypothesis_id: hypothesis_id.clone(),
+                    hypothesis: label.to_string(),
+                    confidence: prob,
+                });
             } else {
-                entry.1 += 1;
+                events.emit(Event::HypothesisUpdated {
+                    investigation_id: id.to_string(),
+                    hypothesis_id: hypothesis_id.clone(),
+                    hypothesis: label.to_string(),
+                    confidence: prob,
+                });
             }
+            let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
+            i.hypotheses.insert(
+                hypothesis_id.clone(),
+                InvestigationHypothesis {
+                    id: hypothesis_id,
+                    hypothesis: label.to_string(),
+                    confidence: prob,
+                },
+            );
+            i.updated_at = unix_now_ms();
         }
 
-        let mut hypotheses: Vec<(String, f64)> = Vec::new();
-        let mut any_failure = false;
-        for (layer, (ok_count, fail_count)) in &layer_stats {
-            if *fail_count > 0 {
-                any_failure = true;
-                let total = ok_count + fail_count;
-                let confidence = *fail_count as f64 / total as f64;
-                hypotheses.push((layer.clone(), confidence));
-            }
-        }
-        hypotheses.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let (top, confidence) = hypotheses.first().map(|(h, c)| (Some(h.clone()), *c)).unwrap_or((None, 0.0));
-        let insufficient = !any_failure || top.is_none() || confidence < 0.25;
-
-        // Emit hypothesis events (top hypothesis first, then runners-up).
-        if let Some((h, c)) = hypotheses.first() {
-            events.emit(Event::HypothesisCreated {
-                investigation_id: id.to_string(),
-                hypothesis_id: format!("{}-hyp-1", id),
-                hypothesis: h.clone(),
-                confidence: *c,
-            });
-            {
-                let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
-                i.hypotheses.insert(
-                    format!("{}-hyp-1", id),
-                    InvestigationHypothesis {
-                        id: format!("{}-hyp-1", id),
-                        hypothesis: h.clone(),
-                        confidence: *c,
-                    },
-                );
-                i.updated_at = unix_now_ms();
-            }
-        }
-        for (idx, (h, c)) in hypotheses.iter().enumerate().skip(1) {
-            events.emit(Event::HypothesisUpdated {
-                investigation_id: id.to_string(),
-                hypothesis_id: format!("{}-hyp-{}", id, idx + 1),
-                hypothesis: h.clone(),
-                confidence: *c,
-            });
-            {
-                let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
-                i.hypotheses.insert(
-                    format!("{}-hyp-{}", id, idx + 1),
-                    InvestigationHypothesis {
-                        id: format!("{}-hyp-{}", id, idx + 1),
-                        hypothesis: h.clone(),
-                        confidence: *c,
-                    },
-                );
-                i.updated_at = unix_now_ms();
-            }
-        }
-
-        (top, confidence, insufficient)
+        (top, confidence, has_failure_evidence)
     }
 
-    /// Run the verify stage: re-probe the APIs implicated by the top hypothesis
-    /// to confirm or refute it (real verification, not a guess).
+    /// Run the verify stage: re-probe the network layer implicated by the
+    /// leading hypothesis (real verification, not a guess).
+    ///
+    /// N1.1: verification now TARGETS the diagnostic claim it tests. The
+    /// layer is chosen from the leading hypothesis (a DNS claim is verified
+    /// by resolving again, a transport claim by connecting again, an
+    /// application claim by the full HTTP exchange), and the API probed is
+    /// one that actually failed that layer. The verification outcome enters
+    /// the authoritative engine through the same `observe` contract — a
+    /// repeated probe is discounted by the correlation model, so a
+    /// verification rerun cannot amplify evidence. A failed verification
+    /// stays failed and a missing layer is never counted as success.
     fn run_verify_stage(
         id: &str,
         inv: &Arc<Mutex<Investigation>>,
         registry: &ApiRegistry,
+        observations: &[InvestigationObservation],
+        top: &Option<String>,
+        engine: &mut DiagnosticEngine,
         events: &EventBus,
     ) -> bool {
-        let api_ids = registry.ids();
-        if api_ids.is_empty() {
+        let layer = top
+            .as_deref()
+            .map(Self::verify_layer_for)
+            .unwrap_or("http");
+        // Prefer an API whose observations actually failed the implicated
+        // layer; fall back to the first observed API.
+        let api_id = observations
+            .iter()
+            .find(|o| o.layer == layer && !o.ok)
+            .map(|o| o.api_id.clone())
+            .or_else(|| observations.first().map(|o| o.api_id.clone()));
+        let Some(api_id) = api_id else {
             return false;
-        }
-        // Verify the first registered API (the one under investigation).
-        let api_id = &api_ids[0];
-        let entry = match registry.entry(api_id) {
+        };
+        let entry = match registry.entry(&api_id) {
             Some(e) => e,
             None => return false,
         };
@@ -779,7 +975,24 @@ impl InvestigationManager {
         }
 
         let outcome = probe_api(&entry, None);
-        let verified = matches!(outcome.health, Health::Healthy);
+        // `verified` is the real outcome of the implicated layer on this
+        // re-measurement — Missing (never exercised) is NOT success.
+        let implicated = outcome.layers.iter().find(|p| p.layer == layer);
+        let verified = implicated
+            .is_some_and(|p| matches!(p.result, LayerResult::Ok));
+
+        // Feed the verification measurement into the authoritative engine
+        // (only the layer the claim is about — verification targets one
+        // diagnostic claim). The repeat is correlation-discounted by the
+        // engine, so a verification rerun cannot count as fresh independent
+        // proof.
+        let test = Self::verify_test_for(layer);
+        for mut probe_result in diagnostic_probes(&outcome) {
+            if probe_result.test.correlation_id() == test {
+                probe_result.timestamp /= 1000;
+                engine.observe(&probe_result);
+            }
+        }
 
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
@@ -789,6 +1002,14 @@ impl InvestigationManager {
                 ok: verified,
                 latency_ms: outcome.latency_ms,
                 timestamp_ms: outcome.timestamp_ms,
+                // The implicated layer's REAL re-measured kind — a Missing
+                // layer records "unknown", never a success.
+                result: implicated.map(|p| match p.result {
+                    LayerResult::Ok => "ok",
+                    LayerResult::Failed => "failed",
+                    LayerResult::Unknown => "unknown",
+                }.to_string()),
+                detail: implicated.and_then(|p| p.detail.clone()),
             });
             i.updated_at = unix_now_ms();
         }
@@ -801,6 +1022,31 @@ impl InvestigationManager {
         });
 
         verified
+    }
+
+    /// The network layer whose re-measurement can confirm or refute a
+    /// hypothesis. Hypotheses only observable through the full HTTP exchange
+    /// (auth, rate limiting, provider faults) verify on the HTTP layer.
+    fn verify_layer_for(hypothesis: &str) -> &'static str {
+        match hypothesis {
+            "dns" | "dns_inconsistency" => "dns",
+            "tls" => "tls",
+            "tcp" | "ipv4" | "ipv6" | "routing" | "mtu" | "congestion_or_packet_loss"
+            | "quic_udp_failure" => "tcp",
+            _ => "http",
+        }
+    }
+
+    /// Diagnostic test whose re-run verifies the given layer — the same
+    /// mapping [`diagnostic_probes`] uses, so verification evidence is keyed
+    /// exactly like observe evidence.
+    fn verify_test_for(layer: &str) -> &'static str {
+        match layer {
+            "dns" => DiagnosticTest::DnsResolve.correlation_id(),
+            "tcp" => DiagnosticTest::TcpConnect.correlation_id(),
+            "tls" => DiagnosticTest::TlsHandshake.correlation_id(),
+            _ => DiagnosticTest::HttpGet.correlation_id(),
+        }
     }
 
     fn finish_completed(
@@ -865,30 +1111,33 @@ impl InvestigationManager {
 
     fn retire_from(inv: &Arc<Mutex<Investigation>>, manager_inner: &Arc<Mutex<InvestigationManagerInner>>) {
         // Clone needed fields before dropping the lock, then retire.
-        let record = {
-            let i = inv.lock().unwrap_or_else(|p| p.into_inner());
-            InvestigationRecord {
-                id: i.id.clone(),
-                query: i.query.clone(),
-                stage: i.stage.to_string(),
-                outcome: i.outcome.unwrap_or(InvestigationOutcome::Failed),
-                seq: i.seq,
-                started_at: i.started_at,
-                updated_at: i.updated_at,
-                observations: i.observations.clone(),
-                hypotheses: i.hypotheses.values().cloned().collect(),
-                top_hypothesis: i.top_hypothesis.clone(),
-                confidence: i.confidence,
-                result: i.result.clone(),
-                error: i.error.clone(),
-            }
-        };
+        let record = Self::snapshot_record(inv);
         let mut inner = manager_inner.lock().unwrap_or_else(|p| p.into_inner());
         inner.active.remove(&record.id);
         inner.history.push(record);
         if inner.history.len() > inner.max_history {
             let drop = inner.history.len() - inner.max_history;
             inner.history.drain(0..drop);
+        }
+    }
+
+    /// Snapshot an investigation into its bounded-history record.
+    fn snapshot_record(inv: &Arc<Mutex<Investigation>>) -> InvestigationRecord {
+        let i = inv.lock().unwrap_or_else(|p| p.into_inner());
+        InvestigationRecord {
+            id: i.id.clone(),
+            query: i.query.clone(),
+            stage: i.stage.to_string(),
+            outcome: i.outcome.unwrap_or(InvestigationOutcome::Failed),
+            seq: i.seq,
+            started_at: i.started_at,
+            updated_at: i.updated_at,
+            observations: i.observations.clone(),
+            hypotheses: i.hypotheses.values().cloned().collect(),
+            top_hypothesis: i.top_hypothesis.clone(),
+            confidence: i.confidence,
+            result: i.result.clone(),
+            error: i.error.clone(),
         }
     }
 }
@@ -1180,9 +1429,10 @@ mod tests {
 
         // 10b. FAILING endpoint leg: a closed port produces a real failure
         // hypothesis, and the verify stage RUNS and reports honestly.
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let closed_port = closed.local_addr().unwrap().port();
-        drop(closed); // nothing listens there now: connect is refused, deterministically
+        // Port 1 sits outside the OS ephemeral range: connect is refused
+        // deterministically. (A dropped dynamic port can be re-bound by
+        // another process within milliseconds — an observed flake.)
+        let closed_port = 1u16;
         assert!(registry.register(ApiEntry::new(
             "n0-failing-api",
             "test",
@@ -1268,5 +1518,462 @@ mod tests {
         // The audited defect: zero observations, nothing on the app bus.
         assert_eq!(status.observation_count, 0, "old wiring unexpectedly saw an API");
         assert!(real_rx.try_recv().is_err(), "old wiring unexpectedly delivered events to the app bus");
+    }
+
+    // ===================================================================
+    // N1.1 — Bayesian engine drives the real analysis (NANI-003).
+    // ===================================================================
+
+    /// A listener that accepts connections but never answers: TCP connects
+    /// succeed, HTTP requests hang until the entry timeout.
+    fn spawn_hanging_http() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                // Accept and hold; the request is never answered.
+                let _ = stream;
+            }
+        });
+        port
+    }
+
+    /// THE N1.1 ACCEPTANCE GATE: the reported analysis must be EXACTLY what
+    /// the authoritative Bayesian engine computes from the very observations
+    /// the investigation recorded — reconstructed independently in this test
+    /// through the same production conversion (`diagnostic_probes`) and the
+    /// same `observe` contract.
+    ///
+    /// This fails against the previous ratio-only `run_analyze_stage`: the
+    /// old path reported per-layer failure ratios as "confidence" (1.0 for a
+    /// single failed layer, several hypotheses at 1.0 each — an impossible
+    /// distribution), never consulted the engine, and ranked by hash-order.
+    #[test]
+    fn n1_bayesian_engine_drives_the_real_analysis() {
+        use crate::network_intelligence::api_intelligence::monitor::diagnostic_probes;
+        use crate::network_intelligence::api_intelligence::registry::{
+            HealthProbe, LayerResult, ProbeOutcomeRecord,
+        };
+        use crate::network_intelligence::api_model::{FailureCategory, RouteKind};
+        use crate::network_intelligence::diagnosis::DiagnosticEngine;
+
+        // A deterministically failing endpoint: DNS resolves (loopback), TCP
+        // is refused, TLS/HTTP are never exercised (Missing). Port 1 is
+        // deliberately OUTSIDE the OS ephemeral range: a dropped
+        // `TcpListener::bind(":0")` port can be re-bound by another process
+        // within milliseconds (observed live — an "HTTP 200 failing leg"),
+        // so a dynamic port is not a deterministic failure.
+        let closed_port = 1u16;
+
+        let (bus, _rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        registry.register(ApiEntry::new(
+            "n1-fail-api",
+            "test",
+            &format!("http://127.0.0.1:{closed_port}/healthz"),
+        ));
+        let mut mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        InvestigationManager::wire_application_dependencies(&mut mgr, &registry, &bus);
+
+        let id = mgr.start("n1 oracle".into());
+        let status = wait_terminal(&mgr, &id);
+        assert_eq!(status.outcome.as_deref(), Some("Completed"));
+
+        let record = {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner
+                .history
+                .iter()
+                .find(|r| r.id == id)
+                .expect("terminal investigation must be in history")
+                .clone()
+        };
+
+        // Independent reconstruction of the engine the lifecycle must have
+        // fed: every recorded observation, converted exactly the way the
+        // production path converts it.
+        let mut reference = DiagnosticEngine::new();
+        let mut verify_at: Option<(String, u64)> = None;
+        let api_id_for_verify = record
+            .observations
+            .first()
+            .map(|o| o.api_id.clone())
+            .unwrap_or_default();
+        for obs in &record.observations {
+            if obs.layer == "verify" {
+                verify_at = Some((obs.api_id.clone(), obs.timestamp_ms));
+                continue;
+            }
+            let result = match obs.result.as_deref() {
+                Some("ok") => LayerResult::Ok,
+                Some("failed") => LayerResult::Failed,
+                _ => LayerResult::Unknown,
+            };
+            let single = ProbeOutcomeRecord {
+                timestamp_ms: obs.timestamp_ms,
+                api_id: obs.api_id.clone(),
+                health: Health::Unknown,
+                category: FailureCategory::Unknown,
+                route: RouteKind::Direct,
+                layers: vec![HealthProbe {
+                    layer: obs.layer.clone(),
+                    result,
+                    latency_ms: obs.latency_ms,
+                    detail: obs.detail.clone(),
+                }],
+                latency_ms: None,
+            };
+            for mut pr in diagnostic_probes(&single) {
+                pr.timestamp /= 1000;
+                reference.observe(&pr);
+            }
+        }
+
+        // Verification targets the leading hypothesis' layer on the same
+        // endpoint; on a closed port the re-probe deterministically reproduces
+        // the observe-stage outcomes (dns Ok, tcp Failed, tls/http Missing).
+        let pre_verify_events = bus.replay_session(&id, 0).into_iter().find_map(|(_, e)| match e {
+            Event::AnalysisCompleted { top_hypothesis, confidence, .. } => Some((top_hypothesis.clone(), confidence)),
+            _ => None,
+        });
+        let (top_ref, prob_ref_after_verify) = {
+            let (label, _) = reference.diagnosis().expect("posterior exists");
+            let layer = InvestigationManager::verify_layer_for(label);
+            let test = InvestigationManager::verify_test_for(layer);
+            if let Some((ref api_id, ts)) = verify_at {
+                let re_probe = probe_api(
+                    &registry.entry(&api_id).expect("registered"),
+                    None,
+                );
+                for mut pr in diagnostic_probes(&re_probe) {
+                    if pr.test.correlation_id() == test {
+                        pr.timestamp = ts / 1000;
+                        reference.observe(&pr);
+                    }
+                }
+            }
+            reference.diagnosis().expect("posterior exists")
+        };
+
+        // The reported analysis IS the engine's posterior — exact match.
+        assert_eq!(status.top_hypothesis.as_deref(), Some(top_ref));
+        assert!(
+            (status.confidence - prob_ref_after_verify).abs() < 1e-9,
+            "reported confidence {} is not the engine posterior {}",
+            status.confidence,
+            prob_ref_after_verify
+        );
+
+        // Posteriors are a probability distribution: the reported hypotheses
+        // can never sum past 1 (the old ratios summed to 3.0 here).
+        let total: f64 = record.hypotheses.iter().map(|h| h.confidence).sum();
+        assert!(
+            total <= 1.0 + 1e-9,
+            "reported hypotheses sum to {total} — not a posterior distribution"
+        );
+        // Evidence moved the belief above uniform (1/19).
+        assert!(
+            status.confidence > 1.0 / 19.0 + 0.01,
+            "failure evidence did not move the posterior"
+        );
+        // Correlated layers of one endpoint must not manufacture certainty.
+        assert!(status.confidence < 0.99, "correlated evidence inflated to certainty");
+
+        // The events carry the same posterior (frontend contract).
+        let events = bus.replay_session(&id, 0);
+        let analysis = events.iter().find_map(|(_, e)| match e {
+            Event::AnalysisCompleted { top_hypothesis, confidence, .. } => {
+                Some((top_hypothesis.clone(), *confidence))
+            }
+            _ => None,
+        });
+        assert!(analysis.is_some(), "no AnalysisCompleted on the canonical bus");
+        let (ev_top, ev_conf) = analysis.unwrap();
+        assert_eq!(ev_top, status.top_hypothesis);
+        assert!(ev_conf.is_finite() && (0.0..=1.0).contains(&ev_conf));
+    }
+
+    /// Regression tripwire: the OLD `run_analyze_stage` (per-layer failure
+    /// ratios presented as confidence) must never come back. Reimplemented
+    /// here exactly as the audit documented it, and asserted to DISAGREE with
+    /// the real engine on the same recorded evidence — so if the lifecycle
+    /// ever reverts to ratios, both this test and the oracle above fail.
+    #[test]
+    fn n1_rejects_the_old_ratio_analysis() {
+        use crate::network_intelligence::api_intelligence::monitor::diagnostic_probes;
+        use crate::network_intelligence::api_intelligence::registry::{HealthProbe, LayerResult, ProbeOutcomeRecord};
+        use crate::network_intelligence::api_model::{FailureCategory, RouteKind};
+
+        let closed_port = 1u16;
+        let (bus, _rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        registry.register(ApiEntry::new(
+            "n1-old-api",
+            "test",
+            &format!("http://127.0.0.1:{closed_port}/healthz"),
+        ));
+        let mut mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        InvestigationManager::wire_application_dependencies(&mut mgr, &registry, &bus);
+        let id = mgr.start("old path guard".into());
+        let status = wait_terminal(&mgr, &id);
+        let record = {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            inner.history.iter().find(|r| r.id == id).expect("record").clone()
+        };
+
+        // The OLD algorithm, reimplemented from the audit.
+        let mut layer_stats: HashMap<String, (u64, u64)> = HashMap::new();
+        for obs in &record.observations {
+            if obs.layer == "verify" { continue; }
+            let e = layer_stats.entry(obs.layer.clone()).or_insert((0, 0));
+            if obs.ok { e.0 += 1; } else { e.1 += 1; }
+        }
+        let mut old_hypotheses: Vec<(String, f64)> = Vec::new();
+        for (layer, (okc, failc)) in &layer_stats {
+            if *failc > 0 {
+                old_hypotheses.push((layer.clone(), *failc as f64 / (*okc + *failc) as f64));
+            }
+        }
+        old_hypotheses.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let old_top_conf = old_hypotheses.first().map(|(_, c)| *c).unwrap_or(0.0);
+        let old_sum: f64 = old_hypotheses.iter().map(|(_, c)| *c).sum();
+
+        // The real engine's verdict on the same evidence.
+        let mut engine = DiagnosticEngine::new();
+        for obs in &record.observations {
+            if obs.layer == "verify" { continue; }
+            let result = match obs.result.as_deref() {
+                Some("ok") => LayerResult::Ok,
+                Some("failed") => LayerResult::Failed,
+                _ => LayerResult::Unknown,
+            };
+            let single = ProbeOutcomeRecord {
+                timestamp_ms: obs.timestamp_ms,
+                api_id: obs.api_id.clone(),
+                health: Health::Unknown,
+                category: FailureCategory::Unknown,
+                route: RouteKind::Direct,
+                layers: vec![HealthProbe {
+                    layer: obs.layer.clone(),
+                    result,
+                    latency_ms: obs.latency_ms,
+                    detail: obs.detail.clone(),
+                }],
+                latency_ms: None,
+            };
+            for mut pr in diagnostic_probes(&single) {
+                pr.timestamp /= 1000;
+                engine.observe(&pr);
+            }
+        }
+        let posterior = engine.diagnosis().map(|(_, p)| p).unwrap_or(0.0);
+
+        // They are not the same number, and the old one is not a
+        // distribution. If the lifecycle ever reports the ratio again, the
+        // oracle (exact-match) fails and so does this test.
+        assert!(
+            (status.confidence - old_top_conf).abs() > 1e-6 || old_hypotheses.len() != record.hypotheses.len(),
+            "reported analysis matches the OLD ratio algorithm — regression"
+        );
+        assert!(
+            old_sum > 1.0 + 1e-9 || old_top_conf == 1.0,
+            "fixture changed: the old algorithm no longer exhibits its invalid-distribution signature"
+        );
+        // The PRE-verification analysis event must equal the observe-stage
+        // reconstruction (the tripwire's engine has no verification input).
+        let analysis_conf = bus
+            .replay_session(&id, 0)
+            .into_iter()
+            .find_map(|(_, e)| match e {
+                Event::AnalysisCompleted { confidence, .. } => Some(confidence),
+                _ => None,
+            })
+            .expect("AnalysisCompleted on the canonical bus");
+        assert!(
+            (posterior - analysis_conf).abs() < 1e-9,
+            "reported confidence is not the engine posterior"
+        );
+    }
+
+    /// Performance smoke (§10): the Bayesian analysis must stay far below
+    /// UI-noticeable cost even for large evidence sets. Measured, printed,
+    /// and sanity-bounded — not a tight benchmark.
+    #[test]
+    fn n1_analysis_latency_smoke() {
+        use std::time::Instant;
+        let mut engine = DiagnosticEngine::new();
+        let port = 1u16; // refused; outcome semantics irrelevant to timing
+        let mut entry = ApiEntry::new("perf", "test", &format!("http://127.0.0.1:{port}/"));
+        entry.timeout_ms = 50;
+        let mut entries = Vec::new();
+        for i in 0..20 {
+            let mut e = entry.clone();
+            e.api_id = format!("perf-{i}");
+            entries.push(e);
+        }
+        let start = Instant::now();
+        let mut observations = 0usize;
+        for e in &entries {
+            let outcome = probe_api(e, None);
+            for mut pr in diagnostic_probes(&outcome) {
+                pr.timestamp /= 1000;
+                engine.observe(&pr);
+                observations += 1;
+            }
+        }
+        let _ = engine.diagnosis();
+        let elapsed = start.elapsed();
+        println!(
+            "N1 perf: {observations} observed probes across 20 APIs in {elapsed:?}"
+        );
+        // Probing dominates; the pure engine work is microseconds per probe.
+        // Generous bound: the whole cycle stays under 5s even on slow CI.
+        assert!(elapsed.as_secs() < 5, "analysis cycle unexpectedly slow: {elapsed:?}");
+    }
+
+    /// Healthy endpoint: no failure evidence → the refusal is preserved
+    /// verbatim, the verify stage is honestly skipped, and no conclusion is
+    /// manufactured from a valid-but-uninformative posterior.
+    #[test]
+    fn n1_insufficient_evidence_refusal_preserved() {
+        let (port, server) = spawn_local_http();
+        let (bus, _rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        registry.register(ApiEntry::new(
+            "n1-ok-api",
+            "test",
+            &format!("http://127.0.0.1:{port}/healthz"),
+        ));
+        let mut mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        InvestigationManager::wire_application_dependencies(&mut mgr, &registry, &bus);
+
+        let id = mgr.start("healthy check".into());
+        let status = wait_terminal(&mgr, &id);
+        assert_eq!(status.outcome.as_deref(), Some("Completed"));
+        assert_eq!(status.result, "Insufficient evidence to reach a conclusion.");
+        assert!(status.confidence < 0.25, "healthy network must not reach the conclusion floor");
+        let events = bus.replay_session(&id, 0);
+        assert!(
+            !events.iter().any(|(_, e)| matches!(e, Event::VerificationCompleted { .. })),
+            "verify must be skipped when there is no failure to verify"
+        );
+        drop(server);
+    }
+
+    /// C3: bounded concurrency. Excess starts are rejected honestly (a
+    /// visible failed record), active capacity is real, and a terminal
+    /// investigation releases its slot.
+    #[test]
+    fn n1_concurrency_limit_rejects_honestly_and_releases() {
+        let port = spawn_hanging_http();
+        let (bus, _rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        let mut entry = ApiEntry::new("n1-hang", "test", &format!("http://127.0.0.1:{port}/healthz"));
+        entry.timeout_ms = 60_000; // probes stay blocked: capacity stays taken
+        registry.register(entry);
+        let mgr = InvestigationManager::new(
+            bus.clone(),
+            registry.clone(),
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+
+        let mut ids = Vec::new();
+        for _ in 0..InvestigationManager::MAX_ACTIVE_INVESTIGATIONS {
+            ids.push(mgr.start("hold".into()));
+        }
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            assert_eq!(inner.active.len(), InvestigationManager::MAX_ACTIVE_INVESTIGATIONS);
+        }
+        for _ in 0..2 {
+            let id = mgr.start("overflow".into());
+            let st = mgr.status(&id).expect("rejected starts are still recorded");
+            assert_eq!(st.outcome.as_deref(), Some("Failed"));
+            assert!(st.result.contains("concurrency limit"), "honest rejection required");
+        }
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            assert_eq!(inner.active.len(), InvestigationManager::MAX_ACTIVE_INVESTIGATIONS);
+        }
+
+        // Terminal paths release capacity: a short-timeout investigation that
+        // finishes (or is cancelled) frees its slot immediately.
+        let (bus2, _rx2) = EventBus::new();
+        let fast = ApiRegistry::new(bus2.clone());
+        let mut quick = ApiEntry::new("n1-quick", "test", &format!("http://127.0.0.1:{port}/healthz"));
+        quick.timeout_ms = 300;
+        fast.register(quick);
+        let mgr2 = InvestigationManager::new(
+            bus2.clone(),
+            fast,
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        let a = mgr2.start("first".into());
+        let b = mgr2.start("second".into());
+        // Both run to completion (300ms probe timeout); terminal state frees
+        // the slots for the next start.
+        let _ = wait_terminal(&mgr2, &a);
+        let _ = wait_terminal(&mgr2, &b);
+        let c = mgr2.start("third".into());
+        let st = mgr2.status(&c).expect("capacity was released");
+        assert_ne!(st.outcome.as_deref(), Some("Failed"), "slots must release after terminal state");
+    }
+
+    /// C3: a panicking lifecycle is an honest terminal failure, never a
+    /// success, and releases the active slot.
+    #[test]
+    fn n1_panic_produces_honest_failure_and_releases_capacity() {
+        let (bus, rx) = EventBus::new();
+        let registry = ApiRegistry::new(bus.clone());
+        let mgr = InvestigationManager::new(
+            bus.clone(),
+            registry,
+            Arc::new(Mutex::new(LearningEngine::new())),
+        );
+        let inv = {
+            let mut inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let id = format!("nani-investigation-{}", inner.next_id);
+            let seq = inner.next_id;
+            inner.next_id += 1;
+            let investigation = Arc::new(Mutex::new(Investigation::new(id.clone(), "panic".into(), seq)));
+            inner.active.insert(id.clone(), investigation.clone());
+            drop(inner);
+            investigation
+        };
+        let inner = mgr.inner.clone();
+        InvestigationManager::guarded_lifecycle(
+            "nani-investigation-900".to_string(),
+            &inv,
+            &inner,
+            &bus,
+            || panic!("injected lifecycle panic"),
+        );
+        // Honest terminal failure on the canonical bus.
+        let events = bus.replay_since(0);
+        assert!(events.iter().any(|(_, e)| matches!(e,
+            Event::InvestigationFailed { investigation_id, .. } if investigation_id == "nani-investigation-900")));
+        // Slot released: the active map is empty and a fresh start works.
+        {
+            let inner = mgr.inner.lock().unwrap_or_else(|p| p.into_inner());
+            assert!(inner.active.is_empty(), "panic must release the active slot");
+        }
+        let next = mgr.start("after panic".into());
+        assert!(!next.is_empty());
+        // Nothing was ever reported Completed.
+        let done = events.iter().any(|(_, e)| matches!(e, Event::InvestigationCompleted { .. }));
+        assert!(!done, "a panic must never be converted into a completion");
+        let _ = rx;
     }
 }

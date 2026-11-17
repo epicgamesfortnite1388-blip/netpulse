@@ -428,12 +428,13 @@ fn main() {
                 // registrations are visible), `set_event_bus` shares one
                 // sequence space and replay buffer. This runs before the
                 // monitor loop and before any UI can start an investigation.
-                {
-                    let mut investigations = nani_state.investigations.lock().unwrap();
-                    investigations
-                        .set_registry(nani_state.registry.lock().unwrap().clone());
-                    investigations.set_event_bus(nani_bus.clone());
-                }
+                //
+                // N1.1 (C1): the call-site is a named, unit-tested function.
+                network_intelligence::investigation::InvestigationManager::wire_application_dependencies(
+                    &mut nani_state.investigations.lock().unwrap(),
+                    &nani_state.registry.lock().unwrap(),
+                    &nani_bus,
+                );
 
                 // Spawn the live monitor loop: polls each registered API,
                 // respects circuit breakers, applies bounded retries with
