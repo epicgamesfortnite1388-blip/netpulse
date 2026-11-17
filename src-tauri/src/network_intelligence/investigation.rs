@@ -273,7 +273,11 @@ impl InvestigationManager {
     /// Start a new investigation. Returns the investigation id. Spawns a
     /// background thread that runs the stages and emits lifecycle events.
     pub fn start(&self, query: String) -> String {
-        let (id, seq, rejected) = {
+        // K-2 (N1-review): the cap check AND the active-slot insert must be
+        // one critical section. Two lock acquisitions left a window where two
+        // simultaneous starts could both pass the check and both insert,
+        // transiently exceeding the cap.
+        let (id, seq, rejected, inv_arc) = {
             let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             // C3 (N0-review condition): bounded concurrency. Each active
             // investigation holds a worker thread running real network
@@ -286,7 +290,17 @@ impl InvestigationManager {
             let id = format!("nani-investigation-{}", inner.next_id);
             let seq = inner.next_id;
             inner.next_id += 1;
-            (id, seq, rejected)
+            if rejected {
+                (id, seq, true, None)
+            } else {
+                let inv_arc = Arc::new(Mutex::new(Investigation::new(
+                    id.clone(),
+                    query.clone(),
+                    seq,
+                )));
+                inner.active.insert(id.clone(), inv_arc.clone());
+                (id, seq, false, Some(inv_arc))
+            }
         };
 
         if rejected {
@@ -315,12 +329,7 @@ impl InvestigationManager {
             return id;
         }
 
-        let inv = Investigation::new(id.clone(), query.clone(), seq);
-        let inv_arc = Arc::new(Mutex::new(inv));
-        {
-            let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-            inner.active.insert(id.clone(), inv_arc.clone());
-        }
+        let inv_arc = inv_arc.expect("non-rejected start must hold a slot");
 
         // Emit the started event.
         self.events.emit(Event::InvestigationStarted {
@@ -654,8 +663,12 @@ impl InvestigationManager {
             stage: InvestigationStage::Verify.to_string(),
         });
 
-        let verified =
+        let (verified, failure_reproduced) =
             Self::run_verify_stage(&id, &inv, &registry, &observations, &top, &mut engine, &events);
+        // K-3 (N1-review): for a failure hypothesis, a re-measured failure is
+        // a REPRODUCTION (the strongest confirmation), a passing layer is a
+        // refutation, and an unmeasured layer stays unverified. The prose
+        // must not call a reproduced failure "unverified".
 
         // N1.1: the verification probe is real evidence — the authoritative
         // engine has absorbed it, so the FINAL verdict comes from the updated
@@ -705,10 +718,18 @@ impl InvestigationManager {
         const CONCLUSION_FLOOR: f64 = 0.25;
         let result = if confidence < CONCLUSION_FLOOR {
             "Insufficient evidence to reach a conclusion.".to_string()
+        } else if failure_reproduced {
+            // K-3: a re-measured failure is a REPRODUCTION — the strongest
+            // confirmation available for a failure hypothesis. Never call it
+            // "unverified".
+            format!("Investigation complete: {top:?} reproduced on re-measurement (confidence {:.0}%); failure confirmed.", confidence * 100.0)
         } else if verified {
-            format!("Investigation complete: {top:?} confirmed (confidence {:.0}%).", confidence * 100.0)
+            // The implicated layer passed on re-measurement: the failure did
+            // not reproduce. The leader may still hold the posterior (flaky
+            // faults do), so the verdict stays uncertain, stated honestly.
+            format!("Investigation complete: {top:?} not reproduced on re-measurement (confidence {:.0}%); treat as uncertain.", confidence * 100.0)
         } else {
-            format!("Investigation complete: {top:?} not verified; treat as uncertain.",)
+            format!("Investigation complete: {top:?} not verified (implicated layer unmeasured); treat as uncertain.",)
         };
         {
             let mut i = inv.lock().unwrap_or_else(|p| p.into_inner());
@@ -930,6 +951,11 @@ impl InvestigationManager {
     /// Run the verify stage: re-probe the network layer implicated by the
     /// leading hypothesis (real verification, not a guess).
     ///
+    /// Returns `(verified, failure_reproduced)`: `verified` — the implicated
+    /// layer re-measured Ok (the failure did NOT reproduce);
+    /// `failure_reproduced` — the implicated layer failed again, which for a
+    /// failure hypothesis is confirmation, never an "unverified" outcome.
+    ///
     /// N1.1: verification now TARGETS the diagnostic claim it tests. The
     /// layer is chosen from the leading hypothesis (a DNS claim is verified
     /// by resolving again, a transport claim by connecting again, an
@@ -947,7 +973,7 @@ impl InvestigationManager {
         top: &Option<String>,
         engine: &mut DiagnosticEngine,
         events: &EventBus,
-    ) -> bool {
+    ) -> (bool, bool) {
         let layer = top
             .as_deref()
             .map(Self::verify_layer_for)
@@ -960,17 +986,17 @@ impl InvestigationManager {
             .map(|o| o.api_id.clone())
             .or_else(|| observations.first().map(|o| o.api_id.clone()));
         let Some(api_id) = api_id else {
-            return false;
+            return (false, false);
         };
         let entry = match registry.entry(&api_id) {
             Some(e) => e,
-            None => return false,
+            None => return (false, false),
         };
 
         {
             let i = inv.lock().unwrap_or_else(|p| p.into_inner());
             if i.is_cancelled() {
-                return false;
+                return (false, false);
             }
         }
 
@@ -980,6 +1006,8 @@ impl InvestigationManager {
         let implicated = outcome.layers.iter().find(|p| p.layer == layer);
         let verified = implicated
             .is_some_and(|p| matches!(p.result, LayerResult::Ok));
+        let failure_reproduced = implicated
+            .is_some_and(|p| matches!(p.result, LayerResult::Failed));
 
         // Feed the verification measurement into the authoritative engine
         // (only the layer the claim is about — verification targets one
@@ -1021,7 +1049,7 @@ impl InvestigationManager {
             source: format!("verify:{api_id}"),
         });
 
-        verified
+        (verified, failure_reproduced)
     }
 
     /// The network layer whose re-measurement can confirm or refute a
