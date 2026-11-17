@@ -145,7 +145,7 @@ async function run() {
   check('invalid source URL rejected', badSource2.status === 400, `status=${badSource2.status}`);
 
   const export404 = await api('GET', '/nodes/export?nodeIds=nope&format=uri');
-  check('export unknown node => empty/error', export404.status === 200 || export404.status === 404, `status=${export404.status}`);
+  check('export retired => 410 Gone (configs are never served)', export404.status === 410, `status=${export404.status}`);
 
   // ---------- iran ----------
   const iranCatalog = await api('GET', '/iran/catalog');
