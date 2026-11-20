@@ -77,10 +77,10 @@ const SHOTS = [
   { id: '01-dashboard', route: '/', label: 'Dashboard' },
   { id: '02-vpn', route: '/vpn', label: 'VPN & engines' },
   { id: '03-nani-overview', route: '/nani', label: 'NANI overview' },
-  { id: '04-nani-hypotheses', route: '/nani', label: 'NANI hypotheses', after: 'nani:hypotheses' },
-  { id: '05-nani-evidence', route: '/nani', label: 'NANI evidence', after: 'nani:evidence' },
-  { id: '06-nani-live', route: '/nani', label: 'NANI live events', after: 'nani:live' },
-  { id: '07-nani-network', route: '/nani', label: 'NANI network', after: 'nani:network' },
+  { id: '04-nani-hypotheses', route: '/nani', label: 'NANI hypotheses', after: 'nani:hypotheses', detail: 3 },
+  { id: '05-nani-evidence', route: '/nani', label: 'NANI evidence', after: 'nani:evidence', detail: 3 },
+  { id: '06-nani-live', route: '/nani', label: 'NANI live events', after: 'nani:live', detail: 3 },
+  { id: '07-nani-network', route: '/nani', label: 'NANI network', after: 'nani:network', detail: 3 },
   { id: '08-copilot', route: '/copilot', label: 'Copilot' },
   { id: '09-nodes', route: '/nodes', label: 'Nodes' },
   { id: '10-settings', route: '/settings', label: 'Settings' },
@@ -256,9 +256,9 @@ async function main() {
       // before the tab can be clicked; on VPN the active engine decides how deep
       // the page can go, so the tab must be clicked before Expert can be offered.
       // Applying the level, switching tab, then applying it again satisfies both.
-      const applyDetail = async () => {
-        if (!DETAIL) return;
-        const wanted = Number(DETAIL) - 1;
+      const applyDetail = async ({ strict }) => {
+        if (!shotDetail) return;
+        const wanted = Number(shotDetail) - 1;
         const res = (await send('Runtime.evaluate', {
           expression: `(() => {
             const group = document.querySelector('[role="radiogroup"][aria-label="Detail level"]');
@@ -271,7 +271,11 @@ async function main() {
           returnByValue: true,
         })).result.value;
         if (!res.ok) {
-          process.stderr.write(`ui-capture: detail level ${DETAIL} could not be selected on ${shot.route} (${res.reason})\n`);
+          // Before the tab switch the requested depth may not be reachable yet —
+          // the default engine may be shallower than the one being captured. That
+          // is expected, so it is only fatal on the authoritative second pass.
+          if (!strict) return;
+          process.stderr.write(`ui-capture: detail level ${shotDetail} could not be selected on ${shot.route} (${res.reason})\n`);
           process.exit(1);
         }
         // React commits on a later tick: the read-back below is what proves the
@@ -279,7 +283,12 @@ async function main() {
         await sleep(350);
       };
 
-      await applyDetail();
+      // A shot may need a level the CLI flag does not name: NANI's non-overview
+      // tabs do not exist at Essential, so a tab shot has to state the level it
+      // requires. `--detail` remains the default for every other shot.
+      const shotDetail = shot.detail != null ? String(shot.detail) : DETAIL;
+
+      await applyDetail({ strict: false });
 
       const tabWanted = shot.after?.startsWith('nani:') ? shot.after.slice(5) : TAB || null;
       if (tabWanted) {
@@ -296,7 +305,14 @@ async function main() {
             if (btns.length === 0) return { error: 'no tabs on this route' };
             const hit = btns.find(b => (b.textContent || '').toLowerCase().includes(want));
             if (!hit) return { error: btns.map(b => b.textContent.trim()).join('|') };
+            // The rail scrolls horizontally below the lg breakpoint, so a trigger
+            // can be present in the DOM while sitting outside the viewport. A
+            // press at its centre would then land on whatever is actually there,
+            // and the run would report the tab as clicked while the surface never
+            // changed. Bring it into view, then measure.
+            hit.scrollIntoView({ block: 'center', inline: 'center' });
             const r = hit.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return { error: 'tab has no box: ' + hit.textContent.trim() };
             return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), label: hit.textContent.trim() };
           })()`,
           returnByValue: true,
@@ -306,9 +322,28 @@ async function main() {
           for (const type of ['mousePressed', 'mouseReleased']) {
             await send('Input.dispatchMouseEvent', { type, x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
           }
+          await sleep(400);
+          // Dispatching a press is not evidence that the tab switched. Read back
+          // which tab is actually selected; a screenshot labelled with a surface
+          // it is not showing is the same silent no-op as a mislabelled scale.
+          const active = (await send('Runtime.evaluate', {
+            expression: `(() => {
+              const on = [...document.querySelectorAll('[role="tablist"] [role="tab"]')]
+                .filter(b => b.getAttribute('aria-selected') === 'true')
+                .map(b => b.textContent.trim());
+              return on;
+            })()`,
+            returnByValue: true,
+          })).result.value;
+          const wanted = tab.toLowerCase();
+          if (!active.some((t) => t.toLowerCase().includes(wanted))) {
+            process.stderr.write(`ui-capture: tab "${tab}" did not activate on ${shot.route} (selected: ${active.join('|') || 'none'})\n`);
+            process.exit(1);
+          }
           process.stdout.write(`      [tab] ${pt.label}\n`);
         } else {
-          process.stdout.write(`      [tab] not found: ${JSON.stringify(pt)}\n`);
+          process.stderr.write(`ui-capture: tab "${tab}" not found on ${shot.route}: ${JSON.stringify(pt)}\n`);
+          process.exit(1);
         }
         await sleep(1200);
       }
@@ -316,7 +351,7 @@ async function main() {
       // Second application, after the tab switch: the active engine or tab can
       // change how deep this page goes, and the level must be settled before the
       // read-back below is treated as proof.
-      await applyDetail();
+      await applyDetail({ strict: true });
 
       // Read back what the page actually resolved, so a selector that matched
       // nothing shows up in the manifest instead of in a wrong screenshot.
@@ -342,8 +377,8 @@ async function main() {
         process.stderr.write(`ui-capture: text scale did not apply (--type-scale resolved to ${applied.typeScale})\n`);
         process.exit(1);
       }
-      if (DETAIL && applied.detailLevel !== Number(DETAIL)) {
-        process.stderr.write(`ui-capture: detail level ${DETAIL} did not apply on ${shot.route} (resolved ${applied.detailLevel})\n`);
+      if (shotDetail && applied.detailLevel !== Number(shotDetail)) {
+        process.stderr.write(`ui-capture: detail level ${shotDetail} did not apply on ${shot.route} (resolved ${applied.detailLevel})\n`);
         process.exit(1);
       }
 
