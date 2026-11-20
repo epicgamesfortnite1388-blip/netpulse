@@ -53,7 +53,15 @@ export interface ProxyCoreMeta {
   shortLabel: string;
   tagline: string;
   description: string;
-  /** Tailwind gradient for the engine glyph. */
+  /**
+   * Tailwind gradient + text colour for the engine glyph.
+   *
+   * Each engine gets a distinct `--color-proto-*` identity so the glyph is a
+   * scanning cue, not decoration: the same tint always means the same engine.
+   * `--color-proto-violet` is deliberately unused here — violet belongs to the
+   * Aether subsystem, and vmess already owns that token in the node list, so
+   * reusing it for an engine would make Aether ambiguous next to its siblings.
+   */
   glyph: string;
   /** Solid colour for canvas / accent fills. */
   color: string;
@@ -88,7 +96,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Reference V2Ray core',
     description:
       'The modern reference core. Best fidelity for Reality and XTLS, and the default choice when no engine preference is set.',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-sky/25 to-proto-sky/5 text-proto-sky',
     color: '#38bdf8',
     protocols: sharedProtocols('xray'),
     strengths: ['Reality & XTLS', 'xhttp transport', 'Can be a chain exit hop'],
@@ -103,7 +111,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Universal protocol core',
     description:
       'The widest protocol coverage of the three cores, and the only one that can dial UDP-based protocols (hysteria2, tuic) or run legacy Shadowsocks ciphers.',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-cyan/25 to-proto-cyan/5 text-proto-cyan',
     color: '#e879f9',
     protocols: sharedProtocols('sing-box'),
     strengths: ['hysteria2 & tuic (UDP)', 'Every Shadowsocks cipher', 'Can be a chain exit hop'],
@@ -118,7 +126,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Original V2Ray (v2fly)',
     description:
       'The original V2Ray core. Some legacy vmess / vless configurations only run here, so it is kept as a third option rather than dropped.',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-indigo/25 to-proto-indigo/5 text-proto-indigo',
     color: '#34d399',
     protocols: sharedProtocols('v2ray'),
     strengths: ['Legacy vmess / vless compatibility', 'Independent implementation of the same schema'],
@@ -138,7 +146,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: "Hysteria2's own client",
     description:
       'The hysteria2 project\u2019s own client binary, so a hysteria2 node can be reached without sing-box installed \u2014 and a hysteria2 measurement can be checked against an independent implementation. It dials hysteria2 and nothing else.',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-orange/25 to-proto-orange/5 text-proto-orange',
     color: '#a78bfa',
     protocols: sharedProtocols('hysteria'),
     strengths: ['The protocol\u2019s own implementation', 'Brutal congestion control from the node\u2019s own bandwidth hints', 'Salamander obfuscation'],
@@ -159,7 +167,11 @@ export interface ManagedProviderMeta {
   id: ManagedProviderId;
   label: string;
   tagline: string;
-  /** Linear gradient + text colour for the glyph. */
+  /**
+   * Linear gradient + text colour for the glyph. Same rule as `PROXY_CORE_META`:
+   * one distinct protocol identity per provider, so the tint carries meaning.
+   * `singbox` shares `sing-box`'s identity on purpose — it is the same core.
+   */
   glyph: string;
   color: string;
   /** How this provider gets its binary — it is never bundled with the app. */
@@ -173,7 +185,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'wireguard',
     label: 'WireGuard',
     tagline: 'Native WireGuard tunnel',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-emerald/25 to-proto-emerald/5 text-proto-emerald',
     color: '#fb7185',
     binaryNote:
       'Driven by the WireGuard for Windows client installed on this machine. On Windows the tunnel is installed through a single per-action UAC prompt — the app never runs anything elevated on its own.',
@@ -183,7 +195,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'openvpn',
     label: 'OpenVPN',
     tagline: 'Native OpenVPN tunnel',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-amber/25 to-proto-amber/5 text-proto-amber',
     color: '#fbbf24',
     binaryNote:
       'Driven by the OpenVPN client installed on this machine. The .ovpn text is parsed and the secrets moved into the encrypted vault before launch.',
@@ -193,7 +205,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'singbox',
     label: 'sing-box (managed tunnel)',
     tagline: 'Share-link tunnel in proxy mode',
-    glyph: 'from-accent/25 to-accent/10 text-accent',
+    glyph: 'from-proto-cyan/25 to-proto-cyan/5 text-proto-cyan',
     color: '#e879f9',
     binaryNote:
       'Uses the app-managed sing-box core installed on this tab — installing the core is what makes this provider available.',
