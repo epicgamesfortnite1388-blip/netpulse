@@ -92,6 +92,83 @@ full suite (220 trials) cross-fitted: ECE 0.146 -> 0.074
 - **Result:** full-suite ECE 0.146 → **0.074** (−49%), Brier 0.189 → 0.180, log loss unchanged within
   noise (0.542 vs 0.536), on held-out trials only. The transform is monotone, so no diagnosis changes:
   only the confidence attached to it.
+## Success evidence and the residual state (2026-11-16)
+
+**Symptom:** a health check where every probed layer succeeded raised `dns` and
+`dns_inconsistency` by roughly 30 percentage points in the Hypothesis tab.
+
+**Root cause:** the hypothesis space had no state meaning "no fault evidenced". `Unknown`
+existed but carried ordinary fault-like failure signatures (0.20-0.30 per test), so it never
+represented health. Every success therefore had to hand its probability to *some* fault
+hypothesis, and the winner was whichever fault hides best from good news. Reproduced on a
+healthy multi-API sequence before the fix: the leader became `ipv6` at 52-75% and `unknown`
+sat at 0.16-0.22, i.e. the engine answered "something is wrong" to a working network. The
+time-decay step was ruled out: `predict` mixes toward a uniform stationary distribution and
+is invariant on a uniform prior at 0 ms / 60 s / 3 min.
+
+**Fix:** `LikelihoodTable::signature` now gives `Unknown` a 0.02 failure probability on every
+test, making it the explicit residual state. Successes concentrate there and the fault
+hypotheses decay. On the same healthy sequence the leader is now `unknown` at 87-90% with
+every fault near zero, and `dns` / `dns_inconsistency` do not move up.
+
+Pinned by two tests in `diagnosis`:
+
+- `a_healthy_probe_round_does_not_raise_failure_hypotheses` — the four-layer healthy round
+  from the report (dns, tcp, tls, http), asserting neither DNS hypothesis rises.
+- `a_fully_healthy_round_makes_no_fault_more_likely` — all eight tests succeed, asserting the
+  residual state becomes dominant (> 0.5) and is the MAP.
+
+**Consequence for calibration numbers in this document.** Diagnosis accuracy per condition is
+unchanged (dns 0.70, tcp 0.70, tls 1.00, gateway 1.00, ...), and proper scoring rules improve
+(Brier 0.189 -> 0.172, log loss 0.539 -> 0.512). The 10-bin ECE does not: it moved from
+0.179 -> 0.048 before this change to 0.178 -> 0.171 after, because healthy evidence now
+compresses the spread of raw confidences and fewer distinct values fit into 10 bins. The stale
+absolute bars (0.146) were replaced by relative assertions on Brier, log loss and cross-fitted
+ECE, which is what the earlier figures in this document were really standing in for.
+
+### Per-condition calibration breakdown (2026-11-16)
+
+`evaluate_calibrated` now also returns `per_condition`, one row per simulator condition on
+the same held-out half (10 trials each here, 5 bins), ordered by that condition's share of
+the aggregate ECE:
+
+```
+    server_failure: n=10 conf=0.487 acc=0.000 gap=+0.487 ECE 0.487 -> 0.684 (share 0.0622)
+   remote_endpoint: n=10 conf=0.488 acc=0.000 gap=+0.488 ECE 0.488 -> 0.654 (share 0.0594)
+               tcp: n=10 conf=0.534 acc=0.700 gap=-0.166 ECE 0.581 -> 0.485 (share 0.0441)
+    upstream_proxy: n=10 conf=0.459 acc=0.900 gap=-0.441 ECE 0.494 -> 0.330 (share 0.0300)
+               dns: n=10 conf=0.398 acc=0.700 gap=-0.302 ECE 0.469 -> 0.247 (share 0.0224)
+      auth_failure: n=10 conf=0.954 acc=1.000 gap=-0.046 ECE 0.046 -> 0.048 (share 0.0044)
+        rate_limit: n=10 conf=0.996 acc=1.000 gap=-0.004 ECE 0.004 -> 0.048 (share 0.0044)
+```
+
+Two findings the aggregate could not show:
+
+- **`server_failure` and `remote_endpoint` are never diagnosed** (0/10 correct) and the map
+  makes them *worse* (ECE 0.487 -> 0.684 and 0.488 -> 0.654). They are the engine's blind
+  spots, not calibration failures; a monotone map fitted across all conditions cannot fix a
+  condition whose label is always wrong, and it actively drags confidence toward the base rate.
+- The genuinely under-confident conditions (`upstream_proxy` 0.46 claimed vs 0.90 right,
+  `routing` 0.59 vs 1.00, `gateway` 0.60 vs 1.00) are pulled up hard by the same map, which is
+  where most of the aggregate gain comes from.
+
+Per-condition ECE is a 10-trial, 5-bin estimate: treat the ordering as a pointer to where to
+look, not as a precise per-condition score. `calibrated_ece_contribution` is `trial_share x
+ECE`, an approximation because the aggregate bins are global.
+
+### Temperature scaling removed (2026-11-16)
+
+`validation::TemperatureScaling` was only ever the comparison baseline in that measurement, never a
+production transform: no live code path fitted or applied it. Keeping it meant shipping a log-loss
+optimiser plus five tests in the statistical module for a method the engine does not use, so it was
+deleted together with `mean_log_loss_at`, the five `temperature_scaling_*` tests, and the
+`temperature` / `temperature_ece` fields of `CalibrationComparison`.
+
+The negative result stays on record here and in code: `IsotonicCalibrator`'s doc comment explains why a
+single global scale factor cannot fit this engine's structural miscalibration, and
+`isotonic_calibration_cuts_held_out_calibration_error` still asserts calibrated ECE below the recorded
+0.146 raw full-suite baseline, so deleting the alternative did not quietly lower the bar.
+
 - **Not yet wired to the UI:** the fitted map comes from simulator trials. Applying it to live posteriors
   needs outcome history from real probes persisted and refitted; hard-coding a simulated `T`/knot set into
   production confidence would be a fabricated number.

@@ -180,96 +180,13 @@ impl CalibrationReport {
     }
 }
 
-/// Post-hoc calibration by temperature scaling.
+/// Recorded real outcomes required before a fitted map replaces the engine's
+/// own confidence.
 ///
-/// `p' = sigmoid(logit(p) / T)`. `T` is fitted by minimizing log loss on
-/// (prediction, outcome) samples that must not be the ones used to measure the
-/// result. The transform is monotone, so it changes how much confidence a
-/// posterior claims without reordering the hypotheses.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TemperatureScaling {
-    temperature: f64,
-}
-
-impl TemperatureScaling {
-    /// Identity transform (T = 1): applies no correction.
-    pub fn identity() -> Self {
-        Self { temperature: 1.0 }
-    }
-
-    /// The fitted temperature. `T > 1` means the raw predictions were
-    /// overconfident and are being shrunk; `T < 1` means the opposite.
-    pub fn temperature(&self) -> f64 {
-        self.temperature
-    }
-
-    /// Fit `T` by minimizing mean log loss over `samples`.
-    ///
-    /// Returns the identity when there is nothing to learn from: an empty set,
-    /// or outcomes that are all the same (log loss is then minimized at an
-    /// extreme `T`, so any fitted value would be noise, not calibration).
-    pub fn fit(samples: &[Prediction]) -> Self {
-        let positives = samples.iter().filter(|p| p.y == 1.0).count();
-        if samples.len() < 2 || positives == 0 || positives == samples.len() {
-            return Self::identity();
-        }
-
-        // Coarse log-spaced sweep (0.2..5.0), then a bounded ternary refine
-        // around the best point: deterministic, dependency-free, and unable to
-        // wander into the flat tails where T -> 0 or T -> infinity.
-        let steps = 120usize;
-        let mut best_t = 1.0;
-        let mut best = f64::INFINITY;
-        for i in 0..=steps {
-            let t = 0.2 * 25.0_f64.powf(i as f64 / steps as f64);
-            let nll = mean_log_loss_at(samples, t);
-            if nll < best {
-                best = nll;
-                best_t = t;
-            }
-        }
-
-        let mut lo = (best_t / 1.25).max(0.05);
-        let mut hi = (best_t * 1.25).min(20.0);
-        for _ in 0..60 {
-            let a = lo + (hi - lo) / 3.0;
-            let b = hi - (hi - lo) / 3.0;
-            if mean_log_loss_at(samples, a) <= mean_log_loss_at(samples, b) {
-                hi = b;
-            } else {
-                lo = a;
-            }
-        }
-        let refined = (lo + hi) / 2.0;
-        let temperature = if mean_log_loss_at(samples, refined) <= best {
-            refined
-        } else {
-            best_t
-        };
-        Self { temperature }
-    }
-
-    /// Calibrated probability for a raw prediction: `sigmoid(logit(p) / T)`.
-    ///
-    /// Monotone in `p` for any fixed `T > 0`, so it reshapes confidence without
-    /// reordering hypotheses.
-    pub fn apply(&self, p: f64) -> f64 {
-        let p = clamp_probability(p);
-        if !self.temperature.is_finite() || (self.temperature - 1.0).abs() < f64::EPSILON {
-            return p;
-        }
-        let logit = (p / (1.0 - p)).ln();
-        crate::network_intelligence::math::sigmoid(logit / self.temperature)
-    }
-
-    /// Apply the transform to every sample, keeping the outcomes.
-    pub fn apply_all(&self, samples: &[Prediction]) -> Vec<Prediction> {
-        samples
-            .iter()
-            .filter_map(|s| Prediction::new(self.apply(s.p), s.y))
-            .collect()
-    }
-}
+/// Below this, a fitted map would mostly memorise a handful of probes, so the
+/// hypothesis view reports the raw posterior and how many outcomes exist
+/// instead of a corrected number.
+pub const MIN_CALIBRATION_SAMPLES: usize = 30;
 
 /// Post-hoc calibration by isotonic regression (pool-adjacent-violators).
 ///
@@ -280,7 +197,7 @@ impl TemperatureScaling {
 /// confidence to observed frequency, so a 40% claim that is right half the time
 /// is corrected upward while a 90% claim that is right 60% of the time is
 /// corrected downward.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct IsotonicCalibrator {
     /// Sorted (raw confidence, calibrated confidence) knots.
     knots: Vec<(f64, f64)>,
@@ -296,7 +213,47 @@ impl IsotonicCalibrator {
         self.knots.is_empty()
     }
 
-    /// Fit the monotone map with weighted PAVA.
+    /// Weighted isotonic regression (pool-adjacent-violators) over points
+    /// already sorted by `x`.
+    ///
+    /// Returns one knot per pooled block at its weight-averaged `x` and `y`, so
+    /// the knots are strictly increasing in `x` and non-decreasing in `y` — the
+    /// property the whole transform exists for.
+    fn pool_adjacent_violators(points: &[(f64, f64, f64)]) -> Vec<(f64, f64)> {
+        // Weighted sums, so a merge is a plain addition.
+        struct Block {
+            x: f64,
+            y: f64,
+            w: f64,
+        }
+        let mut blocks: Vec<Block> = Vec::new();
+        for &(x, y, w) in points {
+            blocks.push(Block {
+                x: x * w,
+                y: y * w,
+                w,
+            });
+            while blocks.len() > 1 {
+                let last = blocks.len() - 1;
+                if blocks[last - 1].y / blocks[last - 1].w <= blocks[last].y / blocks[last].w {
+                    break;
+                }
+                let rhs = blocks.pop().expect("non-empty");
+                let lhs = blocks.pop().expect("non-empty");
+                blocks.push(Block {
+                    x: lhs.x + rhs.x,
+                    y: lhs.y + rhs.y,
+                    w: lhs.w + rhs.w,
+                });
+            }
+        }
+        blocks
+            .iter()
+            .map(|b| (b.x / b.w, b.y / b.w))
+            .collect()
+    }
+
+    /// Fit the monotone map.
     ///
     /// Fewer than two distinct confidences, or a single outcome value, leave
     /// nothing to fit: the identity is returned rather than a step that would
@@ -309,59 +266,40 @@ impl IsotonicCalibrator {
         let mut sorted: Vec<Prediction> = samples.to_vec();
         sorted.sort_by(|a, b| a.p.partial_cmp(&b.p).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Each block keeps its own x values so a merged block can be placed at
-        // the mean confidence it actually covers.
-        struct Block {
-            xs: Vec<f64>,
-            sum_y: f64,
-        }
-        impl Block {
-            fn mean_y(&self) -> f64 {
-                self.sum_y / self.xs.len() as f64
-            }
-            fn mean_x(&self) -> f64 {
-                self.xs.iter().sum::<f64>() / self.xs.len() as f64
-            }
-        }
-
-        let mut blocks: Vec<Block> = Vec::new();
+        // One point per distinct confidence: repeated `p` values are the same
+        // prediction, and two knots at one `x` with different `y` would make
+        // `apply` depend on knot order.
+        let mut grouped: Vec<(f64, f64, f64)> = Vec::new(); // (x, hits, count)
         for s in &sorted {
-            blocks.push(Block {
-                xs: vec![s.p],
-                sum_y: s.y,
-            });
-            while blocks.len() > 1 {
-                let last = blocks.len() - 1;
-                if blocks[last - 1].mean_y() <= blocks[last].mean_y() {
-                    break;
+            match grouped.last_mut() {
+                Some(last) if last.0 == s.p => {
+                    last.1 += s.y;
+                    last.2 += 1.0;
                 }
-                let rhs = blocks.pop().expect("non-empty");
-                let lhs = blocks.pop().expect("non-empty");
-                let mut xs = lhs.xs;
-                xs.extend(rhs.xs);
-                blocks.push(Block {
-                    xs,
-                    sum_y: lhs.sum_y + rhs.sum_y,
-                });
+                _ => grouped.push((s.p, s.y, 1.0)),
             }
         }
 
-        // Shrink each block toward the base rate with a small Beta prior. A
-        // block with 0 hits out of 3 must not claim certainty: unsmoothed
-        // isotonic produces exactly 0/1 and makes log loss explode on the very
-        // samples it was supposed to fix. Shrinking by the same base rate for
-        // every block keeps the fitted map monotone.
+        // Shrink each confidence's hit rate toward the base rate with a small
+        // Beta prior before pooling. A point with 0 hits out of 3 must not claim
+        // certainty: unsmoothed isotonic outputs exactly 0/1 and makes log loss
+        // explode on the very samples it is supposed to fix. Shrinking first and
+        // pooling after is what keeps the result monotone — smoothing fitted
+        // block means instead does not, because the shrink weight depends on the
+        // block size and can invert the order of neighbouring blocks.
         let base_rate = positives as f64 / samples.len() as f64;
         let prior_weight = 2.0;
-        let knots: Vec<(f64, f64)> = blocks
-            .iter()
-            .map(|b| {
-                let n = b.xs.len() as f64;
-                let smoothed = (b.sum_y + prior_weight * base_rate) / (n + prior_weight);
-                (b.mean_x().clamp(0.0, 1.0), smoothed.clamp(0.0, 1.0))
+        let points: Vec<(f64, f64, f64)> = grouped
+            .into_iter()
+            .map(|(x, hits, n)| {
+                let smoothed = (hits + prior_weight * base_rate) / (n + prior_weight);
+                (x, smoothed.clamp(0.0, 1.0), n + prior_weight)
             })
             .collect();
-        Self { knots }
+
+        Self {
+            knots: Self::pool_adjacent_violators(&points),
+        }
     }
 
     /// Calibrated confidence for `p`, interpolating between fitted knots and
@@ -383,9 +321,8 @@ impl IsotonicCalibrator {
             let (x0, y0) = pair[0];
             let (x1, y1) = pair[1];
             if p >= x0 && p <= x1 {
-                if (x1 - x0).abs() < f64::EPSILON {
-                    return y1;
-                }
+                // Knots are distinct in `x` (duplicates are pooled), so this
+                // cannot divide by zero.
                 let t = (p - x0) / (x1 - x0);
                 return y0 + t * (y1 - y0);
             }
@@ -400,16 +337,6 @@ impl IsotonicCalibrator {
             .filter_map(|s| Prediction::new(self.apply(s.p), s.y))
             .collect()
     }
-}
-
-fn mean_log_loss_at(samples: &[Prediction], temperature: f64) -> f64 {
-    let scaler = TemperatureScaling { temperature };
-    let mut acc = 0.0;
-    for s in samples {
-        let p = scaler.apply(s.p);
-        acc += if s.y == 1.0 { p.ln() } else { (1.0 - p).ln() };
-    }
-    -acc / samples.len() as f64
 }
 
 /// Perfectly calibrated predictor: p_i == frequency of y_i in its bin.
@@ -514,70 +441,6 @@ mod tests {
     }
 
     #[test]
-    fn temperature_scaling_shrinks_overconfidence() {
-        // Predictions claim 0.9 but only half of them are right.
-        let mut samples = Vec::new();
-        for i in 0..100 {
-            samples.push(Prediction::new(0.9, if i % 2 == 0 { 1.0 } else { 0.0 }).unwrap());
-        }
-        let scaler = TemperatureScaling::fit(&samples);
-        assert!(scaler.temperature() > 1.0, "T = {}", scaler.temperature());
-        let calibrated = scaler.apply(0.9);
-        assert!(calibrated < 0.9, "calibrated {calibrated} should shrink");
-        assert!(calibrated > 0.5, "calibrated {calibrated} should stay above chance");
-    }
-
-    #[test]
-    fn temperature_scaling_expands_underconfidence() {
-        // Predictions claim 0.6 but nine in ten are right.
-        let mut samples = Vec::new();
-        for i in 0..100 {
-            samples.push(Prediction::new(0.6, if i % 10 == 0 { 0.0 } else { 1.0 }).unwrap());
-        }
-        let scaler = TemperatureScaling::fit(&samples);
-        assert!(scaler.temperature() < 1.0, "T = {}", scaler.temperature());
-        assert!(scaler.apply(0.6) > 0.6);
-    }
-
-    #[test]
-    fn temperature_scaling_reduces_fit_log_loss() {
-        let mut samples = Vec::new();
-        for i in 0..200 {
-            let p = if i % 3 == 0 { 0.85 } else { 0.4 };
-            samples.push(Prediction::new(p, if i % 4 == 0 { 0.0 } else { 1.0 }).unwrap());
-        }
-        let before = log_loss(&samples).unwrap();
-        let scaler = TemperatureScaling::fit(&samples);
-        let after = log_loss(&scaler.apply_all(&samples)).unwrap();
-        assert!(after <= before, "log loss {before:.4} -> {after:.4}");
-    }
-
-    #[test]
-    fn temperature_scaling_is_monotone() {
-        let scaler = TemperatureScaling::fit(&[
-            Prediction::new(0.8, 1.0).unwrap(),
-            Prediction::new(0.8, 0.0).unwrap(),
-            Prediction::new(0.3, 0.0).unwrap(),
-        ]);
-        let low = scaler.apply(0.2);
-        let mid = scaler.apply(0.5);
-        let high = scaler.apply(0.9);
-        assert!(low < mid && mid < high, "{low} {mid} {high}");
-    }
-
-    #[test]
-    fn temperature_scaling_identity_cases() {
-        // No fitted temperature without both outcomes present.
-        let all_hits = [Prediction::new(0.7, 1.0).unwrap()];
-        assert_eq!(TemperatureScaling::fit(&all_hits).temperature(), 1.0);
-        assert_eq!(TemperatureScaling::fit(&[]).temperature(), 1.0);
-        // Identity leaves a prediction untouched and keeps 0/1 finite.
-        let id = TemperatureScaling::identity();
-        assert!((id.apply(0.37) - 0.37).abs() < 1e-12);
-        assert!(id.apply(0.0).is_finite() && id.apply(1.0).is_finite());
-    }
-
-    #[test]
     fn isotonic_reduces_ece_on_structurally_miscalibrated_data() {
         // Low confidence is too low and high confidence is too high at the same
         // time: no single temperature can fix this, a monotone map can.
@@ -643,6 +506,45 @@ mod tests {
         let high = cal.apply(0.99);
         assert!(low <= high, "{low} > {high}");
         assert!(low.is_finite() && high.is_finite());
+    }
+
+    #[test]
+    fn isotonic_pools_repeated_confidences() {
+        // Three samples claim exactly 0.5 and are right; two of them are a
+        // separate 2-count group. They are one confidence, so they must become
+        // one knot: two knots at the same x would make `apply(0.5)` depend on
+        // which comes first.
+        let mut samples = vec![Prediction::new(0.2, 0.0).unwrap()];
+        for _ in 0..3 {
+            samples.push(Prediction::new(0.5, 1.0).unwrap());
+        }
+        let cal = IsotonicCalibrator::fit(&samples);
+        assert_eq!(cal.knots.len(), 2, "knots: {:?}", cal.knots);
+        // base rate 3/4, prior weight 2: (3 + 2 * 0.75) / (3 + 2) = 0.9.
+        assert!((cal.apply(0.5) - 0.9).abs() < 1e-12, "got {}", cal.apply(0.5));
+    }
+
+    #[test]
+    fn isotonic_stays_monotone_when_blocks_have_different_sizes() {
+        // Shrinking fitted block means toward the base rate is not monotone when
+        // block sizes differ: here smoothing after pooling gives 0.543 at p=0.1
+        // and 0.457 at p=0.5, i.e. a lower raw confidence mapping higher. The
+        // fit must smooth first and pool second.
+        let mut samples = vec![Prediction::new(0.1, 0.0).unwrap()];
+        for i in 0..100 {
+            samples.push(Prediction::new(0.5, if i < 45 { 1.0 } else { 0.0 }).unwrap());
+        }
+        for _ in 0..200 {
+            samples.push(Prediction::new(0.95, 1.0).unwrap());
+        }
+        let cal = IsotonicCalibrator::fit(&samples);
+        let mut previous = 0.0;
+        for i in 0..=100 {
+            let p = i as f64 / 100.0;
+            let mapped = cal.apply(p);
+            assert!(mapped >= previous - 1e-12, "not monotone at {p}: {previous} -> {mapped}");
+            previous = mapped;
+        }
     }
 
     #[test]

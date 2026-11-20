@@ -15,7 +15,9 @@ use crate::network_intelligence::ai::explanation::ExplanationFacts;
 use crate::network_intelligence::ai::{AiStatus, Explanation, LocalLlm};
 use crate::network_intelligence::api_intelligence::monitor::probe_api;
 use crate::network_intelligence::api_intelligence::monitor::diagnostic_probes;
-use crate::network_intelligence::api_intelligence::registry::{ApiRegistry, Health};
+use crate::network_intelligence::api_intelligence::registry::{
+    health_check_event, ApiRegistry, Health,
+};
 use crate::network_intelligence::events::{Event, EventBus};
 use crate::network_intelligence::context::context_identity::ContextSignals;
 use crate::network_intelligence::context::engine::{
@@ -278,6 +280,13 @@ pub fn nani_personalization_delete(
 /// web mode delegates to the same-origin deployment).
 #[tauri::command]
 pub fn nani_health_check_all(state: State<'_, NaniState>) -> Result<String, String> {
+    // Cloned out once: the per-API event must reach the feed even though the
+    // registry lock is held for the duration of the checks.
+    let bus = state
+        .events
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let registry = state.registry.lock().unwrap_or_else(|p| p.into_inner());
     let ids: Vec<String> = registry.ids();
     let mut checked = 0usize;
@@ -289,17 +298,45 @@ pub fn nani_health_check_all(state: State<'_, NaniState>) -> Result<String, Stri
         };
         let outcome = probe_api(&entry, None);
         registry.record_probe(&outcome);
+        // `record_probe` reports transitions only; a check that confirms the
+        // previous verdict still happened, so publish the measurement itself.
+        if let Some(bus) = &bus {
+            bus.emit(health_check_event(&outcome));
+        }
         // Feed the measured layers into the Bayesian diagnosis so priors and
         // posteriors describe real probes instead of staying at the initial
         // uniform distribution forever.
         {
             let probes = diagnostic_probes(&outcome);
-            let mut math = state
-                .math
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            for probe in &probes {
-                math.observe_probe(probe);
+            let mut samples = Vec::new();
+            {
+                let mut math = state
+                    .math
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                for mut probe in probes {
+                    // K-1 (N1-review, NANI-022): the transition kernel's
+                    // predict step is calibrated for SECONDS
+                    // (`mix = exp(-0.001 * delta)`); ms timestamps over-mix
+                    // the posterior (a 5s gap erases ~99% of it). The
+                    // investigation path converts; this path must too.
+                    probe.timestamp /= 1000;
+                    // Each probe completes the pair for the previous one: how
+                    // confident the engine was, and whether the leader survived.
+                    if let Some(sample) = math.observe_probe_recording(&probe) {
+                        samples.push(sample);
+                    }
+                }
+            }
+            // Persist outside the math lock: the engine never does I/O.
+            if !samples.is_empty() {
+                let mut persistence = state
+                    .persistence
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                for (predicted, confirmed) in samples {
+                    persistence.record_calibration_sample(predicted, confirmed);
+                }
             }
         }
         checked += 1;
@@ -459,11 +496,15 @@ pub fn nani_math_select_probe(state: State<'_, NaniState>) -> Option<crate::netw
 /// entropy, and the selected probe's expected information gain.
 #[tauri::command]
 pub fn nani_math_hypothesis_view(state: State<'_, NaniState>) -> HypothesisView {
+    // F-02: recorded samples are self-consistency checks against the same
+    // likelihood table that produced the prediction, not externally observed
+    // outcomes. They stay in persistence for diagnostics, but must never fit
+    // a map that the UI would call empirical calibration.
     state
         .math
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .hypothesis_view()
+        .hypothesis_view_with(None)
 }
 
 /// Sequential stopping rule: should we stop diagnostic testing?

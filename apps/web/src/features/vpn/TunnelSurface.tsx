@@ -30,7 +30,7 @@ export function TunnelSurface() {
     <div className="animate-fade-up">
       <EngineHero
         glyph={
-          <EngineGlyph glyph="from-cyan-500/25 to-sky-400/10 text-cyan-300" size="lg">
+          <EngineGlyph glyph="from-accent/25 to-accent/10 text-accent" size="lg">
             <Route size={24} />
           </EngineGlyph>
         }

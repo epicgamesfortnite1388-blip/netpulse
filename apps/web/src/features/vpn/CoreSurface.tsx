@@ -139,6 +139,7 @@ export function CoreSurface({ engine, children }: { engine: ProxyEngineId; child
         pinned
         id="roles"
         defaultOpen
+        detail={2}
         badge={<Badge tone={available ? 'ok' : 'warn'}>{available ? 'installed' : 'missing binary'}</Badge>}
         summary="Two roles: test public nodes, and carry the proxy tunnel"
         title="What this core does here"
@@ -181,6 +182,7 @@ export function CoreSurface({ engine, children }: { engine: ProxyEngineId; child
         collapsible
         id="protocols"
         defaultOpen={false}
+        detail={3}
         summary={`${meta.protocols.length} of ${ALL_PROTOCOLS.length} protocol families · execution facts and known limits`}
         title="Protocol coverage"
         subtitle="Documented engine support — the picker will not offer a combination that only fails at startup"

@@ -265,6 +265,12 @@ impl LikelihoodTable {
     /// Domain prior for P(probe failure | hypothesis, test). These are
     /// structural judgments, not measured frequencies; `validation` exists to
     /// recalibrate them against captured outcomes.
+    ///
+    /// `Unknown` is the residual "no specific fault evidenced" state and takes
+    /// a small failure probability on every test. Without a residual, a probe
+    /// that succeeds still has to hand its mass to *some* fault hypothesis, and
+    /// the winner is whichever fault hides best from good news — which made a
+    /// fully healthy health check promote a cause instead of clearing one.
     fn signature(test: &DiagnosticTest, h: &Hypothesis) -> f64 {
         use DiagnosticTest::*;
         use Hypothesis::*;
@@ -286,7 +292,7 @@ impl LikelihoodTable {
                 QuicUdpFailure => 0.10,
                 CongestionOrPacketLoss => 0.30,
                 NetworkInterferenceOrFiltering => 0.30,
-                Unknown => 0.20,
+                Unknown => 0.02,
             },
             GatewayPing => match h {
                 Gateway => 0.95,
@@ -303,7 +309,7 @@ impl LikelihoodTable {
                 AuthFailure | RateLimit | ApplicationFailure | ServerFailure => 0.02,
                 CongestionOrPacketLoss => 0.30,
                 NetworkInterferenceOrFiltering => 0.30,
-                Unknown => 0.20,
+                Unknown => 0.02,
             },
             // The `LocalInterface` hypothesis was removed in the 19-hypothesis
             // refactor. A leftover `LocalInterface => ...` arm here was parsed by
@@ -313,6 +319,7 @@ impl LikelihoodTable {
             // surviving lower-layer hypothesis) and is otherwise non-specific.
             InterfaceCheck => match h {
                 Gateway => 0.25,
+                Unknown => 0.02,
                 _ => 0.05,
             },
             TcpConnect => match h {
@@ -333,7 +340,7 @@ impl LikelihoodTable {
                 QuicUdpFailure => 0.40,
                 CongestionOrPacketLoss => 0.30,
                 NetworkInterferenceOrFiltering => 0.30,
-                Unknown => 0.30,
+                Unknown => 0.02,
             },
             TlsHandshake => match h {
                 Tls | Gateway | Tcp => 0.95,
@@ -348,7 +355,7 @@ impl LikelihoodTable {
                 AuthFailure | RateLimit => 0.03,
                 CongestionOrPacketLoss => 0.30,
                 NetworkInterferenceOrFiltering => 0.30,
-                Unknown => 0.25,
+                Unknown => 0.02,
             },
             MtuProbe => match h {
                 Mtu => 0.90,
@@ -363,6 +370,7 @@ impl LikelihoodTable {
                 QuicUdpFailure => 0.40,
                 CongestionOrPacketLoss => 0.80,
                 NetworkInterferenceOrFiltering => 0.50,
+                Unknown => 0.02,
                 _ => 0.08,
             },
             Traceroute => match h {
@@ -374,6 +382,7 @@ impl LikelihoodTable {
                 QuicUdpFailure => 0.40,
                 CongestionOrPacketLoss => 0.80,
                 NetworkInterferenceOrFiltering => 0.50,
+                Unknown => 0.02,
                 _ => 0.15,
             },
             HttpGet => match h {
@@ -394,7 +403,7 @@ impl LikelihoodTable {
                 AuthFailure => 0.02,
                 CongestionOrPacketLoss => 0.30,
                 NetworkInterferenceOrFiltering => 0.40,
-                Unknown => 0.30,
+                Unknown => 0.02,
             },
         }
     }
@@ -666,6 +675,61 @@ impl DiagnosticEngine {
         }
         let updated = bayesian_update(&self.posterior.prior, &evidence);
         self.posterior = updated;
+    }
+
+    /// Update with `result` and report the calibration sample this probe
+    /// completes.
+    ///
+    /// The pair is `(confidence held before the probe, 1.0 if the observed
+    /// outcome was at least as well explained by the leading hypothesis as by
+    /// the rest of the engine's belief, else 0.0)`. A confident leader that the
+    /// next probe contradicts was overconfident, which is the quantity the
+    /// isotonic map is fitted on. Both numbers are measured on probes the engine
+    /// actually observed, so calibration rests on real outcomes rather than on
+    /// simulator trials.
+    ///
+    /// Whether the leader merely *stays* the leader is not used: the transition
+    /// model keeps a dominant hypothesis on top through mildly contrary
+    /// evidence, so that label is almost always 1 and calibrates nothing.
+    /// The first probe has no belief to be confident about and yields `None`.
+    pub fn observe_recording_confirmation(&mut self, result: &ProbeResult) -> Option<(f64, f64)> {
+        // Before the first probe the "leader" is the first hypothesis at uniform
+        // prior: top-of-uniform makes no claim, so it is not a sample.
+        let prior_leader = match (self.previous_timestamp, self.posterior.map()) {
+            (Some(_), Some(idx)) => Some(idx),
+            _ => None,
+        };
+        let sample = prior_leader.map(|leader_index| {
+            let confidence = self.posterior.prob(leader_index);
+            let hypotheses = Hypothesis::all();
+            let explained_by_leader = self.likelihood.log_likelihood(
+                &result.test,
+                &hypotheses[leader_index],
+                &result.outcome,
+            );
+            // Log-likelihoods are averaged under the posterior, so this is "the
+            // leader explains the outcome at least as well as the rest of the
+            // belief". Undiscounted: the correlation weight governs how much the
+            // probe moves the posterior, not how well it was predicted.
+            let explained_by_belief: f64 = hypotheses
+                .iter()
+                .enumerate()
+                .map(|(i, h)| {
+                    self.posterior.prob(i)
+                        * self.likelihood.log_likelihood(&result.test, h, &result.outcome)
+                })
+                .sum();
+            let explained = if explained_by_leader >= explained_by_belief {
+                1.0
+            } else {
+                0.0
+            };
+            (confidence, explained)
+        });
+        // The update always happens: recording a sample must never change what
+        // the engine learns.
+        self.observe(result);
+        sample
     }
 
     /// Evidence weight the next observation of `test` would receive.
@@ -977,6 +1041,172 @@ mod tests {
         let (label, prob) = e.diagnosis().expect("some diagnosis");
         assert_eq!(label, "gateway");
         assert!((prob - 1.0 / n).abs() < 1e-9);
+    }
+
+    #[test]
+    fn observe_records_a_calibration_pair_per_probe() {
+        let mut engine = DiagnosticEngine::new();
+        let mut before_each = Vec::new();
+        let mut samples = Vec::new();
+        // Three blocks of same-test failures: the leader's rule for the observed
+        // outcomes changes between blocks, which is what makes both labels
+        // appear. (The leader itself stays put — the transition model keeps a
+        // dominant hypothesis on top — which is exactly why "still the leader"
+        // is not the label.)
+        let mut sequence: Vec<(DiagnosticTest, u64)> = Vec::new();
+        for (test, count) in [
+            (DiagnosticTest::GatewayPing, 8u64),
+            (DiagnosticTest::DnsResolve, 8),
+            (DiagnosticTest::TlsHandshake, 8),
+        ] {
+            for _ in 0..count {
+                sequence.push((test.clone(), sequence.len() as u64));
+            }
+        }
+
+        for (test, i) in sequence {
+            before_each.push(engine.diagnosis().map(|(_, prob)| prob));
+            let probe = ProbeResult {
+                test: test.clone(),
+                outcome: ProbeOutcome::Failure,
+                timestamp: i + 1,
+                source: "calibration-test".into(),
+                cost: 1.0,
+            };
+            samples.push(engine.observe_recording_confirmation(&probe));
+        }
+
+        // Nothing was pending for the very first probe.
+        assert!(samples[0].is_none(), "first probe must not yield a sample");
+        for (i, sample) in samples.iter().enumerate().skip(1) {
+            let (predicted, confirmed) = sample.expect("every later probe completes a pair");
+            // The prediction is the confidence held BEFORE this probe.
+            assert_eq!(
+                predicted.to_bits(),
+                before_each[i].expect("MAP before probe").to_bits(),
+                "sample {i} must record the pre-probe confidence"
+            );
+            assert!(confirmed == 0.0 || confirmed == 1.0);
+        }
+        // A label that is always the same carries no calibration information.
+        let pairs: Vec<(f64, f64)> = samples.iter().flatten().copied().collect();
+        assert!(
+            pairs.iter().any(|(_, y)| *y == 1.0),
+            "label was never 1: the leader never explained a probe better than the belief"
+        );
+        assert!(
+            pairs.iter().any(|(_, y)| *y == 0.0),
+            "label was never 0: no probe contradicted the leader's explanation"
+        );
+    }
+
+    fn posterior_of(engine: &DiagnosticEngine, label: &str) -> f64 {
+        engine
+            .ranked()
+            .into_iter()
+            .find(|(l, _)| *l == label)
+            .map(|(_, p)| p)
+            .unwrap_or(0.0)
+    }
+
+    #[test]
+    fn a_healthy_probe_round_does_not_raise_failure_hypotheses() {
+        // Exactly what a health check on a working API produces: dns, tcp, tls
+        // and http all succeeded. Success is evidence that those layers are
+        // fine, so it must not make a fault more likely — least of all the one
+        // that is hardest to observe directly.
+        let mut engine = DiagnosticEngine::new();
+        let before_dns = posterior_of(&engine, "dns");
+        let before_inconsistent = posterior_of(&engine, "dns_inconsistency");
+        for (i, test) in [
+            DiagnosticTest::DnsResolve,
+            DiagnosticTest::TcpConnect,
+            DiagnosticTest::TlsHandshake,
+            DiagnosticTest::HttpGet,
+        ]
+        .iter()
+        .enumerate()
+        {
+            engine.observe(&ProbeResult {
+                test: test.clone(),
+                outcome: ProbeOutcome::Success,
+                timestamp: i as u64 + 1,
+                source: "health".into(),
+                cost: 0.0,
+            });
+        }
+        let after_dns = posterior_of(&engine, "dns");
+        let after_inconsistent = posterior_of(&engine, "dns_inconsistency");
+        assert!(
+            after_dns <= before_dns + 1e-12,
+            "an all-success round raised dns: {before_dns:.4} -> {after_dns:.4} (leader {:?})",
+            engine.diagnosis()
+        );
+        assert!(
+            after_inconsistent <= before_inconsistent + 1e-12,
+            "an all-success round raised dns_inconsistency: {before_inconsistent:.4} -> {after_inconsistent:.4}"
+        );
+    }
+
+    #[test]
+    fn a_fully_healthy_round_makes_no_fault_more_likely() {
+        // Every diagnostic test succeeds. The engine has no evidence of any
+        // fault, so no fault may gain ground — the residual state has to be the
+        // one that improves.
+        let mut engine = DiagnosticEngine::new();
+        let before: Vec<(&'static str, f64)> = engine
+            .ranked()
+            .into_iter()
+            .map(|(label, prob)| {
+                let label: &'static str = Hypothesis::all()
+                    .into_iter()
+                    .find(|h| h.label() == label)
+                    .map(|h| h.label())
+                    .unwrap_or("unknown");
+                (label, prob)
+            })
+            .collect();
+        for (i, test) in LikelihoodTable::tests().iter().enumerate() {
+            engine.observe(&ProbeResult {
+                test: test.clone(),
+                outcome: ProbeOutcome::Success,
+                timestamp: i as u64 + 1,
+                source: "healthy".into(),
+                cost: 0.0,
+            });
+        }
+        let prior_unknown = before
+            .iter()
+            .find(|(label, _)| *label == "unknown")
+            .map(|(_, p)| *p)
+            .expect("unknown is part of the hypothesis space");
+        let after_unknown = posterior_of(&engine, "unknown");
+        assert!(
+            after_unknown > prior_unknown,
+            "a healthy round must raise the no-fault state: {prior_unknown:.4} -> {after_unknown:.4}"
+        );
+        assert!(
+            after_unknown > 0.5,
+            "a fully healthy round must leave the no-fault state dominant, got {after_unknown:.4}"
+        );
+        // The reported symptom: successes used to promote the DNS faults.
+        for label in ["dns", "dns_inconsistency"] {
+            let prior = before
+                .iter()
+                .find(|(l, _)| *l == label)
+                .map(|(_, p)| *p)
+                .expect("dns hypotheses are in the space");
+            let after = posterior_of(&engine, label);
+            assert!(
+                after <= prior + 1e-12,
+                "a healthy round raised `{label}`: {prior:.4} -> {after:.4}"
+            );
+        }
+        assert_eq!(
+            engine.diagnosis().map(|(label, _)| label),
+            Some("unknown"),
+            "a fully healthy round must land on the no-fault state"
+        );
     }
 
     #[test]

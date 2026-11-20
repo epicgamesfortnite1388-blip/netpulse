@@ -4,6 +4,7 @@ import { Cpu, Globe, Route, Shield, ShieldCheck, ShieldOff, Wifi } from 'lucide-
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { useToast } from '@/components/Toaster';
@@ -199,7 +200,7 @@ export default function VpnPage() {
         id: 'whitedns',
         label: 'WhiteDNS Soar',
         icon: Wifi,
-        glyph: 'from-emerald-500/25 to-teal-400/10 text-emerald-300',
+        glyph: 'from-ok/25 to-ok/10 text-ok',
         dot: { tone: 'idle' } as const,
         state: 'data-plane test',
       },
@@ -213,7 +214,7 @@ export default function VpnPage() {
         label: id === 'wireguard' ? 'WireGuard' : 'OpenVPN',
         icon: ShieldCheck,
         glyph:
-          id === 'wireguard' ? 'from-rose-500/25 to-orange-400/10 text-rose-300' : 'from-amber-500/25 to-yellow-400/10 text-amber-300',
+          'from-accent/25 to-accent/10 text-accent',
         dot: { tone: isConnected ? 'ok' : available ? 'idle' : 'warn' } as const,
         state: isConnected ? 'connected' : available ? 'available' : 'not detected',
       });
@@ -229,7 +230,7 @@ export default function VpnPage() {
           id: 'overview',
           label: 'Overview',
           icon: Shield,
-          glyph: 'from-slate-400/20 to-slate-300/5 text-slate-200',
+          glyph: 'from-surface-3 to-transparent text-muted',
           dot: { tone: connected || tunnelActive ? 'ok' : 'idle' },
           state: connected || tunnelActive ? 'a tunnel is up' : 'no tunnel',
         },
@@ -242,7 +243,7 @@ export default function VpnPage() {
           id: 'aether',
           label: 'Aether',
           icon: Globe,
-          glyph: 'from-violet-500/30 to-cyan-400/10 text-violet-200',
+          glyph: 'from-aether/30 to-aether-2/10 text-aether',
           dot: {
             tone: status?.providerId === 'aether' && connected ? 'ok' : aether?.installed ? 'idle' : 'warn',
           },
@@ -262,7 +263,7 @@ export default function VpnPage() {
           id: 'tunnel',
           label: 'Proxy Tunnel',
           icon: Route,
-          glyph: 'from-cyan-500/25 to-sky-400/10 text-cyan-300',
+          glyph: 'from-accent/25 to-accent/10 text-accent',
           dot: { tone: tunnelActive ? 'ok' : tunnel?.state === 'down' ? 'danger' : installedCores.length ? 'idle' : 'warn' },
           state: tunnelActive ? `active · ${tunnel?.exitIp ?? 'unverified'}` : tunnel?.state === 'down' ? 'fault' : installedCores.length ? 'ready' : 'no core',
         },
@@ -292,7 +293,12 @@ export default function VpnPage() {
   const missing = VPN_SURFACES.filter((s) => !railItems.some((i) => i.id === s.id));
 
   return (
-    <div>
+    // No declared depth: the gates inside the active surface register even while
+    // hidden, so the reach is whatever that engine actually has. Overview stops
+    // at Advanced; the provider and Aether surfaces reach Expert. Offering
+    // Expert on Overview would be a dead click, and declaring a flat 4 here
+    // would make Expert look broken on the surface most readers land on.
+    <DetailLevelProvider scope="vpn" defaultLevel={2}>
       <PageHeader
         title="VPN"
         description="Every tunnel engine on this machine, divided by how it reaches the internet. One tunnel runs at a time; a surface only reports a tunnel it observed."
@@ -307,6 +313,8 @@ export default function VpnPage() {
           ) : null
         }
       />
+
+      <DetailLevelControl className="-mt-3 mb-4" />
 
       {statusQuery.isError && (
         <p className="mb-5 rounded-r-lg border-l-2 border-danger/60 bg-danger/5 px-3.5 py-2.5 text-xs text-danger">
@@ -332,9 +340,18 @@ export default function VpnPage() {
           one core was preferred over another on THIS network, and it is the only
           place the local learning data can be inspected and deleted. It reads the
           node the tunnel is actually on, so the strategy list it shows is the real
-          compatibility answer for that node. */}
-      <AdaptiveRecoveryCard nodeId={tunnel?.nodeId ?? null} />
+          compatibility answer for that node.
+          Level 2: it explains the choice, it is not the choice. */}
+      <DetailGate required={2}>
+        <AdaptiveRecoveryCard nodeId={tunnel?.nodeId ?? null} />
+      </DetailGate>
 
+      {/* The rail is navigation, and navigation is essential: choosing an engine
+          is the next action on this page, not a detail about one. Gating it left
+          Essential as a title and a single status line — a reader could see that
+          nothing was up and had nothing to press. Depth is applied *inside* each
+          surface instead, where it describes a result rather than the way to
+          reach one. */}
       <RTabs.Root value={surface} onValueChange={(v) => setSurface(v as VpnSurfaceId)} orientation="vertical">
         <div className="grid gap-6 lg:grid-cols-[212px_minmax(0,1fr)] lg:items-start">
           {/* ------------------------------- rail ------------------------------ */}
@@ -435,6 +452,6 @@ export default function VpnPage() {
           </div>
         </div>
       </RTabs.Root>
-    </div>
+    </DetailLevelProvider>
   );
 }

@@ -14,12 +14,12 @@ export function engineLabel(engine: string | null | undefined): ProxyEngine | nu
   return null;
 }
 
-const ENGINE_STYLES: Record<ProxyEngine, string> = {
-  xray: 'text-sky-400 bg-sky-500/10',
-  'sing-box': 'text-fuchsia-400 bg-fuchsia-500/10',
-  v2ray: 'text-emerald-400 bg-emerald-500/10',
-  hysteria: 'text-violet-400 bg-violet-500/10',
-};
+/**
+ * One tint for every engine. The per-engine hues were decoration: the label
+ * already names the runtime, and the four arbitrary palette colours had no
+ * light-theme counterpart, so the badge's tint vanished on a white card.
+ */
+const ENGINE_BADGE_CLASS = 'text-accent bg-accent-soft';
 
 /**
  * Colored badge naming the local core (Xray-core / sing-box / V2Ray-core)
@@ -32,7 +32,7 @@ export function EngineBadge({ engine, title }: { engine: string | null | undefin
   if (!label) return null;
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${ENGINE_STYLES[label]}`}
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${ENGINE_BADGE_CLASS}`}
       title={title ?? `Measured through the ${ENGINE_LABELS[label]} runtime`}
     >
       {label}

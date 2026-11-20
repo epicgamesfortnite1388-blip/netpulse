@@ -1,0 +1,142 @@
+[
+  {
+    "kind": "shot",
+    "name": "01-dashboard",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-01-dashboard.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 683,
+      "h1": "Dashboard",
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "02-dashboard-light",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-02-dashboard-light.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 1584,
+      "h1": "Dashboard",
+      "rootChildren": 2,
+      "scrollW": 1430,
+      "clientW": 1430,
+      "theme": "light"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "03-vpn",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-03-vpn.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 415,
+      "h1": null,
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "04-servers",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-04-servers.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 419,
+      "h1": null,
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "05-nodes",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-05-nodes.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 1017,
+      "h1": "Node Explorer",
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "06-nani",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-06-nani.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 1355,
+      "h1": "NANI",
+      "rootChildren": 2,
+      "scrollW": 1430,
+      "clientW": 1430,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "07-diagnostics",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-07-diagnostics.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 419,
+      "h1": null,
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "08-settings",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-08-settings.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 922,
+      "h1": "Settings",
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "09-account",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-09-account.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 637,
+      "h1": "Welcome back",
+      "rootChildren": 2,
+      "scrollW": 1440,
+      "clientW": 1440,
+      "theme": "dark"
+    }
+  },
+  {
+    "kind": "shot",
+    "name": "10-health",
+    "file": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots/before-10-health.png",
+    "diag": {
+      "title": "NetPulse — Network Intelligence",
+      "bodyLen": 1107,
+      "h1": "System Health",
+      "rootChildren": 2,
+      "scrollW": 1430,
+      "clientW": 1430,
+      "theme": "dark"
+    }
+  }
+]

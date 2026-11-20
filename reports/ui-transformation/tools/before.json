@@ -1,0 +1,21 @@
+{
+  "port": 9444,
+  "base": "http://localhost:5173",
+  "out": "E:/Code/Project/Vpn_app/reports/ui-transformation/screenshots",
+  "profile": "E:/Code/Project/Vpn_app-UI-baseline-20261116/cdp-profile",
+  "prefix": "before",
+  "width": 1440,
+  "height": 900,
+  "shots": [
+    { "name": "01-dashboard", "path": "/", "wait": 2600, "theme": "dark" },
+    { "name": "02-dashboard-light", "path": "/", "wait": 2400, "theme": "light" },
+    { "name": "03-vpn", "path": "/vpn", "wait": 2600, "theme": "dark" },
+    { "name": "04-servers", "path": "/servers", "wait": 2400, "theme": "dark" },
+    { "name": "05-nodes", "path": "/nodes", "wait": 2400, "theme": "dark" },
+    { "name": "06-nani", "path": "/nani", "wait": 2600, "theme": "dark" },
+    { "name": "07-diagnostics", "path": "/diagnostics", "wait": 2400, "theme": "dark" },
+    { "name": "08-settings", "path": "/settings", "wait": 2400, "theme": "dark" },
+    { "name": "09-account", "path": "/account", "wait": 2400, "theme": "dark" },
+    { "name": "10-health", "path": "/health", "wait": 2400, "theme": "dark" }
+  ]
+}

@@ -44,11 +44,18 @@ pub struct Observation {
     pub latency_ms: Option<f64>,
 }
 
+/// Calibration outcomes retained before the oldest are evicted.
+const MAX_CALIBRATION_SAMPLES: usize = 500;
+
 /// Derived model state (bandit params, drift state, calibration).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelState {
     pub bandit: HashMap<String, f64>,
     pub calibration: HashMap<String, f64>,
+    /// Real `(confidence, confirmed)` pairs from observed probes, oldest first.
+    /// `serde(default)` keeps a model file written before this field loadable.
+    #[serde(default)]
+    pub calibration_samples: Vec<(f64, f64)>,
 }
 
 /// Persistence store: observations JSONL + model state JSON, schema versioned.
@@ -240,6 +247,32 @@ impl PersistenceStore {
         self.observations.clone()
     }
 
+    /// Record one real calibration outcome: the confidence the engine held, and
+    /// whether the next probe kept the same hypothesis leading.
+    ///
+    /// Malformed values are refused rather than clamped: a confidence outside
+    /// `[0, 1]` or a label that is not 0/1 would distort the fitted map, and a
+    /// sample that never happened is not something to repair.
+    pub fn record_calibration_sample(&mut self, predicted: f64, confirmed: f64) {
+        let valid_label = confirmed == 0.0 || confirmed == 1.0;
+        if !predicted.is_finite() || !(0.0..=1.0).contains(&predicted) || !valid_label {
+            return;
+        }
+        self.model.calibration_samples.push((predicted, confirmed));
+        let len = self.model.calibration_samples.len();
+        if len > MAX_CALIBRATION_SAMPLES {
+            self.model
+                .calibration_samples
+                .drain(0..len - MAX_CALIBRATION_SAMPLES);
+        }
+        let _ = self.persist_model_state();
+    }
+
+    /// Recorded calibration outcomes, oldest first.
+    pub fn calibration_samples(&self) -> &[(f64, f64)] {
+        &self.model.calibration_samples
+    }
+
     /// Current model state.
     pub fn model_state(&self) -> ModelState {
         self.model.clone()
@@ -366,6 +399,40 @@ mod tests {
         assert!(store.observations().is_empty());
         let reopened = PersistenceStore::new(&dir).expect("reopen store");
         assert!(reopened.observations().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn calibration_samples_persist_and_are_bounded() {
+        let dir = std::env::temp_dir().join(format!("nani-calib-samples-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let mut store = PersistenceStore::new(&dir).expect("open store");
+
+        // Malformed pairs are refused rather than clamped into the journal.
+        store.record_calibration_sample(f64::NAN, 1.0);
+        store.record_calibration_sample(0.5, 0.5);
+        store.record_calibration_sample(1.5, 0.0);
+        store.record_calibration_sample(-0.1, 1.0);
+        assert!(store.calibration_samples().is_empty(), "malformed samples accepted");
+
+        let total = MAX_CALIBRATION_SAMPLES + 5;
+        for i in 0..total {
+            let predicted = (i % 10) as f64 / 10.0;
+            let confirmed = if i % 2 == 0 { 1.0 } else { 0.0 };
+            store.record_calibration_sample(predicted, confirmed);
+        }
+        assert_eq!(store.calibration_samples().len(), MAX_CALIBRATION_SAMPLES);
+        // Oldest evicted, newest retained.
+        let last = total - 1;
+        assert_eq!(
+            store.calibration_samples().last().copied(),
+            Some(((last % 10) as f64 / 10.0, if last % 2 == 0 { 1.0 } else { 0.0 }))
+        );
+
+        // Survives a restart and is what the calibrator will be fitted on.
+        let reopened = PersistenceStore::new(&dir).expect("reopen store");
+        assert_eq!(reopened.calibration_samples(), store.calibration_samples());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -88,7 +88,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Reference V2Ray core',
     description:
       'The modern reference core. Best fidelity for Reality and XTLS, and the default choice when no engine preference is set.',
-    glyph: 'from-sky-500/25 to-cyan-400/10 text-sky-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#38bdf8',
     protocols: sharedProtocols('xray'),
     strengths: ['Reality & XTLS', 'xhttp transport', 'Can be a chain exit hop'],
@@ -103,7 +103,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Universal protocol core',
     description:
       'The widest protocol coverage of the three cores, and the only one that can dial UDP-based protocols (hysteria2, tuic) or run legacy Shadowsocks ciphers.',
-    glyph: 'from-fuchsia-500/25 to-pink-400/10 text-fuchsia-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#e879f9',
     protocols: sharedProtocols('sing-box'),
     strengths: ['hysteria2 & tuic (UDP)', 'Every Shadowsocks cipher', 'Can be a chain exit hop'],
@@ -118,7 +118,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: 'Original V2Ray (v2fly)',
     description:
       'The original V2Ray core. Some legacy vmess / vless configurations only run here, so it is kept as a third option rather than dropped.',
-    glyph: 'from-emerald-500/25 to-teal-400/10 text-emerald-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#34d399',
     protocols: sharedProtocols('v2ray'),
     strengths: ['Legacy vmess / vless compatibility', 'Independent implementation of the same schema'],
@@ -138,7 +138,7 @@ export const PROXY_CORE_META: Record<ProxyEngineId, ProxyCoreMeta> = {
     tagline: "Hysteria2's own client",
     description:
       'The hysteria2 project\u2019s own client binary, so a hysteria2 node can be reached without sing-box installed \u2014 and a hysteria2 measurement can be checked against an independent implementation. It dials hysteria2 and nothing else.',
-    glyph: 'from-violet-500/25 to-indigo-400/10 text-violet-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#a78bfa',
     protocols: sharedProtocols('hysteria'),
     strengths: ['The protocol\u2019s own implementation', 'Brutal congestion control from the node\u2019s own bandwidth hints', 'Salamander obfuscation'],
@@ -173,7 +173,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'wireguard',
     label: 'WireGuard',
     tagline: 'Native WireGuard tunnel',
-    glyph: 'from-rose-500/25 to-orange-400/10 text-rose-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#fb7185',
     binaryNote:
       'Driven by the WireGuard for Windows client installed on this machine. On Windows the tunnel is installed through a single per-action UAC prompt — the app never runs anything elevated on its own.',
@@ -183,7 +183,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'openvpn',
     label: 'OpenVPN',
     tagline: 'Native OpenVPN tunnel',
-    glyph: 'from-amber-500/25 to-yellow-400/10 text-amber-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#fbbf24',
     binaryNote:
       'Driven by the OpenVPN client installed on this machine. The .ovpn text is parsed and the secrets moved into the encrypted vault before launch.',
@@ -193,7 +193,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'singbox',
     label: 'sing-box (managed tunnel)',
     tagline: 'Share-link tunnel in proxy mode',
-    glyph: 'from-fuchsia-500/25 to-violet-400/10 text-fuchsia-300',
+    glyph: 'from-accent/25 to-accent/10 text-accent',
     color: '#e879f9',
     binaryNote:
       'Uses the app-managed sing-box core installed on this tab — installing the core is what makes this provider available.',
@@ -203,7 +203,7 @@ export const MANAGED_PROVIDER_META: Record<ManagedProviderId, ManagedProviderMet
     id: 'aether',
     label: 'Aether',
     tagline: 'Censorship-circumvention tunnel',
-    glyph: 'from-violet-500/30 to-cyan-400/10 text-violet-300',
+    glyph: 'from-aether/30 to-aether-2/10 text-aether',
     color: '#a855f7',
     binaryNote:
       'Installed from the official CluvexStudio/Aether GitHub releases with SHA256 verification against the published digest, then self-checked with `-v` before use.',

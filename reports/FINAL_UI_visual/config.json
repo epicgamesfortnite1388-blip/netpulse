@@ -1,0 +1,20 @@
+{
+  "port": 9444,
+  "base": "http://127.0.0.1:5173",
+  "out": "E:/Code/Project/Vpn_app/reports/FINAL_UI_visual",
+  "prefix": "final",
+  "width": 1440,
+  "height": 900,
+  "shots": [
+    { "name": "01-dashboard-1440-dark", "path": "/", "wait": 2600, "theme": "dark" },
+    { "name": "02-dashboard-1280x720", "path": "/", "wait": 2200, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "03-dashboard-narrow-800", "path": "/", "wait": 2200, "theme": "dark", "width": 800, "height": 900 },
+    { "name": "04-dashboard-light", "path": "/", "wait": 2200, "theme": "light" },
+    { "name": "05-vpn-1280x720", "path": "/vpn", "wait": 2400, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "06-nani-1440", "path": "/nani", "wait": 2800, "theme": "dark" },
+    { "name": "07-nani-1280x720", "path": "/nani", "wait": 2400, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "08-settings-1280", "path": "/settings", "wait": 2400, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "09-copilot-1280", "path": "/copilot", "wait": 2400, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "10-dashboard-1920", "path": "/", "wait": 2200, "theme": "dark", "width": 1920, "height": 1080 }
+  ]
+}

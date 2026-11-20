@@ -10,6 +10,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -227,6 +228,7 @@ export default function DashboardPage() {
 
   return (
     <DisclosureScope name="dashboard">
+      <DetailLevelProvider scope="dashboard" defaultLevel={2}>
       <PageHeader
         title="Dashboard"
         description="How healthy is your connection right now?"
@@ -238,7 +240,10 @@ export default function DashboardPage() {
         }
       />
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {/* Command-center hero: the live verdict of the connection, at a glance.
           Values are the same ones the cards below render, so it can never
@@ -298,95 +303,115 @@ export default function DashboardPage() {
               only as tall as the console it stands beside; previously it was
               stretched to the height of a three-item column and carried ~400px
               of empty space under the dial. */}
-          <div className="stagger grid gap-5 lg:grid-cols-3">
-            <Card className="flex flex-col lg:col-span-1">
-              <CardHeader title="Network health" icon={<GaugeIcon size={15} />} />
-              <CardBody className="flex flex-1 flex-col">
-                <div className="flex flex-1 items-center justify-center">
-                  <Gauge value={statusQuery.data.health.score} label={statusQuery.data.health.label ?? 'awaiting data'} size={190} />
-                </div>
-                <p className="mt-3 text-center text-xs leading-relaxed text-faint">
-                  {statusQuery.data.health.score == null
-                    ? 'Score appears once latency data exists.'
-                    : `Based on ${statusQuery.data.health.components?.filter((c) => c.measured).length ?? 0} of ${statusQuery.data.health.components?.length ?? 0} measured components.`}
-                </p>
-                {pingRunning && (
-                  <div className="mt-4 w-full">
-                    <Progress value={pingProgress} />
+          {/* Level 1 — the verdict and the immediate action. Essential content is
+              never gated away: this row answers "is my connection healthy, and
+              what do I do about it?" with no further clicks. */}
+          <DetailGate required={1}>
+            <div className="stagger grid gap-5 lg:grid-cols-3">
+              <Card className="flex flex-col lg:col-span-1">
+                <CardHeader title="Network health" icon={<GaugeIcon size={15} />} />
+                <CardBody className="flex flex-1 flex-col">
+                  <div className="flex flex-1 items-center justify-center">
+                    <Gauge value={statusQuery.data.health.score} label={statusQuery.data.health.label ?? 'awaiting data'} size={190} />
                   </div>
-                )}
-              </CardBody>
-            </Card>
+                  <p className="mt-3 text-center text-xs leading-relaxed text-faint">
+                    {statusQuery.data.health.score == null
+                      ? 'Score appears once latency data exists.'
+                      : `Based on ${statusQuery.data.health.components?.filter((c) => c.measured).length ?? 0} of ${statusQuery.data.health.components?.length ?? 0} measured components.`}
+                  </p>
+                  {pingRunning && (
+                    <div className="mt-4 w-full">
+                      <Progress value={pingProgress} />
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
 
-            <div className="lg:col-span-2">
-              <ConnectionHero state={connection} />
-            </div>
-          </div>
-
-          {/* Row 2 — network facts beside the measurements they came from.
-              The six readouts used to run as a bare six-across strip under a
-              three-item column, which made them the widest thing on the page
-              and the smallest thing to read. */}
-          <div className="stagger grid gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ConnectionCard status={statusQuery.data} />
-            </div>
-            <Card className="lg:col-span-1">
-              <CardHeader title="Measurements" subtitle="Last recorded run of each test" />
-              <CardBody>
-                <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-                  <Metric label="Ping" value={lastPing?.avg ?? statusQuery.data.latencyTcpMs} unit="ms" status={pingStatus} hint={lastPing ? `ICMP avg to ${lastPing.target}` : 'Live TCP connect time to 1.1.1.1:443'} />
-                  <Metric label="Jitter" value={lastPing?.jitterMs ?? null} unit="ms" status={jitterStatus} hint="Mean variation between successive replies (last ping run)" />
-                  <Metric label="Packet loss" value={lastPing?.lossPct ?? null} unit="pct" status={lossStatus} hint="From the last ping run" />
-                  <Metric label="Download" value={lastDownload} unit="mbps" status={lastDownload == null ? 'idle' : 'good'} hint={lastSpeed ? `Last speed test (${timeAgo(lastSpeed.startedAt)})` : 'Run a speed test to populate'} />
-                  <Metric label="Upload" value={lastUpload} unit="mbps" status={lastUpload == null ? 'idle' : 'good'} hint="From the last speed test" />
-                  <Metric label="DNS" value={bestDnsMs} unit="ms" status={bestDnsMs == null ? 'idle' : bestDnsMs <= 30 ? 'good' : bestDnsMs <= 80 ? 'warn' : 'bad'} hint={lastDns ? `Best resolver latency (last DNS test)` : 'Run a DNS test to populate'} />
-                </div>
-              </CardBody>
-            </Card>
-          </div>
-
-          {/* iran connectivity widget */}
-          <IranConnectivityWidget />
-
-          {/* live map widget */}
-          <LiveMapWidget />
-
-          {/* quick actions */}
-          <Card fold={{ id: 'quick-actions', defaultOpen: false, summary: `${QUICK_ACTIONS.length} diagnostics, one click each` }}>
-            <CardHeader
-              title="Quick actions"
-              subtitle="Jump into a focused diagnostic — progress and results are always real measurements"
-            />
-            <CardBody>
-              <div className="flex flex-wrap gap-2.5">
-                {QUICK_ACTIONS.map((a) => (
-                  <Button key={a.to} variant="secondary" size="sm" onClick={() => navigate(a.to)}>
-                    {a.icon}
-                    {a.label}
-                  </Button>
-                ))}
+              <div className="lg:col-span-2">
+                <ConnectionHero state={connection} />
               </div>
-            </CardBody>
-          </Card>
+            </div>
+          </DetailGate>
 
-          {/* chart + insights */}
-          <div className="stagger grid gap-5 lg:grid-cols-3">
-            <Card className="lg:col-span-2" fold={{ id: 'live-latency' }}>
-              <CardHeader
-                title="Live latency"
-                subtitle="TCP connect time to 1.1.1.1:443, sampled every 5 seconds"
-                actions={<Badge tone="accent">{latencyHistory.length} samples</Badge>}
-              />
-              <CardBody>
-                <LatencyChart data={latencyHistory} height={150} />
-              </CardBody>
-            </Card>
-            <InsightsCard insights={insights} />
-          </div>          {/* breakdown + events */}
-          <div className="stagger grid gap-5 lg:grid-cols-3">
-            <HealthBreakdown status={statusQuery.data} />
-            <Card className="lg:col-span-2" fold={{ id: 'recent-activity', defaultOpen: false, summary: `${(eventsQuery.data?.events ?? []).length} recent events` }}>
+          {/* Level 2 — the evidence that makes the verdict believable: network
+              facts beside the six readings they came from. */}
+          <DetailGate required={2}>
+            <div className="stagger grid gap-5 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <ConnectionCard status={statusQuery.data} />
+              </div>
+              <Card className="lg:col-span-1">
+                <CardHeader title="Measurements" subtitle="Last recorded run of each test" />
+                <CardBody>
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                    <Metric label="Ping" value={lastPing?.avg ?? statusQuery.data.latencyTcpMs} unit="ms" status={pingStatus} hint={lastPing ? `ICMP avg to ${lastPing.target}` : 'Live TCP connect time to 1.1.1.1:443'} />
+                    <Metric label="Jitter" value={lastPing?.jitterMs ?? null} unit="ms" status={jitterStatus} hint="Mean variation between successive replies (last ping run)" />
+                    <Metric label="Packet loss" value={lastPing?.lossPct ?? null} unit="pct" status={lossStatus} hint="From the last ping run" />
+                    <Metric label="Download" value={lastDownload} unit="mbps" status={lastDownload == null ? 'idle' : 'good'} hint={lastSpeed ? `Last speed test (${timeAgo(lastSpeed.startedAt)})` : 'Run a speed test to populate'} />
+                    <Metric label="Upload" value={lastUpload} unit="mbps" status={lastUpload == null ? 'idle' : 'good'} hint="From the last speed test" />
+                    <Metric label="DNS" value={bestDnsMs} unit="ms" status={bestDnsMs == null ? 'idle' : bestDnsMs <= 30 ? 'good' : bestDnsMs <= 80 ? 'warn' : 'bad'} hint={lastDns ? `Best resolver latency (last DNS test)` : 'Run a DNS test to populate'} />
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          </DetailGate>
+
+          {/* Level 2 — what the score is made of, beside the diagnostics a
+              reader is most likely to reach for next. */}
+          <DetailGate required={2}>
+            <div className="stagger grid gap-5 lg:grid-cols-3">
+              <HealthBreakdown status={statusQuery.data} />
+              <div className="lg:col-span-2">
+                <Card fold={{ id: 'quick-actions', defaultOpen: false, summary: `${QUICK_ACTIONS.length} diagnostics, one click each` }}>
+                  <CardHeader
+                    title="Quick actions"
+                    subtitle="Jump into a focused diagnostic — progress and results are always real measurements"
+                  />
+                  <CardBody>
+                    <div className="flex flex-wrap gap-2.5">
+                      {QUICK_ACTIONS.map((a) => (
+                        <Button key={a.to} variant="secondary" size="sm" onClick={() => navigate(a.to)}>
+                          {a.icon}
+                          {a.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            </div>
+          </DetailGate>
+
+          {/* Level 3 — the widgets that cost the most to run. Gating them here is
+              also why the dashboard no longer mounts a map on load. */}
+          <DetailGate required={3}>
+            <IranConnectivityWidget />
+          </DetailGate>
+
+          <DetailGate required={3}>
+            <LiveMapWidget />
+          </DetailGate>
+
+          <DetailGate required={3}>
+            <div className="stagger grid gap-5 lg:grid-cols-3">
+              <Card className="lg:col-span-2" fold={{ id: 'live-latency' }}>
+                <CardHeader
+                  title="Live latency"
+                  subtitle="TCP connect time to 1.1.1.1:443, sampled every 5 seconds"
+                  actions={<Badge tone="accent">{latencyHistory.length} samples</Badge>}
+                />
+                <CardBody>
+                  <LatencyChart data={latencyHistory} height={150} />
+                </CardBody>
+              </Card>
+              <InsightsCard insights={insights} />
+            </div>
+          </DetailGate>
+
+          {/* Level 4 — raw provenance. This is what "why did that happen?" needs,
+              and it is not what a first-time reader is looking for. */}
+          <DetailGate required={4}>
+            <Card fold={{ id: 'recent-activity', defaultOpen: false, summary: `${(eventsQuery.data?.events ?? []).length} recent events` }}>
               <CardHeader
                 title="Recent activity"
                 actions={
@@ -412,7 +437,7 @@ export default function DashboardPage() {
                 ))}
               </CardBody>
             </Card>
-          </div>
+          </DetailGate>
         </div>
       ) : (
         <Card>
@@ -427,6 +452,7 @@ export default function DashboardPage() {
         </Card>
       )
     }
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

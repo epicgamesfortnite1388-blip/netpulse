@@ -79,10 +79,10 @@ void main() {
 
 /** CSS-only stand-in used when WebGL is unavailable or its context is lost. */
 function CssOrb({ state }: { state: CoreState }) {
-  const hue = state === 'active' ? 'from-violet-500/70 via-cyan-400/50 to-fuchsia-400/40'
-    : state === 'starting' ? 'from-amber-400/60 via-amber-300/40 to-yellow-200/30'
-      : state === 'down' ? 'from-red-500/50 via-red-400/30 to-rose-300/20'
-        : 'from-indigo-500/50 via-violet-400/30 to-cyan-300/20';
+  const hue = state === 'active' ? 'from-aether/70 via-aether-2/50 to-aether-3/40'
+    : state === 'starting' ? 'from-warn/60 via-warn/40 to-warn/30'
+      : state === 'down' ? 'from-danger/50 via-danger/30 to-danger/20'
+        : 'from-aether/50 via-aether/30 to-aether-2/20';
   return (
     <div className="flex h-full w-full items-center justify-center">
       <div className={`aether-halo h-32 w-32 rounded-full bg-gradient-to-br blur-md ${hue}`} />

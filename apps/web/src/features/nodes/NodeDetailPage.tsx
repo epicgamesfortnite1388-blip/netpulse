@@ -402,6 +402,7 @@ export default function NodeDetailPage() {
       <NodesNav current={node.label} />
 
       <EngineHero
+        pageTitle
         glyph={
           <EngineGlyph glyph="from-accent/25 via-accent/10 to-transparent text-accent" size="lg">
             <Server size={22} />

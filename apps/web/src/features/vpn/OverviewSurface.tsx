@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, ChevronRight, Cpu, GitBranch, Globe, Route, Shield, ShieldCheck, Star, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
+import { DetailGate } from '@/components/ui/DetailLevel';
 import { api } from '@/lib/api';
 
 import { AdminAccessPanel } from './AdminAccessPanel';
@@ -96,7 +97,7 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
       surface: 'aether',
       label: 'Aether',
       tagline: 'Circumvention tunnel',
-      glyph: 'from-violet-500/30 to-cyan-400/10 text-violet-200',
+      glyph: 'from-aether/30 to-aether-2/10 text-aether',
       icon: <Globe size={16} />,
       tone: status?.providerId === 'aether' && status.connected ? 'ok' : aether?.installed ? 'neutral' : 'warn',
       statusLabel:
@@ -108,7 +109,7 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
       surface: 'tunnel',
       label: 'Proxy Tunnel',
       tagline: 'Public nodes via local cores',
-      glyph: 'from-cyan-500/25 to-sky-400/10 text-cyan-300',
+      glyph: 'from-accent/25 to-accent/10 text-accent',
       icon: <Route size={16} />,
       tone: tunnel?.state === 'active' ? 'ok' : tunnel?.state === 'down' ? 'danger' : installedCores.length === 0 ? 'warn' : 'neutral',
       statusLabel: tunnel?.state ?? 'idle',
@@ -237,11 +238,14 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
           elevated token, what each one is doing right now, and the fix where
           the app can supply one. Cross-engine by nature, so it lives on the
           dispatch surface rather than inside any one engine tab. */}
+      {/* Level 2: elevation state can block TUN capture, so it is context a
+          reader may need — but it is a state report, never level 3 or deeper. */}
       <Section
         variant="flat"
         collapsible
         id="admin"
         defaultOpen={false}
+        detail={2}
         summary="Elevation state for TUN capture, route changes and the system proxy"
         title="Administrator rights"
         subtitle="What this app can do that Windows only lets an administrator do"
@@ -249,11 +253,14 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
         <AdminAccessPanel />
       </Section>
 
+      {/* Level 3: reference material. Nothing here changes a decision the
+          reader is making on this screen. */}
       <Section
         variant="flat"
         collapsible
         id="relationships"
         defaultOpen={false}
+        detail={3}
         summary="Three ways this app can carry your traffic"
         title="How the pieces relate"
         subtitle="Which path each engine takes to the internet"
@@ -261,7 +268,7 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
         <div className="grid gap-y-4 sm:grid-cols-3 sm:gap-x-6">
           {RELATIONSHIPS.map((r, i) => (
             <div key={r.title} className={i > 0 ? 'sm:border-l sm:border-line sm:pl-6' : ''}>
-              <p className={`flex items-center gap-1.5 text-sm ${r.aether ? 'text-violet-200' : 'text-text'}`}>
+              <p className={`flex items-center gap-1.5 text-sm ${r.aether ? 'text-aether' : 'text-text'}`}>
                 {r.icon} {r.title}
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted">{r.body}</p>
@@ -270,17 +277,20 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
         </div>
       </Section>
 
-      <div className="space-y-1.5 text-xs leading-relaxed text-faint">
-        <p className="flex items-start gap-1.5">
-          <Star size={12} className="mt-0.5 shrink-0" />
-          &quot;Preferred&quot; is the saved core preference; &quot;in use&quot; is what the next node test will actually run on — the two differ
-          whenever the preferred core is not installed.
-        </p>
-        <p className="flex items-start gap-1.5">
-          <Zap size={12} className="mt-0.5 shrink-0" />
-          Only one tunnel runs at a time across every engine, so connecting anywhere stops whatever was up before.
-        </p>
-      </div>
+      {/* Level 3: glossary for terms the rest of the surface uses. */}
+      <DetailGate required={3}>
+        <div className="space-y-1.5 text-xs leading-relaxed text-faint">
+          <p className="flex items-start gap-1.5">
+            <Star size={12} className="mt-0.5 shrink-0" />
+            &quot;Preferred&quot; is the saved core preference; &quot;in use&quot; is what the next node test will actually run on — the two differ
+            whenever the preferred core is not installed.
+          </p>
+          <p className="flex items-start gap-1.5">
+            <Zap size={12} className="mt-0.5 shrink-0" />
+            Only one tunnel runs at a time across every engine, so connecting anywhere stops whatever was up before.
+          </p>
+        </div>
+      </DetailGate>
     </DisclosureScope>
   );
 }

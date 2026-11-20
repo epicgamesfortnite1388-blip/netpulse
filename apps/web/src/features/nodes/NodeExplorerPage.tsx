@@ -184,14 +184,14 @@ function StatusGlyph({ status }: { status: NodeStatus | string }) {
 }
 
 const PROTOCOL_STYLES: Record<string, string> = {
-  vless: 'text-proto-sky bg-sky-500/10 border-sky-500/25',
-  vmess: 'text-proto-violet bg-violet-500/10 border-violet-500/25',
-  trojan: 'text-proto-orange bg-orange-500/10 border-orange-500/25',
-  shadowsocks: 'text-proto-emerald bg-emerald-500/10 border-emerald-500/25',
-  shadowsocksr: 'text-proto-emerald bg-emerald-500/10 border-emerald-500/25',
-  hysteria2: 'text-proto-cyan bg-cyan-500/10 border-cyan-500/25',
-  tuic: 'text-proto-indigo bg-indigo-500/10 border-indigo-500/25',
-  wireguard: 'text-proto-amber bg-amber-500/10 border-amber-500/25',
+  vless: 'text-proto-sky bg-proto-sky/10 border-proto-sky/25',
+  vmess: 'text-proto-violet bg-proto-violet/10 border-proto-violet/25',
+  trojan: 'text-proto-orange bg-proto-orange/10 border-proto-orange/25',
+  shadowsocks: 'text-proto-emerald bg-proto-emerald/10 border-proto-emerald/25',
+  shadowsocksr: 'text-proto-emerald bg-proto-emerald/10 border-proto-emerald/25',
+  hysteria2: 'text-proto-cyan bg-proto-cyan/10 border-proto-cyan/25',
+  tuic: 'text-proto-indigo bg-proto-indigo/10 border-proto-indigo/25',
+  wireguard: 'text-proto-amber bg-proto-amber/10 border-proto-amber/25',
   unknown: 'text-muted bg-surface-2 border-line',
 };
 

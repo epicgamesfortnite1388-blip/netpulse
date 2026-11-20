@@ -23,17 +23,17 @@ const HOP_ICON: Record<AgentHopId, typeof Globe2> = {
 };
 
 const STATE_CHIP: Record<AgentHop['state'], string> = {
-  pending: 'border-white/8 bg-white/[0.02] text-faint',
-  active: 'border-cyan-300/40 bg-cyan-300/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.18)]',
-  ok: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100',
-  failed: 'border-red-400/40 bg-red-400/10 text-red-100',
+  pending: 'border-line bg-surface-2/40 text-faint',
+  active: 'border-accent/40 bg-accent/10 text-accent shadow-[0_0_18px_var(--color-accent-soft)]',
+  ok: 'border-ok/35 bg-ok/10 text-ok',
+  failed: 'border-danger/40 bg-danger/10 text-danger',
 };
 
 const STATE_RAIL: Record<AgentHop['state'], string> = {
-  pending: 'bg-white/8',
-  active: 'bg-gradient-to-r from-cyan-300/70 to-cyan-300/20',
-  ok: 'bg-emerald-400/45',
-  failed: 'bg-red-400/40',
+  pending: 'bg-line',
+  active: 'bg-gradient-to-r from-accent/70 to-accent/20',
+  ok: 'bg-ok/45',
+  failed: 'bg-danger/40',
 };
 
 function StateGlyph({ state, id }: { state: AgentHop['state']; id: AgentHopId }) {
@@ -49,7 +49,7 @@ export function AgentPathTrace({ hops, busy }: { hops: readonly AgentHop[]; busy
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <p className="text-micro font-semibold uppercase tracking-[0.18em] text-faint">Agent path</p>
-        <p className="truncate font-mono text-micro text-cyan-200/80" aria-live="polite">
+        <p className="truncate font-mono text-micro text-accent/80" aria-live="polite">
           {current ? `${current.label} · ${current.detail}` : busy ? 'planning' : 'idle'}
         </p>
       </div>
@@ -66,7 +66,7 @@ export function AgentPathTrace({ hops, busy }: { hops: readonly AgentHop[]; busy
                 className={`group relative flex min-w-[74px] flex-1 flex-col gap-1 rounded-lg border px-2 py-1.5 transition-colors duration-300 ${STATE_CHIP[hop.state]}`}
               >
                 {active && (
-                  <span className="pointer-events-none absolute inset-x-1 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200 to-transparent motion-safe:animate-pulse motion-reduce:animate-none" />
+                  <span className="pointer-events-none absolute inset-x-1 top-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent motion-safe:animate-pulse motion-reduce:animate-none" />
                 )}
                 <span className="flex items-center gap-1.5">
                   <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-white/10 bg-black/25">
@@ -75,8 +75,8 @@ export function AgentPathTrace({ hops, busy }: { hops: readonly AgentHop[]; busy
                   <span className="truncate text-micro font-semibold uppercase tracking-[0.1em]">{hop.label}</span>
                   {hop.id === 'dns' && active && (
                     <span className="relative ml-auto grid h-2 w-2 shrink-0 place-items-center">
-                      <span className="absolute h-2 w-2 rounded-full bg-cyan-300/60 motion-safe:animate-ping motion-reduce:animate-none" />
-                      <span className="h-1 w-1 rounded-full bg-cyan-200" />
+                      <span className="absolute h-2 w-2 rounded-full bg-accent/60 motion-safe:animate-ping motion-reduce:animate-none" />
+                      <span className="h-1 w-1 rounded-full bg-accent" />
                     </span>
                   )}
                 </span>
@@ -86,10 +86,10 @@ export function AgentPathTrace({ hops, busy }: { hops: readonly AgentHop[]; busy
                 <span aria-hidden className="relative flex w-3 shrink-0 items-center justify-center">
                   <span className={`h-px w-full ${STATE_RAIL[hop.state]}`} />
                   {hop.state === 'ok' && next.state === 'pending' && (
-                    <span className="absolute h-1 w-1 rounded-full bg-emerald-300/70" />
+                    <span className="absolute h-1 w-1 rounded-full bg-ok/70" />
                   )}
                   {hop.state === 'active' && (
-                    <span className="absolute h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_8px_rgba(34,211,238,0.9)] motion-safe:animate-pulse motion-reduce:animate-none" />
+                    <span className="absolute h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse motion-reduce:animate-none" />
                   )}
                   <ChevronRight size={9} className="absolute -right-1 text-white/15" />
                 </span>

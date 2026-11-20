@@ -1,0 +1,52 @@
+START 2026-11-20T16:37:13Z
+CMD: npm run build
+
+> netpulse@3.2.0 build
+> npm run build -w @netpulse/api && npm run build -w @netpulse/web
+
+
+> @netpulse/api@3.2.0 build
+> tsup src/index.ts --format esm --dts --outDir dist
+
+[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: E:\Code\Project\Vpn_app\apps\api\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mESM[39m Build start
+[32mESM[39m [1mdist\proxyTunnel-TF2PXS4W.js    [22m[32m485.00 B[39m
+[32mESM[39m [1mdist\targetGuard-GNX6QJZY.js    [22m[32m535.00 B[39m
+[32mESM[39m [1mdist\chunk-X5ADPQGY.js          [22m[32m73.97 KB[39m
+[32mESM[39m [1mdist\chunk-VMZOBHWK.js          [22m[32m9.36 KB[39m
+[32mESM[39m [1mdist\engineManager-HZPS4ERM.js  [22m[32m639.00 B[39m
+[32mESM[39m [1mdist\exec-6R3BMROW.js           [22m[32m107.00 B[39m
+[32mESM[39m [1mdist\platform-5RI3N5WR.js       [22m[32m195.00 B[39m
+[32mESM[39m [1mdist\chunk-EU6RARZS.js          [22m[32m17.65 KB[39m
+[32mESM[39m [1mdist\systemProxy-43MO4LDW.js    [22m[32m255.00 B[39m
+[32mESM[39m [1mdist\chunk-YCYF33YR.js          [22m[32m3.50 KB[39m
+[32mESM[39m [1mdist\vpnDetect-HUFQC3LA.js      [22m[32m1.82 KB[39m
+[32mESM[39m [1mdist\index.js                   [22m[32m871.83 KB[39m
+[32mESM[39m [1mdist\aetherProvider-ADDDNEAY.js [22m[32m811.00 B[39m
+[32mESM[39m [1mdist\chunk-Z3SVLQXH.js          [22m[32m144.92 KB[39m
+[32mESM[39m [1mdist\chunk-YTSTYCRD.js          [22m[32m96.03 KB[39m
+[32mESM[39m [1mdist\chunk-RBRIWVXW.js          [22m[32m21.62 KB[39m
+[32mESM[39m [1mdist\chunk-FI3UDKSR.js          [22m[32m1.23 KB[39m
+[32mESM[39m [1mdist\chunk-MLKGABMK.js          [22m[32m191.00 B[39m
+[32mESM[39m ⚡️ Build success in 307ms
+[34mDTS[39m Build start
+[32mDTS[39m ⚡️ Build success in 15350ms
+[32mDTS[39m [1mdist\index.d.ts [22m[32m13.00 B[39m
+
+> @netpulse/web@3.2.0 build
+> tsc --noEmit && vite build
+
+src/features/diagnostics/DiagnosticsPage.tsx(185,8): error TS17008: JSX element 'DetailLevelProvider' has no corresponding closing tag.
+npm error Lifecycle script `build` failed with error:
+npm error code 2
+npm error path E:\Code\Project\Vpn_app\apps\web
+npm error workspace @netpulse/web@3.2.0
+npm error location E:\Code\Project\Vpn_app\apps\web
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c tsc --noEmit && vite build
+EXIT=2
+END 2026-11-20T16:37:36Z

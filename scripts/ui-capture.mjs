@@ -66,6 +66,11 @@ const ONLY = flag('only', '')
 // into SHOTS, so allow one ad-hoc route per run.
 const AD_HOC_PATH = flag('path', '');
 const AD_HOC_LABEL = flag('label', 'Ad hoc route');
+// Progressive-disclosure level to select before capture (1..4).
+const DETAIL = flag('detail', '');
+// Select a tab by visible text before capture. Lets one run reach a VPN engine
+// surface or a NANI tab without hard-coding a shot for every combination.
+const TAB = flag('tab', '');
 
 /** The shots we care about. `route` is the SPA path, `after` runs before capture. */
 const SHOTS = [
@@ -241,36 +246,54 @@ async function main() {
         await sleep(400);
       }
 
-      // Read back what the page actually resolved, so a selector that matched
-      // nothing shows up in the manifest instead of in a wrong screenshot.
-      const applied = (await send('Runtime.evaluate', {
-        expression: `(() => {
-          const de = document.documentElement;
-          const cs = getComputedStyle(de);
-          return {
-            theme: de.dataset.theme || 'default',
-            typeScaleAttr: de.dataset.typeScale || 'default',
-            typeScale: cs.getPropertyValue('--type-scale').trim(),
-            rootFont: cs.fontSize,
-          };
-        })()`,
-        returnByValue: true,
-      })).result.value;
-      if (DOM_SCALE && applied.typeScale !== String(SCALE_STEPS[Number(DOM_SCALE_RAW)] === '' ? 1 : DOM_SCALE_RAW)) {
-        process.stderr.write(`ui-capture: text scale did not apply (--type-scale resolved to ${applied.typeScale})\n`);
-        process.exit(1);
-      }
+      // Progressive-disclosure state. The level control is a radiogroup, so the
+      // requested level is selected by index and then READ BACK — a screenshot
+      // labelled "Expert" that is actually showing Essential would be exactly the
+      // class of silent no-op this harness was already caught doing for text size.
+      //
+      // It runs twice, around the tab step, because the two orders are both
+      // required: on NANI the level decides which tabs exist, so it must be set
+      // before the tab can be clicked; on VPN the active engine decides how deep
+      // the page can go, so the tab must be clicked before Expert can be offered.
+      // Applying the level, switching tab, then applying it again satisfies both.
+      const applyDetail = async () => {
+        if (!DETAIL) return;
+        const wanted = Number(DETAIL) - 1;
+        const res = (await send('Runtime.evaluate', {
+          expression: `(() => {
+            const group = document.querySelector('[role="radiogroup"][aria-label="Detail level"]');
+            if (!group) return { ok: false, reason: 'no detail control on this route' };
+            const options = group.querySelectorAll('[role="radio"]');
+            if (!options[${wanted}]) return { ok: false, reason: 'level index out of range (' + options.length + ' options)' };
+            options[${wanted}].click();
+            return { ok: true };
+          })()`,
+          returnByValue: true,
+        })).result.value;
+        if (!res.ok) {
+          process.stderr.write(`ui-capture: detail level ${DETAIL} could not be selected on ${shot.route} (${res.reason})\n`);
+          process.exit(1);
+        }
+        // React commits on a later tick: the read-back below is what proves the
+        // level applied, not this call returning.
+        await sleep(350);
+      };
 
-      if (shot.after?.startsWith('nani:')) {
-        const tab = shot.after.slice(5);
+      await applyDetail();
+
+      const tabWanted = shot.after?.startsWith('nani:') ? shot.after.slice(5) : TAB || null;
+      if (tabWanted) {
+        const tab = tabWanted;
         // Radix activates a tab on pointer down, so a synthetic `.click()` is
         // not enough — dispatch a real press at the trigger's centre.
         const box = await send('Runtime.evaluate', {
           expression: `(() => {
-            const t = document.querySelector('[role="tablist"]');
-            if (!t) return null;
-            const want = ${JSON.stringify(tab)};
-            const btns = [...t.querySelectorAll('[role="tab"]')];
+            // Any tablist, not just the first: the VPN rail and the NANI tab bar
+            // are different tablists on different routes, and a page can grow a
+            // second one. Search them all and take the first text match.
+            const want = ${JSON.stringify(tab)}.toLowerCase();
+            const btns = [...document.querySelectorAll('[role="tablist"] [role="tab"]')];
+            if (btns.length === 0) return { error: 'no tabs on this route' };
             const hit = btns.find(b => (b.textContent || '').toLowerCase().includes(want));
             if (!hit) return { error: btns.map(b => b.textContent.trim()).join('|') };
             const r = hit.getBoundingClientRect();
@@ -290,14 +313,59 @@ async function main() {
         await sleep(1200);
       }
 
+      // Second application, after the tab switch: the active engine or tab can
+      // change how deep this page goes, and the level must be settled before the
+      // read-back below is treated as proof.
+      await applyDetail();
+
+      // Read back what the page actually resolved, so a selector that matched
+      // nothing shows up in the manifest instead of in a wrong screenshot.
+      const applied = (await send('Runtime.evaluate', {
+        expression: `(() => {
+          const de = document.documentElement;
+          const cs = getComputedStyle(de);
+          const group = document.querySelector('[role="radiogroup"][aria-label="Detail level"]');
+          const checkedIndex = group
+            ? [...group.querySelectorAll('[role="radio"]')].findIndex((el) => el.getAttribute('aria-checked') === 'true')
+            : -1;
+          return {
+            theme: de.dataset.theme || 'default',
+            typeScaleAttr: de.dataset.typeScale || 'default',
+            typeScale: cs.getPropertyValue('--type-scale').trim(),
+            rootFont: cs.fontSize,
+            detailLevel: checkedIndex >= 0 ? checkedIndex + 1 : null,
+          };
+        })()`,
+        returnByValue: true,
+      })).result.value;
+      if (DOM_SCALE && applied.typeScale !== String(SCALE_STEPS[Number(DOM_SCALE_RAW)] === '' ? 1 : DOM_SCALE_RAW)) {
+        process.stderr.write(`ui-capture: text scale did not apply (--type-scale resolved to ${applied.typeScale})\n`);
+        process.exit(1);
+      }
+      if (DETAIL && applied.detailLevel !== Number(DETAIL)) {
+        process.stderr.write(`ui-capture: detail level ${DETAIL} did not apply on ${shot.route} (resolved ${applied.detailLevel})\n`);
+        process.exit(1);
+      }
+
       const metrics = await send('Runtime.evaluate', {
         expression: `(() => {
           const de = document.documentElement;
           const scroller = document.querySelector('.np-content') || de;
+          // scrollHeight is clamped to the viewport on a page shorter than the
+          // window, so it cannot tell 415px of content from 570px. Measure the
+          // bottom-most child instead, which is what "how long is this page"
+          // actually means and is what disclosure is supposed to change.
+          const top = scroller.getBoundingClientRect().top + scroller.scrollTop;
+          let contentH = 0;
+          for (const el of scroller.children) {
+            const r = el.getBoundingClientRect();
+            if (r.height > 0) contentH = Math.max(contentH, r.bottom - top);
+          }
           return {
             title: document.title,
             scrollW: scroller.scrollWidth, clientW: scroller.clientWidth,
             scrollH: scroller.scrollHeight, clientH: scroller.clientHeight,
+            contentH: Math.round(contentH),
             docScrollW: de.scrollWidth, docClientW: de.clientWidth,
             h1: [...document.querySelectorAll('h1')].map(h => h.textContent.trim()).slice(0,3),
             rootFont: getComputedStyle(de).fontSize,
@@ -316,7 +384,7 @@ async function main() {
       const m = metrics.result.value;
       manifest.push({ id: shot.id, label: shot.label, route: shot.route, file: path.relative(process.cwd(), file), applied, ...m });
       const overflow = m.scrollW > m.clientW + 1 ? ` HORIZ-OVERFLOW +${m.scrollW - m.clientW}px` : '';
-      process.stdout.write(`  ${shot.id.padEnd(22)} ${String(m.scrollH).padStart(5)}px tall  h1=${JSON.stringify(m.h1[0] ?? '')}${overflow}\n`);
+      process.stdout.write(`  ${shot.id.padEnd(22)} ${String(m.scrollH).padStart(5)}px tall  content=${String(m.contentH).padStart(5)}px  h1=${JSON.stringify(m.h1[0] ?? '')}${overflow}\n`);
     }
 
     writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify({ base: BASE, width: WIDTH, height: HEIGHT, scale: SCALE, theme: THEME || 'default', typeScale: DOM_SCALE_RAW || 'default', shots: manifest }, null, 2));

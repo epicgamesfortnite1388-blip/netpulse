@@ -1,0 +1,9 @@
+START 2026-11-20T16:37:36Z
+CMD: npm run test:ui-contract
+
+> netpulse@3.2.0 test:ui-contract
+> node scripts/assert-ui-contract.mjs
+
+✓ UI contract intact — 55/55 assertions passed (index-WZciFYAT.css)
+EXIT=0
+END 2026-11-20T16:37:37Z

@@ -1,0 +1,7 @@
+START 2026-11-20T17:02:21Z
+
+> netpulse@3.2.0 test:ui-contract
+> node scripts/assert-ui-contract.mjs
+
+✓ UI contract intact — 55/55 assertions passed (index-MQpezK5-.css)
+EXIT=0

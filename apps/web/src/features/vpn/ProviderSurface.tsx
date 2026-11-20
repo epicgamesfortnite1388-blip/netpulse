@@ -380,6 +380,7 @@ export function ProviderSurface({ providerId }: { providerId: ManagedProviderId 
           collapsible
           id="capabilities"
           defaultOpen={false}
+          detail={3}
           summary={`${capabilityRows.filter((r) => r.state === 'yes').length} of ${capabilityRows.length} documented capabilities supported`}
           title="Capabilities"
           subtitle="Documented provider capabilities from the live provider registry"
@@ -437,6 +438,7 @@ export function ProviderSurface({ providerId }: { providerId: ManagedProviderId 
         collapsible
         id="history"
         defaultOpen={false}
+        detail={4}
         summary={providerConnections.length > 0 ? `${providerConnections.length} recorded session(s)` : 'Nothing recorded yet'}
         title="Recent connections"
         subtitle={`Sessions recorded for ${meta.label}`}

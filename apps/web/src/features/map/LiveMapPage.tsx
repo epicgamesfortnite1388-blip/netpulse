@@ -31,6 +31,7 @@ import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { IconButton } from '@/components/ui/IconButton';
 import { Metric } from '@/components/ui/Metric';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/States';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { api } from '@/lib/api';
@@ -612,6 +613,14 @@ export default function LiveMapPage() {
 
   const content = (
     <DisclosureScope name="map" className="space-y-5">
+      {/* Every other screen opens with its title. This one opened with a row of
+          status chips, so the page had no h1 at all: nothing announced what the
+          screen was, and the heading outline started at the first card. */}
+      <PageHeader
+        title="Live map"
+        description="Measured routes on real geography — every arc is a probe that ran, and every point states how confident its location is."
+      />
+
       {/* status strip */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-xs text-muted">
@@ -1333,9 +1342,11 @@ export default function LiveMapPage() {
 
   /* ----------------------------- NOC overlay ------------------------------- */
 
+  // The overlay's own chrome uses theme tokens (text-text / text-muted), so a
+  // hard-coded near-black backdrop made every label unreadable in light theme.
   if (noc) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#060a12]" onKeyDown={(e) => e.key === 'Escape' && setNoc(false)}>
+      <div className="fixed inset-0 z-50 bg-bg" onKeyDown={(e) => e.key === 'Escape' && setNoc(false)}>
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-3 border-b border-line/60 px-5 py-3 text-xs text-muted">
             <span className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.2em] text-accent">

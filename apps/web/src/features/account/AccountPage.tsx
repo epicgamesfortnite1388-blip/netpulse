@@ -234,7 +234,7 @@ function WelcomeGate() {
               )}
               {error && (
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm text-red-400">{error}</p>
+                  <p className="text-sm text-danger">{error}</p>
                   {cooldownLeft > 0 && (
                     <p className="text-xs text-muted" aria-live="polite">
                       You can request another link in {fmtCountdown(cooldownLeft)}.

@@ -55,7 +55,9 @@ use crate::network_intelligence::{
     sequential::{cost_adjusted_gain, should_stop, value_of_information},
     simulation::{NetworkCondition, NetworkSimulator},
     timeseries::ExponentialSmoothing,
-    validation::{brier_score, expected_calibration_error, log_loss, Prediction},
+    validation::{
+        brier_score, expected_calibration_error, log_loss, IsotonicCalibrator, Prediction,
+    },
 };
 
 use rand::{Rng, SeedableRng};
@@ -121,12 +123,9 @@ pub struct ConfidenceInterval {
 /// Result of a probe-selection decision: which test to run and why.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbeSelection {
-    pub test_id: String,
     pub test_name: String,
     pub expected_information_gain: f64,
     pub cost: f64,
-    pub efficiency: f64,
-    pub reasoning: String,
 }
 
 /// One hypothesis paired with the probability it started from and holds now.
@@ -147,6 +146,13 @@ pub struct HypothesisView {
     pub hypotheses: Vec<HypothesisProbability>,
     pub entropy_nats: f64,
     pub map_label: Option<String>,
+    /// The MAP posterior passed through the isotonic map fitted on recorded
+    /// probe outcomes. `None` when no map is fitted, in which case the raw
+    /// posterior in `hypotheses` is the number to show — presence is the
+    /// activation signal, so there is no second flag to keep in sync.
+    pub map_confidence_calibrated: Option<f64>,
+    /// Recorded real outcomes behind that map (0 when nothing is recorded).
+    pub calibration_samples: usize,
     pub selected_probe: Option<ProbeSelection>,
 }
 
@@ -380,6 +386,14 @@ impl NaniMathEngine {
         self.diagnosis.observe(result);
     }
 
+    /// Observe a probe and return the calibration sample it completes.
+    ///
+    /// The caller persists the pair; keeping I/O out of the engine is what lets
+    /// the math stay a pure function of its inputs.
+    pub fn observe_probe_recording(&mut self, result: &ProbeResult) -> Option<(f64, f64)> {
+        self.diagnosis.observe_recording_confirmation(result)
+    }
+
     /// Rank all diagnostic tests by expected information gain per unit cost.
     pub fn rank_diagnostic_tests(&self) -> Vec<TestScore> {
         rank_tests(&self.diagnosis)
@@ -393,17 +407,10 @@ impl NaniMathEngine {
                 .partial_cmp(&b.efficiency)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })?;
-        let reasoning = format!(
-            "Expected information gain {:.4} nats at cost {:.1} (efficiency {:.4} nats/unit)",
-            best.information_gain, best.cost, best.efficiency
-        );
         Some(ProbeSelection {
-            test_id: best.test.correlation_id().to_string(),
             test_name: format!("{:?}", best.test),
             expected_information_gain: best.information_gain,
             cost: best.cost,
-            efficiency: best.efficiency,
-            reasoning,
         })
     }
 
@@ -416,6 +423,20 @@ impl NaniMathEngine {
     /// it moved from, the current entropy, and the probe the engine would run
     /// next by expected information gain.
     pub fn hypothesis_view(&self) -> HypothesisView {
+        self.hypothesis_view_with(None)
+    }
+
+    /// Hypothesis view whose MAP confidence is additionally calibrated.
+    ///
+    /// `calibration` is the fitted map and the number of real outcomes behind
+    /// it. With `None`, or a map with nothing to fit, the calibrated value
+    /// equals the raw one and `calibration_samples` reports the sample count, so
+    /// the UI can say "raw, not enough outcomes yet" instead of inventing a
+    /// corrected number.
+    pub fn hypothesis_view_with(
+        &self,
+        calibration: Option<(&IsotonicCalibrator, usize)>,
+    ) -> HypothesisView {
         let priors = self.diagnosis.priors();
         let hypotheses = self
             .diagnosis
@@ -434,10 +455,19 @@ impl NaniMathEngine {
                 posterior,
             })
             .collect();
+        // Only a fitted map produces a calibrated number; an identity map means
+        // "no map yet", so the field stays empty rather than echoing the raw
+        // posterior back as if it had been corrected.
+        let map = self.diagnosis.diagnosis();
+        let map_confidence_calibrated = calibration
+            .filter(|(calibrator, _)| !calibrator.is_identity())
+            .and_then(|(calibrator, _)| map.as_ref().map(|(_, prob)| calibrator.apply(*prob)));
         HypothesisView {
             hypotheses,
             entropy_nats: self.diagnosis.uncertainty(),
-            map_label: self.diagnosis.diagnosis().map(|(label, _)| label.to_string()),
+            map_label: map.map(|(label, _)| label.to_string()),
+            map_confidence_calibrated,
+            calibration_samples: calibration.map_or(0, |(_, samples)| samples),
             selected_probe: self.select_best_probe(),
         }
     }
@@ -1350,6 +1380,53 @@ mod tests {
         for r in &reports {
             assert!(r.passed, "adversarial test failed: {} — {}", r.test_name, r.detail);
         }
+    }
+
+    #[test]
+    fn hypothesis_view_applies_a_fitted_map_to_the_map_confidence() {
+        let mut engine = NaniMathEngine::new();
+        for i in 0..12u64 {
+            engine.observe_probe(&ProbeResult {
+                test: DiagnosticTest::DnsResolve,
+                outcome: ProbeOutcome::Failure,
+                timestamp: i + 1,
+                source: "view-test".into(),
+                cost: 1.0,
+            });
+        }
+        let raw_view = engine.hypothesis_view();
+        let map_label = raw_view.map_label.clone().expect("a MAP exists after probes");
+        // The posterior is the only place the confidence lives; the view does
+        // not repeat it in a second field.
+        let raw = raw_view
+            .hypotheses
+            .iter()
+            .find(|h| h.label == map_label)
+            .map(|h| h.posterior)
+            .expect("the MAP label has a posterior");
+        // Without a fitted map there is no calibrated number at all.
+        assert_eq!(raw_view.map_confidence_calibrated, None);
+        assert_eq!(raw_view.calibration_samples, 0);
+        assert!(!raw_view.selected_probe.as_ref().map_or(true, |p| p.test_name.is_empty()));
+
+        // Outcomes that say 0.9 was right half the time: the map must pull the
+        // displayed confidence to roughly 0.5.
+        let mut samples = Vec::new();
+        for i in 0..100 {
+            samples.push(Prediction::new(0.9, if i % 2 == 0 { 1.0 } else { 0.0 }).unwrap());
+        }
+        let calibrator = IsotonicCalibrator::fit(&samples);
+        let view = engine.hypothesis_view_with(Some((&calibrator, samples.len())));
+        assert_eq!(view.calibration_samples, 100);
+        let calibrated = view.map_confidence_calibrated.expect("calibrated confidence");
+        assert!((calibrated - calibrator.apply(raw)).abs() < 1e-12);
+        assert!(
+            (calibrated - raw).abs() > 1e-6,
+            "map left an overconfident posterior untouched: {raw} -> {calibrated}"
+        );
+        // Calibration moves confidence, never the ranking or the label.
+        assert_eq!(view.map_label, raw_view.map_label);
+        assert_eq!(view.hypotheses.len(), raw_view.hypotheses.len());
     }
 
     #[test]

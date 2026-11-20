@@ -1,0 +1,2431 @@
+npm notice run netpulse@3.2.0 desktop:dev
+npm notice run npm run build:desktop-backend && tauri dev
+npm notice run netpulse@3.2.0 build:desktop-backend
+npm notice run npm run build -w @netpulse/api && node scripts/prepare-desktop.mjs
+npm notice run @netpulse/api@3.2.0 build
+npm notice run tsup src/index.ts --format esm --dts --outDir dist
+[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: E:\Code\Project\Vpn_app\apps\api\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mESM[39m Build start
+[32mESM[39m [1mdist\proxyTunnel-WJ25LYO6.js    [22m[32m485.00 B[39m
+[32mESM[39m [1mdist\targetGuard-GNX6QJZY.js    [22m[32m535.00 B[39m
+[32mESM[39m [1mdist\chunk-ZV64AH25.js          [22m[32m73.97 KB[39m
+[32mESM[39m [1mdist\chunk-VMZOBHWK.js          [22m[32m9.36 KB[39m
+[32mESM[39m [1mdist\exec-6R3BMROW.js           [22m[32m107.00 B[39m
+[32mESM[39m [1mdist\engineManager-HZPS4ERM.js  [22m[32m639.00 B[39m
+[32mESM[39m [1mdist\platform-NVPA4EBA.js       [22m[32m195.00 B[39m
+[32mESM[39m [1mdist\systemProxy-SMPIDH3R.js    [22m[32m255.00 B[39m
+[32mESM[39m [1mdist\aetherProvider-ZSQNASQK.js [22m[32m811.00 B[39m
+[32mESM[39m [1mdist\chunk-K57AVQJU.js          [22m[32m3.29 KB[39m
+[32mESM[39m [1mdist\vpnDetect-HUFQC3LA.js      [22m[32m1.82 KB[39m
+[32mESM[39m [1mdist\chunk-IAAJ6C6H.js          [22m[32m17.65 KB[39m
+[32mESM[39m [1mdist\chunk-LLXLRQM2.js          [22m[32m144.68 KB[39m
+[32mESM[39m [1mdist\chunk-RBRIWVXW.js          [22m[32m21.62 KB[39m
+[32mESM[39m [1mdist\chunk-6BSGA2JL.js          [22m[32m95.44 KB[39m
+[32mESM[39m [1mdist\chunk-MLKGABMK.js          [22m[32m191.00 B[39m
+[32mESM[39m [1mdist\chunk-FI3UDKSR.js          [22m[32m1.23 KB[39m
+[32mESM[39m [1mdist\index.js                   [22m[32m865.44 KB[39m
+[32mESM[39m ⚡️ Build success in 143ms
+[34mDTS[39m Build start
+[32mDTS[39m ⚡️ Build success in 8740ms
+[32mDTS[39m [1mdist\index.d.ts [22m[32m13.00 B[39m
+npm warn Unknown env config "global-ignore-file". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @netpulse/api@3.2.0 build:desktop
+> tsup src/desktop-index.ts --config tsup.desktop.config.ts
+
+[34mCLI[39m Building entry: src/desktop-index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: E:\Code\Project\Vpn_app\apps\api\tsup.desktop.config.ts
+[34mCLI[39m Target: node22
+[34mCJS[39m Build start
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/config.ts:15:13:
+[37m      15 │   if (typeof [32mimport.meta[37m !== 'undefined' && typeof (import.meta as...
+         ╵              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/config.ts:15:52:
+[37m      15 │ ...== 'undefined' && typeof ([32mimport.meta[37m as { dirname?: string })....
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/config.ts:16:25:
+[37m      16 │     return path.resolve(([32mimport.meta[37m as { dirname: string }).dirna...
+         ╵                          [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/db/client.ts:140:19:
+[37m      140 │   const metaUrl = ([32mimport.meta[37m as { url?: string } | undefined)?....
+          ╵                    [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/services/missionOverdrive.ts:115:15:
+[37m      115 │   const meta = [32mimport.meta[37m as unknown as { dirname?: unknown };
+          ╵                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+[32mCJS[39m [1mdist-desktop\desktop-index.cjs [22m[32m6.06 MB[39m
+[32mCJS[39m ⚡️ Build success in 247ms
+[desktop-prepare] warning: dependency not found, skipping: bindings
+[desktop-prepare] warning: dependency not found, skipping: file-uri-to-path
+[portable-launcher] bundled Node runtime -> E:\Code\Project\Vpn_app\src-tauri\backend\node.exe
+[portable-launcher] done
+[desktop-prepare] backend staged in src-tauri/backend
+     Running BeforeDevCommand (`npm run dev -w @netpulse/web`)
+npm notice run @netpulse/web@3.2.0 dev
+npm notice run vite
+
+  [32m[1mVITE[22m v7.3.7[39m  [2mready in [0m[1m517[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching E:\Code\Project\Vpn_app\src-tauri for changes...
+[1m[92m   Compiling[0m netpulse-desktop v3.2.0 (E:\Code\Project\Vpn_app\src-tauri)
+[1m[96m    Building[0m [=======================> ] 441/443: netpuls…[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `ExplanationFacts`[0m
+  [1m[96m--> [0msrc\network_intelligence\ai\mod.rs:26:36
+   [1m[96m|[0m
+[1m[96m26[0m [1m[96m|[0m pub use explanation::{Explanation, ExplanationFacts};
+   [1m[96m|[0m                                    [1m[93m^^^^^^^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[93mwarning[0m[1m[97m: unused import: `LocalLlmConfig`[0m
+  [1m[96m--> [0msrc\network_intelligence\ai\mod.rs:27:45
+   [1m[96m|[0m
+[1m[96m27[0m [1m[96m|[0m pub use local_runtime::{AiStatus, LocalLlm, LocalLlmConfig};
+   [1m[96m|[0m                                             [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `clamp_probability`, `finite_or_default`, `js_divergence`, and `kl_divergence`[0m
+ [1m[96m--> [0msrc\network_intelligence\bayesian.rs:8:24
+  [1m[96m|[0m
+[1m[96m8[0m [1m[96m|[0m     bernoulli_entropy, clamp_probability, finite_or_default, kl_divergence, js_divergence,
+  [1m[96m|[0m                        [1m[93m^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `crate::network_intelligence::context::context_identity::NetworkContextId`[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:12:5
+   [1m[96m|[0m
+[1m[96m12[0m [1m[96m|[0m use crate::network_intelligence::context::context_identity::NetworkContextId;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `std::collections::HashMap`[0m
+  [1m[96m--> [0msrc\network_intelligence\context\context_identity.rs:12:5
+   [1m[96m|[0m
+[1m[96m12[0m [1m[96m|[0m use std::collections::HashMap;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `Deserialize` and `Serialize`[0m
+ [1m[96m--> [0msrc\network_intelligence\context\transitions.rs:8:13
+  [1m[96m|[0m
+[1m[96m8[0m [1m[96m|[0m use serde::{Deserialize, Serialize};
+  [1m[96m|[0m             [1m[93m^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `ContextIdentity`, `ContextSignals`, `InterfaceClass`, `NetworkContextId`, `NetworkContext`, and `classify_interface`[0m
+  [1m[96m--> [0msrc\network_intelligence\context\mod.rs:16:28
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub use context_identity::{classify_interface, ContextIdentity, ContextSignals, InterfaceClass, NetworkContext, NetworkContextId};
+   [1m[96m|[0m                            [1m[93m^^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `MetricProfile`, `NetworkProfile`, and `ProfileStore`[0m
+  [1m[96m--> [0msrc\network_intelligence\context\mod.rs:17:28
+   [1m[96m|[0m
+[1m[96m17[0m [1m[96m|[0m pub use network_profiles::{MetricProfile, NetworkProfile, ProfileStore};
+   [1m[96m|[0m                            [1m[93m^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `NetworkProfileEngine`, `PersonalizationStatus`, `ProfileEngineSnapshot`, and `TransitionRecord`[0m
+  [1m[96m--> [0msrc\network_intelligence\context\mod.rs:18:18
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m pub use engine::{NetworkProfileEngine, PersonalizationStatus, ProfileEngineSnapshot, TransitionRecord};
+   [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `ProfileStorageError`, `load_engine`, `profile_path`, and `save_engine`[0m
+  [1m[96m--> [0msrc\network_intelligence\context\mod.rs:19:19
+   [1m[96m|[0m
+[1m[96m19[0m [1m[96m|[0m pub use storage::{load_engine, save_engine, profile_path, ProfileStorageError};
+   [1m[96m|[0m                   [1m[93m^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `decay_log_likelihood`[0m
+  [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:11:62
+   [1m[96m|[0m
+[1m[96m11[0m [1m[96m|[0m use crate::network_intelligence::bayesian::{bayesian_update, decay_log_likelihood, Evidence, Posterior, Prior};
+   [1m[96m|[0m                                                              [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `kl_divergence`[0m
+  [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:13:41
+   [1m[96m|[0m
+[1m[96m13[0m [1m[96m|[0m use crate::network_intelligence::math::{kl_divergence, log_sum_exp, softmax};
+   [1m[96m|[0m                                         [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `crate::network_intelligence::math::clamp_probability`[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:23:5
+   [1m[96m|[0m
+[1m[96m23[0m [1m[96m|[0m use crate::network_intelligence::math::clamp_probability;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `std::f64::EPSILON`[0m
+  [1m[96m--> [0msrc\network_intelligence\math.rs:10:5
+   [1m[96m|[0m
+[1m[96m10[0m [1m[96m|[0m use std::f64::EPSILON;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `std::f64::consts::PI`[0m
+  [1m[96m--> [0msrc\network_intelligence\probability.rs:14:5
+   [1m[96m|[0m
+[1m[96m14[0m [1m[96m|[0m use std::f64::consts::PI;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `std::time::Duration`[0m
+  [1m[96m--> [0msrc\network_intelligence\recovery.rs:13:5
+   [1m[96m|[0m
+[1m[96m13[0m [1m[96m|[0m use std::time::Duration;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `clamp_latency`[0m
+  [1m[96m--> [0msrc\network_intelligence\route.rs:14:60
+   [1m[96m|[0m
+[1m[96m14[0m [1m[96m|[0m use crate::network_intelligence::math::{clamp_probability, clamp_latency};
+   [1m[96m|[0m                                                            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `DiagnosticEngine`[0m
+ [1m[96m--> [0msrc\network_intelligence\simulation.rs:9:46
+  [1m[96m|[0m
+[1m[96m9[0m [1m[96m|[0m use crate::network_intelligence::diagnosis::{DiagnosticEngine, DiagnosticTest, ProbeOutcome, ProbeResult};
+  [1m[96m|[0m                                              [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `crate::network_intelligence::math::clamp_probability`[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:13:5
+   [1m[96m|[0m
+[1m[96m13[0m [1m[96m|[0m use crate::network_intelligence::math::clamp_probability;
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `Deserialize` and `Serialize`[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:14:13
+   [1m[96m|[0m
+[1m[96m14[0m [1m[96m|[0m use serde::{Deserialize, Serialize};
+   [1m[96m|[0m             [1m[93m^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `RouteKind`[0m
+  [1m[96m--> [0msrc\network_intelligence\api_intelligence\monitor_loop.rs:15:63
+   [1m[96m|[0m
+[1m[96m15[0m [1m[96m|[0m use crate::network_intelligence::api_model::{FailureCategory, RouteKind};
+   [1m[96m|[0m                                                               [1m[93m^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `finite_or_default`[0m
+ [1m[96m--> [0msrc\network_intelligence\evidence\measurements.rs:7:60
+  [1m[96m|[0m
+[1m[96m7[0m [1m[96m|[0m use crate::network_intelligence::math::{clamp_probability, finite_or_default};
+  [1m[96m|[0m                                                            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused imports: `MeasureState`, `Measurement`, and `Provenance`[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\mod.rs:16:24
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub use measurements::{Measurement, MeasureState, Provenance};
+   [1m[96m|[0m                        [1m[93m^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused imports: `CorrelationGroup` and `CorrelationModel`[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\mod.rs:17:23
+   [1m[96m|[0m
+[1m[96m17[0m [1m[96m|[0m pub use correlation::{CorrelationGroup, CorrelationModel};
+   [1m[96m|[0m                       [1m[93m^^^^^^^^^^^^^^^^[0m  [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `provenance::ProvenanceRecord`[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\mod.rs:18:9
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m pub use provenance::ProvenanceRecord;
+   [1m[96m|[0m         [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: unused import: `validation::ValidationError`[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\mod.rs:19:9
+   [1m[96m|[0m
+[1m[96m19[0m [1m[96m|[0m pub use validation::ValidationError;
+   [1m[96m|[0m         [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `log_sum_exp`[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:12:60
+   [1m[96m|[0m
+[1m[96m12[0m [1m[96m|[0m use crate::network_intelligence::math::{clamp_probability, log_sum_exp};
+   [1m[96m|[0m                                                            [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `mpsc`[0m
+  [1m[96m--> [0msrc\main.rs:48:22
+   [1m[96m|[0m
+[1m[96m48[0m [1m[96m|[0m use std::sync::{Arc, mpsc, Mutex};
+   [1m[96m|[0m                      [1m[93m^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused import: `Manager`[0m
+  [1m[96m--> [0msrc\network_intelligence\events\mod.rs:18:33
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m use tauri::{AppHandle, Emitter, Manager};
+   [1m[96m|[0m                                 [1m[93m^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `k`[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:235:20
+    [1m[96m|[0m
+[1m[96m235[0m [1m[96m|[0m             .map(|(k, (t, xi))| {
+    [1m[96m|[0m                    [1m[93m^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_k`[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `log_probs`[0m
+  [1m[96m--> [0msrc\network_intelligence\bayesian.rs:54:13
+   [1m[96m|[0m
+[1m[96m54[0m [1m[96m|[0m         let log_probs: Vec<f64> = probs
+   [1m[96m|[0m             [1m[93m^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_log_probs`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `lse`[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:117:21
+    [1m[96m|[0m
+[1m[96m117[0m [1m[96m|[0m         if let Some(lse) = softmax(&self.log_probs) {
+    [1m[96m|[0m                     [1m[93m^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_lse`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: variable `count` is assigned to, but never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:181:9
+    [1m[96m|[0m
+[1m[96m181[0m [1m[96m|[0m     let mut count = 0usize;
+    [1m[96m|[0m         [1m[93m^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: consider using `_count` instead
+
+[1m[93mwarning[0m[1m[97m: variable `up` is assigned to, but never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:182:9
+    [1m[96m|[0m
+[1m[96m182[0m [1m[96m|[0m     let mut up = 0usize;
+    [1m[96m|[0m         [1m[93m^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: consider using `_up` instead
+
+[1m[93mwarning[0m[1m[97m: unused variable: `has_gateway`[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:221:13
+    [1m[96m|[0m
+[1m[96m221[0m [1m[96m|[0m         let has_gateway = !(*adapter).first_gateway.is_null();
+    [1m[96m|[0m             [1m[93m^^^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_has_gateway`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `dns_count`[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:222:13
+    [1m[96m|[0m
+[1m[96m222[0m [1m[96m|[0m         let dns_count = count_ipv4_dns((*adapter).first_dns);
+    [1m[96m|[0m             [1m[93m^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_dns_count`[0m
+
+[1m[93mwarning[0m[1m[97m: value assigned to `count` is never read[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:186:13
+    [1m[96m|[0m
+[1m[96m186[0m [1m[96m|[0m             count += 1;
+    [1m[96m|[0m             [1m[93m^^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mhelp[0m: maybe it is overwritten before being read?
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+[1m[93mwarning[0m[1m[97m: value assigned to `up` is never read[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:190:17
+    [1m[96m|[0m
+[1m[96m190[0m [1m[96m|[0m                 up += 1;
+    [1m[96m|[0m                 [1m[93m^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mhelp[0m: maybe it is overwritten before being read?
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unreachable pattern[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:305:17
+    [1m[96m|[0m
+[1m[96m304[0m [1m[96m|[0m                 LocalInterface => 0.97,
+    [1m[96m|[0m                 [1m[96m--------------[0m [1m[96mmatches any value[0m
+[1m[96m305[0m [1m[96m|[0m                 Gateway => 0.25,
+    [1m[96m|[0m                 [1m[93m^^^^^^^[0m [1m[93mno value can reach this[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+[1m[93mwarning[0m[1m[97m: unreachable pattern[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:306:17
+    [1m[96m|[0m
+[1m[96m304[0m [1m[96m|[0m                 LocalInterface => 0.97,
+    [1m[96m|[0m                 [1m[96m--------------[0m [1m[96mmatches any value[0m
+[1m[96m305[0m [1m[96m|[0m                 Gateway => 0.25,
+[1m[96m306[0m [1m[96m|[0m                 _ => 0.05,
+    [1m[96m|[0m                 [1m[93m^[0m [1m[93mno value can reach this[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `LocalInterface`[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:304:17
+    [1m[96m|[0m
+[1m[96m304[0m [1m[96m|[0m                 LocalInterface => 0.97,
+    [1m[96m|[0m                 [1m[93m^^^^^^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_LocalInterface`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `mean`[0m
+   [1m[96m--> [0msrc\network_intelligence\drift.rs:121:13
+    [1m[96m|[0m
+[1m[96m121[0m [1m[96m|[0m         let mean = self.sum_x / self.count as f64;
+    [1m[96m|[0m             [1m[93m^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_mean`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `n`[0m
+  [1m[96m--> [0msrc\network_intelligence\robust_stats.rs:98:13
+   [1m[96m|[0m
+[1m[96m98[0m [1m[96m|[0m         let n = v.len();
+   [1m[96m|[0m             [1m[93m^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_n`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `now_unix`[0m
+  [1m[96m--> [0msrc\network_intelligence\recovery.rs:66:38
+   [1m[96m|[0m
+[1m[96m66[0m [1m[96m|[0m     pub fn record_success(&mut self, now_unix: u64) {
+   [1m[96m|[0m                                      [1m[93m^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_now_unix`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `latency_ms`[0m
+  [1m[96m--> [0msrc\network_intelligence\simulation.rs:71:23
+   [1m[96m|[0m
+[1m[96m71[0m [1m[96m|[0m         let (outcome, latency_ms) = self.probe_outcome(test);
+   [1m[96m|[0m                       [1m[93m^^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_latency_ms`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `api_id`[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:306:32
+    [1m[96m|[0m
+[1m[96m306[0m [1m[96m|[0m     pub fn api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+    [1m[96m|[0m                                [1m[93m^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_api_id`[0m
+
+[1m[93mwarning[0m[1m[97m: unused variable: `rng`[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:349:46
+    [1m[96m|[0m
+[1m[96m349[0m [1m[96m|[0m fn condition_to_network(c: NetworkCondition, rng: &mut StdRng) -> SimulatedNetwork {
+    [1m[96m|[0m                                              [1m[93m^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_rng`[0m
+
+[1m[93mwarning[0m[1m[97m: unused variable: `run_length`[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:27:26
+   [1m[96m|[0m
+[1m[96m27[0m [1m[96m|[0m     pub fn hazard(&self, run_length: u64) -> f64 {
+   [1m[96m|[0m                          [1m[93m^^^^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_run_length`[0m
+
+[1m[93mwarning[0m[1m[97m: unused variable: `timeout`[0m
+  [1m[96m--> [0msrc\network_intelligence\api_intelligence\monitor.rs:43:26
+   [1m[96m|[0m
+[1m[96m43[0m [1m[96m|[0m fn probe_dns(host: &str, timeout: Duration) -> (LayerResult, Option<f64>) {
+   [1m[96m|[0m                          [1m[93m^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_timeout`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: unused variable: `outcome`[0m
+   [1m[96m--> [0msrc\network_intelligence\api_intelligence\monitor_loop.rs:219:46
+    [1m[96m|[0m
+[1m[96m219[0m [1m[96m|[0m     fn recovery_actions(&self, api_id: &str, outcome: &ProbeOutcomeRecord) -> Vec<(String, f64)> {
+    [1m[96m|[0m                                              [1m[93m^^^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_outcome`[0m
+
+[1m[93mwarning[0m[1m[97m: variable does not need to be mutable[0m
+   [1m[96m--> [0msrc\network_intelligence\api_intelligence\monitor_loop.rs:255:18
+    [1m[96m|[0m
+[1m[96m255[0m [1m[96m|[0m         let Some(mut step) = recovery.next_step(now_secs) else {
+    [1m[96m|[0m                  [1m[96m----[0m[1m[93m^^^^[0m
+    [1m[96m|[0m                  [1m[96m|[0m
+    [1m[96m|[0m                  [1m[96mhelp: remove this `mut`[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: variable does not need to be mutable[0m
+   [1m[96m--> [0msrc\main.rs:384:25
+    [1m[96m|[0m
+[1m[96m384[0m [1m[96m|[0m                     let mut registry = nani_state.registry.lock().unwrap();
+    [1m[96m|[0m                         [1m[96m----[0m[1m[93m^^^^^^^^[0m
+    [1m[96m|[0m                         [1m[96m|[0m
+    [1m[96m|[0m                         [1m[96mhelp: remove this `mut`[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `config` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\ai\local_runtime.rs:133:12
+    [1m[96m|[0m
+[1m[96m124[0m [1m[96m|[0m impl LocalLlm {
+    [1m[96m|[0m [1m[96m-------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m133[0m [1m[96m|[0m     pub fn config(&self) -> &LocalLlmConfig {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[93mwarning[0m[1m[97m: struct `ApiOutcome` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\api_model.rs:86:12
+   [1m[96m|[0m
+[1m[96m86[0m [1m[96m|[0m pub struct ApiOutcome {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `RouteFeatures` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:105:12
+    [1m[96m|[0m
+[1m[96m105[0m [1m[96m|[0m pub struct RouteFeatures {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated function `neutral` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:119:12
+    [1m[96m|[0m
+[1m[96m117[0m [1m[96m|[0m impl RouteFeatures {
+    [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m118[0m [1m[96m|[0m     /// Neutral features when nothing is known yet.
+[1m[96m119[0m [1m[96m|[0m     pub fn neutral(api_id: &str) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ApiPredictor` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:148:12
+    [1m[96m|[0m
+[1m[96m148[0m [1m[96m|[0m pub struct ApiPredictor {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `coefficients_for`, `predict`, `observe`, `api_base_rate`, and `api_uncertainty` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:167:12
+    [1m[96m|[0m
+[1m[96m165[0m [1m[96m|[0m impl ApiPredictor {
+    [1m[96m|[0m [1m[96m-----------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m166[0m [1m[96m|[0m     /// Create a new predictor with `n_features` coefficients.
+[1m[96m167[0m [1m[96m|[0m     pub fn new(n_features: usize) -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m180[0m [1m[96m|[0m     fn coefficients_for(&self, api_id: &str) -> Vec<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m196[0m [1m[96m|[0m     pub fn predict(&self, api_id: &str, features: &RouteFeatures) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m211[0m [1m[96m|[0m     pub fn observe(
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m272[0m [1m[96m|[0m     pub fn api_base_rate(&self, api_id: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m281[0m [1m[96m|[0m     pub fn api_uncertainty(&self, api_id: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `feature_vector` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\api_model.rs:300:8
+    [1m[96m|[0m
+[1m[96m300[0m [1m[96m|[0m pub fn feature_vector(f: &RouteFeatures) -> Vec<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ContextBucket` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:16:12
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub struct ContextBucket {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `ConnectivityBucket` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:23:10
+   [1m[96m|[0m
+[1m[96m23[0m [1m[96m|[0m pub enum ConnectivityBucket {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `FailureBucket` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:32:10
+   [1m[96m|[0m
+[1m[96m32[0m [1m[96m|[0m pub enum FailureBucket {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `LatencyBucket` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:39:10
+   [1m[96m|[0m
+[1m[96m39[0m [1m[96m|[0m pub enum LatencyBucket {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated function `from_measurements` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:48:12
+   [1m[96m|[0m
+[1m[96m46[0m [1m[96m|[0m impl ContextBucket {
+   [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m47[0m [1m[96m|[0m     /// Classify raw measurements into a bucket.
+[1m[96m48[0m [1m[96m|[0m     pub fn from_measurements(
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: enum `Action` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\bandit.rs:85:10
+   [1m[96m|[0m
+[1m[96m85[0m [1m[96m|[0m pub enum Action {
+   [1m[96m|[0m          [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated items `all` and `label` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:98:12
+    [1m[96m|[0m
+[1m[96m 97[0m [1m[96m|[0m impl Action {
+    [1m[96m|[0m [1m[96m-----------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 98[0m [1m[96m|[0m     pub fn all() -> Vec<Action> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m112[0m [1m[96m|[0m     pub fn label(&self) -> &'static str {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ActionOutcome` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:129:12
+    [1m[96m|[0m
+[1m[96m129[0m [1m[96m|[0m pub struct ActionOutcome {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `RewardWeights` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:144:12
+    [1m[96m|[0m
+[1m[96m144[0m [1m[96m|[0m pub struct RewardWeights {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `compute_reward` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:173:8
+    [1m[96m|[0m
+[1m[96m173[0m [1m[96m|[0m pub fn compute_reward(outcome: &ActionOutcome, weights: &RewardWeights) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ContextualBandit` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:215:12
+    [1m[96m|[0m
+[1m[96m215[0m [1m[96m|[0m pub struct ContextualBandit {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:224:12
+    [1m[96m|[0m
+[1m[96m223[0m [1m[96m|[0m impl ContextualBandit {
+    [1m[96m|[0m [1m[96m---------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m224[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m232[0m [1m[96m|[0m     pub fn with_prior(alpha: f64, beta: f64) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m243[0m [1m[96m|[0m     fn model_for(&mut self, ctx: ContextBucket, action: &Action) -> &mut BetaBernoulli {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m257[0m [1m[96m|[0m     pub fn select<R: Rng + ?Sized>(
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m298[0m [1m[96m|[0m     pub fn update(&mut self, ctx: ContextBucket, action: &Action, success: Option<bool>) {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m305[0m [1m[96m|[0m     pub fn estimated_success(&self, ctx: ContextBucket, action: &Action) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m313[0m [1m[96m|[0m     pub fn n_models(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `safe_action_filter` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bandit.rs:323:8
+    [1m[96m|[0m
+[1m[96m323[0m [1m[96m|[0m pub fn safe_action_filter(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `Evidence` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\bayesian.rs:20:12
+   [1m[96m|[0m
+[1m[96m20[0m [1m[96m|[0m pub struct Evidence {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `Prior` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\bayesian.rs:34:12
+   [1m[96m|[0m
+[1m[96m34[0m [1m[96m|[0m pub struct Prior {
+   [1m[96m|[0m            [1m[93m^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:41:12
+    [1m[96m|[0m
+[1m[96m 39[0m [1m[96m|[0m impl Prior {
+    [1m[96m|[0m [1m[96m----------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 40[0m [1m[96m|[0m     /// Uniform prior over `n` hypotheses.
+[1m[96m 41[0m [1m[96m|[0m     pub fn uniform(labels: Vec<String>) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 50[0m [1m[96m|[0m     pub fn from_probs(labels: Vec<String>, probs: Vec<f64>) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 65[0m [1m[96m|[0m     pub fn prob(&self, i: usize) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^[0m
+[1m[96m...[0m
+[1m[96m 76[0m [1m[96m|[0m     pub fn map(&self) -> Option<usize> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m 91[0m [1m[96m|[0m     pub fn entropy(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m106[0m [1m[96m|[0m     pub fn add_evidence(&mut self, i: usize, log_likelihood: f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m116[0m [1m[96m|[0m     pub fn normalize(&mut self) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `Posterior` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:134:12
+    [1m[96m|[0m
+[1m[96m134[0m [1m[96m|[0m pub struct Posterior {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated items `from_prior`, `prob`, `label`, `map`, `entropy`, and `ranked` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:139:12
+    [1m[96m|[0m
+[1m[96m138[0m [1m[96m|[0m impl Posterior {
+    [1m[96m|[0m [1m[96m--------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m139[0m [1m[96m|[0m     pub fn from_prior(prior: Prior) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m144[0m [1m[96m|[0m     pub fn prob(&self, i: usize) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^[0m
+[1m[96m...[0m
+[1m[96m149[0m [1m[96m|[0m     pub fn label(&self, i: usize) -> Option<&str> {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m154[0m [1m[96m|[0m     pub fn map(&self) -> Option<usize> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m160[0m [1m[96m|[0m     pub fn entropy(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m165[0m [1m[96m|[0m     pub fn ranked(&self) -> Vec<(&str, f64)> {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `bayesian_update` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:184:8
+    [1m[96m|[0m
+[1m[96m184[0m [1m[96m|[0m pub fn bayesian_update(prior: &Prior, evidence: &[Evidence]) -> Posterior {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `decay_log_likelihood` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:224:8
+    [1m[96m|[0m
+[1m[96m224[0m [1m[96m|[0m pub fn decay_log_likelihood(log_likelihood: f64, age_seconds: f64, lambda: f64) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `posterior_predictive_bernoulli` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:238:8
+    [1m[96m|[0m
+[1m[96m238[0m [1m[96m|[0m pub fn posterior_predictive_bernoulli(model: &BetaBernoulli) -> (f64, f64) {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `update_beta_bernoulli` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:245:8
+    [1m[96m|[0m
+[1m[96m245[0m [1m[96m|[0m pub fn update_beta_bernoulli(model: &mut BetaBernoulli, success: Option<bool>) {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `beta_credible_width` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\bayesian.rs:250:8
+    [1m[96m|[0m
+[1m[96m250[0m [1m[96m|[0m pub fn beta_credible_width(model: &BetaBernoulli) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `CONTROL_ACTION` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\causal.rs:16:11
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub const CONTROL_ACTION: &str = "none";
+   [1m[96m|[0m           [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `InterventionRecord` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\causal.rs:20:12
+   [1m[96m|[0m
+[1m[96m20[0m [1m[96m|[0m pub struct InterventionRecord {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated function `new` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\causal.rs:38:12
+   [1m[96m|[0m
+[1m[96m37[0m [1m[96m|[0m impl InterventionRecord {
+   [1m[96m|[0m [1m[96m-----------------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m38[0m [1m[96m|[0m     pub fn new(
+   [1m[96m|[0m            [1m[93m^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `CausalEstimate` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\causal.rs:61:12
+   [1m[96m|[0m
+[1m[96m61[0m [1m[96m|[0m pub struct CausalEstimate {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `CausalTracker` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\causal.rs:80:12
+   [1m[96m|[0m
+[1m[96m80[0m [1m[96m|[0m pub struct CausalTracker {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `record`, `len`, `is_empty`, and `estimate` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\causal.rs:94:12
+    [1m[96m|[0m
+[1m[96m 93[0m [1m[96m|[0m impl CausalTracker {
+    [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 94[0m [1m[96m|[0m     pub fn new(max_records: usize) -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m104[0m [1m[96m|[0m     pub fn record(&mut self, record: InterventionRecord) {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m112[0m [1m[96m|[0m     pub fn len(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m116[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m126[0m [1m[96m|[0m     pub fn estimate(&self, action: &str, context: &str) -> CausalEstimate {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `unix_now_ms` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:18:4
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m fn unix_now_ms() -> u64 {
+   [1m[96m|[0m    [1m[93m^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `ConfigFormat` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:27:10
+   [1m[96m|[0m
+[1m[96m27[0m [1m[96m|[0m pub enum ConfigFormat {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: enum `ConfigStatus` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:40:10
+   [1m[96m|[0m
+[1m[96m40[0m [1m[96m|[0m pub enum ConfigStatus {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `RedistributionPermission` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:69:10
+   [1m[96m|[0m
+[1m[96m69[0m [1m[96m|[0m pub enum RedistributionPermission {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `ConfigFingerprint` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:80:12
+   [1m[96m|[0m
+[1m[96m80[0m [1m[96m|[0m pub struct ConfigFingerprint(pub [u8; 32]);
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `StructuralFingerprint` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:85:12
+   [1m[96m|[0m
+[1m[96m85[0m [1m[96m|[0m pub struct StructuralFingerprint(pub [u8; 16]);
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `DiscoveredConfig` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:89:12
+   [1m[96m|[0m
+[1m[96m89[0m [1m[96m|[0m pub struct DiscoveredConfig {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ConfigScore` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:118:12
+    [1m[96m|[0m
+[1m[96m118[0m [1m[96m|[0m pub struct ConfigScore {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `PipelineResult` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:141:12
+    [1m[96m|[0m
+[1m[96m141[0m [1m[96m|[0m pub struct PipelineResult {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `PipelineStage` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:149:10
+    [1m[96m|[0m
+[1m[96m149[0m [1m[96m|[0m pub enum PipelineStage {
+    [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `ConfigIntelligenceEngine` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:164:12
+    [1m[96m|[0m
+[1m[96m164[0m [1m[96m|[0m pub struct ConfigIntelligenceEngine {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\config_intelligence.rs:179:12
+    [1m[96m|[0m
+[1m[96m177[0m [1m[96m|[0m impl ConfigIntelligenceEngine {
+    [1m[96m|[0m [1m[96m-----------------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m178[0m [1m[96m|[0m     /// Create a new empty engine.
+[1m[96m179[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m190[0m [1m[96m|[0m     pub fn discover(
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m233[0m [1m[96m|[0m     fn fingerprint_config(raw: &Option<String>) -> ConfigFingerprint {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m250[0m [1m[96m|[0m     fn structural_fingerprint(raw: &Option<String>) -> StructuralFingerprint {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m274[0m [1m[96m|[0m     pub fn parse_config(&mut self, config_id: &str) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m314[0m [1m[96m|[0m     pub fn validate_config(&mut self, config_id: &str) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m346[0m [1m[96m|[0m     pub fn score_config(&mut self, config_id: &str) -> Option<ConfigScore> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m377[0m [1m[96m|[0m     pub fn get_config(&self, config_id: &str) -> Option<&DiscoveredConfig> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m382[0m [1m[96m|[0m     pub fn get_all_configs(&self) -> Vec<&DiscoveredConfig> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m387[0m [1m[96m|[0m     pub fn get_configs_by_status(&self, status: ConfigStatus) -> Vec<&DiscoveredConfig> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m395[0m [1m[96m|[0m     pub fn config_count(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: methods `with_max_contexts`, `len`, `clear`, and `ids` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\context_identity.rs:115:12
+    [1m[96m|[0m
+[1m[96m107[0m [1m[96m|[0m impl ContextIdentity {
+    [1m[96m|[0m [1m[96m--------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m115[0m [1m[96m|[0m     pub fn with_max_contexts(mut self, max: usize) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m121[0m [1m[96m|[0m     pub fn len(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m195[0m [1m[96m|[0m     pub fn clear(&mut self) {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m199[0m [1m[96m|[0m     pub fn ids(&self) -> Vec<NetworkContextId> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `mean`, and `anomaly_score` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\context\network_profiles.rs:43:12
+   [1m[96m|[0m
+[1m[96m42[0m [1m[96m|[0m impl MetricProfile {
+   [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m43[0m [1m[96m|[0m     pub fn new() -> Self {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m48[0m [1m[96m|[0m     pub fn mean(&self) -> f64 {
+   [1m[96m|[0m            [1m[93m^^^^[0m
+[1m[96m...[0m
+[1m[96m58[0m [1m[96m|[0m     pub fn anomaly_score(&self, x: f64) -> f64 {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: method `metric` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\network_profiles.rs:119:12
+    [1m[96m|[0m
+[1m[96m109[0m [1m[96m|[0m impl NetworkProfile {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m119[0m [1m[96m|[0m     pub fn metric(&self, name: &str) -> Option<&MetricProfile> {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `with_max_contexts`, `predict`, `anomaly_score`, and `prediction_confidence` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\network_profiles.rs:160:12
+    [1m[96m|[0m
+[1m[96m151[0m [1m[96m|[0m impl ProfileStore {
+    [1m[96m|[0m [1m[96m-----------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m160[0m [1m[96m|[0m     pub fn with_max_contexts(mut self, max: usize) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m197[0m [1m[96m|[0m     pub fn predict(&self, id: NetworkContextId, metric: &str) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m217[0m [1m[96m|[0m     pub fn anomaly_score(&self, id: NetworkContextId, metric: &str, x: f64) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m232[0m [1m[96m|[0m     pub fn prediction_confidence(&self, id: NetworkContextId, metric: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: methods `has_transitioned`, `set_current`, and `identity` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\context\transitions.rs:79:12
+   [1m[96m|[0m
+[1m[96m42[0m [1m[96m|[0m impl ContextTransitionTracker {
+   [1m[96m|[0m [1m[96m-----------------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m79[0m [1m[96m|[0m     pub fn has_transitioned(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m84[0m [1m[96m|[0m     pub fn set_current(&mut self, id: Option<NetworkContextId>) {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m98[0m [1m[96m|[0m     pub fn identity(&self) -> &ContextIdentity {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `is_compatible` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\transitions.rs:132:12
+    [1m[96m|[0m
+[1m[96m130[0m [1m[96m|[0m impl InterfaceClass {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m131[0m [1m[96m|[0m     /// Whether two interface classes are compatible (same broad category).
+[1m[96m132[0m [1m[96m|[0m     pub fn is_compatible(self, other: InterfaceClass) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `parse_output` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\collector.rs:252:4
+    [1m[96m|[0m
+[1m[96m252[0m [1m[96m|[0m fn parse_output(bytes: &[u8]) -> Option<ContextSignals> {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `set_active_context`, `record_global_metric`, `reliability`, `posterior`, `predict_metric`, and `metric_median` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\context\engine.rs:139:12
+    [1m[96m|[0m
+[1m[96m 93[0m [1m[96m|[0m impl NetworkProfileEngine {
+    [1m[96m|[0m [1m[96m-------------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m139[0m [1m[96m|[0m     pub fn set_active_context(&mut self, id: NetworkContextId) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m158[0m [1m[96m|[0m     pub fn record_global_metric(&mut self, metric: &str, value: f64, now_ms: u64) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m179[0m [1m[96m|[0m     pub fn reliability(&self, api_id: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m186[0m [1m[96m|[0m     pub fn posterior(&self, api_id: &str, level: f64) -> Option<BetaPosterior> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m191[0m [1m[96m|[0m     pub fn predict_metric(&self, metric: &str) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m198[0m [1m[96m|[0m     pub fn metric_median(&self, metric: &str) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `PrivacyAction` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\context\privacy.rs:13:10
+   [1m[96m|[0m
+[1m[96m13[0m [1m[96m|[0m pub enum PrivacyAction {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `PrivacyController` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\context\privacy.rs:24:12
+   [1m[96m|[0m
+[1m[96m24[0m [1m[96m|[0m pub struct PrivacyController {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\context\privacy.rs:30:12
+   [1m[96m|[0m
+[1m[96m29[0m [1m[96m|[0m impl PrivacyController {
+   [1m[96m|[0m [1m[96m----------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m30[0m [1m[96m|[0m     pub fn new(tracker: ContextTransitionTracker, store: ProfileStore) -> Self {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m35[0m [1m[96m|[0m     pub fn delete_context(&mut self, id: NetworkContextId) -> PrivacyAction {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m50[0m [1m[96m|[0m     pub fn delete_all_contexts(&mut self) -> PrivacyAction {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m60[0m [1m[96m|[0m     pub fn reset_active(&mut self) {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m65[0m [1m[96m|[0m     pub fn context_count(&self) -> usize {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m69[0m [1m[96m|[0m     pub fn store(&self) -> &ProfileStore {
+   [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m73[0m [1m[96m|[0m     pub fn store_mut(&mut self) -> &mut ProfileStore {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m77[0m [1m[96m|[0m     pub fn identity(&self) -> &ContextTransitionTracker {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `Hypothesis` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:19:10
+   [1m[96m|[0m
+[1m[96m19[0m [1m[96m|[0m pub enum Hypothesis {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `label` and `all` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:41:12
+   [1m[96m|[0m
+[1m[96m40[0m [1m[96m|[0m impl Hypothesis {
+   [1m[96m|[0m [1m[96m---------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m41[0m [1m[96m|[0m     pub fn label(&self) -> &'static str {
+   [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m64[0m [1m[96m|[0m     pub fn all() -> Vec<Hypothesis> {
+   [1m[96m|[0m            [1m[93m^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ProbeResult` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:91:12
+   [1m[96m|[0m
+[1m[96m91[0m [1m[96m|[0m pub struct ProbeResult {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: enum `ProbeOutcome` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:104:10
+    [1m[96m|[0m
+[1m[96m104[0m [1m[96m|[0m pub enum ProbeOutcome {
+    [1m[96m|[0m          [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `DiagnosticTest` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:119:10
+    [1m[96m|[0m
+[1m[96m119[0m [1m[96m|[0m pub enum DiagnosticTest {
+    [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `correlation_id` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:134:12
+    [1m[96m|[0m
+[1m[96m130[0m [1m[96m|[0m impl DiagnosticTest {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m134[0m [1m[96m|[0m     pub fn correlation_id(&self) -> &'static str {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `LikelihoodTable` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:154:12
+    [1m[96m|[0m
+[1m[96m154[0m [1m[96m|[0m pub struct LikelihoodTable {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:170:12
+    [1m[96m|[0m
+[1m[96m164[0m [1m[96m|[0m impl LikelihoodTable {
+    [1m[96m|[0m [1m[96m--------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m170[0m [1m[96m|[0m     pub fn default() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m182[0m [1m[96m|[0m     pub fn tests() -> Vec<DiagnosticTest> {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m195[0m [1m[96m|[0m     fn test_index(test: &DiagnosticTest) -> usize {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m214[0m [1m[96m|[0m     fn row(test: &DiagnosticTest, h: &Hypothesis) -> Vec<f64> {
+    [1m[96m|[0m        [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m263[0m [1m[96m|[0m     fn signature(test: &DiagnosticTest, h: &Hypothesis) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m392[0m [1m[96m|[0m     pub fn log_likelihood(
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m422[0m [1m[96m|[0m     pub fn set_log_likelihood(
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `TransitionModel` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:451:12
+    [1m[96m|[0m
+[1m[96m451[0m [1m[96m|[0m pub struct TransitionModel {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `default` and `log_transition` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:457:12
+    [1m[96m|[0m
+[1m[96m456[0m [1m[96m|[0m impl TransitionModel {
+    [1m[96m|[0m [1m[96m--------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m457[0m [1m[96m|[0m     pub fn default() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m484[0m [1m[96m|[0m     pub fn log_transition(&self, from: &Hypothesis, to: &Hypothesis) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `DiagnosticEngine` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:498:12
+    [1m[96m|[0m
+[1m[96m498[0m [1m[96m|[0m pub struct DiagnosticEngine {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: constant `MAX_CORRELATION_HISTORY` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:518:7
+    [1m[96m|[0m
+[1m[96m518[0m [1m[96m|[0m const MAX_CORRELATION_HISTORY: usize = 32;
+    [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `CORRELATION_WINDOW_MS` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:522:7
+    [1m[96m|[0m
+[1m[96m522[0m [1m[96m|[0m const CORRELATION_WINDOW_MS: u64 = 5 * 60 * 1_000;
+    [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:526:12
+    [1m[96m|[0m
+[1m[96m524[0m [1m[96m|[0m impl DiagnosticEngine {
+    [1m[96m|[0m [1m[96m---------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m525[0m [1m[96m|[0m     /// Create a new engine with a uniform prior over all hypotheses.
+[1m[96m526[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m542[0m [1m[96m|[0m     pub fn with_correlation(mut self, correlation: CorrelationModel) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m548[0m [1m[96m|[0m     pub fn with_prior(prior: Prior) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m564[0m [1m[96m|[0m     pub fn predict(&mut self, delta_seconds: f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m605[0m [1m[96m|[0m     pub fn observe(&mut self, result: &ProbeResult) {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m662[0m [1m[96m|[0m     pub fn uncertainty(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m667[0m [1m[96m|[0m     pub fn diagnosis(&self) -> Option<(&str, f64)> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m675[0m [1m[96m|[0m     pub fn ranked(&self) -> Vec<(&str, f64)> {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `TestScore` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:688:12
+    [1m[96m|[0m
+[1m[96m688[0m [1m[96m|[0m pub struct TestScore {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `expected_information_gain` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:696:8
+    [1m[96m|[0m
+[1m[96m696[0m [1m[96m|[0m pub fn expected_information_gain(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `rank_tests` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:767:8
+    [1m[96m|[0m
+[1m[96m767[0m [1m[96m|[0m pub fn rank_tests(engine: &DiagnosticEngine) -> Vec<TestScore> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `LikelihoodCalibrator` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:796:12
+    [1m[96m|[0m
+[1m[96m796[0m [1m[96m|[0m pub struct LikelihoodCalibrator {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `observe`, and `apply` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:803:12
+    [1m[96m|[0m
+[1m[96m802[0m [1m[96m|[0m impl LikelihoodCalibrator {
+    [1m[96m|[0m [1m[96m-------------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m803[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m813[0m [1m[96m|[0m     pub fn observe(
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m842[0m [1m[96m|[0m     pub fn apply(&self, table: &mut LikelihoodTable) {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `sprt_stop` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:876:8
+    [1m[96m|[0m
+[1m[96m876[0m [1m[96m|[0m pub fn sprt_stop(llr: f64, alpha: f64, beta: f64) -> Option<bool> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `should_stop_testing` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:894:8
+    [1m[96m|[0m
+[1m[96m894[0m [1m[96m|[0m pub fn should_stop_testing(entropy: f64, map_prob: f64, entropy_threshold: f64) -> bool {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `DriftStatus` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\drift.rs:11:10
+   [1m[96m|[0m
+[1m[96m11[0m [1m[96m|[0m pub enum DriftStatus {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `CusumDetector` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\drift.rs:26:12
+   [1m[96m|[0m
+[1m[96m26[0m [1m[96m|[0m pub struct CusumDetector {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `for_success_rate`, `update`, and `statistic` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\drift.rs:37:12
+   [1m[96m|[0m
+[1m[96m34[0m [1m[96m|[0m impl CusumDetector {
+   [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m37[0m [1m[96m|[0m     pub fn new(nu: f64, h: f64) -> Option<Self> {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m52[0m [1m[96m|[0m     pub fn for_success_rate() -> Self {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m60[0m [1m[96m|[0m     pub fn update(&mut self, e_t: f64) -> DriftStatus {
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m75[0m [1m[96m|[0m     pub fn statistic(&self) -> f64 {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `PageHinkleyDetector` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\drift.rs:88:12
+   [1m[96m|[0m
+[1m[96m88[0m [1m[96m|[0m pub struct PageHinkleyDetector {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `for_success_rate`, and `update` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\drift.rs:98:12
+    [1m[96m|[0m
+[1m[96m 97[0m [1m[96m|[0m impl PageHinkleyDetector {
+    [1m[96m|[0m [1m[96m------------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 98[0m [1m[96m|[0m     pub fn new(lambda: f64) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m113[0m [1m[96m|[0m     pub fn for_success_rate() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m117[0m [1m[96m|[0m     pub fn update(&mut self, x_t: f64) -> DriftStatus {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `DriftAwareWeighter` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\drift.rs:148:12
+    [1m[96m|[0m
+[1m[96m148[0m [1m[96m|[0m pub struct DriftAwareWeighter {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `observe`, `decay_weight`, and `statistic` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\drift.rs:157:12
+    [1m[96m|[0m
+[1m[96m156[0m [1m[96m|[0m impl DriftAwareWeighter {
+    [1m[96m|[0m [1m[96m-----------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m157[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m167[0m [1m[96m|[0m     pub fn observe(&mut self, success: f64) -> DriftStatus {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m175[0m [1m[96m|[0m     pub fn decay_weight(&self, age_seconds: f64, just_drifted: bool) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m184[0m [1m[96m|[0m     pub fn statistic(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `unix_now_ms` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\episodes.rs:15:4
+   [1m[96m|[0m
+[1m[96m15[0m [1m[96m|[0m fn unix_now_ms() -> u64 {
+   [1m[96m|[0m    [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `verify`, `correct`, and `is_learnable` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\episodes.rs:107:12
+    [1m[96m|[0m
+[1m[96m105[0m [1m[96m|[0m impl NetworkEpisode {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m106[0m [1m[96m|[0m     /// Create a new episode with default (unverified) quality.
+[1m[96m107[0m [1m[96m|[0m     pub fn new(
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m135[0m [1m[96m|[0m     pub fn verify(mut self, quality: EvidenceQuality) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m142[0m [1m[96m|[0m     pub fn correct(mut self, correction: impl Into<String>) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m149[0m [1m[96m|[0m     pub fn is_learnable(&self) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `is_empty`, `verified_for_context`, `all_verified`, `set_correction`, and `delete_context` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\episodes.rs:205:12
+    [1m[96m|[0m
+[1m[96m166[0m [1m[96m|[0m impl EpisodeMemory {
+    [1m[96m|[0m [1m[96m------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m205[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m210[0m [1m[96m|[0m     pub fn verified_for_context(&self, context_id: NetworkContextId) -> Vec<&NetworkEpisode> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m223[0m [1m[96m|[0m     pub fn all_verified(&self) -> Vec<&NetworkEpisode> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m229[0m [1m[96m|[0m     pub fn set_correction(&mut self, episode_id: &str, correction: &str) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m239[0m [1m[96m|[0m     pub fn delete_context(&mut self, context_id: NetworkContextId) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `EventSubscription` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\events\mod.rs:173:12
+    [1m[96m|[0m
+[1m[96m173[0m [1m[96m|[0m pub struct EventSubscription {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated items `new` and `next` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\events\mod.rs:181:8
+    [1m[96m|[0m
+[1m[96m180[0m [1m[96m|[0m impl EventSubscription {
+    [1m[96m|[0m [1m[96m----------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m181[0m [1m[96m|[0m     fn new(rx: mpsc::Receiver<Event>, since_seq: u64) -> Self {
+    [1m[96m|[0m        [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m186[0m [1m[96m|[0m     pub fn next(&mut self) -> Option<Event> {
+    [1m[96m|[0m            [1m[93m^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `CONDITIONS` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:25:7
+   [1m[96m|[0m
+[1m[96m25[0m [1m[96m|[0m const CONDITIONS: [(NetworkCondition, &str); 11] = [
+   [1m[96m|[0m       [1m[93m^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `probe_sequence` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:39:4
+   [1m[96m|[0m
+[1m[96m39[0m [1m[96m|[0m fn probe_sequence() -> Vec<DiagnosticTest> {
+   [1m[96m|[0m    [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `fixed_rule` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:53:4
+   [1m[96m|[0m
+[1m[96m53[0m [1m[96m|[0m fn fixed_rule(probes: &[ProbeResult]) -> &'static str {
+   [1m[96m|[0m    [1m[93m^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ConditionResult` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:74:12
+   [1m[96m|[0m
+[1m[96m74[0m [1m[96m|[0m pub struct ConditionResult {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `EvaluationResult` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:82:12
+   [1m[96m|[0m
+[1m[96m82[0m [1m[96m|[0m pub struct EvaluationResult {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `wilson` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evaluation.rs:99:4
+   [1m[96m|[0m
+[1m[96m99[0m [1m[96m|[0m fn wilson(successes: usize, n: usize) -> (f64, f64) {
+   [1m[96m|[0m    [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `evaluate` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:113:8
+    [1m[96m|[0m
+[1m[96m113[0m [1m[96m|[0m pub fn evaluate(seeds: u64) -> EvaluationResult {
+    [1m[96m|[0m        [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `expected_calibration_error` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:180:4
+    [1m[96m|[0m
+[1m[96m180[0m [1m[96m|[0m fn expected_calibration_error(samples: &[(f64, bool)], bins: usize) -> f64 {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `BenchReport` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:210:12
+    [1m[96m|[0m
+[1m[96m210[0m [1m[96m|[0m pub struct BenchReport {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `bench_candidate` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:220:4
+    [1m[96m|[0m
+[1m[96m220[0m [1m[96m|[0m fn bench_candidate() -> RouteCandidate {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `benchmark` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:242:8
+    [1m[96m|[0m
+[1m[96m242[0m [1m[96m|[0m pub fn benchmark(iterations: usize) -> BenchReport {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `ig_consistency` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evaluation.rs:278:8
+    [1m[96m|[0m
+[1m[96m278[0m [1m[96m|[0m pub fn ig_consistency() -> bool {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `NodeId` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:29:12
+   [1m[96m|[0m
+[1m[96m29[0m [1m[96m|[0m pub struct NodeId(pub String);
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `NodeType` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:39:10
+   [1m[96m|[0m
+[1m[96m39[0m [1m[96m|[0m pub enum NodeType {
+   [1m[96m|[0m          [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `Edge` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:53:12
+   [1m[96m|[0m
+[1m[96m53[0m [1m[96m|[0m pub struct Edge {
+   [1m[96m|[0m            [1m[93m^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated function `new` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:67:12
+   [1m[96m|[0m
+[1m[96m66[0m [1m[96m|[0m impl Edge {
+   [1m[96m|[0m [1m[96m---------[0m [1m[96massociated function in this implementation[0m
+[1m[96m67[0m [1m[96m|[0m     pub fn new(from: NodeId, to: NodeId, relation: String) -> Self {
+   [1m[96m|[0m            [1m[93m^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `NetworkGraph` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\graph.rs:81:12
+   [1m[96m|[0m
+[1m[96m81[0m [1m[96m|[0m pub struct NetworkGraph {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\graph.rs:92:12
+    [1m[96m|[0m
+[1m[96m 90[0m [1m[96m|[0m impl NetworkGraph {
+    [1m[96m|[0m [1m[96m-----------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 91[0m [1m[96m|[0m     /// Create an empty graph.
+[1m[96m 92[0m [1m[96m|[0m     pub fn new() -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m 97[0m [1m[96m|[0m     pub fn add_node(&mut self, id: NodeId, node_type: NodeType) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m103[0m [1m[96m|[0m     pub fn add_edge(&mut self, edge: Edge) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m113[0m [1m[96m|[0m     pub fn observe_edge(
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m144[0m [1m[96m|[0m     pub fn outgoing(&self, id: &NodeId) -> Option<&Vec<Edge>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m149[0m [1m[96m|[0m     pub fn incoming(&self, id: &NodeId) -> Option<&Vec<Edge>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m154[0m [1m[96m|[0m     pub fn node_type(&self, id: &NodeId) -> Option<NodeType> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m159[0m [1m[96m|[0m     pub fn node_count(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m164[0m [1m[96m|[0m     pub fn edge_count(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m169[0m [1m[96m|[0m     pub fn reachable_from(&self, start: &NodeId) -> HashSet<NodeId> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m187[0m [1m[96m|[0m     pub fn can_reach(&self, target: &NodeId) -> HashSet<NodeId> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m206[0m [1m[96m|[0m     pub fn connected_components(&self) -> Vec<HashSet<NodeId>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m244[0m [1m[96m|[0m     pub fn failure_propagation(&self, failed: &[NodeId]) -> HashSet<NodeId> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m264[0m [1m[96m|[0m     pub fn shortest_path(&self, start: &NodeId, target: &NodeId) -> Option<Vec<NodeId>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m300[0m [1m[96m|[0m     pub fn betweenness_centrality(&self) -> HashMap<NodeId, f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `unix_now_ms` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\graph.rs:348:4
+    [1m[96m|[0m
+[1m[96m348[0m [1m[96m|[0m fn unix_now_ms() -> u64 {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `HardwareTier` is never used[0m
+ [1m[96m--> [0msrc\network_intelligence\hardware.rs:9:10
+  [1m[96m|[0m
+[1m[96m9[0m [1m[96m|[0m pub enum HardwareTier {
+  [1m[96m|[0m          [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `HardwareProfile` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\hardware.rs:16:12
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub struct HardwareProfile {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated items `detect`, `sampling_interval_ms`, `max_concurrent_tests`, and `allow_model_inference` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\hardware.rs:24:12
+   [1m[96m|[0m
+[1m[96m22[0m [1m[96m|[0m impl HardwareProfile {
+   [1m[96m|[0m [1m[96m--------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m23[0m [1m[96m|[0m     /// Build a profile from available parallelism and an optional memory measurement.
+[1m[96m24[0m [1m[96m|[0m     pub fn detect(memory_mb: Option<u64>) -> Self {
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m38[0m [1m[96m|[0m     pub fn sampling_interval_ms(&self) -> u64 {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m47[0m [1m[96m|[0m     pub fn max_concurrent_tests(&self) -> usize {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m57[0m [1m[96m|[0m     pub fn allow_model_inference(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `classify` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\hardware.rs:63:4
+   [1m[96m|[0m
+[1m[96m63[0m [1m[96m|[0m fn classify(cores: usize, memory_mb: Option<u64>) -> HardwareTier {
+   [1m[96m|[0m    [1m[93m^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `BetaPosterior` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\hierarchical.rs:28:12
+   [1m[96m|[0m
+[1m[96m28[0m [1m[96m|[0m pub struct BetaPosterior {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: associated function `from_model` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\hierarchical.rs:41:8
+   [1m[96m|[0m
+[1m[96m40[0m [1m[96m|[0m impl BetaPosterior {
+   [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m41[0m [1m[96m|[0m     fn from_model(model: &BetaBernoulli, level: f64) -> Self {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `global_posterior`, `observe_global`, `predict`, `posterior`, `local_count`, and `contexts` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\hierarchical.rs:115:12
+    [1m[96m|[0m
+[1m[96m 89[0m [1m[96m|[0m impl HierarchicalBetaBernoulli {
+    [1m[96m|[0m [1m[96m------------------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m115[0m [1m[96m|[0m     pub fn global_posterior(&self, level: f64) -> BetaPosterior {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m123[0m [1m[96m|[0m     pub fn observe_global(&mut self, success: Option<bool>) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m144[0m [1m[96m|[0m     pub fn predict(&self, context: NetworkContextId, api: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m152[0m [1m[96m|[0m     pub fn posterior(&self, context: NetworkContextId, api: &str, level: f64) -> BetaPosterior {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m170[0m [1m[96m|[0m     pub fn local_count(&self, context: NetworkContextId, api: &str) -> u64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m183[0m [1m[96m|[0m     pub fn contexts(&self) -> Vec<NetworkContextId> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: field `correlations` is never read[0m
+   [1m[96m--> [0msrc\network_intelligence\learning.rs:106:5
+    [1m[96m|[0m
+[1m[96m 97[0m [1m[96m|[0m pub struct LearningEngine {
+    [1m[96m|[0m            [1m[96m--------------[0m [1m[96mfield in this struct[0m
+[1m[96m...[0m
+[1m[96m106[0m [1m[96m|[0m     correlations: CorrelationModel,
+    [1m[96m|[0m     [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `set_context`, `profile_confidence`, `record_user_correction`, `metric_median`, `reliability`, and `evidence_weights` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\learning.rs:181:12
+    [1m[96m|[0m
+[1m[96m119[0m [1m[96m|[0m impl LearningEngine {
+    [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m181[0m [1m[96m|[0m     pub fn set_context(&mut self, context: NetworkContextId) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m218[0m [1m[96m|[0m     pub fn profile_confidence(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m394[0m [1m[96m|[0m     pub fn record_user_correction(&mut self, episode_id: &str, correction: &str) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m400[0m [1m[96m|[0m     pub fn metric_median(&self, metric: &str) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m404[0m [1m[96m|[0m     pub fn reliability(&self, api_id: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m410[0m [1m[96m|[0m     pub fn evidence_weights(&self, observations: &[(String, f64)]) -> Option<Vec<f64>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `finite_or_default` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\math.rs:47:8
+   [1m[96m|[0m
+[1m[96m47[0m [1m[96m|[0m pub fn finite_or_default(x: f64, default: f64) -> f64 {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `sigmoid` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\math.rs:60:8
+   [1m[96m|[0m
+[1m[96m60[0m [1m[96m|[0m pub fn sigmoid(x: f64) -> f64 {
+   [1m[96m|[0m        [1m[93m^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `logit` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\math.rs:75:8
+   [1m[96m|[0m
+[1m[96m75[0m [1m[96m|[0m pub fn logit(p: f64) -> f64 {
+   [1m[96m|[0m        [1m[93m^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `log_sum_exp` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\math.rs:86:8
+   [1m[96m|[0m
+[1m[96m86[0m [1m[96m|[0m pub fn log_sum_exp(values: &[f64]) -> f64 {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `softmax` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:107:8
+    [1m[96m|[0m
+[1m[96m107[0m [1m[96m|[0m pub fn softmax(log_probs: &[f64]) -> Option<Vec<f64>> {
+    [1m[96m|[0m        [1m[93m^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `normalize_weights` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:128:8
+    [1m[96m|[0m
+[1m[96m128[0m [1m[96m|[0m pub fn normalize_weights(weights: &[f64]) -> Option<Vec<f64>> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `sample_categorical` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:144:8
+    [1m[96m|[0m
+[1m[96m144[0m [1m[96m|[0m pub fn sample_categorical<R: rand::Rng + ?Sized>(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `bernoulli_entropy` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:165:8
+    [1m[96m|[0m
+[1m[96m165[0m [1m[96m|[0m pub fn bernoulli_entropy(p: f64) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `kl_divergence` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:184:8
+    [1m[96m|[0m
+[1m[96m184[0m [1m[96m|[0m pub fn kl_divergence(p: &[f64], q: &[f64]) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `js_divergence` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:208:8
+    [1m[96m|[0m
+[1m[96m208[0m [1m[96m|[0m pub fn js_divergence(p: &[f64], q: &[f64]) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `clamp_latency` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\math.rs:223:8
+    [1m[96m|[0m
+[1m[96m223[0m [1m[96m|[0m pub fn clamp_latency(value: f64, floor: f64, cap: f64) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\robust_stats.rs:43:12
+    [1m[96m|[0m
+[1m[96m 28[0m [1m[96m|[0m impl RobustStats {
+    [1m[96m|[0m [1m[96m----------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m 43[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 92[0m [1m[96m|[0m     pub fn iqr(&self) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m125[0m [1m[96m|[0m     pub fn p50(&self) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m130[0m [1m[96m|[0m     pub fn p90(&self) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m135[0m [1m[96m|[0m     pub fn p95(&self) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m140[0m [1m[96m|[0m     pub fn p99(&self) -> Option<f64> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m145[0m [1m[96m|[0m     fn quantile_window(window: &VecDeque<f64>, p: f64) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `quantile` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\robust_stats.rs:156:4
+    [1m[96m|[0m
+[1m[96m156[0m [1m[96m|[0m fn quantile(sorted: &[f64], p: f64) -> f64 {
+    [1m[96m|[0m    [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `COMPACT_EVERY` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\persistence.rs:32:7
+   [1m[96m|[0m
+[1m[96m32[0m [1m[96m|[0m const COMPACT_EVERY: usize = 512;
+   [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple fields are never read[0m
+  [1m[96m--> [0msrc\network_intelligence\persistence.rs:57:5
+   [1m[96m|[0m
+[1m[96m56[0m [1m[96m|[0m pub struct PersistenceStore {
+   [1m[96m|[0m            [1m[96m----------------[0m [1m[96mfields in this struct[0m
+[1m[96m57[0m [1m[96m|[0m     dir: PathBuf,
+   [1m[96m|[0m     [1m[93m^^^[0m
+[1m[96m58[0m [1m[96m|[0m     observations_path: PathBuf,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^[0m
+[1m[96m59[0m [1m[96m|[0m     model_state_path: PathBuf,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^[0m
+[1m[96m60[0m [1m[96m|[0m     version_path: PathBuf,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^[0m
+[1m[96m61[0m [1m[96m|[0m     observations: Vec<Observation>,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^[0m
+[1m[96m62[0m [1m[96m|[0m     model: ModelState,
+   [1m[96m|[0m     [1m[93m^^^^^[0m
+[1m[96m63[0m [1m[96m|[0m     /// Appends since the last full-file compaction.
+[1m[96m64[0m [1m[96m|[0m     appends_since_compaction: usize,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `PersistenceStore` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple methods are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\persistence.rs:166:12
+    [1m[96m|[0m
+[1m[96m 67[0m [1m[96m|[0m impl PersistenceStore {
+    [1m[96m|[0m [1m[96m---------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m166[0m [1m[96m|[0m     pub fn schema_version(&self) -> u64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m171[0m [1m[96m|[0m     pub fn record_observation(&mut self, obs: Observation) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m192[0m [1m[96m|[0m     fn append_observation(&self) -> std::io::Result<()> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m204[0m [1m[96m|[0m     fn persist_observations(&self) -> std::io::Result<()> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m222[0m [1m[96m|[0m     pub fn reset(&mut self) -> std::io::Result<usize> {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m233[0m [1m[96m|[0m     pub fn clear(&mut self) -> std::io::Result<usize> {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m238[0m [1m[96m|[0m     pub fn observations(&self) -> Vec<Observation> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m243[0m [1m[96m|[0m     pub fn model_state(&self) -> ModelState {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m248[0m [1m[96m|[0m     pub fn set_model_state(&mut self, model: ModelState) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m254[0m [1m[96m|[0m     fn persist_model_state(&self) -> std::io::Result<()> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\probability.rs:52:12
+    [1m[96m|[0m
+[1m[96m 35[0m [1m[96m|[0m impl BetaBernoulli {
+    [1m[96m|[0m [1m[96m------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m 52[0m [1m[96m|[0m     pub fn uniform() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 57[0m [1m[96m|[0m     pub fn jeffreys() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 63[0m [1m[96m|[0m     pub fn centered(p: f64, n: f64) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 87[0m [1m[96m|[0m     pub fn posterior_alpha(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 92[0m [1m[96m|[0m     pub fn posterior_beta(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 97[0m [1m[96m|[0m     pub fn effective_sample_size(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m108[0m [1m[96m|[0m     pub fn variance(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m116[0m [1m[96m|[0m     pub fn std_dev(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m152[0m [1m[96m|[0m     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m167[0m [1m[96m|[0m     pub fn credible_interval(&self, credible_level: f64) -> (f64, f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m187[0m [1m[96m|[0m     pub fn lcb(&self, kappa: f64) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m192[0m [1m[96m|[0m     pub fn entropy(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `gamma_sample` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\probability.rs:206:4
+    [1m[96m|[0m
+[1m[96m206[0m [1m[96m|[0m fn gamma_sample<R: Rng + ?Sized>(rng: &mut R, k: f64) -> f64 {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `normal_sample` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\probability.rs:239:4
+    [1m[96m|[0m
+[1m[96m239[0m [1m[96m|[0m fn normal_sample<R: Rng + ?Sized>(rng: &mut R) -> f64 {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `Categorical` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\probability.rs:253:12
+    [1m[96m|[0m
+[1m[96m253[0m [1m[96m|[0m pub struct Categorical {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\probability.rs:260:12
+    [1m[96m|[0m
+[1m[96m257[0m [1m[96m|[0m impl Categorical {
+    [1m[96m|[0m [1m[96m----------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m260[0m [1m[96m|[0m     pub fn from_probs(probs: &[f64]) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m274[0m [1m[96m|[0m     pub fn from_log_probs(log_probs: Vec<f64>) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m285[0m [1m[96m|[0m     pub fn n_outcomes(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m290[0m [1m[96m|[0m     pub fn prob(&self, i: usize) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^[0m
+[1m[96m...[0m
+[1m[96m301[0m [1m[96m|[0m     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Option<usize> {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m306[0m [1m[96m|[0m     pub fn entropy(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m322[0m [1m[96m|[0m     pub fn add_evidence(&mut self, i: usize, delta_log_likelihood: f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: fields `action`, `timeout_sec`, and `reversible` are never read[0m
+   [1m[96m--> [0msrc\network_intelligence\recovery.rs:145:9
+    [1m[96m|[0m
+[1m[96m143[0m [1m[96m|[0m pub struct RecoveryStep {
+    [1m[96m|[0m            [1m[96m------------[0m [1m[96mfields in this struct[0m
+[1m[96m144[0m [1m[96m|[0m     pub id: String,
+[1m[96m145[0m [1m[96m|[0m     pub action: String,
+    [1m[96m|[0m         [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m149[0m [1m[96m|[0m     pub timeout_sec: u64,
+    [1m[96m|[0m         [1m[93m^^^^^^^^^^^[0m
+[1m[96m150[0m [1m[96m|[0m     /// Whether this step is reversible (has a rollback).
+[1m[96m151[0m [1m[96m|[0m     pub reversible: bool,
+    [1m[96m|[0m         [1m[93m^^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `RecoveryStep` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: field `max_retries_per_step` is never read[0m
+   [1m[96m--> [0msrc\network_intelligence\recovery.rs:166:9
+    [1m[96m|[0m
+[1m[96m160[0m [1m[96m|[0m pub struct RecoveryPlan {
+    [1m[96m|[0m            [1m[96m------------[0m [1m[96mfield in this struct[0m
+[1m[96m...[0m
+[1m[96m166[0m [1m[96m|[0m     pub max_retries_per_step: u64,
+    [1m[96m|[0m         [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `RecoveryPlan` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[93mwarning[0m[1m[97m: methods `rollback` and `active_api` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\recovery.rs:313:12
+    [1m[96m|[0m
+[1m[96m184[0m [1m[96m|[0m impl RecoveryPlanner {
+    [1m[96m|[0m [1m[96m--------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m313[0m [1m[96m|[0m     pub fn rollback(&mut self) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m336[0m [1m[96m|[0m     pub fn active_api(&self) -> Option<&str> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `RecoveryOutcome` is never constructed[0m
+ [1m[96m--> [0msrc\network_intelligence\recovery_memory.rs:7:12
+  [1m[96m|[0m
+[1m[96m7[0m [1m[96m|[0m pub struct RecoveryOutcome {
+  [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `RecoveryMemory` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\recovery_memory.rs:18:12
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m pub struct RecoveryMemory {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\recovery_memory.rs:24:12
+   [1m[96m|[0m
+[1m[96m23[0m [1m[96m|[0m impl RecoveryMemory {
+   [1m[96m|[0m [1m[96m-------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m24[0m [1m[96m|[0m     pub fn new(capacity: usize) -> Self {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m31[0m [1m[96m|[0m     pub fn record(&mut self, outcome: RecoveryOutcome) {
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m38[0m [1m[96m|[0m     pub fn len(&self) -> usize {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m42[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m47[0m [1m[96m|[0m     pub fn success_rate(&self, action: &str, context: &str) -> Option<f64> {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m61[0m [1m[96m|[0m     pub fn mean_prediction_error(&self, action: &str) -> Option<f64> {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m79[0m [1m[96m|[0m     pub fn counts_by_action(&self) -> HashMap<String, (usize, usize)> {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `RouteMetrics` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\route.rs:21:12
+   [1m[96m|[0m
+[1m[96m21[0m [1m[96m|[0m pub struct RouteMetrics {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `RouteCandidate` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\route.rs:44:12
+   [1m[96m|[0m
+[1m[96m44[0m [1m[96m|[0m pub struct RouteCandidate {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ObjectiveWeights` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\route.rs:58:12
+   [1m[96m|[0m
+[1m[96m58[0m [1m[96m|[0m pub struct ObjectiveWeights {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `ScoredRoute` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\route.rs:92:12
+   [1m[96m|[0m
+[1m[96m92[0m [1m[96m|[0m pub struct ScoredRoute {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `score_candidate` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\route.rs:108:8
+    [1m[96m|[0m
+[1m[96m108[0m [1m[96m|[0m pub fn score_candidate(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `score_candidates` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\route.rs:157:8
+    [1m[96m|[0m
+[1m[96m157[0m [1m[96m|[0m pub fn score_candidates(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `pareto_frontier` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\route.rs:176:8
+    [1m[96m|[0m
+[1m[96m176[0m [1m[96m|[0m pub fn pareto_frontier(scored: &mut [ScoredRoute]) {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `select_best_route` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\route.rs:218:8
+    [1m[96m|[0m
+[1m[96m218[0m [1m[96m|[0m pub fn select_best_route(
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `cvar_latency` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\route.rs:239:8
+    [1m[96m|[0m
+[1m[96m239[0m [1m[96m|[0m pub fn cvar_latency(samples: &[f64], alpha: f64) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `cost_adjusted_gain` is never used[0m
+ [1m[96m--> [0msrc\network_intelligence\sequential.rs:5:8
+  [1m[96m|[0m
+[1m[96m5[0m [1m[96m|[0m pub fn cost_adjusted_gain(info_gain: f64, cost: f64, epsilon: f64) -> f64 {
+  [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `should_stop` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\sequential.rs:12:8
+   [1m[96m|[0m
+[1m[96m12[0m [1m[96m|[0m pub fn should_stop(best_gain: f64, gain_threshold: f64, confidence: f64, confidence_target: f64) -> bool {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `value_of_information` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\sequential.rs:20:8
+   [1m[96m|[0m
+[1m[96m20[0m [1m[96m|[0m pub fn value_of_information(prior_loss: f64, expected_posterior_loss: f64, cost: f64) -> f64 {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: enum `NetworkCondition` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\simulation.rs:15:10
+   [1m[96m|[0m
+[1m[96m15[0m [1m[96m|[0m pub enum NetworkCondition {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `SimulatedNetwork` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\simulation.rs:35:12
+   [1m[96m|[0m
+[1m[96m35[0m [1m[96m|[0m pub struct SimulatedNetwork {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `NetworkSimulator` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\simulation.rs:45:12
+   [1m[96m|[0m
+[1m[96m45[0m [1m[96m|[0m pub struct NetworkSimulator {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `reseed`, `probe`, `probe_outcome`, `api_call`, and `diagnose_sequence` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:53:12
+    [1m[96m|[0m
+[1m[96m 51[0m [1m[96m|[0m impl NetworkSimulator {
+    [1m[96m|[0m [1m[96m---------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 52[0m [1m[96m|[0m     /// Create a simulator with the given seed and network condition.
+[1m[96m 53[0m [1m[96m|[0m     pub fn new(seed: u64, condition: NetworkCondition) -> Self {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m 60[0m [1m[96m|[0m     pub fn reseed(&mut self, seed: u64, condition: NetworkCondition) {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 70[0m [1m[96m|[0m     pub fn probe(&mut self, test: &DiagnosticTest) -> ProbeResult {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+[1m[96m...[0m
+[1m[96m 97[0m [1m[96m|[0m     fn probe_outcome(&mut self, test: &DiagnosticTest) -> (ProbeOutcome, f64) {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m306[0m [1m[96m|[0m     pub fn api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m343[0m [1m[96m|[0m     pub fn diagnose_sequence(&mut self, tests: &[DiagnosticTest]) -> Vec<ProbeResult> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `condition_to_network` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:349:4
+    [1m[96m|[0m
+[1m[96m349[0m [1m[96m|[0m fn condition_to_network(c: NetworkCondition, rng: &mut StdRng) -> SimulatedNetwork {
+    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `Scenario` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:377:12
+    [1m[96m|[0m
+[1m[96m377[0m [1m[96m|[0m pub struct Scenario {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `scenario_fast_unreliable_vs_slow_reliable` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:386:8
+    [1m[96m|[0m
+[1m[96m386[0m [1m[96m|[0m pub fn scenario_fast_unreliable_vs_slow_reliable() -> Scenario {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `scenario_provider_outage` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:402:8
+    [1m[96m|[0m
+[1m[96m402[0m [1m[96m|[0m pub fn scenario_provider_outage() -> Scenario {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `scenario_dns_failure` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\simulation.rs:415:8
+    [1m[96m|[0m
+[1m[96m415[0m [1m[96m|[0m pub fn scenario_dns_failure() -> Scenario {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: enum `HazardFunction` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:19:10
+   [1m[96m|[0m
+[1m[96m19[0m [1m[96m|[0m pub enum HazardFunction {
+   [1m[96m|[0m          [1m[93m^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `hazard` and `survival` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:27:12
+   [1m[96m|[0m
+[1m[96m25[0m [1m[96m|[0m impl HazardFunction {
+   [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m26[0m [1m[96m|[0m     /// Compute the hazard probability P(r_t = 0 | r_{t-1} = r).
+[1m[96m27[0m [1m[96m|[0m     pub fn hazard(&self, run_length: u64) -> f64 {
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m37[0m [1m[96m|[0m     pub fn survival(&self, run_length: u64) -> f64 {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `RunStats` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:48:8
+   [1m[96m|[0m
+[1m[96m48[0m [1m[96m|[0m struct RunStats {
+   [1m[96m|[0m        [1m[93m^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `add` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:55:8
+   [1m[96m|[0m
+[1m[96m54[0m [1m[96m|[0m impl RunStats {
+   [1m[96m|[0m [1m[96m-------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m55[0m [1m[96m|[0m     fn add(self, x: f64) -> Self {
+   [1m[96m|[0m        [1m[93m^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `BayesianOnlineCPD` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\changepoint.rs:65:12
+   [1m[96m|[0m
+[1m[96m65[0m [1m[96m|[0m pub struct BayesianOnlineCPD {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: multiple associated items are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\changepoint.rs:83:12
+    [1m[96m|[0m
+[1m[96m 81[0m [1m[96m|[0m impl BayesianOnlineCPD {
+    [1m[96m|[0m [1m[96m----------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m 82[0m [1m[96m|[0m     /// Create a new BOCPD with constant hazard.
+[1m[96m 83[0m [1m[96m|[0m     pub fn new(hazard: HazardFunction, max_run_length: u64) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m107[0m [1m[96m|[0m     pub fn default_cpd() -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m118[0m [1m[96m|[0m     pub fn observe(&mut self, x: f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m178[0m [1m[96m|[0m     pub fn changepoint_probability(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m183[0m [1m[96m|[0m     pub fn instantaneous_changepoint_probability(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m188[0m [1m[96m|[0m     pub fn most_likely_run_length(&self) -> u64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m197[0m [1m[96m|[0m     pub fn expected_run_length(&self) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m208[0m [1m[96m|[0m     fn predictive_probability(&self, run_length: u64, x: f64) -> f64 {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m225[0m [1m[96m|[0m     pub fn n(&self) -> u64 {
+    [1m[96m|[0m            [1m[93m^[0m
+
+[1m[93mwarning[0m[1m[97m: function `category_summary` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\api_intelligence\failure_classifier.rs:30:8
+   [1m[96m|[0m
+[1m[96m30[0m [1m[96m|[0m pub fn category_summary(category: FailureCategory) -> String {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `entries` and `select_route` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\api_intelligence\registry.rs:259:12
+    [1m[96m|[0m
+[1m[96m199[0m [1m[96m|[0m impl ApiRegistry {
+    [1m[96m|[0m [1m[96m----------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m259[0m [1m[96m|[0m     pub fn entries(&self) -> Vec<ApiEntry> {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m343[0m [1m[96m|[0m     pub fn select_route(&self, api_id: &str, route_id: &str, reason: &str) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `set_confidence` and `missing` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evidence\measurements.rs:145:12
+    [1m[96m|[0m
+[1m[96m 91[0m [1m[96m|[0m impl Measurement {
+    [1m[96m|[0m [1m[96m----------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m145[0m [1m[96m|[0m     pub fn set_confidence(&mut self, confidence: f64) {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m150[0m [1m[96m|[0m     pub fn missing(id: impl Into<String>, timestamp: u64, kind: impl Into<String>) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `CORRELATION_DISCOUNT` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\correlation.rs:22:7
+   [1m[96m|[0m
+[1m[96m22[0m [1m[96m|[0m const CORRELATION_DISCOUNT: f64 = 0.5;
+   [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `contains` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\correlation.rs:42:12
+   [1m[96m|[0m
+[1m[96m33[0m [1m[96m|[0m impl CorrelationGroup {
+   [1m[96m|[0m [1m[96m---------------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m42[0m [1m[96m|[0m     pub fn contains(&self, test_id: &str) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: field `groups` is never read[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\correlation.rs:50:5
+   [1m[96m|[0m
+[1m[96m49[0m [1m[96m|[0m pub struct CorrelationModel {
+   [1m[96m|[0m            [1m[96m----------------[0m [1m[96mfield in this struct[0m
+[1m[96m50[0m [1m[96m|[0m     groups: Vec<CorrelationGroup>,
+   [1m[96m|[0m     [1m[93m^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `CorrelationModel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `with_groups`, `groups`, `groups_for`, `correlated`, `weight_for`, and `adjusted_weights` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evidence\correlation.rs:90:12
+    [1m[96m|[0m
+[1m[96m 59[0m [1m[96m|[0m impl CorrelationModel {
+    [1m[96m|[0m [1m[96m---------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m...[0m
+[1m[96m 90[0m [1m[96m|[0m     pub fn with_groups(groups: Vec<CorrelationGroup>) -> Self {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 94[0m [1m[96m|[0m     pub fn groups(&self) -> &[CorrelationGroup] {
+    [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m 99[0m [1m[96m|[0m     pub fn groups_for(&self, test_id: &str) -> Vec<&CorrelationGroup> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m103[0m [1m[96m|[0m     pub fn correlated(&self, a: &str, b: &str) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m114[0m [1m[96m|[0m     pub fn weight_for(&self, prior_tests: &[&str], test_id: &str) -> f64 {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m128[0m [1m[96m|[0m     pub fn adjusted_weights(&self, observations: &[(String, f64)]) -> Option<Vec<f64>> {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: constant `PIPELINE_STAGES` is never used[0m
+ [1m[96m--> [0msrc\network_intelligence\evidence\telemetry_pipeline.rs:9:7
+  [1m[96m|[0m
+[1m[96m9[0m [1m[96m|[0m const PIPELINE_STAGES: &[&str] = &["COLLECT", "VALIDATE", "NORMALIZE", "ENRICH", "STORE", "PUBLISH"];
+  [1m[96m|[0m       [1m[93m^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: fields `stage` and `elapsed_us` are never read[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\telemetry_pipeline.rs:14:9
+   [1m[96m|[0m
+[1m[96m13[0m [1m[96m|[0m pub struct PipelineResult {
+   [1m[96m|[0m            [1m[96m--------------[0m [1m[96mfields in this struct[0m
+[1m[96m14[0m [1m[96m|[0m     pub stage: String,
+   [1m[96m|[0m         [1m[93m^^^^^[0m
+[1m[96m15[0m [1m[96m|[0m     pub measurement: Measurement,
+[1m[96m16[0m [1m[96m|[0m     pub elapsed_us: u128,
+   [1m[96m|[0m         [1m[93m^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `PipelineResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[93mwarning[0m[1m[97m: field `name` is never read[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\telemetry_pipeline.rs:22:5
+   [1m[96m|[0m
+[1m[96m21[0m [1m[96m|[0m pub struct TelemetryQueue {
+   [1m[96m|[0m            [1m[96m--------------[0m [1m[96mfield in this struct[0m
+[1m[96m22[0m [1m[96m|[0m     name: String,
+   [1m[96m|[0m     [1m[93m^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: methods `capacity`, `len`, `is_empty`, `cancel`, and `is_cancelled` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\telemetry_pipeline.rs:38:12
+   [1m[96m|[0m
+[1m[96m28[0m [1m[96m|[0m impl TelemetryQueue {
+   [1m[96m|[0m [1m[96m-------------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m38[0m [1m[96m|[0m     pub fn capacity(&self) -> usize {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m42[0m [1m[96m|[0m     pub fn len(&self) -> usize {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m46[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m69[0m [1m[96m|[0m     pub fn cancel(&mut self) {
+   [1m[96m|[0m            [1m[93m^^^^^^[0m
+[1m[96m...[0m
+[1m[96m73[0m [1m[96m|[0m     pub fn is_cancelled(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: methods `get`, `len`, `is_empty`, and `clear` are never used[0m
+   [1m[96m--> [0msrc\network_intelligence\evidence\telemetry_pipeline.rs:93:12
+    [1m[96m|[0m
+[1m[96m 84[0m [1m[96m|[0m impl ResultsStore {
+    [1m[96m|[0m [1m[96m-----------------[0m [1m[96mmethods in this implementation[0m
+[1m[96m...[0m
+[1m[96m 93[0m [1m[96m|[0m     pub fn get(&self, id: &str) -> Option<&Measurement> {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m101[0m [1m[96m|[0m     pub fn len(&self) -> usize {
+    [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m105[0m [1m[96m|[0m     pub fn is_empty(&self) -> bool {
+    [1m[96m|[0m            [1m[93m^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m109[0m [1m[96m|[0m     pub fn clear(&mut self) {
+    [1m[96m|[0m            [1m[93m^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: struct `ProvenanceRecord` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\provenance.rs:11:12
+   [1m[96m|[0m
+[1m[96m11[0m [1m[96m|[0m pub struct ProvenanceRecord {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated items `new`, `is_verified`, and `can_be_authorized` are never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\provenance.rs:19:12
+   [1m[96m|[0m
+[1m[96m18[0m [1m[96m|[0m impl ProvenanceRecord {
+   [1m[96m|[0m [1m[96m---------------------[0m [1m[96massociated items in this implementation[0m
+[1m[96m19[0m [1m[96m|[0m     pub fn new(source_id: impl Into<String>, provenance: Provenance) -> Self {
+   [1m[96m|[0m            [1m[93m^^^[0m
+[1m[96m...[0m
+[1m[96m28[0m [1m[96m|[0m     pub fn is_verified(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^[0m
+[1m[96m...[0m
+[1m[96m35[0m [1m[96m|[0m     pub fn can_be_authorized(&self) -> bool {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: variant `OutdatedEvidence` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\validation.rs:15:5
+   [1m[96m|[0m
+[1m[96m10[0m [1m[96m|[0m pub enum ValidationError {
+   [1m[96m|[0m          [1m[96m---------------[0m [1m[96mvariant in this enum[0m
+[1m[96m...[0m
+[1m[96m15[0m [1m[96m|[0m     OutdatedEvidence,
+   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^[0m
+   [1m[96m|[0m
+   [1m[96m= [0m[1m[97mnote[0m: `ValidationError` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: method `validate_full` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\evidence\validation.rs:69:12
+   [1m[96m|[0m
+[1m[96m32[0m [1m[96m|[0m impl Measurement {
+   [1m[96m|[0m [1m[96m----------------[0m [1m[96mmethod in this implementation[0m
+[1m[96m...[0m
+[1m[96m69[0m [1m[96m|[0m     pub fn validate_full(&self, now: u64, max_freshness_ms: f64) -> Option<ValidationError> {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `Prediction` is never constructed[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:16:12
+   [1m[96m|[0m
+[1m[96m16[0m [1m[96m|[0m pub struct Prediction {
+   [1m[96m|[0m            [1m[93m^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated function `new` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:24:12
+   [1m[96m|[0m
+[1m[96m23[0m [1m[96m|[0m impl Prediction {
+   [1m[96m|[0m [1m[96m---------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m24[0m [1m[96m|[0m     pub fn new(p: f64, y: f64) -> Option<Self> {
+   [1m[96m|[0m            [1m[93m^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `brier_score` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:44:8
+   [1m[96m|[0m
+[1m[96m44[0m [1m[96m|[0m pub fn brier_score(predictions: &[Prediction]) -> Option<f64> {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `log_loss` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:61:8
+   [1m[96m|[0m
+[1m[96m61[0m [1m[96m|[0m pub fn log_loss(predictions: &[Prediction]) -> Option<f64> {
+   [1m[96m|[0m        [1m[93m^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: function `expected_calibration_error` is never used[0m
+  [1m[96m--> [0msrc\network_intelligence\validation.rs:83:8
+   [1m[96m|[0m
+[1m[96m83[0m [1m[96m|[0m pub fn expected_calibration_error(predictions: &[Prediction], n_bins: usize) -> Option<f64> {
+   [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: function `maximum_calibration_error` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\validation.rs:115:8
+    [1m[96m|[0m
+[1m[96m115[0m [1m[96m|[0m pub fn maximum_calibration_error(predictions: &[Prediction], n_bins: usize) -> Option<f64> {
+    [1m[96m|[0m        [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[93mwarning[0m[1m[97m: struct `CalibrationReport` is never constructed[0m
+   [1m[96m--> [0msrc\network_intelligence\validation.rs:148:12
+    [1m[96m|[0m
+[1m[96m148[0m [1m[96m|[0m pub struct CalibrationReport {
+    [1m[96m|[0m            [1m[93m^^^^^^^^^^^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: associated function `compute` is never used[0m
+   [1m[96m--> [0msrc\network_intelligence\validation.rs:161:12
+    [1m[96m|[0m
+[1m[96m160[0m [1m[96m|[0m impl CalibrationReport {
+    [1m[96m|[0m [1m[96m----------------------[0m [1m[96massociated function in this implementation[0m
+[1m[96m161[0m [1m[96m|[0m     pub fn compute(predictions: &[Prediction], n_bins: usize) -> Option<Self> {
+    [1m[96m|[0m            [1m[93m^^^^^^^[0m
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m[1m[97m: variable `LocalInterface` should have a snake case name[0m
+   [1m[96m--> [0msrc\network_intelligence\diagnosis.rs:304:17
+    [1m[96m|[0m
+[1m[96m304[0m [1m[96m|[0m                 LocalInterface => 0.97,
+    [1m[96m|[0m                 [1m[93m^^^^^^^^^^^^^^[0m [1m[93mhelp: convert the identifier to snake case: `local_interface`[0m
+    [1m[96m|[0m
+    [1m[96m= [0m[1m[97mnote[0m: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+[1m[96m    Building[0m [=======================> ] 442/443: netpuls…                                                            [1m[93mwarning[0m: `netpulse-desktop` (bin "netpulse-desktop") generated 251 warnings (run `cargo fix --bin "netpulse-desktop" -p netpulse-desktop` to apply 45 suggestions)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 9.34s
+[1m[92m     Running[0m `target\debug\netpulse-desktop.exe`
+[netpulse:info] logging initialized (data dir: C:\Users\RADIN\AppData\Roaming\app.netpulse.desktop)
+[netpulse:info] === NetPulse desktop starting (v3.2.0) ===
+[netpulse:info] exe: E:\Code\Project\Vpn_app\src-tauri\target\debug\netpulse-desktop.exe
+[netpulse:info] WebView2Loader.dll next to exe: true
+[netpulse:info] WEBVIEW2_BROWSER_EXECUTABLE_FOLDER: <not set>

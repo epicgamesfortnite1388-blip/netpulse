@@ -103,10 +103,12 @@ const CORE_LABEL: Record<CoreState, string> = {
 
 /** Accent per state, used by the stage's rings and caption. */
 const CORE_ACCENT: Record<CoreState, string> = {
-  idle: 'border-violet-300/25 text-violet-100/85',
-  starting: 'border-amber-300/35 text-amber-100/90',
-  active: 'border-cyan-300/45 text-cyan-100',
-  down: 'border-red-400/40 text-red-100/90',
+  // `.aether-stage` is a fixed dark gradient in both themes, so the ink stays a
+  // constant light value here and only the hue-bearing border moves to a token.
+  idle: 'border-aether/30 text-white/85',
+  starting: 'border-warn/45 text-white/90',
+  active: 'border-aether-2/50 text-white',
+  down: 'border-danger/45 text-white/90',
 };
 
 function formatBytes(n: number | null | undefined): string {
@@ -165,16 +167,16 @@ function PhaseTrack({ phases }: { phases: Phase[] }) {
             // a 12px glyph does not fit legibly inside a 16px circle.
             className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-micro font-bold ${
               p.done
-                ? 'border-cyan-300/60 bg-cyan-400/20 text-cyan-100'
+                ? 'border-aether-2/60 bg-aether-2/20 text-white'
                 : p.running
-                  ? 'border-amber-300/70 bg-amber-400/10 text-amber-100 animate-pulse-dot'
+                  ? 'border-warn/70 bg-warn/10 text-white animate-pulse-dot'
                   : 'border-white/15 bg-white/5 text-white/35'
             }`}
           >
             {p.done ? '✓' : p.running ? '•' : ''}
           </span>
           <span className="min-w-0">
-            <span className={`block text-xs font-medium ${p.done ? 'text-white/90' : p.running ? 'text-amber-100' : 'text-white/45'}`}>{p.label}</span>
+            <span className={`block text-xs font-medium ${p.done ? 'text-white/90' : p.running ? 'text-white/90' : 'text-white/45'}`}>{p.label}</span>
             <span className="mt-0.5 block text-micro leading-snug text-white/40">{p.detail}</span>
           </span>
         </li>
@@ -209,7 +211,7 @@ function CorePortal({ state, exitIp, latencyMs }: { state: CoreState; exitIp: st
         <Suspense
           fallback={
             <div className="flex h-full w-full items-center justify-center">
-              <span className="aether-halo h-24 w-24 rounded-full bg-gradient-to-br from-violet-500/60 to-cyan-400/30 blur-md" />
+              <span className="aether-halo h-24 w-24 rounded-full bg-gradient-to-br from-aether/60 to-aether-2/30 blur-md" />
             </div>
           }
         >
@@ -236,7 +238,7 @@ function CorePortal({ state, exitIp, latencyMs }: { state: CoreState; exitIp: st
         'left-3 bottom-3 border-b border-l',
         'right-3 bottom-3 border-b border-r',
       ].map((c) => (
-        <span key={c} aria-hidden className={`pointer-events-none absolute h-3 w-3 border-violet-300/35 ${c}`} />
+        <span key={c} aria-hidden className={`pointer-events-none absolute h-3 w-3 border-aether/35 ${c}`} />
       ))}
     </div>
   );
@@ -396,10 +398,10 @@ export function AetherSurface() {
           {/* ------------------------------ identity ---------------------------- */}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <EngineGlyph glyph="from-violet-500/30 to-cyan-400/10 text-violet-200" size="lg">
+              <EngineGlyph glyph="from-aether/30 to-aether-2/10 text-white/85" size="lg">
                 <Globe size={24} />
               </EngineGlyph>
-              <span className="text-micro font-semibold uppercase tracking-[0.22em] text-violet-200/70">
+              <span className="text-micro font-semibold uppercase tracking-[0.22em] text-white/70">
                 circumvention engine · masque / warp family
               </span>
             </div>
@@ -436,7 +438,7 @@ export function AetherSurface() {
                 <Button
                   variant="primary"
                   onClick={() => setShowTuning(true)}
-                  className="aether-cta h-10 border-cyan-300/50 bg-cyan-400/15 px-5 text-cyan-50 hover:bg-cyan-400/25"
+                  className="aether-cta h-10 border-aether-2/50 bg-aether-2/15 px-5 text-white hover:bg-aether-2/25"
                 >
                   <Plus size={13} />
                   Create profile
@@ -460,7 +462,7 @@ export function AetherSurface() {
                   }
                   className={
                     aetherProfiles[0]
-                      ? 'aether-cta h-10 border-cyan-300/50 bg-cyan-400/15 px-5 text-cyan-50 hover:bg-cyan-400/25'
+                      ? 'aether-cta h-10 border-aether-2/50 bg-aether-2/15 px-5 text-white hover:bg-aether-2/25'
                       : 'h-10 border border-white/10 text-white/50'
                   }
                 >
@@ -472,7 +474,7 @@ export function AetherSurface() {
                   variant="danger"
                   onClick={() => disconnect.mutate()}
                   loading={disconnect.isPending}
-                  className="h-10 border-rose-300/40 bg-rose-500/15 px-5 text-rose-50 hover:bg-rose-500/25"
+                  className="h-10 border-danger/40 bg-danger/15 px-5 text-white hover:bg-danger/25"
                 >
                   <Square size={12} />
                   Disconnect
@@ -616,7 +618,7 @@ export function AetherSurface() {
                   key={p.id}
                   tone={active ? 'active' : 'default'}
                   leading={
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-200">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-aether/15 text-white/85">
                       <Globe size={14} />
                     </span>
                   }
@@ -657,6 +659,7 @@ export function AetherSurface() {
           collapsible
           id="tun"
           defaultOpen={false}
+          detail={2}
           badge={
             <Badge tone={tunActive ? 'ok' : engine?.tun ? 'warn' : 'neutral'}>
               {tunActive ? 'capturing' : engine?.tun ? 'requested' : 'off'}
@@ -759,6 +762,7 @@ export function AetherSurface() {
         collapsible
         id="provenance"
         defaultOpen={false}
+        detail={4}
         badge={<Badge tone={installed ? 'ok' : 'warn'}>{engine?.version ? `v${engine.version}` : 'not installed'}</Badge>}
         summary="Where the binary comes from and how it is verified"
         title="Engine provenance"

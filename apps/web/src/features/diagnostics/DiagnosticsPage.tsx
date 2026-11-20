@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
@@ -181,6 +182,11 @@ export default function DiagnosticsPage() {
 
   return (
     <DisclosureScope name="diagnostics">
+      {/* The per-stage timings are gated inside `running`/`report`, so on an idle
+          page those gates do not exist. Without an explicit depth the control
+          would collapse to two options and a reader who chose Advanced would
+          find it gone on return. */}
+      <DetailLevelProvider scope="diagnostics" defaultLevel={2} depth={3}>
       <PageHeader
         title="Diagnostics"
         description="One-click complete diagnostic plus focused tools: bufferbloat grading, path-MTU discovery, CGNAT detection and continuous stability monitoring."
@@ -192,7 +198,10 @@ export default function DiagnosticsPage() {
         }
       />
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {error != null && <ErrorState error={new Error(error)} retry={() => void runComplete()} />}
 
@@ -204,15 +213,19 @@ export default function DiagnosticsPage() {
               <span className="font-mono text-faint">{diag.pct != null ? `${diag.pct}%` : '…'}</span>
             </div>
             <Progress value={diag.pct ?? 0} />
-            {liveLog.length > 0 && (
-              <ul className="mt-3 space-y-1 border-t border-line pt-3">
-                {liveLog.map((line, i) => (
-                  <li key={i} className="font-mono text-micro text-faint">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* Level 3: the raw stage log. Progress itself is essential, the
+                per-line narration is not. */}
+            <DetailGate required={3}>
+              {liveLog.length > 0 && (
+                <ul className="mt-3 space-y-1 border-t border-line pt-3">
+                  {liveLog.map((line, i) => (
+                    <li key={i} className="font-mono text-micro text-faint">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DetailGate>
           </CardBody>
         </Card>
       )}
@@ -225,17 +238,21 @@ export default function DiagnosticsPage() {
             subtitle={`${report.steps.filter((s) => s.status === 'done').length}/${report.steps.length} steps succeeded · ${new Date(report.startedAt).toLocaleTimeString()}`}
           />
           <CardBody className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2">
-              {report.steps.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2 text-mini">
-                  <span className="text-muted">{s.label}</span>
-                  <span className="flex items-center gap-2 text-xs text-faint">
-                    {s.detail}
-                    <Badge tone={STEP_TONE[s.status]}>{s.status}</Badge>
-                  </span>
-                </div>
-              ))}
-            </div>
+            {/* Level 3: per-step timings. The findings below stay at every
+                level — a diagnostic that hides its problems is not one. */}
+            <DetailGate required={3}>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {report.steps.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2 text-mini">
+                    <span className="text-muted">{s.label}</span>
+                    <span className="flex items-center gap-2 text-xs text-faint">
+                      {s.detail}
+                      <Badge tone={STEP_TONE[s.status]}>{s.status}</Badge>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </DetailGate>
             {report.findings.length > 0 && (
               <div className="space-y-1.5">
                 {report.findings.map((f, i) => (
@@ -254,7 +271,10 @@ export default function DiagnosticsPage() {
         </Card>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      {/* Level 2: the focused tools. Essential is the verdict and the findings;
+          these are the instruments a reader reaches for afterwards. */}
+      <DetailGate required={2}>
+      <div className="grid items-start gap-5 lg:grid-cols-3">
         <Card>
           <CardHeader
             title="Bufferbloat"
@@ -274,7 +294,7 @@ export default function DiagnosticsPage() {
             ) : (
               <p className="py-2 text-sm text-faint">Measures idle latency, then latency under real download and upload load. Grade A means latency barely moves under load.</p>
             )}
-            <Button className="mt-3" variant="ghost" onClick={() => void runBufferbloat()} loading={bbRunning} disabled={bbRunning}>
+            <Button className="mt-3" variant="secondary" size="sm" onClick={() => void runBufferbloat()} loading={bbRunning} disabled={bbRunning}>
               Run test
             </Button>
             {bbError && <p className="mt-2 text-xs text-danger">{bbError}</p>}
@@ -301,7 +321,7 @@ export default function DiagnosticsPage() {
             ) : (
               <p className="py-2 text-sm text-faint">Finds the largest unfragmented packet your path supports. Values below 1500 can stall some TLS handshakes.</p>
             )}
-            <Button className="mt-3" variant="ghost" onClick={() => void runMtu()} loading={mtuRunning} disabled={mtuRunning}>
+            <Button className="mt-3" variant="secondary" size="sm" onClick={() => void runMtu()} loading={mtuRunning} disabled={mtuRunning}>
               Probe MTU
             </Button>
             {mtuState.error && <p className="mt-2 text-xs text-danger">{mtuState.error}</p>}
@@ -328,12 +348,13 @@ export default function DiagnosticsPage() {
             ) : (
               <p className="py-2 text-sm text-faint">Compares your router's WAN address against your observed public IP to detect carrier-grade NAT (100.64.0.0/10).</p>
             )}
-            <Button className="mt-3" variant="ghost" onClick={() => void runCgnat()}>
+            <Button className="mt-3" variant="secondary" size="sm" onClick={() => void runCgnat()}>
               Check
             </Button>
           </CardBody>
         </Card>
       </div>
+      </DetailGate>
 
       {toolError && <ErrorState error={new Error(toolError)} retry={() => setToolError(null)} />}
 
@@ -368,6 +389,7 @@ export default function DiagnosticsPage() {
           )}
         </CardBody>
       </Card>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

@@ -1,8 +1,11 @@
 import { Check, ChevronDown, HelpCircle, Minus, X } from 'lucide-react';
 
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate } from '@/components/ui/DetailLevel';
 import { CollapsibleCard, useDisclosure, useDisclosureScopeName } from '@/components/ui/Disclosure';
 import { HeadingLevelProvider, headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
+
+import type { DetailLevel } from '@/lib/detailLevel';
 
 /**
  * The engine hero's name, at whatever rank the surrounding surface sits at.
@@ -120,21 +123,16 @@ export function EngineHero({
  * keeps the section out of the page-level fold. `badge` survives folding — a
  * collapsed section must never hide live state.
  */
-export function Section({
-  title,
-  subtitle,
-  icon,
-  actions,
-  children,
-  className = '',
-  variant = 'card',
-  collapsible = false,
-  defaultOpen = true,
-  pinned = false,
-  id,
-  summary,
-  badge,
-}: {
+export function Section(props: SectionProps) {
+  // `detail` is a one-attribute opt-in to the four-level model. It wraps rather
+  // than threads through, so every branch below stays unaware of it and the two
+  // mechanisms stay independent: the level decides whether the section exists,
+  // the fold decides whether it is open.
+  const element = <SectionBody {...props} />;
+  return props.detail ? <DetailGate required={props.detail}>{element}</DetailGate> : element;
+}
+
+interface SectionProps {
   title: ReactNode;
   subtitle?: ReactNode;
   icon?: ReactNode;
@@ -149,7 +147,25 @@ export function Section({
   id?: string;
   summary?: string;
   badge?: ReactNode;
-}) {
+  /** Shallowest detail level at which this section is relevant. */
+  detail?: DetailLevel;
+}
+
+function SectionBody({
+  title,
+  subtitle,
+  icon,
+  actions,
+  children,
+  className = '',
+  variant = 'card',
+  collapsible = false,
+  defaultOpen = true,
+  pinned = false,
+  id,
+  summary,
+  badge,
+}: SectionProps) {
   const scope = useDisclosureScopeName();
   const sectionId = id ?? (typeof title === 'string' ? title : 'section');
 

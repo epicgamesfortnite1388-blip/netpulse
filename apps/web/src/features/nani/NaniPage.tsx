@@ -35,12 +35,16 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailLevelControl, DetailLevelProvider, useDetailLevel } from '@/components/ui/DetailLevel';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { Input } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Notice } from '@/components/ui/Surface';
 import { TabPanel, Tabs } from '@/components/ui/Tabs';
+import { isVisible } from '@/lib/detailLevel';
+
+import type { DetailLevel } from '@/lib/detailLevel';
 
 import {
   cancelInvestigation,
@@ -86,18 +90,32 @@ type Tab =
   | 'history'
   | 'settings';
 
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview', label: 'Overview', icon: <Brain size={14} /> },
-  { id: 'live', label: 'Live Investigation', icon: <Activity size={14} /> },
-  { id: 'recovery', label: 'Recovery', icon: <ShieldCheck size={14} /> },
-  { id: 'workspace', label: 'AI Workspace', icon: <MessageSquare size={14} /> },
-  { id: 'hypotheses', label: 'Hypotheses', icon: <Radar size={14} /> },
-  { id: 'evidence', label: 'Evidence', icon: <Database size={14} /> },
-  { id: 'network', label: 'Network Intel', icon: <NetworkIcon size={14} /> },
-  { id: 'learning', label: 'Learning', icon: <Zap size={14} /> },
-  { id: 'history', label: 'History', icon: <HistoryIcon size={14} /> },
-  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={14} /> },
+/**
+ * The tab set IS the disclosure structure here, rather than a second layer of
+ * gates inside each tab. `level` is the shallowest detail level at which the
+ * section becomes relevant, so raising the level grows the rail instead of
+ * adding a fourth accordion inside a third one:
+ *
+ *   1 Essential  the belief, and whether the investigation is running
+ *   2 Context    why it believes it — hypotheses, live progress, the assistant
+ *   3 Advanced   the evidence behind each hypothesis, recovery, network detail
+ *   4 Expert     learning state and the full history
+ */
+const TABS: { id: Tab; label: string; icon: React.ReactNode; level: DetailLevel }[] = [
+  { id: 'overview', label: 'Overview', icon: <Brain size={14} />, level: 1 },
+  { id: 'live', label: 'Live Investigation', icon: <Activity size={14} />, level: 2 },
+  { id: 'recovery', label: 'Recovery', icon: <ShieldCheck size={14} />, level: 3 },
+  { id: 'workspace', label: 'AI Workspace', icon: <MessageSquare size={14} />, level: 2 },
+  { id: 'hypotheses', label: 'Hypotheses', icon: <Radar size={14} />, level: 2 },
+  { id: 'evidence', label: 'Evidence', icon: <Database size={14} />, level: 3 },
+  { id: 'network', label: 'Network Intel', icon: <NetworkIcon size={14} />, level: 3 },
+  { id: 'learning', label: 'Learning', icon: <Zap size={14} />, level: 4 },
+  { id: 'history', label: 'History', icon: <HistoryIcon size={14} />, level: 4 },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={14} />, level: 3 },
 ];
+
+/** Hoisted so the provider's memo dependency is a stable reference. */
+const TAB_LEVELS = TABS.map((t) => t.level);
 
 /* ------------------------------------------------------------------ */
 /*  AI activity core                                                   */
@@ -197,7 +215,27 @@ function deriveEvidence(state: NaniEventState): DerivedEvidence[] {
 /* ------------------------------------------------------------------ */
 
 export function NaniPage() {
+  return (
+    // NANI discloses through its navigation, not through gates: the level
+    // decides which tabs exist. There is therefore no gate to mount, so the tab
+    // levels are declared explicitly — without this the provider sees no
+    // requirements and renders no control, hiding the feature on the page that
+    // relies on it most.
+    <DetailLevelProvider scope="nani" defaultLevel={1} declares={TAB_LEVELS}>
+      <NaniContent />
+    </DetailLevelProvider>
+  );
+}
+
+function NaniContent() {
   const [tab, setTab] = useState<Tab>('overview');
+  const detail = useDetailLevel();
+  const level = detail?.level ?? 1;
+  // Raising the level only ever adds tabs; dropping it can remove the one the
+  // reader is on. Falling back to Overview is the exit rule — a level change
+  // must never leave an empty page behind a vanished tab.
+  const visibleTabs = TABS.filter((t) => isVisible(t.level, level));
+  const activeTab: Tab = visibleTabs.some((t) => t.id === tab) ? tab : 'overview';
   const { state: events, available: eventsAvailable } = useNaniEvents();
 
   const [status, setStatus] = useState<{ desktop: NaniStatusDto | null; web: NaniWebStatusDto | null } | null>(null);
@@ -269,6 +307,8 @@ export function NaniPage() {
         description="NetPulse Adaptive Network Intelligence — observe, investigate, understand, improve."
       />
 
+      <DetailLevelControl className="-mt-3 mb-4" />
+
       {/* One tab language for the product. This bar used to be hand-rolled —
           a bottom rule and a solid accent fill, unlike every other tab row in
           the app — and carried its own copy of the APG roving-focus logic.
@@ -276,8 +316,8 @@ export function NaniPage() {
           gives the same keyboard behaviour with none of the duplicate code,
           and NANI stops looking like a separate application. */}
       <Tabs
-        items={TABS.map((t) => ({ value: t.id, label: t.label, icon: t.icon }))}
-        value={tab}
+        items={visibleTabs.map((t) => ({ value: t.id, label: t.label, icon: t.icon }))}
+        value={activeTab}
         onValueChange={(v) => setTab(v as Tab)}
         size="sm"
         ariaLabel="NANI sections"
