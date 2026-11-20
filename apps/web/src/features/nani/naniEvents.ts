@@ -87,6 +87,21 @@ export interface MeasurementGapSignal {
 }
 
 /**
+ * True only for an explicit failure/unknown health verdict. A missing field is
+ * NOT unhealthy — it simply carries no negative information.
+ */
+function isUnhealthyVerdict(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return /unhealthy|failed|unknown/i.test(value);
+}
+
+/** NANI-021: a health event that names an upstream route is not a direct measurement. */
+function isInferredProxyRoute(payload: Record<string, unknown>): boolean {
+  const route = payload.route;
+  return typeof route === 'string' && route.startsWith('upstream:');
+}
+
+/**
  * The most recent record of a health check that failed before measuring, or
  * `null` when no such failure is the current explanation.
  *
@@ -102,6 +117,7 @@ export function lastFailedHealthSignal(events: NaniEvent[]): MeasurementGapSigna
     if (
       event.type === 'CircuitBreakerTripped' ||
       event.type === 'RecoveryRolledBack' ||
+      event.type === 'nani:recovery:rolledback' ||
       event.type === 'nani:recovery:exhausted'
     ) {
       const subject =
@@ -112,13 +128,25 @@ export function lastFailedHealthSignal(events: NaniEvent[]): MeasurementGapSigna
             : null;
       return { at: event.at, label: describeEvent(event.type, event.payload), subject };
     }
-    if (
-      event.type === 'TelemetryTick' ||
-      event.type === 'nani:health:updated' ||
-      event.type === 'ApiHealthChanged' ||
-      event.type === 'CircuitBreakerRecovered'
-    ) {
+    if (event.type === 'TelemetryTick' || event.type === 'nani:health:updated' ||
+        event.type === 'CircuitBreakerRecovered' ||
+        (event.type === 'ApiHealthChanged' && !isUnhealthyVerdict(event.payload.health)) ||
+        // F-09: only a healthy/degraded check means observation resumed. An
+        // Unhealthy/Unknown verdict must not erase an older failure reason.
+        (event.type === 'HealthCheckCompleted' && !isUnhealthyVerdict(event.payload.health) && !isInferredProxyRoute(event.payload))) {
       return null;
+    }
+    // An explicit unhealthy/unknown verdict IS itself a measurement gap:
+    // surface it instead of hiding the older failure reason.
+    if ((event.type === 'HealthCheckCompleted' || event.type === 'ApiHealthChanged') &&
+        (isUnhealthyVerdict(event.payload.health) || isInferredProxyRoute(event.payload))) {
+      const subject =
+        typeof event.payload.api_id === 'string'
+          ? event.payload.api_id
+          : typeof event.payload.apiId === 'string'
+            ? event.payload.apiId
+            : null;
+      return { at: event.at, label: describeEvent(event.type, event.payload), subject };
     }
   }
   return null;
@@ -128,6 +156,7 @@ export function lastFailedHealthSignal(events: NaniEvent[]): MeasurementGapSigna
 export function activityForEvent(type: string): NaniActivityState | null {
   switch (type) {
     case 'TelemetryTick':
+    case 'HealthCheckCompleted':
     case 'nani:health:updated':
       return 'Observing';
     case 'FailureDetected':
@@ -147,6 +176,7 @@ export function activityForEvent(type: string): NaniActivityState | null {
     case 'RecoveryCompleted':
       return 'Completed';
     case 'RecoveryRolledBack':
+    case 'nani:recovery:rolledback':
       return 'Failed';
     case 'RouteSelected':
     case 'nani:route:activated':
@@ -189,6 +219,7 @@ export function activityForEvent(type: string): NaniActivityState | null {
       // HTTP recovery step topics carry the outcome in the suffix.
       if (type.startsWith('nani:recovery:step:')) return 'Testing';
       if (type === 'nani:recovery:exhausted') return 'Failed';
+      if (type === 'nani:recovery:reset') return 'Idle';
       return null;
   }
 }
@@ -199,6 +230,12 @@ export function describeEvent(type: string, payload: Record<string, unknown>): s
   switch (type) {
     case 'TelemetryTick':
       return 'Telemetry snapshot received';
+    case 'HealthCheckCompleted': {
+      const route = typeof payload.route === 'string' && payload.route.length > 0
+        ? ` via ${payload.route} (not a direct measurement)`
+        : '';
+      return `Health check ${payload.health ? String(payload.health) : 'finished'}${api ? ` for ${api}` : ''}${route}`;
+    }
     case 'FailureDetected':
       return `Failure classified${payload.category ? `: ${String(payload.category)}` : ''}${api ? ` (${api})` : ''}`;
     case 'ApiHealthChanged':
@@ -217,6 +254,11 @@ export function describeEvent(type: string, payload: Record<string, unknown>): s
       return `Recovery step ${payload.stepId ? String(payload.stepId) : ''}`.trim();
     case 'RecoveryCompleted':
       return `Recovery ${payload.success === false ? 'exhausted' : 'completed'}`;
+    case 'RecoveryRolledBack':
+    case 'nani:recovery:rolledback':
+      return `Recovery rolled back${payload.route_id || payload.routeId ? ` to ${String(payload.route_id ?? payload.routeId)}` : ''} (state only; no route was reconfigured)`;
+    case 'nani:recovery:reset':
+      return `Recovery plan cleared${payload.recoveryId ? ` (${String(payload.recoveryId)})` : ''}; learned evidence retained`;
     case 'RouteSelected':
     case 'nani:route:activated':
       return `Route selected${payload.route_id || payload.routeId ? `: ${String(payload.route_id ?? payload.routeId)}` : ''}`;
@@ -244,7 +286,11 @@ export function describeEvent(type: string, payload: Record<string, unknown>): s
     case 'AnalysisCompleted':
       return `Analysis complete${payload.top_hypothesis ? `: ${String(payload.top_hypothesis)}` : ''} (confidence ${payload.confidence ?? 0})`;
     case 'VerificationCompleted':
-      return `Verification ${payload.verified === false ? 'failed' : 'passed'}${payload.route_id ? ` via ${String(payload.route_id)}` : ''}`;
+      // F-08: an absent `verified` field is NOT a pass. Default to unknown so
+      // an unavailable verification can never be rendered as a success.
+      return `Verification ${
+        payload.verified === true ? 'passed' : payload.verified === false ? 'failed' : 'unavailable'
+      }${payload.route_id ? ` via ${String(payload.route_id)}` : ''}`;
     case 'InvestigationCompleted':
       return `Investigation completed${payload.result ? `: ${String(payload.result)}` : ''}`;
     case 'InvestigationFailed':
@@ -320,11 +366,6 @@ export function applyNaniEvent(state: NaniEventState, event: NaniEvent): NaniEve
   if (state.lastSeq > 0 && event.seq > state.lastSeq + 1) {
     gapCount += event.seq - state.lastSeq - 1;
   }
-  if (event.seq > 0 && event.seq <= state.lastSeq) {
-    // Out-of-order replay of an already-superseded sequence: keep the newer
-    // ordering, but still record the event so nothing silently disappears.
-    gapCount = gapCount;
-  }
 
   const events = [...state.events, event];
   if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
@@ -348,6 +389,20 @@ export function applyNaniEvent(state: NaniEventState, event: NaniEvent): NaniEve
 /** Apply many events in order (e.g. a replay buffer after reconnect). */
 export function applyNaniEvents(state: NaniEventState, events: NaniEvent[]): NaniEventState {
   return events.reduce(applyNaniEvent, state);
+}
+
+/**
+ * Record a replay gap the BACKEND reported (event ring evicted / bus restarted).
+ * `applyNaniEvent` only detects gaps between sequences it can see; when the
+ * backend says "you missed events", that signal must still reach the UI's
+ * `Gaps` metric instead of being silently dropped (F-07).
+ */
+export function recordReplayGap(state: NaniEventState): NaniEventState {
+  return {
+    ...state,
+    gapCount: state.gapCount + 1,
+    joinedLate: true,
+  };
 }
 
 /* ------------------------------------------------------------------ */

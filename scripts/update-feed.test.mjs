@@ -34,6 +34,7 @@ import { decodePublicKey, decodeSignature, isEncryptedSecretKey, toMinisignField
 import { inspectZip, writeZipSingleStored } from './lib/zipWrite.mjs';
 import {
   buildLatestJson,
+  clearLocalFeedMarker,
   feedEndpoint,
   FeedConfigError,
   localEndpointForPort,
@@ -89,6 +90,26 @@ eq(
   eq('the local feed endpoint is the complete sidecar URL', feedEndpoint('local'), 'http://127.0.0.1:47615/api/v1/update-feed/latest.json');
   eq('the local artifact URL names the file in the query', releaseAssetUrl('local', '1.2.3', 'artifact.zip'), 'http://127.0.0.1:47615/api/v1/update-feed/artifact?file=artifact.zip');
   eq('localEndpointForPort still rewrites for callers that need it', localEndpointForPort(53944), 'http://127.0.0.1:53944/api/v1/update-feed/latest.json');
+}
+
+{
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'np-feed-marker-'));
+  const pkgPath = path.join(tmpRoot, 'package.json');
+  const pkg = {
+    repository: 'https://github.com/acme/netpulse',
+    netpulse: { releaseFeed: 'local' },
+  };
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg));
+
+  const before = resolveReleaseRepo({ env: {}, repoRoot: tmpRoot });
+  check('package.json local marker selects the local feed', before.slug === 'local' && before.local === true);
+
+  check('clearLocalFeedMarker removes the marker', clearLocalFeedMarker(pkg) === true && pkg.netpulse === undefined);
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg));
+
+  const after = resolveReleaseRepo({ env: {}, repoRoot: tmpRoot });
+  check('after clearing, the configured repository drives the endpoint', after.slug === 'acme/netpulse' && after.local !== true);
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
 
 {

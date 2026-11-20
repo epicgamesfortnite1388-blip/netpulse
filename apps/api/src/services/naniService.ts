@@ -10,33 +10,39 @@ import type {
   ApiClassification,
   ApiHealthStatus,
   ApiProbeResult,
+  ApiRegistration,
   ApiRegistry,
   ApiRegistryEntry,
-  ApiUpstreamRoute,
   DiagnosticObservation,
-  DiagnosticTest,
   HypothesisPosterior,
+  NaniDiagnosisCompleted,
+  NaniEventEnvelope,
+  NaniEventPayload,
+  NaniEventType,
+  NaniHealthUpdated,
+  NaniRecoveryExhausted,
+  NaniRecoveryPlanned,
+  NaniRecoveryResetEvent,
+  NaniRecoveryRolledBackEvent,
+  NaniRecoveryStepEvent,
+  NaniRouteActivated,
   RecoveryObservation,
   RecoveryPolicy,
+  RecoverySnapshot,
   RecoveryStep,
+  RecoveryStepKind,
   RouteCandidate,
-  RouteFeatures,
+  RouteKind,
   StepStatus,
 } from '@netpulse/shared';
 import {
   assessApiHealth,
   classifyApiFailure,
-  closeCircuit,
   createApiRegistry,
   DEFAULT_RECOVERY_POLICY,
   DEFAULT_ROUTE_CONSTRAINTS,
   DEFAULT_TESTS,
   diagnose,
-  failRoute,
-  filterCandidates,
-  getApi,
-  listApis,
-  openCircuit,
   planRecovery,
   RecoveryController,
   registerApi,
@@ -67,7 +73,9 @@ interface ApiRuntimeState {
   knownGoodRouteId: string | null;
   recoveryId: string | null;
   /** Steps of the active plan, in plan order (needed to revert all of them). */
-  recoverySteps: Array<{ id: string; kind: string; routeId: string }>;
+  recoverySteps: Array<{ id: string; kind: RecoveryStepKind; routeId: string; routeKind: RouteKind }>;
+  /** Active bounded controller, created only when the plan has runnable steps. */
+  recoveryController?: RecoveryController;
 }
 
 export interface NaniHealthCheckOptions {
@@ -115,7 +123,7 @@ export interface NaniRollbackResult {
   skippedStepIds: string[];
   /** The plan's rollback step, when the plan had one. */
   revertedStepId: string | null;
-  snapshot: unknown;
+  snapshot: RecoverySnapshot | null;
   message: string;
 }
 
@@ -123,8 +131,12 @@ export interface NaniRecoveryStepResult {
   recoveryId: string;
   stepId: string;
   status: StepStatus;
-  snapshot: any;
+  snapshot: RecoverySnapshot;
   nextStepId: string | null;
+}
+
+function isStepEventStatus(status: StepStatus): status is NaniRecoveryStepEvent['status'] {
+  return status !== 'pending';
 }
 
 type HealthLayer = 'dns' | 'tcp' | 'tls' | 'http';
@@ -181,7 +193,7 @@ export class NaniService {
     return this.registry;
   }
 
-  registerApi(entry: Omit<ApiRegistryEntry, 'dependedBy'> & { dependedBy?: string[] }): void {
+  registerApi(entry: ApiRegistration): void {
     registerApi(this.registry, entry);
     this.apis.delete(entry.id);
     // Materialise the runtime state so listApis()/the UI can see the provider
@@ -193,7 +205,7 @@ export class NaniService {
   }
 
   listApis(): Array<{ entry: ApiRegistryEntry; health: ApiHealthStatus; failures: number; successes: number }> {
-    return Array.from(this.apis.entries()).map(([id, state]) => ({
+    return Array.from(this.apis.values()).map((state) => ({
       entry: state.entry,
       health: state.entry.health as ApiHealthStatus,
       failures: state.failures,
@@ -230,7 +242,7 @@ export class NaniService {
       state.failures = 0;
     }
 
-    const healthy = classification.status as ApiHealthStatus;
+    const healthy: ApiHealthStatus = classification.status;
     setApiHealth(this.registry, opts.apiId, healthy, {
       lastFailureCategory: classification.category,
       lastVerifiedAt: now,
@@ -238,7 +250,7 @@ export class NaniService {
     });
     state.lastProbe = probe;
 
-    this.publish('nani:health:updated', {
+    const update: NaniHealthUpdated = {
       apiId: opts.apiId,
       status: healthy,
       category: classification.category,
@@ -249,7 +261,8 @@ export class NaniService {
       directReachable: probe.tcp ?? false,
       upstreamReachable: undefined,
       at: now,
-    } as any);
+    };
+    this.publish('nani:health:updated', update);
 
     this.deps.events.record(
       classification.retryable ? 'warn' : 'error',
@@ -305,13 +318,14 @@ export class NaniService {
     const excluded = new Set(observations.map((o) => o.testId));
     const nextTest = selectNextTest(result.posterior, DEFAULT_TESTS, excluded, now);
 
-    this.publish('nani:diagnosis:completed', {
+    const completed: NaniDiagnosisCompleted = {
       target,
       top: result.top,
       confidence: result.confidence,
       action,
       explanation,
-    } as any);
+    };
+    this.publish('nani:diagnosis:completed', completed);
 
     return {
       target,
@@ -339,23 +353,33 @@ export class NaniService {
     const plan = planRecovery(routes, this.recoveryPolicy, DEFAULT_ROUTE_CONSTRAINTS, knownGoodRouteId);
     const recoveryId = `nani-recovery-${apiId}-${now}`;
     state.recoveryId = recoveryId;
+    // A new plan invalidates any controller left by an earlier plan, even when
+    // the new plan has no runnable steps.
+    state.recoveryController = undefined;
 
-    state.recoverySteps = plan.steps.map((s) => ({ id: s.id, kind: s.kind, routeId: s.routeId }));
+    const routeKindById = new Map(routes.map((r) => [r.id, r.kind]));
+    state.recoverySteps = plan.steps.map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      routeId: s.routeId,
+      routeKind: routeKindById.get(s.routeId) ?? 'direct',
+    }));
 
     // Create the recovery controller only when there are actionable steps.
     if (plan.status === 'ready' && plan.steps.length > 0) {
-      const controller = new RecoveryController(plan as any, this.recoveryPolicy);
+      const controller = new RecoveryController(plan, this.recoveryPolicy);
       this.attachRecoveryController(apiId, controller);
     }
 
-    this.publish('nani:recovery:planned', {
+    const planned: NaniRecoveryPlanned = {
       recoveryId,
       target: apiId,
       status: plan.status,
       reason: plan.reason,
       steps: plan.steps.map((s) => ({ id: s.id, kind: s.kind, routeId: s.routeId, requiresAuthorization: s.requiresAuthorization })),
       rejected: plan.rejected,
-    } as any);
+    };
+    this.publish('nani:recovery:planned', planned);
 
     return {
       recoveryId,
@@ -371,60 +395,63 @@ export class NaniService {
   nextRecoveryStep(
     apiId: string,
     now: number = Date.now(),
-  ): { step: RecoveryStep | null; snapshot: any; knownGoodRouteId: string | null } {
+  ): { step: RecoveryStep | null; snapshot: RecoverySnapshot | null; knownGoodRouteId: string | null } {
     const state = this.apis.get(apiId);
     if (!state) return { step: null, snapshot: null, knownGoodRouteId: null };
     if (!state.recoveryId) return { step: null, snapshot: null, knownGoodRouteId: state.knownGoodRouteId };
-    // Lazily create controller on first step request.
-    if (!(state as any)._controller) {
-      // Re-derive plan from known routes is not possible here; controller must
-      // be created by planRecovery. We store it on the state via a symbol.
-      return { step: null, snapshot: null, knownGoodRouteId: state.knownGoodRouteId };
-    }
-    const controller = (state as any)._controller;
+    const controller = state.recoveryController;
+    // Re-deriving a plan here would invent steps that were never approved.
+    if (!controller) return { step: null, snapshot: null, knownGoodRouteId: state.knownGoodRouteId };
     const step = controller.next(now);
     return { step, snapshot: controller.snapshot(), knownGoodRouteId: state.knownGoodRouteId };
   }
 
   recordRecoveryStep(apiId: string, observation: RecoveryObservation, now: number = Date.now()): NaniRecoveryStepResult {
     const state = this.apis.get(apiId);
-    if (!state || !(state as any)._controller) throw new Error(`no active recovery controller for ${apiId}`);
-    const controller = (state as any)._controller;
+    const controller = state?.recoveryController;
+    if (!state || !controller) throw new Error(`no active recovery controller for ${apiId}`);
+    const plannedStep = state.recoverySteps.find((s) => s.id === observation.stepId);
+    if (!plannedStep) throw new Error(`unknown recovery step ${observation.stepId} for ${apiId}`);
     controller.record(observation, now);
     const snapshot = controller.snapshot();
 
-    this.publish(`nani:recovery:step:${observation.status}`, {
-      recoveryId: state.recoveryId ?? '',
-      stepId: observation.stepId,
-      kind: observation.stepId.split(':')[1] as any,
-      routeId: observation.stepId.split(':')[0],
-      status: observation.status,
-      latencyMs: observation.latencyMs,
-      message: observation.message,
-    } as any);
+    if (isStepEventStatus(observation.status)) {
+      const stepEvent: NaniRecoveryStepEvent = {
+        recoveryId: state.recoveryId ?? '',
+        stepId: observation.stepId,
+        kind: plannedStep.kind,
+        routeId: plannedStep.routeId,
+        status: observation.status,
+        latencyMs: observation.latencyMs,
+        message: observation.message,
+      };
+      this.publish(`nani:recovery:step:${stepEvent.status}`, stepEvent);
+    }
 
     if (observation.status === 'succeeded' && observation.stepId.includes('verify')) {
-      const routeId = observation.stepId.split(':')[0] ?? '';
+      const routeId = plannedStep.routeId;
       // A route the engine just verified working is the known-good target a
       // rollback reverts to. Nothing else sets this: it is evidence, not a
       // user preference.
       state.knownGoodRouteId = routeId;
       verifyRoute(this.registry, apiId, routeId, { successPrior: 0.9 }, now);
-      this.publish('nani:route:activated', {
+      const activated: NaniRouteActivated = {
         apiId,
         routeId,
-        kind: 'direct',
+        kind: plannedStep.routeKind,
         successProbability: 0.9,
-      } as any);
+      };
+      this.publish('nani:route:activated', activated);
     }
 
     if (snapshot.exhausted) {
-      this.publish('nani:recovery:exhausted', {
+      const exhausted: NaniRecoveryExhausted = {
         recoveryId: state.recoveryId ?? '',
         target: apiId,
         reason: 'max attempts reached',
         attempts: snapshot.attempts,
-      } as any);
+      };
+      this.publish('nani:recovery:exhausted', exhausted);
     }
 
     const next = controller.next(now);
@@ -459,7 +486,7 @@ export class NaniService {
       throw new Error(`no known-good route recorded for ${apiId}`);
     }
 
-    const controller = (state as any)._controller as RecoveryController | undefined;
+    const controller = state.recoveryController;
     // Only a rollback step that actually targets this route may be recorded as
     // reverted. Planning can carry a different known-good route, and recording
     // that step as succeeded would claim a revert that never happened.
@@ -469,14 +496,14 @@ export class NaniService {
 
     if (controller) {
       if (revertedStepId) {
-        controller.record({ stepId: revertedStepId, status: 'succeeded' } as RecoveryObservation, now);
+        controller.record({ stepId: revertedStepId, status: 'succeeded' }, now);
       }
       // Everything still unfinished is neither run nor failed: skipped.
       for (const step of state.recoverySteps) {
         if (step.id === revertedStepId) continue;
-        const status = controller.snapshot().statuses.find((s: any) => s.stepId === step.id)?.status;
+        const status = controller.snapshot().statuses.find((s) => s.stepId === step.id)?.status;
         if (status === 'pending' || status === 'running' || status === 'requires-permission') {
-          controller.record({ stepId: step.id, status: 'skipped' } as RecoveryObservation, now);
+          controller.record({ stepId: step.id, status: 'skipped' }, now);
           skippedStepIds.push(step.id);
         }
       }
@@ -485,14 +512,15 @@ export class NaniService {
     const snapshot = controller ? controller.snapshot() : null;
     const recoveryId = state.recoveryId;
 
-    this.publish('nani:recovery:rolledback', {
+    const rolledBack: NaniRecoveryRolledBackEvent = {
       recoveryId: recoveryId ?? '',
       apiId,
       routeId,
       revertedStepId,
       skippedStepIds,
       source: 'operator',
-    } as any);
+    };
+    this.publish('nani:recovery:rolledback', rolledBack);
 
     return {
       apiId,
@@ -512,7 +540,7 @@ export class NaniService {
   /** Attach a recovery controller to an API's runtime state (called by planRecovery). */
   attachRecoveryController(apiId: string, controller: RecoveryController): void {
     const state = this.apis.get(apiId);
-    if (state) (state as any)._controller = controller;
+    if (state) state.recoveryController = controller;
   }
 
   /**
@@ -531,10 +559,15 @@ export class NaniService {
     const state = this.apis.get(apiId);
     if (!state) throw new Error(`unknown api: ${apiId}`);
     const previousRecoveryId = state.recoveryId;
-    delete (state as any)._controller;
+    state.recoveryController = undefined;
     state.recoveryId = null;
     if (previousRecoveryId) {
-      this.publish('nani:recovery:reset', { apiId, recoveryId: previousRecoveryId } as any);
+      const reset: NaniRecoveryResetEvent = {
+        apiId,
+        recoveryId: previousRecoveryId,
+        cleared: true,
+      };
+      this.publish('nani:recovery:reset', reset);
     }
     return { apiId, previousRecoveryId, cleared: previousRecoveryId !== null };
   }
@@ -612,7 +645,6 @@ export class NaniService {
       if (!test) continue;
       const obs = await runDiagnosticTest(
         this.deps.controller,
-        undefined as any,
         test,
         target,
         now,
@@ -657,11 +689,17 @@ export class NaniService {
     return state;
   }
 
-  private publish<T extends any>(type: string, payload: T): void {
+  private publish<T extends NaniEventPayload>(type: NaniEventType, payload: T): void {
     this.seq += 1;
-    const env = { seq: this.seq, at: Date.now(), type: type as any, payload, version: 1 };
+    const envelope: NaniEventEnvelope<T> = {
+      seq: this.seq,
+      at: Date.now(),
+      type,
+      payload,
+      version: 1,
+    };
     const topic = type.split(':').slice(1).join(':');
-    this.deps.bus.publish(`nani:${topic}`, env as any);
+    this.deps.bus.publish(`nani:${topic}`, { ...envelope });
     this.deps.events.record('info', 'connectivity', `event: ${type}`, { type });
   }
 

@@ -24,6 +24,7 @@ export function Metric({
   unit = 'raw',
   hint,
   status = 'idle',
+  size = 'md',
   children,
 }: {
   label: string;
@@ -32,6 +33,12 @@ export function Metric({
   hint?: string;
   /** idle = awaiting first measurement */
   status?: 'good' | 'warn' | 'bad' | 'idle';
+  /**
+   * `md` (20px) is the reading size for a row of metrics; `lg` (24px) is for a
+   * single focal result. Before this existed every metric was 24px, so a strip
+   * of six supporting numbers outranked the page's headline verdict.
+   */
+  size?: 'md' | 'lg';
   children?: ReactNode;
 }) {
   const valueColor =
@@ -46,15 +53,22 @@ export function Metric({
   const body = (
     <div>
       <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">{label}</div>
-      <div className={`metric-num mt-1 text-2xl font-semibold ${valueColor}`}>{format(value, unit)}</div>
+      <div className={`metric-num mt-1 font-semibold ${size === 'lg' ? 'text-2xl' : 'text-xl'} ${valueColor}`}>
+        {format(value, unit)}
+      </div>
       {children}
     </div>
   );
 
   if (hint) {
+    // The trigger must be focusable or the hint is pointer-only. Radix wires
+    // aria-describedby from the trigger, so making the wrapper focusable is the
+    // whole fix: the hint now appears on keyboard focus as well as hover.
     return (
       <Tooltip content={hint}>
-        <div className="cursor-help">{body}</div>
+        <div className="cursor-help rounded-sm" tabIndex={0}>
+          {body}
+        </div>
       </Tooltip>
     );
   }

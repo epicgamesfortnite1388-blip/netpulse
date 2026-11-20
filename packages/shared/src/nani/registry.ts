@@ -10,7 +10,7 @@
  * performs health checks.
  */
 
-import type { RouteCandidate, RouteFeatures, RouteKind } from './types';
+import type { RouteFeatures, RouteKind } from './types';
 
 export type ApiAuthType = 'none' | 'bearer' | 'api-key' | 'oauth2' | 'basic';
 export type HealthCheckMethod = 'http-get' | 'http-post' | 'tcp-only' | 'tls-only' | 'custom';
@@ -44,6 +44,21 @@ export interface ApiRetryPolicy {
   maxAttempts: number;
   jitter: number;
 }
+
+export const DEFAULT_API_RATE_LIMIT: ApiRateLimitPolicy = {
+  maxRequests: 60,
+  windowMs: 60_000,
+  honorsRetryAfter: true,
+  cooldownMs: 5_000,
+};
+
+export const DEFAULT_API_RETRY: ApiRetryPolicy = {
+  baseMs: 500,
+  factor: 2,
+  maxMs: 8_000,
+  maxAttempts: 3,
+  jitter: 0.2,
+};
 
 export interface ApiRegistryEntry {
   id: string;
@@ -93,9 +108,32 @@ export function createApiRegistry(): ApiRegistry {
   };
 }
 
+/** Fields the host may omit when registering a provider over the API. */
+export type ApiRegistration = Omit<
+  ApiRegistryEntry,
+  | 'dependedBy'
+  | 'routes'
+  | 'rateLimit'
+  | 'retry'
+  | 'consecutiveFailures'
+  | 'autoRecoveryPermitted'
+  | 'autoRecoveryPaused'
+  | 'health'
+> & Partial<Pick<
+  ApiRegistryEntry,
+  | 'dependedBy'
+  | 'routes'
+  | 'rateLimit'
+  | 'retry'
+  | 'consecutiveFailures'
+  | 'autoRecoveryPermitted'
+  | 'autoRecoveryPaused'
+  | 'health'
+>>;
+
 export function registerApi(
   registry: ApiRegistry,
-  entry: Omit<ApiRegistryEntry, 'dependedBy'> & { dependedBy?: string[] },
+  entry: ApiRegistration,
 ): ApiRegistryEntry | undefined {
   const previous = registry.entries.get(entry.id);
   const normalized: ApiRegistryEntry = {
@@ -106,6 +144,8 @@ export function registerApi(
     // undefined" instead of recording the route.
     routes: entry.routes ?? [],
     dependedBy: entry.dependedBy ?? [],
+    rateLimit: entry.rateLimit ?? DEFAULT_API_RATE_LIMIT,
+    retry: entry.retry ?? DEFAULT_API_RETRY,
     consecutiveFailures: entry.consecutiveFailures ?? 0,
     autoRecoveryPermitted: entry.autoRecoveryPermitted ?? true,
     autoRecoveryPaused: entry.autoRecoveryPaused ?? false,

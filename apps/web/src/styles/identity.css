@@ -1,0 +1,702 @@
+/*
+ * NETPULSE — "Signal / Instrument" design identity
+ * ---------------------------------------------------------------
+ * Design direction (see UI_02 for the full rationale):
+ *
+ * Four candidates were explored: (A) a neon "network operations centre",
+ * (B) an editorial Swiss/SaaS data sheet, (C) a glassmorphic dark console,
+ * and (D) a precision measurement instrument. A and C are exactly the
+ * generic VPN aesthetic the brief rejects; B reads as a web dashboard rather
+ * than a Windows instrument. D was selected: NetPulse measures real things,
+ * and the interface should look like the instrument that measures them.
+ *
+ * The identity is carried by FIVE decisions, not by decoration:
+ *   1. Petrol-ink surfaces with a warm-ivory text plane — never pure black,
+ *      never an electric-blue accent. Light mode is warm paper, not white.
+ *   2. A single sea-glass "signal" accent. Every other hue is SEMANTIC:
+ *      amber = in-progress / unverified, coral = failed, violet = NANI.
+ *      A colour on this UI always means something.
+ *   3. Mono micro-labels + large tabular numerals for measurements. Technical
+ *      data is typographic, not chart-shaped. No graphs without real data.
+ *   4. Small radii, hairline rules, and three real elevation steps. Panels
+ *      are planes, not pill-shaped cards floating inside other cards.
+ *   5. A pulse-trace mark: one horizontal rule with a single spike. It is the
+ *      logo, the section divider, and the state rail — never a looping
+ *      animation.
+ *
+ * This file is imported AFTER tokens.css. Tailwind v4 emits utilities as
+ * `var(--color-*)` references, so overriding the semantic custom properties
+ * here repaints EVERY existing screen (all 27 routes) without editing them.
+ * Only brand-new components use the `np-*` classes defined below.
+ */
+
+/* ------------------------------------------------------------------ *
+ * 1. Semantic palette — dark is the default                        *
+ * ------------------------------------------------------------------ */
+:root {
+  --color-bg: #0a1114;
+  --color-surface: #101a1e;
+  --color-surface-2: #162328;
+  --color-elevated: #1d2d33;
+  --color-line: rgba(196, 220, 212, 0.105);
+  --color-line-strong: rgba(196, 220, 212, 0.22);
+
+  --color-text: #edf3ee;
+  --color-muted: #93a6a2;
+  --color-faint: #718783;
+  --color-on-accent: #06231c;
+  --color-accent-foreground: #06231c;
+  --color-surface-3: #1d2d33;
+  --color-background: #0a1114;
+
+  --color-accent: #6ed9bc;
+  --color-accent-strong: #a6eed5;
+  --color-accent-soft: rgba(110, 217, 188, 0.10);
+  --color-ok: #66d6ae;
+  --color-warn: #e6b36a;
+  --color-danger: #ee7a70;
+
+  --color-aether: #a99be0;
+  --color-aether-2: #6ed9bc;
+  --color-aether-3: #e08fa8;
+  --color-aether-soft: rgba(169, 155, 224, 0.11);
+  --color-aether-line: rgba(169, 155, 224, 0.30);
+
+  /* Protocol inks keep their existing contrast-calibrated values. */
+  --color-proto-sky: oklch(82.8% 0.111 230.318);
+  --color-proto-violet: oklch(81.1% 0.111 293.571);
+  --color-proto-orange: oklch(83.7% 0.128 66.29);
+  --color-proto-emerald: oklch(84.5% 0.143 164.978);
+  --color-proto-cyan: oklch(86.5% 0.127 207.078);
+  --color-proto-indigo: oklch(78.5% 0.115 274.713);
+  --color-proto-amber: oklch(87.9% 0.169 91.605);
+
+  /* State semantics — ONE source of truth for connection wording/colour. */
+  --state-idle: #718783;
+  --state-connecting: #e6b36a;
+  --state-connected: #66d6ae;
+  --state-unverified: #e6b36a;
+  --state-failed: #ee7a70;
+  --state-reconnecting: #e6b36a;
+  --state-unknown: #718783;
+  --state-diagnostic: #a99be0;
+
+  /* Brand + geometry tokens */
+  --np-ink: #0a1114;
+  --np-signal: #6ed9bc;
+  --np-signal-dim: rgba(110, 217, 188, 0.16);
+  --np-warm: #e6b36a;
+  --np-violet: #a99be0;
+  --np-rail-w: 76px;
+  --np-context-w: 226px;
+  --np-topbar-h: 58px;
+  --np-r-1: 3px;
+  --np-r-2: 6px;
+  --np-r-3: 10px;
+  --np-r-4: 14px;
+  --np-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --np-dur: 180ms;
+
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(196, 220, 212, 0.03);
+  --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.46), 0 1px 3px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(196, 220, 212, 0.04);
+  --shadow-overlay: 0 20px 48px rgba(0, 0, 0, 0.60), 0 4px 12px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(196, 220, 212, 0.05);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. Light theme — warm paper, not clinical white                  *
+ * ------------------------------------------------------------------ */
+html[data-theme='light'] {
+  --color-bg: #f3f5f1;
+  --color-surface: #ffffff;
+  --color-surface-2: #e9eee9;
+  --color-elevated: #ffffff;
+  --color-line: rgba(18, 42, 38, 0.10);
+  --color-line-strong: rgba(18, 42, 38, 0.22);
+
+  --color-text: #10211e;
+  --color-muted: #46605b;
+  --color-faint: #5d7570;
+  --color-on-accent: #ffffff;
+  --color-accent-foreground: #ffffff;
+  --color-surface-3: #d8e0db;
+  --color-background: #f3f5f1;
+  --color-accent-strong: #075e4e;
+  --color-accent-soft: rgba(11, 126, 104, 0.09);
+  --color-ok: #0b7e68;
+  --color-warn: #94590f;
+  --color-danger: #b3372c;
+
+  --color-aether: #5b4ba8;
+  --color-aether-2: #0b7e68;
+  --color-aether-3: #a83b62;
+  --color-aether-soft: rgba(91, 75, 168, 0.09);
+  --color-aether-line: rgba(91, 75, 168, 0.26);
+
+  --color-proto-sky: #0369a1;
+  --color-proto-violet: #6d28d9;
+  --color-proto-orange: #c2410c;
+  --color-proto-emerald: #047857;
+  --color-proto-cyan: #0e7490;
+  --color-proto-indigo: #4338ca;
+  --color-proto-amber: #b45309;
+
+  --state-idle: #5d7570;
+  --state-connecting: #94590f;
+  --state-connected: #0b7e68;
+  --state-unverified: #94590f;
+  --state-failed: #b3372c;
+  --state-reconnecting: #94590f;
+  --state-unknown: #5d7570;
+  --state-diagnostic: #5b4ba8;
+
+  --np-signal: #0b7e68;
+  --np-signal-dim: rgba(11, 126, 104, 0.14);
+  --np-warm: #94590f;
+  --np-violet: #5b4ba8;
+
+  --shadow-raised: 0 1px 2px rgba(15, 35, 31, 0.06), 0 1px 3px rgba(15, 35, 31, 0.04), 0 0 0 1px rgba(15, 35, 31, 0.03);
+  --shadow-floating: 0 6px 18px rgba(15, 35, 31, 0.10), 0 2px 4px rgba(15, 35, 31, 0.05), 0 0 0 1px rgba(15, 35, 31, 0.04);
+  --shadow-overlay: 0 20px 48px rgba(15, 35, 31, 0.16), 0 4px 12px rgba(15, 35, 31, 0.07), 0 0 0 1px rgba(15, 35, 31, 0.05);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    --color-bg: #f3f5f1;
+    --color-surface: #ffffff;
+    --color-surface-2: #e9eee9;
+    --color-elevated: #ffffff;
+    --color-line: rgba(18, 42, 38, 0.10);
+    --color-line-strong: rgba(18, 42, 38, 0.22);
+    --color-text: #10211e;
+    --color-muted: #46605b;
+    --color-faint: #5d7570;
+    --color-accent: #0b7e68;
+    --color-accent-strong: #075e4e;
+    --color-accent-soft: rgba(11, 126, 104, 0.09);
+    --color-ok: #0b7e68;
+    --color-warn: #94590f;
+    --color-danger: #b3372c;
+    --color-on-accent: #ffffff;
+    --color-accent-foreground: #ffffff;
+    --color-surface-3: #d8e0db;
+    --color-background: #f3f5f1;
+    --state-idle: #5d7570;
+    --state-connecting: #94590f;
+    --state-connected: #0b7e68;
+    --state-unverified: #94590f;
+    --state-failed: #b3372c;
+    --state-reconnecting: #94590f;
+    --state-diagnostic: #5b4ba8;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. Global typography and chrome                                   *
+ * ------------------------------------------------------------------ */
+html {
+  color-scheme: dark;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv11' 1, 'ss01' 1;
+}
+
+h1, h2, h3 {
+  letter-spacing: -0.022em;
+  font-weight: 600;
+}
+
+/* Numerals are measurements. They must align column-to-column. */
+.metric-num,
+.np-num,
+code, kbd, pre, .font-mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+/* One consistent, visible focus treatment for the whole product. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--np-r-1);
+}
+
+::selection {
+  background: var(--np-signal-dim);
+  color: var(--color-text);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(125, 150, 145, 0.28);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(125, 150, 145, 0.48);
+  background-clip: content-box;
+}
+
+/* The old backdrop was two large cyan/emerald radial glows. A precision
+   instrument has a flat, calm ground; only a very faint top-edge wash
+   remains, and it costs nothing to composite. */
+.app-backdrop {
+  background: var(--color-bg) !important;
+  background-image: none !important;
+}
+html[data-theme='light'] .app-backdrop {
+  background: var(--color-bg) !important;
+  background-image: none !important;
+}
+
+/* The glass/brand-gradient utilities from the old identity are still used by
+   a handful of legacy surfaces. Tone them down so no screen can reintroduce
+   the neon language through a utility class. */
+.surface-glass {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-line) !important;
+  box-shadow: var(--shadow-raised) !important;
+  backdrop-filter: none !important;
+}
+.hairline-brand {
+  background: var(--color-accent) !important;
+  opacity: 0.55;
+}
+.brand-gradient {
+  background-image: none !important;
+}
+.shadow-glow {
+  box-shadow: var(--shadow-raised) !important;
+}
+
+/* Aether's stage used a near-black violet gradient with three infinite
+   animations. Keep its structure (it is a real engine surface) but bring it
+   into the petrol-ink family and slow the motion to a single, quiet drift. */
+.aether-stage {
+  background: linear-gradient(160deg, #122026, #0c1519 70%) !important;
+}
+.aether-aurora,
+.aether-scanline,
+.aether-sheen {
+  animation: none !important;
+  opacity: 0.22 !important;
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Structural primitives                                          *
+ * ------------------------------------------------------------------ */
+
+/* Micro-label: the instrument's panel engraving.
+ * Size comes from the ramp, not a literal: a fixed 10px here ignored the
+ * user's Text-size preference entirely, so at 125% every label stayed 10px
+ * while the text around it grew to 15px. Tracking is slightly tighter than
+ * the old 0.16em because the glyphs are now 12px rather than 10px; uppercase
+ * mono is what makes it read as an engraving, not the small size. */
+.np-label {
+  font-family: var(--font-mono);
+  font-size: calc(0.75rem * var(--type-scale));
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* A section opens with a label and a short signal rule. The rule is the
+   pulse-trace motif reduced to its simplest form. */
+.np-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.np-section-head::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, var(--color-line-strong), transparent 70%);
+}
+
+/* Panels are planes: one hairline, one small radius, one elevation step. */
+.np-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--np-r-3);
+  box-shadow: var(--shadow-raised);
+}
+.np-panel-flush {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.np-inset {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--np-r-2);
+}
+
+/* A data row: label left, measurement right, hairline between rows only. */
+.np-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--color-line);
+}
+.np-row:last-child {
+  border-bottom: 0;
+}
+.np-row-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: calc(0.8125rem * var(--type-scale));
+  color: var(--color-text);
+}
+
+/* State badge: colour is supplied by --np-state, never chosen ad hoc. */
+.np-state-badge {
+  --np-state: var(--state-idle);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  border-radius: var(--np-r-1);
+  border: 1px solid color-mix(in srgb, var(--np-state) 34%, transparent);
+  background: color-mix(in srgb, var(--np-state) 11%, transparent);
+  color: var(--np-state);
+  font-family: var(--font-mono);
+  font-size: calc(0.75rem * var(--type-scale));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.np-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--np-state);
+  flex: none;
+}
+
+/* The primary action is a solid signal fill, not a tinted outline. */
+.np-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: var(--np-r-2);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: calc(0.8125rem * var(--type-scale));
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition: transform var(--np-dur) var(--np-ease), filter var(--np-dur) var(--np-ease);
+}
+.np-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.np-btn-primary:active:not(:disabled) {
+  transform: scale(0.975);
+}
+.np-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.np-btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--np-r-2);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: calc(0.75rem * var(--type-scale));
+  font-weight: 500;
+  transition: border-color var(--np-dur) var(--np-ease), background var(--np-dur) var(--np-ease);
+}
+.np-btn-quiet:hover:not(:disabled) {
+  border-color: var(--color-line-strong);
+  background: var(--color-elevated);
+}
+.np-btn-quiet:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.np-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--np-r-2);
+  border: 1px solid transparent;
+  color: var(--color-muted);
+  transition: color var(--np-dur) var(--np-ease), background var(--np-dur) var(--np-ease), border-color var(--np-dur) var(--np-ease);
+}
+.np-icon-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border-color: var(--color-line);
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. Application shell                                              *
+ * ------------------------------------------------------------------ */
+.np-shell {
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+/* Left rail: fixed, icon-first, with a vertical signal bar for the active
+   destination. 76px is deliberately narrow — it leaves the content wide. */
+.np-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--np-rail-w);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  border-right: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+@media (min-width: 1024px) {
+  .np-rail { display: flex; }
+}
+
+.np-rail-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 11px 2px;
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  /* Was a literal 9px — under the floor, and immune to the Text-size
+   * preference. 12px with tighter tracking still fits the 76px rail
+   * ("Overview" measures ~60px of the 72px usable width). */
+  font-size: calc(0.75rem * var(--type-scale));
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-align: center;
+  transition: color var(--np-dur) var(--np-ease), background var(--np-dur) var(--np-ease);
+}
+.np-rail-item:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+.np-rail-item[data-active='true'] {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-soft);
+}
+.np-rail-item[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14%;
+  bottom: 14%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-accent);
+}
+.np-rail-item:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Context column: the secondary navigation for the active section. */
+.np-context {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: var(--np-rail-w);
+  z-index: 29;
+  width: var(--np-context-w);
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-right: 1px solid var(--color-line);
+  background: var(--color-bg);
+  padding: 20px 14px 24px;
+}
+@media (min-width: 1024px) {
+  .np-context { display: flex; }
+}
+
+.np-context-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--np-r-2);
+  color: var(--color-muted);
+  font-size: calc(0.8125rem * var(--type-scale));
+  line-height: 1.3;
+  border-left: 2px solid transparent;
+  transition: color var(--np-dur) var(--np-ease), background var(--np-dur) var(--np-ease), border-color var(--np-dur) var(--np-ease);
+}
+.np-context-link:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+.np-context-link[data-active='true'] {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-soft);
+  border-left-color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Topbar: one global row. It carries context, real connection state, and the
+   few actions that are useful from any screen. */
+.np-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--np-topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-bg);
+}
+.np-topbar[data-scrolled='true'] {
+  box-shadow: var(--shadow-floating);
+  border-bottom-color: var(--color-line-strong);
+}
+
+.np-shell-body {
+  min-width: 0;
+  flex: 1;
+}
+@media (min-width: 1024px) {
+  .np-shell-body { margin-left: calc(var(--np-rail-w) + var(--np-context-w)); }
+}
+
+.np-content {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 28px 28px 48px;
+}
+@media (max-width: 1023px) {
+  .np-content { padding: 20px 18px 40px; }
+}
+
+/* Mobile drawer reuses the rail + context as a single stacked panel. */
+.np-mobile-nav {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+.np-mobile-panel {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(300px, 84vw);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+  padding: 18px 14px 28px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. Connection dial                                                *
+ * ------------------------------------------------------------------ */
+/* Three concentric arcs. Each ring is one REAL backend signal — process /
+   tunnel, traffic verification, guard (kill switch / TUN). No ring animates
+   in a loop; the arcs change only when the backend state changes. */
+.np-dial {
+  display: block;
+  overflow: visible;
+}
+.np-dial-track {
+  fill: none;
+  stroke: var(--color-line);
+  stroke-width: 2;
+}
+.np-dial-arc {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke var(--dur-move, 280ms) var(--np-ease), stroke-dasharray var(--dur-move, 280ms) var(--np-ease), opacity var(--dur-move, 280ms) var(--np-ease);
+}
+.np-dial-center {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  fill: var(--color-text);
+}
+.np-dial-sub {
+  font-family: var(--font-mono);
+  font-size: calc(0.75rem * var(--type-scale));
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  fill: var(--color-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Motion policy                                                  *
+ * ------------------------------------------------------------------ */
+/* Every transition above is a discrete state change. Nothing here loops. */
+@media (prefers-reduced-motion: reduce) {
+  .np-rail-item,
+  .np-context-link,
+  .np-btn-primary,
+  .np-btn-quiet,
+  .np-icon-btn,
+  .np-dial-arc,
+  .page-enter {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+  .aether-halo,
+  .aether-ping,
+  .aether-orbit,
+  .aether-orbit-slow,
+  .animate-pulse-dot {
+    animation: none !important;
+  }
+
+  /* The rules above are a blocklist, and components use Tailwind's animation
+     utilities directly — `animate-pulse` alone appears on six elements, all of
+     them infinite. A list of names cannot keep up with that, so neutralise the
+     whole family instead.
+     `animate-spin` is deliberately exempt: a spinner that stops is
+     indistinguishable from a hang, and it is the only one of these that is
+     reporting progress rather than decorating. */
+  [class*='animate-']:not([class*='animate-spin']) {
+    animation: none !important;
+  }
+}

@@ -70,6 +70,20 @@ pub enum Event {
     LearningUpdate { metric: String, value: f64, context: String },
     /// Periodic telemetry snapshot (bounded frequency).
     TelemetryTick { timestamp_ms: u64, healthy_apis: usize, total_apis: usize },
+    /// One health check finished for an API, whether or not its classification
+    /// changed. `record_probe` reports transitions only, so a check that
+    /// confirms the previous verdict would otherwise leave no trace at all.
+    HealthCheckCompleted {
+        api_id: String,
+        health: String,
+        category: String,
+        /// How the HTTP leg reached the target: `direct` or `system-proxy-inferred`.
+        /// Additive so older event consumers can ignore it.
+        route: String,
+        latency_ms: Option<f64>,
+        healthy_layers: usize,
+        total_layers: usize,
+    },
     /// A user-initiated manual action completed.
     UserAction { action: String, api_id: Option<String>, success: bool },
     /// Investigation lifecycle — NANI command center sessions.

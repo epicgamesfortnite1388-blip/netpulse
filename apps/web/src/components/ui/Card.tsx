@@ -84,7 +84,11 @@ export function Card({
 
   return (
     <div
-      className={`rounded-xl border border-line bg-surface shadow-raised transition-colors ${className}`}
+      // One panel radius for the whole product. This was `rounded-xl` (12px)
+      // while `.np-panel` used `--np-r-3` (10px), so a Card nested in a panel
+      // had a larger corner than its container — the one thing a nested radius
+      // must never do.
+      className={`rounded-[var(--np-r-3)] border border-line bg-surface shadow-raised transition-colors ${className}`}
       {...rest}
     >
       <CardChildLevelContext.Provider value={level + (rendersHeading ? 1 : 0)}>
@@ -131,7 +135,7 @@ export function CardHeader({
   );
 
   const headerClass =
-    'relative flex items-start justify-between gap-3 border-b border-line px-5 py-3.5';
+    'relative flex items-start justify-between gap-3 border-b border-line-strong px-5 py-3.5';
 
   return (
     <div className={headerClass}>
@@ -167,7 +171,7 @@ export function CardBody({ className = '', children, ...rest }: React.HTMLAttrib
   // leave live subtrees (charts, pollers) running behind a closed section.
   if (fold && !fold.open) return null;
   const body = (
-    <div id={fold?.bodyId} className={`px-5 py-4 ${className}`} {...rest}>
+    <div id={fold?.bodyId} className={`px-5 py-3.5 ${className}`} {...rest}>
       {children}
     </div>
   );

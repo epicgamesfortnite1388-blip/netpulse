@@ -1,0 +1,8 @@
+  01-dashboard            1831px tall  h1="Dashboard"
+  03-nani-overview        1077px tall  h1="NANI"
+      [tab] Network Intel
+  07-nani-network          842px tall  h1="NANI"
+  08-copilot               842px tall  h1="Copilot"
+  10-settings              842px tall  h1="Settings"
+
+wrote 5 shots + manifest.json to E:\Code\Project\Vpn_app\reports\EXHAUSTIVE_AUDIT\visual-data-backed

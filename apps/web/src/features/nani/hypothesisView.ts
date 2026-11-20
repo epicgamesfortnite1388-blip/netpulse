@@ -39,6 +39,48 @@ export function formatNats(value: number): string {
   return Number.isFinite(value) ? `${value.toFixed(3)} nats` : 'unavailable';
 }
 
+/** How the MAP confidence should be presented, and where the number came from. */
+export interface CalibrationDisplay {
+  /** Confidence to show: always the raw posterior until external outcomes exist. */
+  confidence: number;
+  /** False until an externally observed outcome calibrates the map. */
+  calibrated: boolean;
+  /** One line saying where the number came from, for the header. */
+  note: string;
+}
+
+/**
+ * Present the raw MAP posterior honestly.
+ *
+ * F-02: the engine's `map_confidence_calibrated` is derived by comparing the
+ * leading hypothesis with the same likelihood table that produced it. It is a
+ * self-consistency value, not empirical calibration against a measured
+ * external outcome. It must never be labelled "calibrated confidence".
+ */
+export function calibrationDisplay(view: {
+  map_label: string | null;
+  hypotheses: HypothesisProbabilityDto[];
+  map_confidence_calibrated: number | null;
+  calibration_samples: number;
+}): CalibrationDisplay | null {
+  const raw = view.hypotheses.find((h) => h.label === view.map_label);
+  if (!raw) return null;
+  const samples = Number.isFinite(view.calibration_samples) ? view.calibration_samples : 0;
+  const selfConsistency = view.map_confidence_calibrated;
+  if (selfConsistency !== null && Number.isFinite(selfConsistency)) {
+    return {
+      confidence: raw.posterior,
+      calibrated: false,
+      note: `raw posterior; self-consistency index available from ${samples} internal checks (not externally calibrated)`,
+    };
+  }
+  return {
+    confidence: raw.posterior,
+    calibrated: false,
+    note: `raw posterior, ${samples} internal consistency check${samples === 1 ? '' : 's'} recorded`,
+  };
+}
+
 /** Signed percentage-point change from prior to posterior, e.g. "+12.4 pp". */
 export function formatShift(shift: number): string {
   const pp = (Number.isFinite(shift) ? shift : 0) * 100;

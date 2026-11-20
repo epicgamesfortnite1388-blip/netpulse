@@ -1,0 +1,3737 @@
+   Compiling netpulse-desktop v3.2.0 (E:\Code\Project\Vpn_app\src-tauri)
+warning: unused import: `ExplanationFacts`
+  --> src\network_intelligence\ai\mod.rs:26:36
+   |
+26 | pub use explanation::{Explanation, ExplanationFacts};
+   |                                    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `LocalLlmConfig`
+  --> src\network_intelligence\ai\mod.rs:27:45
+   |
+27 | pub use local_runtime::{AiStatus, LocalLlm, LocalLlmConfig};
+   |                                             ^^^^^^^^^^^^^^
+
+warning: unused imports: `clamp_probability`, `finite_or_default`, `js_divergence`, and `kl_divergence`
+ --> src\network_intelligence\bayesian.rs:8:24
+  |
+8 |     bernoulli_entropy, clamp_probability, entropy_of, finite_or_default, kl_divergence,
+  |                        ^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+9 |     js_divergence, log_sum_exp, softmax,
+  |     ^^^^^^^^^^^^^
+
+warning: unused import: `crate::network_intelligence::context::context_identity::NetworkContextId`
+  --> src\network_intelligence\config_intelligence.rs:12:5
+   |
+12 | use crate::network_intelligence::context::context_identity::NetworkContextId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> src\network_intelligence\context\context_identity.rs:12:5
+   |
+12 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> src\network_intelligence\context\transitions.rs:8:13
+  |
+8 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `ContextIdentity`, `ContextSignals`, `InterfaceClass`, `NetworkContextId`, `NetworkContext`, and `classify_interface`
+  --> src\network_intelligence\context\mod.rs:16:28
+   |
+16 | pub use context_identity::{classify_interface, ContextIdentity, ContextSignals, InterfaceClass, NetworkContext, NetworkContextId};
+   |                            ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `MetricProfile`, `NetworkProfile`, and `ProfileStore`
+  --> src\network_intelligence\context\mod.rs:17:28
+   |
+17 | pub use network_profiles::{MetricProfile, NetworkProfile, ProfileStore};
+   |                            ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `TransitionRecord`
+  --> src\network_intelligence\context\mod.rs:18:86
+   |
+18 | pub use engine::{NetworkProfileEngine, PersonalizationStatus, ProfileEngineSnapshot, TransitionRecord};
+   |                                                                                      ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ProfileStorageError`, `load_engine`, `profile_path`, and `save_engine`
+  --> src\network_intelligence\context\mod.rs:19:19
+   |
+19 | pub use storage::{load_engine, save_engine, profile_path, ProfileStorageError};
+   |                   ^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `decay_log_likelihood`
+  --> src\network_intelligence\diagnosis.rs:12:22
+   |
+12 |     bayesian_update, decay_log_likelihood, evidence_movement, Evidence, Posterior, Prior,
+   |                      ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `kl_divergence`
+  --> src\network_intelligence\diagnosis.rs:15:53
+   |
+15 | use crate::network_intelligence::math::{entropy_of, kl_divergence, log_sum_exp, softmax};
+   |                                                     ^^^^^^^^^^^^^
+
+warning: unused import: `crate::network_intelligence::math::clamp_probability`
+  --> src\network_intelligence\graph.rs:23:5
+   |
+23 | use crate::network_intelligence::math::clamp_probability;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::f64::EPSILON`
+  --> src\network_intelligence\math.rs:10:5
+   |
+10 | use std::f64::EPSILON;
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+  --> src\network_intelligence\recovery.rs:13:5
+   |
+13 | use std::time::Duration;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `clamp_latency`
+  --> src\network_intelligence\route.rs:14:60
+   |
+14 | use crate::network_intelligence::math::{clamp_probability, clamp_latency};
+   |                                                            ^^^^^^^^^^^^^
+
+warning: unused import: `DiagnosticEngine`
+ --> src\network_intelligence\simulation.rs:9:46
+  |
+9 | use crate::network_intelligence::diagnosis::{DiagnosticEngine, DiagnosticTest, ProbeOutcome, ProbeResult};
+  |                                              ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::network_intelligence::math::clamp_probability`
+ --> src\network_intelligence\timeseries.rs:8:5
+  |
+8 | use crate::network_intelligence::math::clamp_probability;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ProbeOutcome` and `ProbeResult`
+  --> src\network_intelligence\information_theory.rs:10:39
+   |
+10 |     DiagnosticEngine, DiagnosticTest, ProbeOutcome, ProbeResult, TestScore,
+   |                                       ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `log_sum_exp`
+  --> src\network_intelligence\information_theory.rs:12:68
+   |
+12 | use crate::network_intelligence::math::{entropy_of, kl_divergence, log_sum_exp, PROB_FLOOR};
+   |                                                                    ^^^^^^^^^^^
+
+warning: unused import: `RouteMetrics`
+  --> src\network_intelligence\information_theory.rs:13:58
+   |
+13 | use crate::network_intelligence::route::{RouteCandidate, RouteMetrics};
+   |                                                          ^^^^^^^^^^^^
+
+warning: unused import: `crate::network_intelligence::math::clamp_probability`
+  --> src\network_intelligence\changepoint.rs:13:5
+   |
+13 | use crate::network_intelligence::math::clamp_probability;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+  --> src\network_intelligence\changepoint.rs:14:13
+   |
+14 | use serde::{Deserialize, Serialize};
+   |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `RouteKind`
+  --> src\network_intelligence\api_intelligence\monitor_loop.rs:15:63
+   |
+15 | use crate::network_intelligence::api_model::{FailureCategory, RouteKind};
+   |                                                               ^^^^^^^^^
+
+warning: unused import: `finite_or_default`
+ --> src\network_intelligence\evidence\measurements.rs:7:60
+  |
+7 | use crate::network_intelligence::math::{clamp_probability, finite_or_default};
+  |                                                            ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `MeasureState`, `Measurement`, and `Provenance`
+  --> src\network_intelligence\evidence\mod.rs:16:24
+   |
+16 | pub use measurements::{Measurement, MeasureState, Provenance};
+   |                        ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused imports: `CorrelationGroup` and `CorrelationModel`
+  --> src\network_intelligence\evidence\mod.rs:17:23
+   |
+17 | pub use correlation::{CorrelationGroup, CorrelationModel};
+   |                       ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `provenance::ProvenanceRecord`
+  --> src\network_intelligence\evidence\mod.rs:18:9
+   |
+18 | pub use provenance::ProvenanceRecord;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `validation::ValidationError`
+  --> src\network_intelligence\evidence\mod.rs:19:9
+   |
+19 | pub use validation::ValidationError;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `log_sum_exp`
+  --> src\network_intelligence\validation.rs:12:60
+   |
+12 | use crate::network_intelligence::math::{clamp_probability, log_sum_exp};
+   |                                                            ^^^^^^^^^^^
+
+warning: unused import: `diagnostic_probes`
+  --> src\network_intelligence\investigation.rs:16:5
+   |
+16 |     diagnostic_probes, observe_diagnostic_probes_matching, probe_api,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ProbeOutcomeRecord`
+  --> src\network_intelligence\investigation.rs:19:39
+   |
+19 |     ApiRegistry, Health, LayerResult, ProbeOutcomeRecord,
+   |                                       ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BreakerState`, `CONTROL_ACTION`, `ConfigScore`, `ConfigStatus`, `ConnectivityBucket`, `Edge`, `FailureBucket`, `Health`, `Hypothesis`, `LatencyBucket`, `NetworkGraph`, `NodeId`, `NodeType`, `PROB_FLOOR`, `ProfileEngineSnapshot`, `RecoveryStep`, `RedistributionPermission`, `UpstreamRoute`, `clamp_latency`, `cost_adjusted_gain`, `finite_or_default`, `normalize_weights`, `sample_categorical`, `should_stop`, and `value_of_information`
+  --> src\network_intelligence\foundation.rs:19:57
+   |
+19 |     api_intelligence::registry::{ApiEntry, ApiRegistry, Health, ProbeOutcomeRecord, UpstreamRoute},
+   |                                                         ^^^^^^                      ^^^^^^^^^^^^^
+...
+22 |         Action, ContextBucket, ContextualBandit, ConnectivityBucket, FailureBucket, LatencyBucket,
+   |                                                  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+...
+25 |     causal::{CausalTracker, CONTROL_ACTION, InterventionRecord},
+   |                             ^^^^^^^^^^^^^^
+...
+28 |         ConfigIntelligenceEngine, ConfigScore, DiscoveredConfig, ConfigFormat, ConfigStatus,
+   |                                   ^^^^^^^^^^^                                  ^^^^^^^^^^^^
+29 |         RedistributionPermission,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+32 |         NetworkProfileEngine, PersonalizationStatus, ProfileEngineSnapshot,
+   |                                                      ^^^^^^^^^^^^^^^^^^^^^
+...
+36 |         DiagnosticEngine, DiagnosticTest, Hypothesis, ProbeOutcome, ProbeResult, TestScore,
+   |                                           ^^^^^^^^^^
+...
+40 |     graph::{Edge, NetworkGraph, NodeId, NodeType},
+   |             ^^^^  ^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^
+...
+45 |         bernoulli_entropy, clamp_latency, clamp_probability, finite_or_default, kl_divergence,
+   |                            ^^^^^^^^^^^^^                     ^^^^^^^^^^^^^^^^^
+46 |         js_divergence, log_sum_exp, logit, normalize_weights, sample_categorical, sigmoid,
+   |                                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+47 |         softmax, PROB_FLOOR,
+   |                  ^^^^^^^^^^
+...
+50 |     recovery::{BreakerState, CircuitBreaker, RecoveryPlanner, RecoveryStep},
+   |                ^^^^^^^^^^^^                                   ^^^^^^^^^^^^
+...
+55 |     sequential::{cost_adjusted_gain, should_stop, value_of_information},
+   |                  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Rng`
+  --> src\network_intelligence\foundation.rs:63:12
+   |
+63 | use rand::{Rng, SeedableRng};
+   |            ^^^
+
+warning: unused import: `mpsc`
+  --> src\main.rs:48:22
+   |
+48 | use std::sync::{Arc, mpsc, Mutex};
+   |                      ^^^^
+
+warning: unused import: `Rng`
+   --> src\network_intelligence\bandit.rs:349:16
+    |
+349 |     use rand::{Rng, SeedableRng};
+    |                ^^^
+
+warning: unused imports: `clamp_probability`, `finite_or_default`, and `js_divergence`
+ --> src\network_intelligence\bayesian.rs:8:24
+  |
+8 |     bernoulli_entropy, clamp_probability, entropy_of, finite_or_default, kl_divergence,
+  |                        ^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^
+9 |     js_divergence, log_sum_exp, softmax,
+  |     ^^^^^^^^^^^^^
+
+warning: unused import: `Rng`
+   --> src\network_intelligence\math.rs:274:16
+    |
+274 |     use rand::{Rng, SeedableRng};
+    |                ^^^
+
+warning: unused import: `Event`
+   --> src\network_intelligence\api_intelligence\monitor_loop.rs:309:43
+    |
+309 | use crate::network_intelligence::events::{Event, EventBus};
+    |                                           ^^^^^
+
+warning: unused import: `super::*`
+  --> src\network_intelligence\evidence\mod.rs:24:9
+   |
+24 |     use super::*;
+   |         ^^^^^^^^
+
+warning: unused imports: `BreakerState`, `CONTROL_ACTION`, `ConfigScore`, `ConfigStatus`, `ConnectivityBucket`, `Edge`, `FailureBucket`, `Health`, `Hypothesis`, `LatencyBucket`, `NetworkGraph`, `NodeId`, `NodeType`, `ProfileEngineSnapshot`, `RecoveryStep`, `RedistributionPermission`, `UpstreamRoute`, `clamp_latency`, `cost_adjusted_gain`, `finite_or_default`, `normalize_weights`, `sample_categorical`, `should_stop`, and `value_of_information`
+  --> src\network_intelligence\foundation.rs:19:57
+   |
+19 |     api_intelligence::registry::{ApiEntry, ApiRegistry, Health, ProbeOutcomeRecord, UpstreamRoute},
+   |                                                         ^^^^^^                      ^^^^^^^^^^^^^
+...
+22 |         Action, ContextBucket, ContextualBandit, ConnectivityBucket, FailureBucket, LatencyBucket,
+   |                                                  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+...
+25 |     causal::{CausalTracker, CONTROL_ACTION, InterventionRecord},
+   |                             ^^^^^^^^^^^^^^
+...
+28 |         ConfigIntelligenceEngine, ConfigScore, DiscoveredConfig, ConfigFormat, ConfigStatus,
+   |                                   ^^^^^^^^^^^                                  ^^^^^^^^^^^^
+29 |         RedistributionPermission,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+32 |         NetworkProfileEngine, PersonalizationStatus, ProfileEngineSnapshot,
+   |                                                      ^^^^^^^^^^^^^^^^^^^^^
+...
+36 |         DiagnosticEngine, DiagnosticTest, Hypothesis, ProbeOutcome, ProbeResult, TestScore,
+   |                                           ^^^^^^^^^^
+...
+40 |     graph::{Edge, NetworkGraph, NodeId, NodeType},
+   |             ^^^^  ^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^
+...
+45 |         bernoulli_entropy, clamp_latency, clamp_probability, finite_or_default, kl_divergence,
+   |                            ^^^^^^^^^^^^^                     ^^^^^^^^^^^^^^^^^
+46 |         js_divergence, log_sum_exp, logit, normalize_weights, sample_categorical, sigmoid,
+   |                                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+...
+50 |     recovery::{BreakerState, CircuitBreaker, RecoveryPlanner, RecoveryStep},
+   |                ^^^^^^^^^^^^                                   ^^^^^^^^^^^^
+...
+55 |     sequential::{cost_adjusted_gain, should_stop, value_of_information},
+   |                  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Manager`
+  --> src\network_intelligence\events\mod.rs:18:33
+   |
+18 | use tauri::{AppHandle, Emitter, Manager};
+   |                                 ^^^^^^^
+
+warning: unused variable: `k`
+   --> src\network_intelligence\api_model.rs:235:20
+    |
+235 |             .map(|(k, (t, xi))| {
+    |                    ^ help: if this is intentional, prefix it with an underscore: `_k`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `log_probs`
+  --> src\network_intelligence\bayesian.rs:54:13
+   |
+54 |         let log_probs: Vec<f64> = probs
+   |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_log_probs`
+
+warning: unused variable: `lse`
+   --> src\network_intelligence\bayesian.rs:107:21
+    |
+107 |         if let Some(lse) = softmax(&self.log_probs) {
+    |                     ^^^ help: if this is intentional, prefix it with an underscore: `_lse`
+
+warning: variable `count` is assigned to, but never used
+   --> src\network_intelligence\context\collector.rs:181:9
+    |
+181 |     let mut count = 0usize;
+    |         ^^^^^^^^^
+    |
+    = note: consider using `_count` instead
+
+warning: variable `up` is assigned to, but never used
+   --> src\network_intelligence\context\collector.rs:182:9
+    |
+182 |     let mut up = 0usize;
+    |         ^^^^^^
+    |
+    = note: consider using `_up` instead
+
+warning: unused variable: `has_gateway`
+   --> src\network_intelligence\context\collector.rs:221:13
+    |
+221 |         let has_gateway = !(*adapter).first_gateway.is_null();
+    |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_has_gateway`
+
+warning: unused variable: `dns_count`
+   --> src\network_intelligence\context\collector.rs:222:13
+    |
+222 |         let dns_count = count_ipv4_dns((*adapter).first_dns);
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dns_count`
+
+warning: value assigned to `count` is never read
+   --> src\network_intelligence\context\collector.rs:186:13
+    |
+186 |             count += 1;
+    |             ^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `up` is never read
+   --> src\network_intelligence\context\collector.rs:190:17
+    |
+190 |                 up += 1;
+    |                 ^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `mean`
+   --> src\network_intelligence\drift.rs:121:13
+    |
+121 |         let mean = self.sum_x / self.count as f64;
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_mean`
+
+warning: unused variable: `n`
+   --> src\network_intelligence\robust_stats.rs:181:13
+    |
+181 |         let n = v.len();
+    |             ^ help: if this is intentional, prefix it with an underscore: `_n`
+
+warning: unused variable: `now_unix`
+  --> src\network_intelligence\recovery.rs:66:38
+   |
+66 |     pub fn record_success(&mut self, now_unix: u64) {
+   |                                      ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_now_unix`
+
+warning: unused variable: `latency_ms`
+  --> src\network_intelligence\simulation.rs:71:23
+   |
+71 |         let (outcome, latency_ms) = self.probe_outcome(test);
+   |                       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_latency_ms`
+
+warning: unused variable: `api_id`
+   --> src\network_intelligence\simulation.rs:306:32
+    |
+306 |     pub fn api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+    |                                ^^^^^^ help: if this is intentional, prefix it with an underscore: `_api_id`
+
+warning: unused variable: `rng`
+   --> src\network_intelligence\simulation.rs:349:46
+    |
+349 | fn condition_to_network(c: NetworkCondition, rng: &mut StdRng) -> SimulatedNetwork {
+    |                                              ^^^ help: if this is intentional, prefix it with an underscore: `_rng`
+
+warning: unused variable: `current_selection`
+  --> src\network_intelligence\information_theory.rs:64:5
+   |
+64 |     current_selection: Option<usize>,
+   |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_selection`
+
+warning: unused variable: `run_length`
+  --> src\network_intelligence\changepoint.rs:27:26
+   |
+27 |     pub fn hazard(&self, run_length: u64) -> f64 {
+   |                          ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_run_length`
+
+warning: unused variable: `outcome`
+   --> src\network_intelligence\api_intelligence\monitor_loop.rs:219:46
+    |
+219 |     fn recovery_actions(&self, api_id: &str, outcome: &ProbeOutcomeRecord) -> Vec<(String, f64)> {
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_outcome`
+
+warning: variable does not need to be mutable
+   --> src\network_intelligence\api_intelligence\monitor_loop.rs:255:18
+    |
+255 |         let Some(mut step) = recovery.next_step(now_secs) else {
+    |                  ----^^^^
+    |                  |
+    |                  help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src\network_intelligence\investigation.rs:560:13
+    |
+560 |         let mut stage = InvestigationStage::Observe;
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `stage`
+   --> src\network_intelligence\investigation.rs:560:13
+    |
+560 |         let mut stage = InvestigationStage::Observe;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stage`
+
+warning: variable does not need to be mutable
+   --> src\main.rs:407:25
+    |
+407 |                     let mut registry = nani_state.registry.lock().unwrap();
+    |                         ----^^^^^^^^
+    |                         |
+    |                         help: remove this `mut`
+
+warning: method `config` is never used
+   --> src\network_intelligence\ai\local_runtime.rs:133:12
+    |
+124 | impl LocalLlm {
+    | ------------- method in this implementation
+...
+133 |     pub fn config(&self) -> &LocalLlmConfig {
+    |            ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ApiOutcome` is never constructed
+  --> src\network_intelligence\api_model.rs:86:12
+   |
+86 | pub struct ApiOutcome {
+   |            ^^^^^^^^^^
+
+warning: struct `RouteFeatures` is never constructed
+   --> src\network_intelligence\api_model.rs:105:12
+    |
+105 | pub struct RouteFeatures {
+    |            ^^^^^^^^^^^^^
+
+warning: associated function `neutral` is never used
+   --> src\network_intelligence\api_model.rs:119:12
+    |
+117 | impl RouteFeatures {
+    | ------------------ associated function in this implementation
+118 |     /// Neutral features when nothing is known yet.
+119 |     pub fn neutral(api_id: &str) -> Self {
+    |            ^^^^^^^
+
+warning: struct `ApiPredictor` is never constructed
+   --> src\network_intelligence\api_model.rs:148:12
+    |
+148 | pub struct ApiPredictor {
+    |            ^^^^^^^^^^^^
+
+warning: associated items `new`, `coefficients_for`, `predict`, `observe`, `api_base_rate`, and `api_uncertainty` are never used
+   --> src\network_intelligence\api_model.rs:167:12
+    |
+165 | impl ApiPredictor {
+    | ----------------- associated items in this implementation
+166 |     /// Create a new predictor with `n_features` coefficients.
+167 |     pub fn new(n_features: usize) -> Self {
+    |            ^^^
+...
+180 |     fn coefficients_for(&self, api_id: &str) -> Vec<f64> {
+    |        ^^^^^^^^^^^^^^^^
+...
+196 |     pub fn predict(&self, api_id: &str, features: &RouteFeatures) -> Option<f64> {
+    |            ^^^^^^^
+...
+211 |     pub fn observe(
+    |            ^^^^^^^
+...
+272 |     pub fn api_base_rate(&self, api_id: &str) -> f64 {
+    |            ^^^^^^^^^^^^^
+...
+281 |     pub fn api_uncertainty(&self, api_id: &str) -> f64 {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `feature_vector` is never used
+   --> src\network_intelligence\api_model.rs:300:8
+    |
+300 | pub fn feature_vector(f: &RouteFeatures) -> Vec<f64> {
+    |        ^^^^^^^^^^^^^^
+
+warning: variants `Unknown`, `Good`, `Degraded`, `Poor`, and `Outage` are never constructed
+  --> src\network_intelligence\bandit.rs:24:5
+   |
+23 | pub enum ConnectivityBucket {
+   |          ------------------ variants in this enum
+24 |     Unknown,
+   |     ^^^^^^^
+25 |     Good,
+   |     ^^^^
+26 |     Degraded,
+   |     ^^^^^^^^
+27 |     Poor,
+   |     ^^^^
+28 |     Outage,
+   |     ^^^^^^
+   |
+   = note: `ConnectivityBucket` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `None`, `Few`, and `Many` are never constructed
+  --> src\network_intelligence\bandit.rs:33:5
+   |
+32 | pub enum FailureBucket {
+   |          ------------- variants in this enum
+33 |     None,
+   |     ^^^^
+34 |     Few,    // 1-2
+   |     ^^^
+35 |     Many,   // 3+
+   |     ^^^^
+   |
+   = note: `FailureBucket` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Unknown`, `Low`, `Medium`, and `High` are never constructed
+  --> src\network_intelligence\bandit.rs:40:5
+   |
+39 | pub enum LatencyBucket {
+   |          ------------- variants in this enum
+40 |     Unknown,
+   |     ^^^^^^^
+41 |     Low,    // < 100ms
+   |     ^^^
+42 |     Medium, // 100-500ms
+   |     ^^^^^^
+43 |     High,   // > 500ms
+   |     ^^^^
+   |
+   = note: `LatencyBucket` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `from_measurements` is never used
+  --> src\network_intelligence\bandit.rs:48:12
+   |
+46 | impl ContextBucket {
+   | ------------------ associated function in this implementation
+47 |     /// Classify raw measurements into a bucket.
+48 |     pub fn from_measurements(
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\network_intelligence\bandit.rs:86:5
+   |
+85 | pub enum Action {
+   |          ------ variants in this enum
+86 |     RunDnsDiagnostics,
+   |     ^^^^^^^^^^^^^^^^^
+87 |     TestDirectApi,
+   |     ^^^^^^^^^^^^^
+88 |     TestApprovedUpstream,
+   |     ^^^^^^^^^^^^^^^^^^^^
+89 |     TestIpv4,
+   |     ^^^^^^^^
+90 |     TestIpv6,
+   |     ^^^^^^^^
+91 |     TestSupportedEngine,
+   |     ^^^^^^^^^^^^^^^^^^^
+92 |     VerifyKnownGoodRoute,
+   |     ^^^^^^^^^^^^^^^^^^^^
+93 |     AuthorizedMtuExperiment,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+94 |     RestorePreviousConfiguration,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `Action` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `all` and `label` are never used
+   --> src\network_intelligence\bandit.rs:98:12
+    |
+ 97 | impl Action {
+    | ----------- associated items in this implementation
+ 98 |     pub fn all() -> Vec<Action> {
+    |            ^^^
+...
+112 |     pub fn label(&self) -> &'static str {
+    |            ^^^^^
+
+warning: struct `ActionOutcome` is never constructed
+   --> src\network_intelligence\bandit.rs:129:12
+    |
+129 | pub struct ActionOutcome {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `RewardWeights` is never constructed
+   --> src\network_intelligence\bandit.rs:144:12
+    |
+144 | pub struct RewardWeights {
+    |            ^^^^^^^^^^^^^
+
+warning: function `compute_reward` is never used
+   --> src\network_intelligence\bandit.rs:173:8
+    |
+173 | pub fn compute_reward(outcome: &ActionOutcome, weights: &RewardWeights) -> f64 {
+    |        ^^^^^^^^^^^^^^
+
+warning: fields `models`, `prior_alpha`, and `prior_beta` are never read
+   --> src\network_intelligence\bandit.rs:217:5
+    |
+215 | pub struct ContextualBandit {
+    |            ---------------- fields in this struct
+216 |     /// Models keyed by (context_bucket, action).
+217 |     models: HashMap<(ContextBucket, Action), BetaBernoulli>,
+    |     ^^^^^^
+218 |     /// Prior hyperparameters for new models.
+219 |     prior_alpha: f64,
+    |     ^^^^^^^^^^^
+220 |     prior_beta: f64,
+    |     ^^^^^^^^^^
+    |
+    = note: `ContextualBandit` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `with_prior`, `model_for`, `select`, `update`, `estimated_success`, and `n_models` are never used
+   --> src\network_intelligence\bandit.rs:232:12
+    |
+223 | impl ContextualBandit {
+    | --------------------- associated items in this implementation
+...
+232 |     pub fn with_prior(alpha: f64, beta: f64) -> Option<Self> {
+    |            ^^^^^^^^^^
+...
+243 |     fn model_for(&mut self, ctx: ContextBucket, action: &Action) -> &mut BetaBernoulli {
+    |        ^^^^^^^^^
+...
+257 |     pub fn select<R: Rng + ?Sized>(
+    |            ^^^^^^
+...
+298 |     pub fn update(&mut self, ctx: ContextBucket, action: &Action, success: Option<bool>) {
+    |            ^^^^^^
+...
+305 |     pub fn estimated_success(&self, ctx: ContextBucket, action: &Action) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^
+...
+313 |     pub fn n_models(&self) -> usize {
+    |            ^^^^^^^^
+
+warning: function `safe_action_filter` is never used
+   --> src\network_intelligence\bandit.rs:323:8
+    |
+323 | pub fn safe_action_filter(
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: field `timestamp` is never read
+  --> src\network_intelligence\bayesian.rs:23:9
+   |
+20 | pub struct Evidence {
+   |            -------- field in this struct
+...
+23 |     pub timestamp: u64,
+   |         ^^^^^^^^^
+   |
+   = note: `Evidence` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `from_probs` is never used
+  --> src\network_intelligence\bayesian.rs:50:12
+   |
+39 | impl Prior {
+   | ---------- associated function in this implementation
+...
+50 |     pub fn from_probs(labels: Vec<String>, probs: Vec<f64>) -> Option<Self> {
+   |            ^^^^^^^^^^
+
+warning: function `decay_log_likelihood` is never used
+   --> src\network_intelligence\bayesian.rs:236:8
+    |
+236 | pub fn decay_log_likelihood(log_likelihood: f64, age_seconds: f64, lambda: f64) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `posterior_predictive_bernoulli` is never used
+   --> src\network_intelligence\bayesian.rs:250:8
+    |
+250 | pub fn posterior_predictive_bernoulli(model: &BetaBernoulli) -> (f64, f64) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `update_beta_bernoulli` is never used
+   --> src\network_intelligence\bayesian.rs:257:8
+    |
+257 | pub fn update_beta_bernoulli(model: &mut BetaBernoulli, success: Option<bool>) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `beta_credible_width` is never used
+   --> src\network_intelligence\bayesian.rs:262:8
+    |
+262 | pub fn beta_credible_width(model: &BetaBernoulli) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `CONTROL_ACTION` is never used
+  --> src\network_intelligence\causal.rs:16:11
+   |
+16 | pub const CONTROL_ACTION: &str = "none";
+   |           ^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src\network_intelligence\causal.rs:38:12
+   |
+37 | impl InterventionRecord {
+   | ----------------------- associated function in this implementation
+38 |     pub fn new(
+   |            ^^^
+
+warning: struct `CausalEstimate` is never constructed
+  --> src\network_intelligence\causal.rs:61:12
+   |
+61 | pub struct CausalEstimate {
+   |            ^^^^^^^^^^^^^^
+
+warning: fields `records`, `max_records`, and `min_arm_size` are never read
+  --> src\network_intelligence\causal.rs:81:5
+   |
+80 | pub struct CausalTracker {
+   |            ------------- fields in this struct
+81 |     records: Vec<InterventionRecord>,
+   |     ^^^^^^^
+82 |     max_records: usize,
+   |     ^^^^^^^^^^^
+83 |     /// Minimum controlled observations per arm before an estimate is made.
+84 |     pub min_arm_size: usize,
+   |         ^^^^^^^^^^^^
+   |
+   = note: `CausalTracker` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `record`, `len`, `is_empty`, and `estimate` are never used
+   --> src\network_intelligence\causal.rs:104:12
+    |
+ 93 | impl CausalTracker {
+    | ------------------ methods in this implementation
+...
+104 |     pub fn record(&mut self, record: InterventionRecord) {
+    |            ^^^^^^
+...
+112 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+116 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+126 |     pub fn estimate(&self, action: &str, context: &str) -> CausalEstimate {
+    |            ^^^^^^^^
+
+warning: function `unix_now_ms` is never used
+  --> src\network_intelligence\config_intelligence.rs:18:4
+   |
+18 | fn unix_now_ms() -> u64 {
+   |    ^^^^^^^^^^^
+
+warning: struct `ConfigScore` is never constructed
+   --> src\network_intelligence\config_intelligence.rs:118:12
+    |
+118 | pub struct ConfigScore {
+    |            ^^^^^^^^^^^
+
+warning: struct `PipelineResult` is never constructed
+   --> src\network_intelligence\config_intelligence.rs:141:12
+    |
+141 | pub struct PipelineResult {
+    |            ^^^^^^^^^^^^^^
+
+warning: enum `PipelineStage` is never used
+   --> src\network_intelligence\config_intelligence.rs:149:10
+    |
+149 | pub enum PipelineStage {
+    |          ^^^^^^^^^^^^^
+
+warning: fields `configs`, `fingerprint_index`, `structural_index`, `source_history`, and `next_id` are never read
+   --> src\network_intelligence\config_intelligence.rs:166:5
+    |
+164 | pub struct ConfigIntelligenceEngine {
+    |            ------------------------ fields in this struct
+165 |     /// Discovered configurations, keyed by config_id.
+166 |     configs: HashMap<String, DiscoveredConfig>,
+    |     ^^^^^^^
+167 |     /// Fingerprint → config_id (for deduplication).
+168 |     fingerprint_index: HashMap<ConfigFingerprint, String>,
+    |     ^^^^^^^^^^^^^^^^^
+169 |     /// Structural fingerprint → vec of config_ids (for near-duplicate detection).
+170 |     structural_index: HashMap<StructuralFingerprint, Vec<String>>,
+    |     ^^^^^^^^^^^^^^^^
+171 |     /// Per-source score history.
+172 |     source_history: HashMap<String, Vec<f64>>,
+    |     ^^^^^^^^^^^^^^
+173 |     /// Monotonic counter for unique config IDs.
+174 |     next_id: u64,
+    |     ^^^^^^^
+    |
+    = note: `ConfigIntelligenceEngine` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: multiple associated items are never used
+   --> src\network_intelligence\config_intelligence.rs:190:12
+    |
+177 | impl ConfigIntelligenceEngine {
+    | ----------------------------- associated items in this implementation
+...
+190 |     pub fn discover(
+    |            ^^^^^^^^
+...
+233 |     fn fingerprint_config(raw: &Option<String>) -> ConfigFingerprint {
+    |        ^^^^^^^^^^^^^^^^^^
+...
+250 |     fn structural_fingerprint(raw: &Option<String>) -> StructuralFingerprint {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+274 |     pub fn parse_config(&mut self, config_id: &str) -> bool {
+    |            ^^^^^^^^^^^^
+...
+314 |     pub fn validate_config(&mut self, config_id: &str) -> bool {
+    |            ^^^^^^^^^^^^^^^
+...
+346 |     pub fn score_config(&mut self, config_id: &str) -> Option<ConfigScore> {
+    |            ^^^^^^^^^^^^
+...
+377 |     pub fn get_config(&self, config_id: &str) -> Option<&DiscoveredConfig> {
+    |            ^^^^^^^^^^
+...
+382 |     pub fn get_all_configs(&self) -> Vec<&DiscoveredConfig> {
+    |            ^^^^^^^^^^^^^^^
+...
+387 |     pub fn get_configs_by_status(&self, status: ConfigStatus) -> Vec<&DiscoveredConfig> {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+395 |     pub fn config_count(&self) -> usize {
+    |            ^^^^^^^^^^^^
+
+warning: methods `with_max_contexts`, `len`, `clear`, and `ids` are never used
+   --> src\network_intelligence\context\context_identity.rs:115:12
+    |
+107 | impl ContextIdentity {
+    | -------------------- methods in this implementation
+...
+115 |     pub fn with_max_contexts(mut self, max: usize) -> Self {
+    |            ^^^^^^^^^^^^^^^^^
+...
+121 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+195 |     pub fn clear(&mut self) {
+    |            ^^^^^
+...
+199 |     pub fn ids(&self) -> Vec<NetworkContextId> {
+    |            ^^^
+
+warning: associated items `new`, `mean`, and `anomaly_score` are never used
+  --> src\network_intelligence\context\network_profiles.rs:43:12
+   |
+42 | impl MetricProfile {
+   | ------------------ associated items in this implementation
+43 |     pub fn new() -> Self {
+   |            ^^^
+...
+48 |     pub fn mean(&self) -> f64 {
+   |            ^^^^
+...
+58 |     pub fn anomaly_score(&self, x: f64) -> f64 {
+   |            ^^^^^^^^^^^^^
+
+warning: method `metric` is never used
+   --> src\network_intelligence\context\network_profiles.rs:119:12
+    |
+109 | impl NetworkProfile {
+    | ------------------- method in this implementation
+...
+119 |     pub fn metric(&self, name: &str) -> Option<&MetricProfile> {
+    |            ^^^^^^
+
+warning: methods `with_max_contexts`, `predict`, `anomaly_score`, and `prediction_confidence` are never used
+   --> src\network_intelligence\context\network_profiles.rs:160:12
+    |
+151 | impl ProfileStore {
+    | ----------------- methods in this implementation
+...
+160 |     pub fn with_max_contexts(mut self, max: usize) -> Self {
+    |            ^^^^^^^^^^^^^^^^^
+...
+197 |     pub fn predict(&self, id: NetworkContextId, metric: &str) -> Option<f64> {
+    |            ^^^^^^^
+...
+217 |     pub fn anomaly_score(&self, id: NetworkContextId, metric: &str, x: f64) -> Option<f64> {
+    |            ^^^^^^^^^^^^^
+...
+232 |     pub fn prediction_confidence(&self, id: NetworkContextId, metric: &str) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `has_transitioned`, `set_current`, and `identity` are never used
+  --> src\network_intelligence\context\transitions.rs:79:12
+   |
+42 | impl ContextTransitionTracker {
+   | ----------------------------- methods in this implementation
+...
+79 |     pub fn has_transitioned(&self) -> bool {
+   |            ^^^^^^^^^^^^^^^^
+...
+84 |     pub fn set_current(&mut self, id: Option<NetworkContextId>) {
+   |            ^^^^^^^^^^^
+...
+98 |     pub fn identity(&self) -> &ContextIdentity {
+   |            ^^^^^^^^
+
+warning: method `is_compatible` is never used
+   --> src\network_intelligence\context\transitions.rs:132:12
+    |
+130 | impl InterfaceClass {
+    | ------------------- method in this implementation
+131 |     /// Whether two interface classes are compatible (same broad category).
+132 |     pub fn is_compatible(self, other: InterfaceClass) -> bool {
+    |            ^^^^^^^^^^^^^
+
+warning: function `parse_output` is never used
+   --> src\network_intelligence\context\collector.rs:252:4
+    |
+252 | fn parse_output(bytes: &[u8]) -> Option<ContextSignals> {
+    |    ^^^^^^^^^^^^
+
+warning: methods `set_active_context`, `record_global_metric`, `reliability`, `posterior`, `predict_metric`, and `metric_median` are never used
+   --> src\network_intelligence\context\engine.rs:139:12
+    |
+ 93 | impl NetworkProfileEngine {
+    | ------------------------- methods in this implementation
+...
+139 |     pub fn set_active_context(&mut self, id: NetworkContextId) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+158 |     pub fn record_global_metric(&mut self, metric: &str, value: f64, now_ms: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+194 |     pub fn reliability(&self, api_id: &str) -> f64 {
+    |            ^^^^^^^^^^^
+...
+201 |     pub fn posterior(&self, api_id: &str, level: f64) -> Option<BetaPosterior> {
+    |            ^^^^^^^^^
+...
+206 |     pub fn predict_metric(&self, metric: &str) -> Option<f64> {
+    |            ^^^^^^^^^^^^^^
+...
+213 |     pub fn metric_median(&self, metric: &str) -> Option<f64> {
+    |            ^^^^^^^^^^^^^
+
+warning: enum `PrivacyAction` is never used
+  --> src\network_intelligence\context\privacy.rs:13:10
+   |
+13 | pub enum PrivacyAction {
+   |          ^^^^^^^^^^^^^
+
+warning: struct `PrivacyController` is never constructed
+  --> src\network_intelligence\context\privacy.rs:24:12
+   |
+24 | pub struct PrivacyController {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+  --> src\network_intelligence\context\privacy.rs:30:12
+   |
+29 | impl PrivacyController {
+   | ---------------------- associated items in this implementation
+30 |     pub fn new(tracker: ContextTransitionTracker, store: ProfileStore) -> Self {
+   |            ^^^
+...
+35 |     pub fn delete_context(&mut self, id: NetworkContextId) -> PrivacyAction {
+   |            ^^^^^^^^^^^^^^
+...
+50 |     pub fn delete_all_contexts(&mut self) -> PrivacyAction {
+   |            ^^^^^^^^^^^^^^^^^^^
+...
+60 |     pub fn reset_active(&mut self) {
+   |            ^^^^^^^^^^^^
+...
+65 |     pub fn context_count(&self) -> usize {
+   |            ^^^^^^^^^^^^^
+...
+69 |     pub fn store(&self) -> &ProfileStore {
+   |            ^^^^^
+...
+73 |     pub fn store_mut(&mut self) -> &mut ProfileStore {
+   |            ^^^^^^^^^
+...
+77 |     pub fn identity(&self) -> &ContextTransitionTracker {
+   |            ^^^^^^^^
+
+warning: fields `source` and `cost` are never read
+   --> src\network_intelligence\diagnosis.rs:102:9
+    |
+ 96 | pub struct ProbeResult {
+    |            ----------- fields in this struct
+...
+102 |     pub source: String,
+    |         ^^^^^^
+103 |     /// How much this probe costs (time + resource units), used in IG/cost.
+104 |     pub cost: f64,
+    |         ^^^^
+    |
+    = note: `ProbeResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `set_log_likelihood` is never used
+   --> src\network_intelligence\diagnosis.rs:441:12
+    |
+169 | impl LikelihoodTable {
+    | -------------------- method in this implementation
+...
+441 |     pub fn set_log_likelihood(
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `with_correlation` and `with_prior` are never used
+   --> src\network_intelligence\diagnosis.rs:566:12
+    |
+547 | impl DiagnosticEngine {
+    | --------------------- associated items in this implementation
+...
+566 |     pub fn with_correlation(mut self, correlation: CorrelationModel) -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+572 |     pub fn with_prior(prior: Prior) -> Self {
+    |            ^^^^^^^^^^
+
+warning: struct `LikelihoodCalibrator` is never constructed
+   --> src\network_intelligence\diagnosis.rs:927:12
+    |
+927 | pub struct LikelihoodCalibrator {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `observe`, and `apply` are never used
+   --> src\network_intelligence\diagnosis.rs:934:12
+    |
+933 | impl LikelihoodCalibrator {
+    | ------------------------- associated items in this implementation
+934 |     pub fn new() -> Self {
+    |            ^^^
+...
+944 |     pub fn observe(
+    |            ^^^^^^^
+...
+973 |     pub fn apply(&self, table: &mut LikelihoodTable) {
+    |            ^^^^^
+
+warning: function `sprt_stop` is never used
+    --> src\network_intelligence\diagnosis.rs:1007:8
+     |
+1007 | pub fn sprt_stop(llr: f64, alpha: f64, beta: f64) -> Option<bool> {
+     |        ^^^^^^^^^
+
+warning: enum `DriftStatus` is never used
+  --> src\network_intelligence\drift.rs:11:10
+   |
+11 | pub enum DriftStatus {
+   |          ^^^^^^^^^^^
+
+warning: fields `nu`, `samples_since_reset`, and `total_detections` are never read
+  --> src\network_intelligence\drift.rs:28:9
+   |
+26 | pub struct CusumDetector {
+   |            ------------- fields in this struct
+27 |     pub s: f64,
+28 |     pub nu: f64,
+   |         ^^
+29 |     pub h: f64,
+30 |     pub samples_since_reset: u64,
+   |         ^^^^^^^^^^^^^^^^^^^
+31 |     pub total_detections: u64,
+   |         ^^^^^^^^^^^^^^^^
+   |
+   = note: `CusumDetector` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `new`, `for_success_rate`, and `update` are never used
+  --> src\network_intelligence\drift.rs:37:12
+   |
+34 | impl CusumDetector {
+   | ------------------ associated items in this implementation
+...
+37 |     pub fn new(nu: f64, h: f64) -> Option<Self> {
+   |            ^^^
+...
+52 |     pub fn for_success_rate() -> Self {
+   |            ^^^^^^^^^^^^^^^^
+...
+60 |     pub fn update(&mut self, e_t: f64) -> DriftStatus {
+   |            ^^^^^^
+
+warning: fields `sum_x`, `max_ph`, `count`, and `total_detections` are never read
+  --> src\network_intelligence\drift.rs:89:9
+   |
+88 | pub struct PageHinkleyDetector {
+   |            ------------------- fields in this struct
+89 |     pub sum_x: f64,
+   |         ^^^^^
+90 |     pub sum_ph: f64,
+91 |     pub max_ph: f64,
+   |         ^^^^^^
+92 |     pub count: u64,
+   |         ^^^^^
+93 |     pub lambda: f64,
+94 |     pub total_detections: u64,
+   |         ^^^^^^^^^^^^^^^^
+   |
+   = note: `PageHinkleyDetector` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `new`, `for_success_rate`, and `update` are never used
+   --> src\network_intelligence\drift.rs:98:12
+    |
+ 97 | impl PageHinkleyDetector {
+    | ------------------------ associated items in this implementation
+ 98 |     pub fn new(lambda: f64) -> Option<Self> {
+    |            ^^^
+...
+113 |     pub fn for_success_rate() -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+117 |     pub fn update(&mut self, x_t: f64) -> DriftStatus {
+    |            ^^^^^^
+
+warning: struct `DriftAwareWeighter` is never constructed
+   --> src\network_intelligence\drift.rs:148:12
+    |
+148 | pub struct DriftAwareWeighter {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `observe`, `decay_weight`, and `statistic` are never used
+   --> src\network_intelligence\drift.rs:157:12
+    |
+156 | impl DriftAwareWeighter {
+    | ----------------------- associated items in this implementation
+157 |     pub fn new() -> Self {
+    |            ^^^
+...
+167 |     pub fn observe(&mut self, success: f64) -> DriftStatus {
+    |            ^^^^^^^
+...
+175 |     pub fn decay_weight(&self, age_seconds: f64, just_drifted: bool) -> f64 {
+    |            ^^^^^^^^^^^^
+...
+184 |     pub fn statistic(&self) -> f64 {
+    |            ^^^^^^^^^
+
+warning: function `unix_now_ms` is never used
+  --> src\network_intelligence\episodes.rs:15:4
+   |
+15 | fn unix_now_ms() -> u64 {
+   |    ^^^^^^^^^^^
+
+warning: associated items `new`, `verify`, `correct`, and `is_learnable` are never used
+   --> src\network_intelligence\episodes.rs:107:12
+    |
+105 | impl NetworkEpisode {
+    | ------------------- associated items in this implementation
+106 |     /// Create a new episode with default (unverified) quality.
+107 |     pub fn new(
+    |            ^^^
+...
+135 |     pub fn verify(mut self, quality: EvidenceQuality) -> Self {
+    |            ^^^^^^
+...
+142 |     pub fn correct(mut self, correction: impl Into<String>) -> Self {
+    |            ^^^^^^^
+...
+149 |     pub fn is_learnable(&self) -> bool {
+    |            ^^^^^^^^^^^^
+
+warning: methods `is_empty`, `verified_for_context`, `all_verified`, `set_correction`, and `delete_context` are never used
+   --> src\network_intelligence\episodes.rs:205:12
+    |
+166 | impl EpisodeMemory {
+    | ------------------ methods in this implementation
+...
+205 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+210 |     pub fn verified_for_context(&self, context_id: NetworkContextId) -> Vec<&NetworkEpisode> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+223 |     pub fn all_verified(&self) -> Vec<&NetworkEpisode> {
+    |            ^^^^^^^^^^^^
+...
+229 |     pub fn set_correction(&mut self, episode_id: &str, correction: &str) -> bool {
+    |            ^^^^^^^^^^^^^^
+...
+239 |     pub fn delete_context(&mut self, context_id: NetworkContextId) -> usize {
+    |            ^^^^^^^^^^^^^^
+
+warning: method `investigation_id` is never used
+   --> src\network_intelligence\events\mod.rs:177:12
+    |
+171 | impl Event {
+    | ---------- method in this implementation
+...
+177 |     pub fn investigation_id(&self) -> Option<&str> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: methods `replay` and `replay_session` are never used
+   --> src\network_intelligence\events\mod.rs:284:12
+    |
+220 | impl EventBus {
+    | ------------- methods in this implementation
+...
+284 |     pub fn replay(&self) -> Vec<Event> {
+    |            ^^^^^^
+...
+355 |     pub fn replay_session(&self, investigation_id: &str, since_seq: u64) -> Vec<(u64, Event)> {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `EventSubscription` is never constructed
+   --> src\network_intelligence\events\mod.rs:385:12
+    |
+385 | pub struct EventSubscription {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `next` are never used
+   --> src\network_intelligence\events\mod.rs:393:8
+    |
+392 | impl EventSubscription {
+    | ---------------------- associated items in this implementation
+393 |     fn new(rx: mpsc::Receiver<Event>, since_seq: u64) -> Self {
+    |        ^^^
+...
+398 |     pub fn next(&mut self) -> Option<Event> {
+    |            ^^^^
+
+warning: constant `CONDITIONS` is never used
+  --> src\network_intelligence\evaluation.rs:29:7
+   |
+29 | const CONDITIONS: [(NetworkCondition, &str); 11] = [
+   |       ^^^^^^^^^^
+
+warning: function `probe_sequence` is never used
+  --> src\network_intelligence\evaluation.rs:43:4
+   |
+43 | fn probe_sequence() -> Vec<DiagnosticTest> {
+   |    ^^^^^^^^^^^^^^
+
+warning: function `fixed_rule` is never used
+  --> src\network_intelligence\evaluation.rs:57:4
+   |
+57 | fn fixed_rule(probes: &[ProbeResult]) -> &'static str {
+   |    ^^^^^^^^^^
+
+warning: struct `ConditionResult` is never constructed
+  --> src\network_intelligence\evaluation.rs:78:12
+   |
+78 | pub struct ConditionResult {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `EvaluationResult` is never constructed
+  --> src\network_intelligence\evaluation.rs:86:12
+   |
+86 | pub struct EvaluationResult {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: function `wilson` is never used
+   --> src\network_intelligence\evaluation.rs:103:4
+    |
+103 | fn wilson(successes: usize, n: usize) -> (f64, f64) {
+    |    ^^^^^^
+
+warning: struct `Trial` is never constructed
+   --> src\network_intelligence\evaluation.rs:118:8
+    |
+118 | struct Trial {
+    |        ^^^^^
+
+warning: function `run_trials` is never used
+   --> src\network_intelligence\evaluation.rs:132:4
+    |
+132 | fn run_trials(seeds: u64) -> Vec<Trial> {
+    |    ^^^^^^^^^^
+
+warning: function `evaluate` is never used
+   --> src\network_intelligence\evaluation.rs:163:8
+    |
+163 | pub fn evaluate(seeds: u64) -> EvaluationResult {
+    |        ^^^^^^^^
+
+warning: constant `CONDITION_BINS` is never used
+   --> src\network_intelligence\evaluation.rs:221:7
+    |
+221 | const CONDITION_BINS: usize = 5;
+    |       ^^^^^^^^^^^^^^
+
+warning: struct `ConditionCalibration` is never constructed
+   --> src\network_intelligence\evaluation.rs:225:12
+    |
+225 | pub struct ConditionCalibration {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `CalibrationComparison` is never constructed
+   --> src\network_intelligence\evaluation.rs:250:12
+    |
+250 | pub struct CalibrationComparison {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `evaluate_calibrated` is never used
+   --> src\network_intelligence\evaluation.rs:283:8
+    |
+283 | pub fn evaluate_calibrated(seeds: u64, n_bins: usize) -> CalibrationComparison {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `BenchReport` is never constructed
+   --> src\network_intelligence\evaluation.rs:366:12
+    |
+366 | pub struct BenchReport {
+    |            ^^^^^^^^^^^
+
+warning: function `bench_candidate` is never used
+   --> src\network_intelligence\evaluation.rs:376:4
+    |
+376 | fn bench_candidate() -> RouteCandidate {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `benchmark` is never used
+   --> src\network_intelligence\evaluation.rs:398:8
+    |
+398 | pub fn benchmark(iterations: usize) -> BenchReport {
+    |        ^^^^^^^^^
+
+warning: function `ig_consistency` is never used
+   --> src\network_intelligence\evaluation.rs:434:8
+    |
+434 | pub fn ig_consistency() -> bool {
+    |        ^^^^^^^^^^^^^^
+
+warning: struct `NodeId` is never constructed
+  --> src\network_intelligence\graph.rs:29:12
+   |
+29 | pub struct NodeId(pub String);
+   |            ^^^^^^
+
+warning: enum `NodeType` is never used
+  --> src\network_intelligence\graph.rs:39:10
+   |
+39 | pub enum NodeType {
+   |          ^^^^^^^^
+
+warning: struct `Edge` is never constructed
+  --> src\network_intelligence\graph.rs:53:12
+   |
+53 | pub struct Edge {
+   |            ^^^^
+
+warning: associated function `new` is never used
+  --> src\network_intelligence\graph.rs:67:12
+   |
+66 | impl Edge {
+   | --------- associated function in this implementation
+67 |     pub fn new(from: NodeId, to: NodeId, relation: String) -> Self {
+   |            ^^^
+
+warning: struct `NetworkGraph` is never constructed
+  --> src\network_intelligence\graph.rs:81:12
+   |
+81 | pub struct NetworkGraph {
+   |            ^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src\network_intelligence\graph.rs:92:12
+    |
+ 90 | impl NetworkGraph {
+    | ----------------- associated items in this implementation
+ 91 |     /// Create an empty graph.
+ 92 |     pub fn new() -> Self {
+    |            ^^^
+...
+ 97 |     pub fn add_node(&mut self, id: NodeId, node_type: NodeType) {
+    |            ^^^^^^^^
+...
+103 |     pub fn add_edge(&mut self, edge: Edge) {
+    |            ^^^^^^^^
+...
+113 |     pub fn observe_edge(
+    |            ^^^^^^^^^^^^
+...
+144 |     pub fn outgoing(&self, id: &NodeId) -> Option<&Vec<Edge>> {
+    |            ^^^^^^^^
+...
+149 |     pub fn incoming(&self, id: &NodeId) -> Option<&Vec<Edge>> {
+    |            ^^^^^^^^
+...
+154 |     pub fn node_type(&self, id: &NodeId) -> Option<NodeType> {
+    |            ^^^^^^^^^
+...
+159 |     pub fn node_count(&self) -> usize {
+    |            ^^^^^^^^^^
+...
+164 |     pub fn edge_count(&self) -> usize {
+    |            ^^^^^^^^^^
+...
+169 |     pub fn reachable_from(&self, start: &NodeId) -> HashSet<NodeId> {
+    |            ^^^^^^^^^^^^^^
+...
+187 |     pub fn can_reach(&self, target: &NodeId) -> HashSet<NodeId> {
+    |            ^^^^^^^^^
+...
+206 |     pub fn connected_components(&self) -> Vec<HashSet<NodeId>> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+244 |     pub fn failure_propagation(&self, failed: &[NodeId]) -> HashSet<NodeId> {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+264 |     pub fn shortest_path(&self, start: &NodeId, target: &NodeId) -> Option<Vec<NodeId>> {
+    |            ^^^^^^^^^^^^^
+...
+300 |     pub fn betweenness_centrality(&self) -> HashMap<NodeId, f64> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `unix_now_ms` is never used
+   --> src\network_intelligence\graph.rs:348:4
+    |
+348 | fn unix_now_ms() -> u64 {
+    |    ^^^^^^^^^^^
+
+warning: enum `HardwareTier` is never used
+ --> src\network_intelligence\hardware.rs:9:10
+  |
+9 | pub enum HardwareTier {
+  |          ^^^^^^^^^^^^
+
+warning: struct `HardwareProfile` is never constructed
+  --> src\network_intelligence\hardware.rs:16:12
+   |
+16 | pub struct HardwareProfile {
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated items `detect`, `sampling_interval_ms`, `max_concurrent_tests`, and `allow_model_inference` are never used
+  --> src\network_intelligence\hardware.rs:24:12
+   |
+22 | impl HardwareProfile {
+   | -------------------- associated items in this implementation
+23 |     /// Build a profile from available parallelism and an optional memory measurement.
+24 |     pub fn detect(memory_mb: Option<u64>) -> Self {
+   |            ^^^^^^
+...
+38 |     pub fn sampling_interval_ms(&self) -> u64 {
+   |            ^^^^^^^^^^^^^^^^^^^^
+...
+47 |     pub fn max_concurrent_tests(&self) -> usize {
+   |            ^^^^^^^^^^^^^^^^^^^^
+...
+57 |     pub fn allow_model_inference(&self) -> bool {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `classify` is never used
+  --> src\network_intelligence\hardware.rs:63:4
+   |
+63 | fn classify(cores: usize, memory_mb: Option<u64>) -> HardwareTier {
+   |    ^^^^^^^^
+
+warning: struct `BetaPosterior` is never constructed
+  --> src\network_intelligence\hierarchical.rs:28:12
+   |
+28 | pub struct BetaPosterior {
+   |            ^^^^^^^^^^^^^
+
+warning: associated function `from_model` is never used
+  --> src\network_intelligence\hierarchical.rs:41:8
+   |
+40 | impl BetaPosterior {
+   | ------------------ associated function in this implementation
+41 |     fn from_model(model: &BetaBernoulli, level: f64) -> Self {
+   |        ^^^^^^^^^^
+
+warning: methods `global_posterior`, `predict`, `posterior`, `local_count`, and `contexts` are never used
+   --> src\network_intelligence\hierarchical.rs:115:12
+    |
+ 89 | impl HierarchicalBetaBernoulli {
+    | ------------------------------ methods in this implementation
+...
+115 |     pub fn global_posterior(&self, level: f64) -> BetaPosterior {
+    |            ^^^^^^^^^^^^^^^^
+...
+144 |     pub fn predict(&self, context: NetworkContextId, api: &str) -> f64 {
+    |            ^^^^^^^
+...
+152 |     pub fn posterior(&self, context: NetworkContextId, api: &str, level: f64) -> BetaPosterior {
+    |            ^^^^^^^^^
+...
+170 |     pub fn local_count(&self, context: NetworkContextId, api: &str) -> u64 {
+    |            ^^^^^^^^^^^
+...
+183 |     pub fn contexts(&self) -> Vec<NetworkContextId> {
+    |            ^^^^^^^^
+
+warning: field `correlations` is never read
+   --> src\network_intelligence\learning.rs:106:5
+    |
+ 97 | pub struct LearningEngine {
+    |            -------------- field in this struct
+...
+106 |     correlations: CorrelationModel,
+    |     ^^^^^^^^^^^^
+
+warning: methods `set_context`, `profile_confidence`, `record_user_correction`, `metric_median`, `reliability`, and `evidence_weights` are never used
+   --> src\network_intelligence\learning.rs:181:12
+    |
+119 | impl LearningEngine {
+    | ------------------- methods in this implementation
+...
+181 |     pub fn set_context(&mut self, context: NetworkContextId) {
+    |            ^^^^^^^^^^^
+...
+218 |     pub fn profile_confidence(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+403 |     pub fn record_user_correction(&mut self, episode_id: &str, correction: &str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+409 |     pub fn metric_median(&self, metric: &str) -> Option<f64> {
+    |            ^^^^^^^^^^^^^
+...
+413 |     pub fn reliability(&self, api_id: &str) -> f64 {
+    |            ^^^^^^^^^^^
+...
+419 |     pub fn evidence_weights(&self, observations: &[(String, f64)]) -> Option<Vec<f64>> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: function `finite_or_default` is never used
+  --> src\network_intelligence\math.rs:52:8
+   |
+52 | pub fn finite_or_default(x: f64, default: f64) -> f64 {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `sigmoid` is never used
+  --> src\network_intelligence\math.rs:65:8
+   |
+65 | pub fn sigmoid(x: f64) -> f64 {
+   |        ^^^^^^^
+
+warning: function `logit` is never used
+  --> src\network_intelligence\math.rs:80:8
+   |
+80 | pub fn logit(p: f64) -> f64 {
+   |        ^^^^^
+
+warning: function `normalize_weights` is never used
+   --> src\network_intelligence\math.rs:152:8
+    |
+152 | pub fn normalize_weights(weights: &[f64]) -> Option<Vec<f64>> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `sample_categorical` is never used
+   --> src\network_intelligence\math.rs:168:8
+    |
+168 | pub fn sample_categorical<R: rand::Rng + ?Sized>(
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `bernoulli_entropy` is never used
+   --> src\network_intelligence\math.rs:205:8
+    |
+205 | pub fn bernoulli_entropy(p: f64) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `kl_divergence` is never used
+   --> src\network_intelligence\math.rs:224:8
+    |
+224 | pub fn kl_divergence(p: &[f64], q: &[f64]) -> Option<f64> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `js_divergence` is never used
+   --> src\network_intelligence\math.rs:248:8
+    |
+248 | pub fn js_divergence(p: &[f64], q: &[f64]) -> Option<f64> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `clamp_latency` is never used
+   --> src\network_intelligence\math.rs:263:8
+    |
+263 | pub fn clamp_latency(value: f64, floor: f64, cap: f64) -> Option<f64> {
+    |        ^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src\network_intelligence\robust_stats.rs:43:12
+    |
+ 28 | impl RobustStats {
+    | ---------------- associated items in this implementation
+...
+ 43 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 95 |     pub fn mean(&self) -> Option<f64> {
+    |            ^^^^
+...
+108 |     pub fn variance(&self) -> Option<f64> {
+    |            ^^^^^^^^
+...
+119 |     pub fn std_dev(&self) -> Option<f64> {
+    |            ^^^^^^^
+...
+132 |     pub fn trimmed_mean(&self, fraction: f64) -> Option<f64> {
+    |            ^^^^^^^^^^^^
+...
+153 |     pub fn winsorized_mean(&self, fraction: f64) -> Option<f64> {
+    |            ^^^^^^^^^^^^^^^
+...
+175 |     pub fn iqr(&self) -> Option<f64> {
+    |            ^^^
+...
+208 |     pub fn p50(&self) -> Option<f64> {
+    |            ^^^
+...
+213 |     pub fn p90(&self) -> Option<f64> {
+    |            ^^^
+...
+218 |     pub fn p95(&self) -> Option<f64> {
+    |            ^^^
+...
+223 |     pub fn p99(&self) -> Option<f64> {
+    |            ^^^
+...
+228 |     fn quantile_window(window: &VecDeque<f64>, p: f64) -> Option<f64> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `quantile` is never used
+   --> src\network_intelligence\robust_stats.rs:239:4
+    |
+239 | fn quantile(sorted: &[f64], p: f64) -> f64 {
+    |    ^^^^^^^^
+
+warning: constant `COMPACT_EVERY` is never used
+  --> src\network_intelligence\persistence.rs:32:7
+   |
+32 | const COMPACT_EVERY: usize = 512;
+   |       ^^^^^^^^^^^^^
+
+warning: fields `dir`, `observations_path`, `version_path`, `observations`, and `appends_since_compaction` are never read
+  --> src\network_intelligence\persistence.rs:64:5
+   |
+63 | pub struct PersistenceStore {
+   |            ---------------- fields in this struct
+64 |     dir: PathBuf,
+   |     ^^^
+65 |     observations_path: PathBuf,
+   |     ^^^^^^^^^^^^^^^^^
+66 |     model_state_path: PathBuf,
+67 |     version_path: PathBuf,
+   |     ^^^^^^^^^^^^
+68 |     observations: Vec<Observation>,
+   |     ^^^^^^^^^^^^
+...
+71 |     appends_since_compaction: usize,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `PersistenceStore` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: multiple methods are never used
+   --> src\network_intelligence\persistence.rs:173:12
+    |
+ 74 | impl PersistenceStore {
+    | --------------------- methods in this implementation
+...
+173 |     pub fn schema_version(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^
+...
+178 |     pub fn record_observation(&mut self, obs: Observation) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+199 |     fn append_observation(&self) -> std::io::Result<()> {
+    |        ^^^^^^^^^^^^^^^^^^
+...
+211 |     fn persist_observations(&self) -> std::io::Result<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+230 |     pub fn reset(&mut self) -> std::io::Result<usize> {
+    |            ^^^^^
+...
+241 |     pub fn clear(&mut self) -> std::io::Result<usize> {
+    |            ^^^^^
+...
+246 |     pub fn observations(&self) -> Vec<Observation> {
+    |            ^^^^^^^^^^^^
+...
+277 |     pub fn model_state(&self) -> ModelState {
+    |            ^^^^^^^^^^^
+...
+282 |     pub fn set_model_state(&mut self, model: ModelState) {
+    |            ^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src\network_intelligence\probability.rs:52:12
+    |
+ 35 | impl BetaBernoulli {
+    | ------------------ associated items in this implementation
+...
+ 52 |     pub fn uniform() -> Self {
+    |            ^^^^^^^
+...
+ 57 |     pub fn jeffreys() -> Self {
+    |            ^^^^^^^^
+...
+ 63 |     pub fn centered(p: f64, n: f64) -> Option<Self> {
+    |            ^^^^^^^^
+...
+ 87 |     pub fn posterior_alpha(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^
+...
+ 92 |     pub fn posterior_beta(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^
+...
+ 97 |     pub fn effective_sample_size(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+108 |     pub fn variance(&self) -> f64 {
+    |            ^^^^^^^^
+...
+116 |     pub fn std_dev(&self) -> f64 {
+    |            ^^^^^^^
+...
+152 |     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+    |            ^^^^^^
+...
+167 |     pub fn credible_interval(&self, credible_level: f64) -> (f64, f64) {
+    |            ^^^^^^^^^^^^^^^^^
+...
+187 |     pub fn lcb(&self, kappa: f64) -> f64 {
+    |            ^^^
+...
+192 |     pub fn entropy(&self) -> f64 {
+    |            ^^^^^^^
+
+warning: function `gamma_sample` is never used
+   --> src\network_intelligence\probability.rs:206:4
+    |
+206 | fn gamma_sample<R: Rng + ?Sized>(rng: &mut R, k: f64) -> f64 {
+    |    ^^^^^^^^^^^^
+
+warning: function `normal_sample` is never used
+   --> src\network_intelligence\probability.rs:239:4
+    |
+239 | fn normal_sample<R: Rng + ?Sized>(rng: &mut R) -> f64 {
+    |    ^^^^^^^^^^^^^
+
+warning: struct `WilsonInterval` is never constructed
+   --> src\network_intelligence\probability.rs:255:12
+    |
+255 | pub struct WilsonInterval {
+    |            ^^^^^^^^^^^^^^
+
+warning: method `width` is never used
+   --> src\network_intelligence\probability.rs:270:12
+    |
+268 | impl WilsonInterval {
+    | ------------------- method in this implementation
+269 |     /// Interval width `upper - lower`.
+270 |     pub fn width(&self) -> f64 {
+    |            ^^^^^
+
+warning: function `wilson_interval` is never used
+   --> src\network_intelligence\probability.rs:284:8
+    |
+284 | pub fn wilson_interval(successes: u64, n: u64, z: f64) -> Option<WilsonInterval> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: struct `Categorical` is never constructed
+   --> src\network_intelligence\probability.rs:309:12
+    |
+309 | pub struct Categorical {
+    |            ^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src\network_intelligence\probability.rs:316:12
+    |
+313 | impl Categorical {
+    | ---------------- associated items in this implementation
+...
+316 |     pub fn from_probs(probs: &[f64]) -> Option<Self> {
+    |            ^^^^^^^^^^
+...
+330 |     pub fn from_log_probs(log_probs: Vec<f64>) -> Option<Self> {
+    |            ^^^^^^^^^^^^^^
+...
+341 |     pub fn n_outcomes(&self) -> usize {
+    |            ^^^^^^^^^^
+...
+346 |     pub fn prob(&self, i: usize) -> f64 {
+    |            ^^^^
+...
+357 |     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Option<usize> {
+    |            ^^^^^^
+...
+362 |     pub fn entropy(&self) -> f64 {
+    |            ^^^^^^^
+...
+378 |     pub fn add_evidence(&mut self, i: usize, delta_log_likelihood: f64) {
+    |            ^^^^^^^^^^^^
+
+warning: fields `action`, `timeout_sec`, and `reversible` are never read
+   --> src\network_intelligence\recovery.rs:145:9
+    |
+143 | pub struct RecoveryStep {
+    |            ------------ fields in this struct
+144 |     pub id: String,
+145 |     pub action: String,
+    |         ^^^^^^
+...
+149 |     pub timeout_sec: u64,
+    |         ^^^^^^^^^^^
+150 |     /// Whether this step is reversible (has a rollback).
+151 |     pub reversible: bool,
+    |         ^^^^^^^^^^
+    |
+    = note: `RecoveryStep` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `max_retries_per_step` is never read
+   --> src\network_intelligence\recovery.rs:166:9
+    |
+160 | pub struct RecoveryPlan {
+    |            ------------ field in this struct
+...
+166 |     pub max_retries_per_step: u64,
+    |         ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryPlan` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `rollback` and `active_api` are never used
+   --> src\network_intelligence\recovery.rs:313:12
+    |
+184 | impl RecoveryPlanner {
+    | -------------------- methods in this implementation
+...
+313 |     pub fn rollback(&mut self) {
+    |            ^^^^^^^^
+...
+336 |     pub fn active_api(&self) -> Option<&str> {
+    |            ^^^^^^^^^^
+
+warning: fields `records` and `capacity` are never read
+  --> src\network_intelligence\recovery_memory.rs:19:5
+   |
+18 | pub struct RecoveryMemory {
+   |            -------------- fields in this struct
+19 |     records: Vec<RecoveryOutcome>,
+   |     ^^^^^^^
+20 |     capacity: usize,
+   |     ^^^^^^^^
+   |
+   = note: `RecoveryMemory` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `record`, `len`, `is_empty`, `success_rate`, `mean_prediction_error`, and `counts_by_action` are never used
+  --> src\network_intelligence\recovery_memory.rs:31:12
+   |
+23 | impl RecoveryMemory {
+   | ------------------- methods in this implementation
+...
+31 |     pub fn record(&mut self, outcome: RecoveryOutcome) {
+   |            ^^^^^^
+...
+38 |     pub fn len(&self) -> usize {
+   |            ^^^
+...
+42 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+...
+47 |     pub fn success_rate(&self, action: &str, context: &str) -> Option<f64> {
+   |            ^^^^^^^^^^^^
+...
+61 |     pub fn mean_prediction_error(&self, action: &str) -> Option<f64> {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+...
+79 |     pub fn counts_by_action(&self) -> HashMap<String, (usize, usize)> {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: multiple fields are never read
+  --> src\network_intelligence\route.rs:23:9
+   |
+21 | pub struct RouteMetrics {
+   |            ------------ fields in this struct
+22 |     /// Predicted success probability P(success), calibrated.
+23 |     pub success_prob: f64,
+   |         ^^^^^^^^^^^^
+24 |     /// Uncertainty (std dev) on success_prob.
+25 |     pub success_std: f64,
+   |         ^^^^^^^^^^^
+26 |     /// Expected latency in ms.
+27 |     pub latency_ms: f64,
+   |         ^^^^^^^^^^
+28 |     /// Std dev of latency.
+29 |     pub latency_std: f64,
+   |         ^^^^^^^^^^^
+30 |     /// Jitter (latency variation) in ms.
+31 |     pub jitter_ms: f64,
+   |         ^^^^^^^^^
+32 |     /// Predicted packet loss fraction (0..1).
+33 |     pub packet_loss: f64,
+   |         ^^^^^^^^^^^
+34 |     /// Expected recovery time in seconds if this route fails.
+35 |     pub recovery_time_sec: f64,
+   |         ^^^^^^^^^^^^^^^^^
+36 |     /// Resource cost (CPU/memory/bandwidth units), higher = more expensive.
+37 |     pub resource_cost: f64,
+   |         ^^^^^^^^^^^^^
+38 |     /// Security risk score (0..1), where 1 = violates a hard constraint (e.g. disabled TLS).
+39 |     pub security_risk: f64,
+   |         ^^^^^^^^^^^^^
+   |
+   = note: `RouteMetrics` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `RouteCandidate` is never constructed
+  --> src\network_intelligence\route.rs:44:12
+   |
+44 | pub struct RouteCandidate {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `ObjectiveWeights` is never constructed
+  --> src\network_intelligence\route.rs:58:12
+   |
+58 | pub struct ObjectiveWeights {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `ScoredRoute` is never constructed
+  --> src\network_intelligence\route.rs:92:12
+   |
+92 | pub struct ScoredRoute {
+   |            ^^^^^^^^^^^
+
+warning: function `score_candidate` is never used
+   --> src\network_intelligence\route.rs:108:8
+    |
+108 | pub fn score_candidate(
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `score_candidates` is never used
+   --> src\network_intelligence\route.rs:157:8
+    |
+157 | pub fn score_candidates(
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `pareto_frontier` is never used
+   --> src\network_intelligence\route.rs:176:8
+    |
+176 | pub fn pareto_frontier(scored: &mut [ScoredRoute]) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `select_best_route` is never used
+   --> src\network_intelligence\route.rs:218:8
+    |
+218 | pub fn select_best_route(
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `cvar_latency` is never used
+   --> src\network_intelligence\route.rs:239:8
+    |
+239 | pub fn cvar_latency(samples: &[f64], alpha: f64) -> Option<f64> {
+    |        ^^^^^^^^^^^^
+
+warning: function `cost_adjusted_gain` is never used
+ --> src\network_intelligence\sequential.rs:5:8
+  |
+5 | pub fn cost_adjusted_gain(info_gain: f64, cost: f64, epsilon: f64) -> f64 {
+  |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `should_stop` is never used
+  --> src\network_intelligence\sequential.rs:12:8
+   |
+12 | pub fn should_stop(best_gain: f64, gain_threshold: f64, confidence: f64, confidence_target: f64) -> bool {
+   |        ^^^^^^^^^^^
+
+warning: function `value_of_information` is never used
+  --> src\network_intelligence\sequential.rs:20:8
+   |
+20 | pub fn value_of_information(prior_loss: f64, expected_posterior_loss: f64, cost: f64) -> f64 {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\network_intelligence\simulation.rs:17:5
+   |
+15 | pub enum NetworkCondition {
+   |          ---------------- variants in this enum
+16 |     Healthy,
+17 |     DnsFailure,
+   |     ^^^^^^^^^^
+18 |     GatewayFailure,
+   |     ^^^^^^^^^^^^^^
+19 |     RoutingFailure,
+   |     ^^^^^^^^^^^^^^
+20 |     Ipv4Only,
+   |     ^^^^^^^^
+21 |     Ipv6Only,
+   |     ^^^^^^^^
+22 |     TcpTimeout,
+   |     ^^^^^^^^^^
+23 |     TlsFailure,
+   |     ^^^^^^^^^^
+24 |     MtuIssue,
+   |     ^^^^^^^^
+25 |     UpstreamProxyDown,
+   |     ^^^^^^^^^^^^^^^^^
+26 |     RemoteEndpointDown,
+   |     ^^^^^^^^^^^^^^^^^^
+27 |     AuthRejected,
+   |     ^^^^^^^^^^^^
+28 |     RateLimited,
+   |     ^^^^^^^^^^^
+29 |     ServerError,
+   |     ^^^^^^^^^^^
+30 |     IntermittentLoss, // packet loss that comes and goes
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `NetworkCondition` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `condition`, `base_latency_ms`, `packet_loss`, and `jitter_ms` are never read
+  --> src\network_intelligence\simulation.rs:36:9
+   |
+35 | pub struct SimulatedNetwork {
+   |            ---------------- fields in this struct
+36 |     pub condition: NetworkCondition,
+   |         ^^^^^^^^^
+37 |     pub base_latency_ms: f64,
+   |         ^^^^^^^^^^^^^^^
+38 |     pub packet_loss: f64,
+   |         ^^^^^^^^^^^
+39 |     pub jitter_ms: f64,
+   |         ^^^^^^^^^
+   |
+   = note: `SimulatedNetwork` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `rng`, `network`, and `seed` are never read
+  --> src\network_intelligence\simulation.rs:46:5
+   |
+45 | pub struct NetworkSimulator {
+   |            ---------------- fields in this struct
+46 |     rng: StdRng,
+   |     ^^^
+47 |     pub network: SimulatedNetwork,
+   |         ^^^^^^^
+48 |     pub seed: u64,
+   |         ^^^^
+   |
+   = note: `NetworkSimulator` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `reseed`, `probe`, `probe_outcome`, `api_call`, and `diagnose_sequence` are never used
+   --> src\network_intelligence\simulation.rs:60:12
+    |
+ 51 | impl NetworkSimulator {
+    | --------------------- methods in this implementation
+...
+ 60 |     pub fn reseed(&mut self, seed: u64, condition: NetworkCondition) {
+    |            ^^^^^^
+...
+ 70 |     pub fn probe(&mut self, test: &DiagnosticTest) -> ProbeResult {
+    |            ^^^^^
+...
+ 97 |     fn probe_outcome(&mut self, test: &DiagnosticTest) -> (ProbeOutcome, f64) {
+    |        ^^^^^^^^^^^^^
+...
+306 |     pub fn api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+    |            ^^^^^^^^
+...
+343 |     pub fn diagnose_sequence(&mut self, tests: &[DiagnosticTest]) -> Vec<ProbeResult> {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `Scenario` is never constructed
+   --> src\network_intelligence\simulation.rs:377:12
+    |
+377 | pub struct Scenario {
+    |            ^^^^^^^^
+
+warning: function `scenario_fast_unreliable_vs_slow_reliable` is never used
+   --> src\network_intelligence\simulation.rs:386:8
+    |
+386 | pub fn scenario_fast_unreliable_vs_slow_reliable() -> Scenario {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `scenario_provider_outage` is never used
+   --> src\network_intelligence\simulation.rs:402:8
+    |
+402 | pub fn scenario_provider_outage() -> Scenario {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `scenario_dns_failure` is never used
+   --> src\network_intelligence\simulation.rs:415:8
+    |
+415 | pub fn scenario_dns_failure() -> Scenario {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `alpha`, `state`, and `n` are never read
+  --> src\network_intelligence\timeseries.rs:18:5
+   |
+17 | pub struct ExponentialSmoothing {
+   |            -------------------- fields in this struct
+18 |     alpha: f64,
+   |     ^^^^^
+19 |     state: Option<f64>,
+   |     ^^^^^
+20 |     n: u64,
+   |     ^
+   |
+   = note: `ExponentialSmoothing` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `new`, `default_smoothing`, `observe`, `value`, and `n` are never used
+  --> src\network_intelligence\timeseries.rs:26:12
+   |
+23 | impl ExponentialSmoothing {
+   | ------------------------- associated items in this implementation
+...
+26 |     pub fn new(alpha: f64) -> Option<Self> {
+   |            ^^^
+...
+38 |     pub fn default_smoothing() -> Self {
+   |            ^^^^^^^^^^^^^^^^^
+...
+43 |     pub fn observe(&mut self, x: f64) -> f64 {
+   |            ^^^^^^^
+...
+57 |     pub fn value(&self) -> Option<f64> {
+   |            ^^^^^
+...
+62 |     pub fn n(&self) -> u64 {
+   |            ^
+
+warning: struct `DoubleExponentialSmoothing` is never constructed
+  --> src\network_intelligence\timeseries.rs:73:12
+   |
+73 | pub struct DoubleExponentialSmoothing {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `default_double`, `observe`, `forecast`, `forecast_h`, and `n` are never used
+   --> src\network_intelligence\timeseries.rs:83:12
+    |
+ 81 | impl DoubleExponentialSmoothing {
+    | ------------------------------- associated items in this implementation
+ 82 |     /// Create with smoothing factors alpha (level) and beta (trend).
+ 83 |     pub fn new(alpha: f64, beta: f64) -> Option<Self> {
+    |            ^^^
+...
+100 |     pub fn default_double() -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+105 |     pub fn observe(&mut self, x: f64) -> f64 {
+    |            ^^^^^^^
+...
+124 |     pub fn forecast(&self) -> f64 {
+    |            ^^^^^^^^
+...
+133 |     pub fn forecast_h(&self, h: u64) -> f64 {
+    |            ^^^^^^^^^^
+...
+142 |     pub fn n(&self) -> u64 {
+    |            ^
+
+warning: struct `RollingTrend` is never constructed
+   --> src\network_intelligence\timeseries.rs:152:12
+    |
+152 | pub struct RollingTrend {
+    |            ^^^^^^^^^^^^
+
+warning: associated items `new`, `observe`, `slope`, `trend_direction`, and `len` are never used
+   --> src\network_intelligence\timeseries.rs:159:12
+    |
+157 | impl RollingTrend {
+    | ----------------- associated items in this implementation
+158 |     /// Create with window size.
+159 |     pub fn new(max_size: usize) -> Self {
+    |            ^^^
+...
+167 |     pub fn observe(&mut self, x: f64) {
+    |            ^^^^^^^
+...
+179 |     pub fn slope(&self) -> Option<f64> {
+    |            ^^^^^
+...
+206 |     pub fn trend_direction(&self) -> TrendDirection {
+    |            ^^^^^^^^^^^^^^^
+...
+215 |     pub fn len(&self) -> usize {
+    |            ^^^
+
+warning: enum `TrendDirection` is never used
+   --> src\network_intelligence\timeseries.rs:222:10
+    |
+222 | pub enum TrendDirection {
+    |          ^^^^^^^^^^^^^^
+
+warning: enum `ProbeCategory` is never used
+  --> src\network_intelligence\information_theory.rs:17:10
+   |
+17 | pub enum ProbeCategory {
+   |          ^^^^^^^^^^^^^
+
+warning: struct `ScoredProbe` is never constructed
+  --> src\network_intelligence\information_theory.rs:26:12
+   |
+26 | pub struct ScoredProbe {
+   |            ^^^^^^^^^^^
+
+warning: function `expected_information_gain_diagnostic` is never used
+  --> src\network_intelligence\information_theory.rs:37:8
+   |
+37 | pub fn expected_information_gain_diagnostic(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rank_diagnostic_probes` is never used
+  --> src\network_intelligence\information_theory.rs:45:8
+   |
+45 | pub fn rank_diagnostic_probes(engine: &DiagnosticEngine) -> Vec<TestScore> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `select_best_diagnostic_probe` is never used
+  --> src\network_intelligence\information_theory.rs:50:8
+   |
+50 | pub fn select_best_diagnostic_probe(engine: &DiagnosticEngine) -> Option<TestScore> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expected_information_gain_route` is never used
+  --> src\network_intelligence\information_theory.rs:62:8
+   |
+62 | pub fn expected_information_gain_route(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `rank_route_probes` is never used
+   --> src\network_intelligence\information_theory.rs:104:8
+    |
+104 | pub fn rank_route_probes(candidates: &[RouteCandidate]) -> Vec<ScoredProbe> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `conditional_entropy` is never used
+   --> src\network_intelligence\information_theory.rs:171:8
+    |
+171 | pub fn conditional_entropy(p_xy: &[Vec<f64>], p_x: &[f64]) -> Option<f64> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `value_of_information` is never used
+   --> src\network_intelligence\information_theory.rs:179:8
+    |
+179 | pub fn value_of_information(
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `cost_adjusted_gain` is never used
+   --> src\network_intelligence\information_theory.rs:188:8
+    |
+188 | pub fn cost_adjusted_gain(info_gain: f64, cost: f64, epsilon: f64) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `should_stop` is never used
+   --> src\network_intelligence\information_theory.rs:195:8
+    |
+195 | pub fn should_stop(
+    |        ^^^^^^^^^^^
+
+warning: function `should_stop_by_budget` is never used
+   --> src\network_intelligence\information_theory.rs:209:8
+    |
+209 | pub fn should_stop_by_budget(
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `select_best_probe_unified` is never used
+   --> src\network_intelligence\information_theory.rs:221:8
+    |
+221 | pub fn select_best_probe_unified(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `hazard` and `survival` are never used
+  --> src\network_intelligence\changepoint.rs:27:12
+   |
+25 | impl HazardFunction {
+   | ------------------- methods in this implementation
+26 |     /// Compute the hazard probability P(r_t = 0 | r_{t-1} = r).
+27 |     pub fn hazard(&self, run_length: u64) -> f64 {
+   |            ^^^^^^
+...
+37 |     pub fn survival(&self, run_length: u64) -> f64 {
+   |            ^^^^^^^^
+
+warning: fields `n`, `mean`, and `m2` are never read
+  --> src\network_intelligence\changepoint.rs:49:5
+   |
+48 | struct RunStats {
+   |        -------- fields in this struct
+49 |     n: f64,
+   |     ^
+50 |     mean: f64,
+   |     ^^^^
+51 |     m2: f64,
+   |     ^^
+   |
+   = note: `RunStats` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `add` is never used
+  --> src\network_intelligence\changepoint.rs:55:8
+   |
+54 | impl RunStats {
+   | ------------- method in this implementation
+55 |     fn add(self, x: f64) -> Self {
+   |        ^^^
+
+warning: fields `hazard`, `stats`, `n`, and `max_run_length` are never read
+  --> src\network_intelligence\changepoint.rs:66:5
+   |
+65 | pub struct BayesianOnlineCPD {
+   |            ----------------- fields in this struct
+66 |     hazard: HazardFunction,
+   |     ^^^^^^
+...
+70 |     stats: HashMap<u64, RunStats>,
+   |     ^^^^^
+71 |     /// Number of observations processed.
+72 |     n: u64,
+   |     ^
+73 |     /// Maximum run length to track (bounds memory).
+74 |     max_run_length: u64,
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `BayesianOnlineCPD` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `observe`, `instantaneous_changepoint_probability`, `predictive_probability`, and `n` are never used
+   --> src\network_intelligence\changepoint.rs:118:12
+    |
+ 81 | impl BayesianOnlineCPD {
+    | ---------------------- methods in this implementation
+...
+118 |     pub fn observe(&mut self, x: f64) {
+    |            ^^^^^^^
+...
+183 |     pub fn instantaneous_changepoint_probability(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+208 |     fn predictive_probability(&self, run_length: u64, x: f64) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+225 |     pub fn n(&self) -> u64 {
+    |            ^
+
+warning: function `category_summary` is never used
+  --> src\network_intelligence\api_intelligence\failure_classifier.rs:30:8
+   |
+30 | pub fn category_summary(category: FailureCategory) -> String {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: function `observe_diagnostic_probes` is never used
+   --> src\network_intelligence\api_intelligence\monitor.rs:321:8
+    |
+321 | pub fn observe_diagnostic_probes(engine: &mut DiagnosticEngine, outcome: &ProbeOutcomeRecord) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `entries` and `select_route` are never used
+   --> src\network_intelligence\api_intelligence\registry.rs:292:12
+    |
+225 | impl ApiRegistry {
+    | ---------------- methods in this implementation
+...
+292 |     pub fn entries(&self) -> Vec<ApiEntry> {
+    |            ^^^^^^^
+...
+376 |     pub fn select_route(&self, api_id: &str, route_id: &str, reason: &str) {
+    |            ^^^^^^^^^^^^
+
+warning: associated items `set_confidence` and `missing` are never used
+   --> src\network_intelligence\evidence\measurements.rs:145:12
+    |
+ 91 | impl Measurement {
+    | ---------------- associated items in this implementation
+...
+145 |     pub fn set_confidence(&mut self, confidence: f64) {
+    |            ^^^^^^^^^^^^^^
+...
+150 |     pub fn missing(id: impl Into<String>, timestamp: u64, kind: impl Into<String>) -> Self {
+    |            ^^^^^^^
+
+warning: associated items `with_groups`, `groups`, `groups_for`, and `adjusted_weights` are never used
+   --> src\network_intelligence\evidence\correlation.rs:90:12
+    |
+ 59 | impl CorrelationModel {
+    | --------------------- associated items in this implementation
+...
+ 90 |     pub fn with_groups(groups: Vec<CorrelationGroup>) -> Self {
+    |            ^^^^^^^^^^^
+...
+ 94 |     pub fn groups(&self) -> &[CorrelationGroup] {
+    |            ^^^^^^
+...
+ 99 |     pub fn groups_for(&self, test_id: &str) -> Vec<&CorrelationGroup> {
+    |            ^^^^^^^^^^
+...
+128 |     pub fn adjusted_weights(&self, observations: &[(String, f64)]) -> Option<Vec<f64>> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: constant `PIPELINE_STAGES` is never used
+ --> src\network_intelligence\evidence\telemetry_pipeline.rs:9:7
+  |
+9 | const PIPELINE_STAGES: &[&str] = &["COLLECT", "VALIDATE", "NORMALIZE", "ENRICH", "STORE", "PUBLISH"];
+  |       ^^^^^^^^^^^^^^^
+
+warning: fields `stage` and `elapsed_us` are never read
+  --> src\network_intelligence\evidence\telemetry_pipeline.rs:14:9
+   |
+13 | pub struct PipelineResult {
+   |            -------------- fields in this struct
+14 |     pub stage: String,
+   |         ^^^^^
+15 |     pub measurement: Measurement,
+16 |     pub elapsed_us: u128,
+   |         ^^^^^^^^^^
+   |
+   = note: `PipelineResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `name` is never read
+  --> src\network_intelligence\evidence\telemetry_pipeline.rs:22:5
+   |
+21 | pub struct TelemetryQueue {
+   |            -------------- field in this struct
+22 |     name: String,
+   |     ^^^^
+
+warning: methods `capacity`, `len`, `is_empty`, `cancel`, and `is_cancelled` are never used
+  --> src\network_intelligence\evidence\telemetry_pipeline.rs:38:12
+   |
+28 | impl TelemetryQueue {
+   | ------------------- methods in this implementation
+...
+38 |     pub fn capacity(&self) -> usize {
+   |            ^^^^^^^^
+...
+42 |     pub fn len(&self) -> usize {
+   |            ^^^
+...
+46 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+...
+69 |     pub fn cancel(&mut self) {
+   |            ^^^^^^
+...
+73 |     pub fn is_cancelled(&self) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: methods `get`, `len`, `is_empty`, and `clear` are never used
+   --> src\network_intelligence\evidence\telemetry_pipeline.rs:93:12
+    |
+ 84 | impl ResultsStore {
+    | ----------------- methods in this implementation
+...
+ 93 |     pub fn get(&self, id: &str) -> Option<&Measurement> {
+    |            ^^^
+...
+101 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+105 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+109 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: struct `ProvenanceRecord` is never constructed
+  --> src\network_intelligence\evidence\provenance.rs:11:12
+   |
+11 | pub struct ProvenanceRecord {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `is_verified`, and `can_be_authorized` are never used
+  --> src\network_intelligence\evidence\provenance.rs:19:12
+   |
+18 | impl ProvenanceRecord {
+   | --------------------- associated items in this implementation
+19 |     pub fn new(source_id: impl Into<String>, provenance: Provenance) -> Self {
+   |            ^^^
+...
+28 |     pub fn is_verified(&self) -> bool {
+   |            ^^^^^^^^^^^
+...
+35 |     pub fn can_be_authorized(&self) -> bool {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: variant `OutdatedEvidence` is never constructed
+  --> src\network_intelligence\evidence\validation.rs:15:5
+   |
+10 | pub enum ValidationError {
+   |          --------------- variant in this enum
+...
+15 |     OutdatedEvidence,
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `ValidationError` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `validate_full` is never used
+  --> src\network_intelligence\evidence\validation.rs:69:12
+   |
+32 | impl Measurement {
+   | ---------------- method in this implementation
+...
+69 |     pub fn validate_full(&self, now: u64, max_freshness_ms: f64) -> Option<ValidationError> {
+   |            ^^^^^^^^^^^^^
+
+warning: function `brier_score` is never used
+  --> src\network_intelligence\validation.rs:44:8
+   |
+44 | pub fn brier_score(predictions: &[Prediction]) -> Option<f64> {
+   |        ^^^^^^^^^^^
+
+warning: function `log_loss` is never used
+  --> src\network_intelligence\validation.rs:61:8
+   |
+61 | pub fn log_loss(predictions: &[Prediction]) -> Option<f64> {
+   |        ^^^^^^^^
+
+warning: function `expected_calibration_error` is never used
+  --> src\network_intelligence\validation.rs:83:8
+   |
+83 | pub fn expected_calibration_error(predictions: &[Prediction], n_bins: usize) -> Option<f64> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `maximum_calibration_error` is never used
+   --> src\network_intelligence\validation.rs:115:8
+    |
+115 | pub fn maximum_calibration_error(predictions: &[Prediction], n_bins: usize) -> Option<f64> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `CalibrationReport` is never constructed
+   --> src\network_intelligence\validation.rs:148:12
+    |
+148 | pub struct CalibrationReport {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated function `compute` is never used
+   --> src\network_intelligence\validation.rs:161:12
+    |
+160 | impl CalibrationReport {
+    | ---------------------- associated function in this implementation
+161 |     pub fn compute(predictions: &[Prediction], n_bins: usize) -> Option<Self> {
+    |            ^^^^^^^
+
+warning: method `apply_all` is never used
+   --> src\network_intelligence\validation.rs:334:12
+    |
+206 | impl IsotonicCalibrator {
+    | ----------------------- method in this implementation
+...
+334 |     pub fn apply_all(&self, samples: &[Prediction]) -> Vec<Prediction> {
+    |            ^^^^^^^^^
+
+warning: field `history` is never read
+   --> src\network_intelligence\investigation.rs:188:5
+    |
+182 | pub struct InvestigationManager {
+    |            -------------------- field in this struct
+...
+188 |     history: Vec<InvestigationRecord>,
+    |     ^^^^^^^
+    |
+    = note: `InvestigationManager` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: constant `CONCLUSION_FLOOR` is never used
+   --> src\network_intelligence\investigation.rs:720:15
+    |
+720 |         const CONCLUSION_FLOOR: f64 = 0.25;
+    |               ^^^^^^^^^^^^^^^^
+
+warning: function `unix_now_ms` is never used
+  --> src\network_intelligence\foundation.rs:69:4
+   |
+69 | fn unix_now_ms() -> u64 {
+   |    ^^^^^^^^^^^
+
+warning: constant `FOUNDATION_SCHEMA_VERSION` is never used
+  --> src\network_intelligence\foundation.rs:77:11
+   |
+77 | pub const FOUNDATION_SCHEMA_VERSION: u32 = 1;
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MathId` is never constructed
+  --> src\network_intelligence\foundation.rs:82:12
+   |
+82 | pub struct MathId(pub u64);
+   |            ^^^^^^
+
+warning: associated function `from_string` is never used
+  --> src\network_intelligence\foundation.rs:85:12
+   |
+84 | impl MathId {
+   | ----------- associated function in this implementation
+85 |     pub fn from_string(s: &str) -> Self {
+   |            ^^^^^^^^^^^
+
+warning: struct `Probability` is never constructed
+  --> src\network_intelligence\foundation.rs:96:12
+   |
+96 | pub struct Probability(pub f64);
+   |            ^^^^^^^^^^^
+
+warning: associated items `try_from`, `value`, `complement`, and `log` are never used
+   --> src\network_intelligence\foundation.rs:99:12
+    |
+ 98 | impl Probability {
+    | ---------------- associated items in this implementation
+ 99 |     pub fn try_from(p: f64) -> Option<Self> {
+    |            ^^^^^^^^
+...
+105 |     pub fn value(self) -> f64 {
+    |            ^^^^^
+...
+108 |     pub fn complement(self) -> Self {
+    |            ^^^^^^^^^^
+...
+111 |     pub fn log(self) -> f64 {
+    |            ^^^
+
+warning: struct `ConfidenceInterval` is never constructed
+   --> src\network_intelligence\foundation.rs:118:12
+    |
+118 | pub struct ConfidenceInterval {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `HypothesisRanking` is never constructed
+   --> src\network_intelligence\foundation.rs:161:12
+    |
+161 | pub struct HypothesisRanking {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `CausalResult` is never constructed
+   --> src\network_intelligence\foundation.rs:188:12
+    |
+188 | pub struct CausalResult {
+    |            ^^^^^^^^^^^^
+
+warning: struct `RobustAnomalyResult` is never constructed
+   --> src\network_intelligence\foundation.rs:198:12
+    |
+198 | pub struct RobustAnomalyResult {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ConfigRecommendation` is never constructed
+   --> src\network_intelligence\foundation.rs:208:12
+    |
+208 | pub struct ConfigRecommendation {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple fields are never read
+   --> src\network_intelligence\foundation.rs:223:5
+    |
+219 | pub struct NaniMathEngine {
+    |            -------------- fields in this struct
+...
+223 |     reliability: HierarchicalBetaBernoulli,
+    |     ^^^^^^^^^^^
+224 |     /// Context personalization engine.
+225 |     context: NetworkProfileEngine,
+    |     ^^^^^^^
+226 |     /// Robust statistics sliding windows, keyed by metric name.
+227 |     robust_windows: HashMap<String, RobustStats>,
+    |     ^^^^^^^^^^^^^^
+...
+235 |     learning: LearningEngine,
+    |     ^^^^^^^^
+236 |     /// Contextual bandit for action selection.
+237 |     bandit: ContextualBandit,
+    |     ^^^^^^
+238 |     /// Recovery memory (verified outcomes).
+239 |     recovery_memory: RecoveryMemory,
+    |     ^^^^^^^^^^^^^^^
+240 |     /// Causal tracker for ATE estimation.
+241 |     causal_tracker: CausalTracker,
+    |     ^^^^^^^^^^^^^^
+242 |     /// Route metrics and multi-objective optimization.
+243 |     routes: HashMap<String, RouteMetrics>,
+    |     ^^^^^^
+244 |     /// Configuration intelligence engine.
+245 |     config_engine: ConfigIntelligenceEngine,
+    |     ^^^^^^^^^^^^^
+246 |     /// Network simulator for deterministic testing.
+247 |     simulator: NetworkSimulator,
+    |     ^^^^^^^^^
+248 |     /// Exponential smoothing forecasters, keyed by metric name.
+249 |     smoothers: HashMap<String, ExponentialSmoothing>,
+    |     ^^^^^^^^^
+250 |     /// Circuit breakers, keyed by API id.
+251 |     circuit_breakers: HashMap<String, CircuitBreaker>,
+    |     ^^^^^^^^^^^^^^^^
+252 |     /// Recovery planners, keyed by API id.
+253 |     recovery_planners: HashMap<String, RecoveryPlanner>,
+    |     ^^^^^^^^^^^^^^^^^
+254 |     /// API registry (control plane).
+255 |     api_registry: ApiRegistry,
+    |     ^^^^^^^^^^^^
+256 |     /// Random number generator seed for reproducible stochastic operations.
+257 |     rng_seed: u64,
+    |     ^^^^^^^^
+
+warning: multiple associated items are never used
+    --> src\network_intelligence\foundation.rs:297:12
+     |
+ 266 | impl NaniMathEngine {
+     | ------------------- associated items in this implementation
+...
+ 297 |     pub fn clamp_probability(&self, p: f64) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^
+...
+ 302 |     pub fn sigmoid(&self, x: f64) -> f64 {
+     |            ^^^^^^^
+...
+ 307 |     pub fn logit(&self, p: f64) -> f64 {
+     |            ^^^^^
+...
+ 312 |     pub fn log_sum_exp(&self, values: &[f64]) -> f64 {
+     |            ^^^^^^^^^^^
+...
+ 317 |     pub fn softmax(&self, log_probs: &[f64]) -> Option<Vec<f64>> {
+     |            ^^^^^^^
+...
+ 322 |     pub fn bernoulli_entropy(&self, p: f64) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^
+...
+ 327 |     pub fn kl_divergence(&self, p: &[f64], q: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 332 |     pub fn js_divergence(&self, p: &[f64], q: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 341 |     pub fn uniform_prior(&self, labels: Vec<String>) -> Prior {
+     |            ^^^^^^^^^^^^^
+...
+ 346 |     pub fn prior_from_probs(&self, labels: Vec<String>, probs: Vec<f64>) -> Option<Prior> {
+     |            ^^^^^^^^^^^^^^^^
+...
+ 351 |     pub fn bayesian_update(&self, prior: &Prior, evidence: &[Evidence]) -> Posterior {
+     |            ^^^^^^^^^^^^^^^
+...
+ 356 |     pub fn decay_log_likelihood(&self, ll: f64, age_seconds: f64, lambda: f64) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+ 361 |     pub fn posterior_predictive_bernoulli(&self, model: &BetaBernoulli) -> (f64, f64) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 370 |     pub fn diagnosis(&self) -> Option<(&str, f64)> {
+     |            ^^^^^^^^^
+...
+ 385 |     pub fn observe_probe(&mut self, result: &ProbeResult) {
+     |            ^^^^^^^^^^^^^
+...
+ 418 |     pub fn expected_information_gain(&self, test: &DiagnosticTest) -> Option<TestScore> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 425 |     pub fn hypothesis_view(&self) -> HypothesisView {
+     |            ^^^^^^^^^^^^^^^
+...
+ 537 |     pub fn robust_anomaly(
+     |            ^^^^^^^^^^^^^^
+...
+ 568 |     pub fn robust_median(&self, values: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 583 |     pub fn robust_mad(&self, values: &[f64], center: f64) -> Option<f64> {
+     |            ^^^^^^^^^^
+...
+ 603 |     pub fn detect_changepoint(
+     |            ^^^^^^^^^^^^^^^^^^
+...
+ 631 |     pub fn detect_drift(
+     |            ^^^^^^^^^^^^
+...
+ 675 |     pub fn record_intervention(&mut self, record: InterventionRecord) {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 682 |     pub fn estimate_causal_effect(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+ 706 |     pub fn record_api_probe(
+     |            ^^^^^^^^^^^^^^^^
+...
+ 723 |     pub fn bandit_select(&mut self, context_signals: &ContextSignals, arm_names: &[String]) -> Option<usize> {
+     |            ^^^^^^^^^^^^^
+...
+ 746 |     pub fn bandit_update(&mut self, context_signals: &ContextSignals, arm_name: &str, reward: f64) {
+     |            ^^^^^^^^^^^^^
+...
+ 763 |     pub fn record_recovery_outcome(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 782 |     pub fn best_recovery_action(&self, context: &str) -> Option<String> {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+ 802 |     pub fn register_route(&mut self, route_id: String, metrics: RouteMetrics) {
+     |            ^^^^^^^^^^^^^^
+...
+ 808 |     pub fn score_route(&self, route_id: &str, kappa: f64) -> Option<f64> {
+     |            ^^^^^^^^^^^
+...
+ 822 |     pub fn route_pareto_frontier(&mut self) -> Vec<String> {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+ 846 |     pub fn route_cvar_latency(&self, samples: &[f64], alpha: f64) -> Option<f64> {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+ 855 |     pub fn forecast_metric(
+     |            ^^^^^^^^^^^^^^^
+...
+ 876 |     pub fn brier_score(&self, predictions: &[f64], outcomes: &[bool]) -> Option<f64> {
+     |            ^^^^^^^^^^^
+...
+ 889 |     pub fn log_loss(&self, predictions: &[f64], outcomes: &[bool]) -> Option<f64> {
+     |            ^^^^^^^^
+...
+ 902 |     pub fn expected_calibration_error(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 924 |     pub fn observe_reliability(
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 935 |     pub fn observe_global_reliability(&mut self, success: bool) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 940 |     pub fn predict_reliability(&self, context: &str, api_id: &str) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 950 |     pub fn circuit_breaker_record(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+ 968 |     pub fn circuit_breaker_tripped(&self, api_id: &str) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 980 |     pub fn discover_config(
+     |            ^^^^^^^^^^^^^^^
+...
+ 992 |     pub fn score_config(&mut self, config_id: &str) -> Option<ConfigRecommendation> {
+     |            ^^^^^^^^^^^^
+...
+1006 |     pub fn all_configs(&self) -> Vec<&DiscoveredConfig> {
+     |            ^^^^^^^^^^^
+...
+1015 |     pub fn simulate_probe(&mut self, test: &DiagnosticTest) -> ProbeResult {
+     |            ^^^^^^^^^^^^^^
+...
+1020 |     pub fn simulate_api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+     |            ^^^^^^^^^^^^^^^^^
+...
+1029 |     pub fn hardware_profile(&self, memory_mb: Option<u64>) -> HardwareProfile {
+     |            ^^^^^^^^^^^^^^^^
+...
+1038 |     pub fn probe_api(&self, entry: &ApiEntry) -> ProbeOutcomeRecord {
+     |            ^^^^^^^^^
+...
+1043 |     pub fn classify_probe_inputs(&self, inputs: ProbeInputs) -> FailureCategory {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1052 |     pub fn snapshot(&self) -> FoundationSnapshot {
+     |            ^^^^^^^^
+...
+1070 |     pub fn from_snapshot(snapshot: FoundationSnapshot) -> Option<Self> {
+     |            ^^^^^^^^^^^^^
+
+warning: struct `FoundationSnapshot` is never constructed
+    --> src\network_intelligence\foundation.rs:1083:12
+     |
+1083 | pub struct FoundationSnapshot {
+     |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `StabilityReport` is never constructed
+    --> src\network_intelligence\foundation.rs:1100:12
+     |
+1100 | pub struct StabilityReport {
+     |            ^^^^^^^^^^^^^^^
+
+warning: function `run_stability_tests` is never used
+    --> src\network_intelligence\foundation.rs:1107:8
+     |
+1107 | pub fn run_stability_tests() -> Vec<StabilityReport> {
+     |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `run_adversarial_tests` is never used
+    --> src\network_intelligence\foundation.rs:1204:8
+     |
+1204 | pub fn run_adversarial_tests() -> Vec<StabilityReport> {
+     |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Rng`
+   --> src\network_intelligence\probability.rs:389:16
+    |
+389 |     use rand::{Rng, SeedableRng};
+    |                ^^^
+
+warning: variable does not need to be mutable
+   --> src\network_intelligence\api_model.rs:404:13
+    |
+404 |         let mut p = ApiPredictor::new(8);
+    |             ----^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `p`
+   --> src\network_intelligence\api_model.rs:412:13
+    |
+412 |         let p = ApiPredictor::new(8);
+    |             ^ help: if this is intentional, prefix it with an underscore: `_p`
+
+warning: unused variable: `label`
+    --> src\network_intelligence\diagnosis.rs:1224:14
+     |
+1224 |         let (label, prob) = e.diagnosis().expect("some diagnosis");
+     |              ^^^^^ help: if this is intentional, prefix it with an underscore: `_label`
+
+warning: variable does not need to be mutable
+   --> src\network_intelligence\hierarchical.rs:277:13
+    |
+277 |         let mut model = HierarchicalBetaBernoulli::new(8.0, 2.0, 10.0).expect("valid");
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `cat_direct`
+   --> src\network_intelligence\simulation.rs:486:14
+    |
+486 |         let (cat_direct, success_direct, _) = sim.api_call("api-1", RouteKind::Direct);
+    |              ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cat_direct`
+
+warning: variable does not need to be mutable
+   --> src\network_intelligence\api_intelligence\monitor_loop.rs:255:18
+    |
+255 |         let Some(mut step) = recovery.next_step(now_secs) else {
+    |                  ----^^^^
+    |                  |
+    |                  help: remove this `mut`
+
+warning: unused variable: `id1`
+    --> src\network_intelligence\investigation.rs:1242:13
+     |
+1242 |         let id1 = mgr.start("one".into());
+     |             ^^^ help: if this is intentional, prefix it with an underscore: `_id1`
+
+warning: unused variable: `api_id_for_verify`
+    --> src\network_intelligence\investigation.rs:1675:13
+     |
+1675 |         let api_id_for_verify = record
+     |             ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_api_id_for_verify`
+
+warning: variable does not need to be mutable
+    --> src\network_intelligence\foundation.rs:1469:13
+     |
+1469 |         let mut engine = NaniMathEngine::new();
+     |             ----^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: field `api_id` is never read
+   --> src\network_intelligence\api_model.rs:106:9
+    |
+105 | pub struct RouteFeatures {
+    |            ------------- field in this struct
+106 |     pub api_id: String,
+    |         ^^^^^^
+    |
+    = note: `RouteFeatures` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `api_uncertainty` is never used
+   --> src\network_intelligence\api_model.rs:281:12
+    |
+165 | impl ApiPredictor {
+    | ----------------- method in this implementation
+...
+281 |     pub fn api_uncertainty(&self, api_id: &str) -> f64 {
+    |            ^^^^^^^^^^^^^^^
+
+warning: variant `Unknown` is never constructed
+  --> src\network_intelligence\bandit.rs:24:5
+   |
+23 | pub enum ConnectivityBucket {
+   |          ------------------ variant in this enum
+24 |     Unknown,
+   |     ^^^^^^^
+   |
+   = note: `ConnectivityBucket` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `label` is never used
+   --> src\network_intelligence\bandit.rs:112:12
+    |
+ 97 | impl Action {
+    | ----------- method in this implementation
+...
+112 |     pub fn label(&self) -> &'static str {
+    |            ^^^^^
+
+warning: fields `w_jitter` and `w_cost` are never read
+   --> src\network_intelligence\bandit.rs:147:9
+    |
+144 | pub struct RewardWeights {
+    |            ------------- fields in this struct
+...
+147 |     pub w_jitter: f64,
+    |         ^^^^^^^^
+148 |     pub w_loss: f64,
+149 |     pub w_cost: f64,
+    |         ^^^^^^
+    |
+    = note: `RewardWeights` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `with_prior` and `n_models` are never used
+   --> src\network_intelligence\bandit.rs:232:12
+    |
+223 | impl ContextualBandit {
+    | --------------------- associated items in this implementation
+...
+232 |     pub fn with_prior(alpha: f64, beta: f64) -> Option<Self> {
+    |            ^^^^^^^^^^
+...
+313 |     pub fn n_models(&self) -> usize {
+    |            ^^^^^^^^
+
+warning: method `is_empty` is never used
+   --> src\network_intelligence\causal.rs:116:12
+    |
+ 93 | impl CausalTracker {
+    | ------------------ method in this implementation
+...
+116 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+
+warning: field `source_history` is never read
+   --> src\network_intelligence\config_intelligence.rs:172:5
+    |
+164 | pub struct ConfigIntelligenceEngine {
+    |            ------------------------ field in this struct
+...
+172 |     source_history: HashMap<String, Vec<f64>>,
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `ConfigIntelligenceEngine` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `get_all_configs` is never used
+   --> src\network_intelligence\config_intelligence.rs:382:12
+    |
+177 | impl ConfigIntelligenceEngine {
+    | ----------------------------- method in this implementation
+...
+382 |     pub fn get_all_configs(&self) -> Vec<&DiscoveredConfig> {
+    |            ^^^^^^^^^^^^^^^
+
+warning: method `ids` is never used
+   --> src\network_intelligence\context\context_identity.rs:199:12
+    |
+107 | impl ContextIdentity {
+    | -------------------- method in this implementation
+...
+199 |     pub fn ids(&self) -> Vec<NetworkContextId> {
+    |            ^^^
+
+warning: associated items `new` and `mean` are never used
+  --> src\network_intelligence\context\network_profiles.rs:43:12
+   |
+42 | impl MetricProfile {
+   | ------------------ associated items in this implementation
+43 |     pub fn new() -> Self {
+   |            ^^^
+...
+48 |     pub fn mean(&self) -> f64 {
+   |            ^^^^
+
+warning: method `with_max_contexts` is never used
+   --> src\network_intelligence\context\network_profiles.rs:160:12
+    |
+151 | impl ProfileStore {
+    | ----------------- method in this implementation
+...
+160 |     pub fn with_max_contexts(mut self, max: usize) -> Self {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: methods `set_current` and `identity` are never used
+  --> src\network_intelligence\context\transitions.rs:84:12
+   |
+42 | impl ContextTransitionTracker {
+   | ----------------------------- methods in this implementation
+...
+84 |     pub fn set_current(&mut self, id: Option<NetworkContextId>) {
+   |            ^^^^^^^^^^^
+...
+98 |     pub fn identity(&self) -> &ContextIdentity {
+   |            ^^^^^^^^
+
+warning: methods `set_active_context`, `record_global_metric`, and `posterior` are never used
+   --> src\network_intelligence\context\engine.rs:139:12
+    |
+ 93 | impl NetworkProfileEngine {
+    | ------------------------- methods in this implementation
+...
+139 |     pub fn set_active_context(&mut self, id: NetworkContextId) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+158 |     pub fn record_global_metric(&mut self, metric: &str, value: f64, now_ms: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+201 |     pub fn posterior(&self, api_id: &str, level: f64) -> Option<BetaPosterior> {
+    |            ^^^^^^^^^
+
+warning: methods `reset_active`, `store`, and `identity` are never used
+  --> src\network_intelligence\context\privacy.rs:60:12
+   |
+29 | impl PrivacyController {
+   | ---------------------- methods in this implementation
+...
+60 |     pub fn reset_active(&mut self) {
+   |            ^^^^^^^^^^^^
+...
+69 |     pub fn store(&self) -> &ProfileStore {
+   |            ^^^^^
+...
+77 |     pub fn identity(&self) -> &ContextTransitionTracker {
+   |            ^^^^^^^^
+
+warning: field `cost` is never read
+   --> src\network_intelligence\diagnosis.rs:104:9
+    |
+ 96 | pub struct ProbeResult {
+    |            ----------- field in this struct
+...
+104 |     pub cost: f64,
+    |         ^^^^
+    |
+    = note: `ProbeResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `with_prior` is never used
+   --> src\network_intelligence\diagnosis.rs:572:12
+    |
+547 | impl DiagnosticEngine {
+    | --------------------- associated function in this implementation
+...
+572 |     pub fn with_prior(prior: Prior) -> Self {
+    |            ^^^^^^^^^^
+
+warning: associated function `for_success_rate` is never used
+   --> src\network_intelligence\drift.rs:113:12
+    |
+ 97 | impl PageHinkleyDetector {
+    | ------------------------ associated function in this implementation
+...
+113 |     pub fn for_success_rate() -> Self {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: method `statistic` is never used
+   --> src\network_intelligence\drift.rs:184:12
+    |
+156 | impl DriftAwareWeighter {
+    | ----------------------- method in this implementation
+...
+184 |     pub fn statistic(&self) -> f64 {
+    |            ^^^^^^^^^
+
+warning: method `correct` is never used
+   --> src\network_intelligence\episodes.rs:142:12
+    |
+105 | impl NetworkEpisode {
+    | ------------------- method in this implementation
+...
+142 |     pub fn correct(mut self, correction: impl Into<String>) -> Self {
+    |            ^^^^^^^
+
+warning: methods `is_empty` and `all_verified` are never used
+   --> src\network_intelligence\episodes.rs:205:12
+    |
+166 | impl EpisodeMemory {
+    | ------------------ methods in this implementation
+...
+205 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+223 |     pub fn all_verified(&self) -> Vec<&NetworkEpisode> {
+    |            ^^^^^^^^^^^^
+
+warning: fields `trial_share`, `raw_brier`, and `calibrated_brier` are never read
+   --> src\network_intelligence\evaluation.rs:231:9
+    |
+225 | pub struct ConditionCalibration {
+    |            -------------------- fields in this struct
+...
+231 |     pub trial_share: f64,
+    |         ^^^^^^^^^^^
+...
+244 |     pub raw_brier: f64,
+    |         ^^^^^^^^^
+245 |     pub calibrated_brier: f64,
+    |         ^^^^^^^^^^^^^^^^
+    |
+    = note: `ConditionCalibration` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `incoming` and `can_reach` are never used
+   --> src\network_intelligence\graph.rs:149:12
+    |
+ 90 | impl NetworkGraph {
+    | ----------------- methods in this implementation
+...
+149 |     pub fn incoming(&self, id: &NodeId) -> Option<&Vec<Edge>> {
+    |            ^^^^^^^^
+...
+187 |     pub fn can_reach(&self, target: &NodeId) -> HashSet<NodeId> {
+    |            ^^^^^^^^^
+
+warning: method `contexts` is never used
+   --> src\network_intelligence\hierarchical.rs:183:12
+    |
+ 89 | impl HierarchicalBetaBernoulli {
+    | ------------------------------ method in this implementation
+...
+183 |     pub fn contexts(&self) -> Vec<NetworkContextId> {
+    |            ^^^^^^^^
+
+warning: methods `set_context`, `profile_confidence`, and `record_user_correction` are never used
+   --> src\network_intelligence\learning.rs:181:12
+    |
+119 | impl LearningEngine {
+    | ------------------- methods in this implementation
+...
+181 |     pub fn set_context(&mut self, context: NetworkContextId) {
+    |            ^^^^^^^^^^^
+...
+218 |     pub fn profile_confidence(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+403 |     pub fn record_user_correction(&mut self, episode_id: &str, correction: &str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `is_empty`, `iqr`, and `p50` are never used
+   --> src\network_intelligence\robust_stats.rs:43:12
+    |
+ 28 | impl RobustStats {
+    | ---------------- methods in this implementation
+...
+ 43 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+175 |     pub fn iqr(&self) -> Option<f64> {
+    |            ^^^
+...
+208 |     pub fn p50(&self) -> Option<f64> {
+    |            ^^^
+
+warning: fields `dir` and `version_path` are never read
+  --> src\network_intelligence\persistence.rs:64:5
+   |
+63 | pub struct PersistenceStore {
+   |            ---------------- fields in this struct
+64 |     dir: PathBuf,
+   |     ^^^
+...
+67 |     version_path: PathBuf,
+   |     ^^^^^^^^^^^^
+   |
+   = note: `PersistenceStore` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `clear` is never used
+   --> src\network_intelligence\persistence.rs:241:12
+    |
+ 74 | impl PersistenceStore {
+    | --------------------- method in this implementation
+...
+241 |     pub fn clear(&mut self) -> std::io::Result<usize> {
+    |            ^^^^^
+
+warning: associated function `centered` is never used
+  --> src\network_intelligence\probability.rs:63:12
+   |
+35 | impl BetaBernoulli {
+   | ------------------ associated function in this implementation
+...
+63 |     pub fn centered(p: f64, n: f64) -> Option<Self> {
+   |            ^^^^^^^^
+
+warning: associated items `from_log_probs` and `n_outcomes` are never used
+   --> src\network_intelligence\probability.rs:330:12
+    |
+313 | impl Categorical {
+    | ---------------- associated items in this implementation
+...
+330 |     pub fn from_log_probs(log_probs: Vec<f64>) -> Option<Self> {
+    |            ^^^^^^^^^^^^^^
+...
+341 |     pub fn n_outcomes(&self) -> usize {
+    |            ^^^^^^^^^^
+
+warning: fields `timeout_sec` and `reversible` are never read
+   --> src\network_intelligence\recovery.rs:149:9
+    |
+143 | pub struct RecoveryStep {
+    |            ------------ fields in this struct
+...
+149 |     pub timeout_sec: u64,
+    |         ^^^^^^^^^^^
+150 |     /// Whether this step is reversible (has a rollback).
+151 |     pub reversible: bool,
+    |         ^^^^^^^^^^
+    |
+    = note: `RecoveryStep` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `active_api` is never used
+   --> src\network_intelligence\recovery.rs:336:12
+    |
+184 | impl RecoveryPlanner {
+    | -------------------- method in this implementation
+...
+336 |     pub fn active_api(&self) -> Option<&str> {
+    |            ^^^^^^^^^^
+
+warning: methods `is_empty` and `counts_by_action` are never used
+  --> src\network_intelligence\recovery_memory.rs:42:12
+   |
+23 | impl RecoveryMemory {
+   | ------------------- methods in this implementation
+...
+42 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+...
+79 |     pub fn counts_by_action(&self) -> HashMap<String, (usize, usize)> {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: field `route_kind` is never read
+  --> src\network_intelligence\route.rs:46:9
+   |
+44 | pub struct RouteCandidate {
+   |            -------------- field in this struct
+45 |     pub id: String,
+46 |     pub route_kind: RouteKind,
+   |         ^^^^^^^^^^
+   |
+   = note: `RouteCandidate` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `packet_loss` is never read
+  --> src\network_intelligence\simulation.rs:38:9
+   |
+35 | pub struct SimulatedNetwork {
+   |            ---------------- field in this struct
+...
+38 |     pub packet_loss: f64,
+   |         ^^^^^^^^^^^
+   |
+   = note: `SimulatedNetwork` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `diagnose_sequence` is never used
+   --> src\network_intelligence\simulation.rs:343:12
+    |
+ 51 | impl NetworkSimulator {
+    | --------------------- method in this implementation
+...
+343 |     pub fn diagnose_sequence(&mut self, tests: &[DiagnosticTest]) -> Vec<ProbeResult> {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated items `default_smoothing` and `n` are never used
+  --> src\network_intelligence\timeseries.rs:38:12
+   |
+23 | impl ExponentialSmoothing {
+   | ------------------------- associated items in this implementation
+...
+38 |     pub fn default_smoothing() -> Self {
+   |            ^^^^^^^^^^^^^^^^^
+...
+62 |     pub fn n(&self) -> u64 {
+   |            ^
+
+warning: associated items `default_double`, `forecast_h`, and `n` are never used
+   --> src\network_intelligence\timeseries.rs:100:12
+    |
+ 81 | impl DoubleExponentialSmoothing {
+    | ------------------------------- associated items in this implementation
+...
+100 |     pub fn default_double() -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+133 |     pub fn forecast_h(&self, h: u64) -> f64 {
+    |            ^^^^^^^^^^
+...
+142 |     pub fn n(&self) -> u64 {
+    |            ^
+
+warning: method `len` is never used
+   --> src\network_intelligence\timeseries.rs:215:12
+    |
+157 | impl RollingTrend {
+    | ----------------- method in this implementation
+...
+215 |     pub fn len(&self) -> usize {
+    |            ^^^
+
+warning: field `0` is never read
+  --> src\network_intelligence\information_theory.rs:20:11
+   |
+20 |     Route(String),
+   |     ----- ^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `ProbeCategory` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+20 -     Route(String),
+20 +     Route(()),
+   |
+
+warning: variants `Diagnostic`, `Api`, and `Recovery` are never constructed
+  --> src\network_intelligence\information_theory.rs:18:5
+   |
+17 | pub enum ProbeCategory {
+   |          ------------- variants in this enum
+18 |     Diagnostic(DiagnosticTest),
+   |     ^^^^^^^^^^
+19 |     Api(String),
+   |     ^^^
+20 |     Route(String),
+21 |     Recovery(String),
+   |     ^^^^^^^^
+   |
+   = note: `ProbeCategory` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `category`, `id`, `expected_information_gain`, `cost`, and `net_value` are never read
+  --> src\network_intelligence\information_theory.rs:27:9
+   |
+26 | pub struct ScoredProbe {
+   |            ----------- fields in this struct
+27 |     pub category: ProbeCategory,
+   |         ^^^^^^^^
+28 |     pub id: String,
+   |         ^^
+29 |     pub expected_information_gain: f64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     pub cost: f64,
+   |         ^^^^
+...
+33 |     pub net_value: f64,
+   |         ^^^^^^^^^
+   |
+   = note: `ScoredProbe` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `instantaneous_changepoint_probability` and `n` are never used
+   --> src\network_intelligence\changepoint.rs:183:12
+    |
+ 81 | impl BayesianOnlineCPD {
+    | ---------------------- methods in this implementation
+...
+183 |     pub fn instantaneous_changepoint_probability(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+225 |     pub fn n(&self) -> u64 {
+    |            ^
+
+warning: methods `groups` and `groups_for` are never used
+  --> src\network_intelligence\evidence\correlation.rs:94:12
+   |
+59 | impl CorrelationModel {
+   | --------------------- methods in this implementation
+...
+94 |     pub fn groups(&self) -> &[CorrelationGroup] {
+   |            ^^^^^^
+...
+99 |     pub fn groups_for(&self, test_id: &str) -> Vec<&CorrelationGroup> {
+   |            ^^^^^^^^^^
+
+warning: methods `capacity`, `is_empty`, `cancel`, and `is_cancelled` are never used
+  --> src\network_intelligence\evidence\telemetry_pipeline.rs:38:12
+   |
+28 | impl TelemetryQueue {
+   | ------------------- methods in this implementation
+...
+38 |     pub fn capacity(&self) -> usize {
+   |            ^^^^^^^^
+...
+46 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+...
+69 |     pub fn cancel(&mut self) {
+   |            ^^^^^^
+...
+73 |     pub fn is_cancelled(&self) -> bool {
+   |            ^^^^^^^^^^^^
+
+warning: methods `get`, `is_empty`, and `clear` are never used
+   --> src\network_intelligence\evidence\telemetry_pipeline.rs:93:12
+    |
+ 84 | impl ResultsStore {
+    | ----------------- methods in this implementation
+...
+ 93 |     pub fn get(&self, id: &str) -> Option<&Measurement> {
+    |            ^^^
+...
+105 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+109 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: fields `source_id`, `timestamp`, and `channel` are never read
+  --> src\network_intelligence\evidence\provenance.rs:12:9
+   |
+11 | pub struct ProvenanceRecord {
+   |            ---------------- fields in this struct
+12 |     pub source_id: String,
+   |         ^^^^^^^^^
+13 |     pub provenance: Provenance,
+14 |     pub timestamp: u64,
+   |         ^^^^^^^^^
+15 |     pub channel: Option<String>,
+   |         ^^^^^^^
+   |
+   = note: `ProvenanceRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: multiple fields are never read
+   --> src\network_intelligence\foundation.rs:235:5
+    |
+219 | pub struct NaniMathEngine {
+    |            -------------- fields in this struct
+...
+235 |     learning: LearningEngine,
+    |     ^^^^^^^^
+236 |     /// Contextual bandit for action selection.
+237 |     bandit: ContextualBandit,
+    |     ^^^^^^
+238 |     /// Recovery memory (verified outcomes).
+239 |     recovery_memory: RecoveryMemory,
+    |     ^^^^^^^^^^^^^^^
+...
+247 |     simulator: NetworkSimulator,
+    |     ^^^^^^^^^
+248 |     /// Exponential smoothing forecasters, keyed by metric name.
+249 |     smoothers: HashMap<String, ExponentialSmoothing>,
+    |     ^^^^^^^^^
+250 |     /// Circuit breakers, keyed by API id.
+251 |     circuit_breakers: HashMap<String, CircuitBreaker>,
+    |     ^^^^^^^^^^^^^^^^
+252 |     /// Recovery planners, keyed by API id.
+253 |     recovery_planners: HashMap<String, RecoveryPlanner>,
+    |     ^^^^^^^^^^^^^^^^^
+254 |     /// API registry (control plane).
+255 |     api_registry: ApiRegistry,
+    |     ^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+    --> src\network_intelligence\foundation.rs:302:12
+     |
+ 266 | impl NaniMathEngine {
+     | ------------------- associated items in this implementation
+...
+ 302 |     pub fn sigmoid(&self, x: f64) -> f64 {
+     |            ^^^^^^^
+...
+ 307 |     pub fn logit(&self, p: f64) -> f64 {
+     |            ^^^^^
+...
+ 312 |     pub fn log_sum_exp(&self, values: &[f64]) -> f64 {
+     |            ^^^^^^^^^^^
+...
+ 317 |     pub fn softmax(&self, log_probs: &[f64]) -> Option<Vec<f64>> {
+     |            ^^^^^^^
+...
+ 322 |     pub fn bernoulli_entropy(&self, p: f64) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^
+...
+ 327 |     pub fn kl_divergence(&self, p: &[f64], q: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 332 |     pub fn js_divergence(&self, p: &[f64], q: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 346 |     pub fn prior_from_probs(&self, labels: Vec<String>, probs: Vec<f64>) -> Option<Prior> {
+     |            ^^^^^^^^^^^^^^^^
+...
+ 356 |     pub fn decay_log_likelihood(&self, ll: f64, age_seconds: f64, lambda: f64) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+ 361 |     pub fn posterior_predictive_bernoulli(&self, model: &BetaBernoulli) -> (f64, f64) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 370 |     pub fn diagnosis(&self) -> Option<(&str, f64)> {
+     |            ^^^^^^^^^
+...
+ 418 |     pub fn expected_information_gain(&self, test: &DiagnosticTest) -> Option<TestScore> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 568 |     pub fn robust_median(&self, values: &[f64]) -> Option<f64> {
+     |            ^^^^^^^^^^^^^
+...
+ 583 |     pub fn robust_mad(&self, values: &[f64], center: f64) -> Option<f64> {
+     |            ^^^^^^^^^^
+...
+ 603 |     pub fn detect_changepoint(
+     |            ^^^^^^^^^^^^^^^^^^
+...
+ 631 |     pub fn detect_drift(
+     |            ^^^^^^^^^^^^
+...
+ 675 |     pub fn record_intervention(&mut self, record: InterventionRecord) {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 706 |     pub fn record_api_probe(
+     |            ^^^^^^^^^^^^^^^^
+...
+ 723 |     pub fn bandit_select(&mut self, context_signals: &ContextSignals, arm_names: &[String]) -> Option<usize> {
+     |            ^^^^^^^^^^^^^
+...
+ 746 |     pub fn bandit_update(&mut self, context_signals: &ContextSignals, arm_name: &str, reward: f64) {
+     |            ^^^^^^^^^^^^^
+...
+ 763 |     pub fn record_recovery_outcome(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 782 |     pub fn best_recovery_action(&self, context: &str) -> Option<String> {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+ 802 |     pub fn register_route(&mut self, route_id: String, metrics: RouteMetrics) {
+     |            ^^^^^^^^^^^^^^
+...
+ 808 |     pub fn score_route(&self, route_id: &str, kappa: f64) -> Option<f64> {
+     |            ^^^^^^^^^^^
+...
+ 822 |     pub fn route_pareto_frontier(&mut self) -> Vec<String> {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+ 846 |     pub fn route_cvar_latency(&self, samples: &[f64], alpha: f64) -> Option<f64> {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+ 855 |     pub fn forecast_metric(
+     |            ^^^^^^^^^^^^^^^
+...
+ 902 |     pub fn expected_calibration_error(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 924 |     pub fn observe_reliability(
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 935 |     pub fn observe_global_reliability(&mut self, success: bool) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 940 |     pub fn predict_reliability(&self, context: &str, api_id: &str) -> f64 {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+ 950 |     pub fn circuit_breaker_record(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+ 968 |     pub fn circuit_breaker_tripped(&self, api_id: &str) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 980 |     pub fn discover_config(
+     |            ^^^^^^^^^^^^^^^
+...
+ 992 |     pub fn score_config(&mut self, config_id: &str) -> Option<ConfigRecommendation> {
+     |            ^^^^^^^^^^^^
+...
+1006 |     pub fn all_configs(&self) -> Vec<&DiscoveredConfig> {
+     |            ^^^^^^^^^^^
+...
+1015 |     pub fn simulate_probe(&mut self, test: &DiagnosticTest) -> ProbeResult {
+     |            ^^^^^^^^^^^^^^
+...
+1020 |     pub fn simulate_api_call(&mut self, api_id: &str, route: RouteKind) -> (FailureCategory, bool, f64) {
+     |            ^^^^^^^^^^^^^^^^^
+...
+1029 |     pub fn hardware_profile(&self, memory_mb: Option<u64>) -> HardwareProfile {
+     |            ^^^^^^^^^^^^^^^^
+...
+1038 |     pub fn probe_api(&self, entry: &ApiEntry) -> ProbeOutcomeRecord {
+     |            ^^^^^^^^^
+...
+1043 |     pub fn classify_probe_inputs(&self, inputs: ProbeInputs) -> FailureCategory {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1070 |     pub fn from_snapshot(snapshot: FoundationSnapshot) -> Option<Self> {
+     |            ^^^^^^^^^^^^^
+
+warning: `netpulse-desktop` (bin "netpulse-desktop" test) generated 148 warnings (83 duplicates) (run `cargo fix --bin "netpulse-desktop" -p netpulse-desktop --tests` to apply 15 suggestions)
+warning: `netpulse-desktop` (bin "netpulse-desktop") generated 270 warnings (run `cargo fix --bin "netpulse-desktop" -p netpulse-desktop` to apply 53 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 04s
+     Running unittests src\main.rs (E:\Code\Project\Vpn_app\src-tauri\target\debug\deps\netpulse_desktop-f93ba3cdb522c0c7.exe)
+
+running 24 tests
+test network_intelligence::api_intelligence::failure_classifier::tests::classifies_http_statuses ... ok
+test network_intelligence::api_intelligence::failure_classifier::tests::no_status_means_unknown_not_a_guess ... ok
+test network_intelligence::api_intelligence::failure_classifier::tests::summaries_are_non_empty ... ok
+test network_intelligence::api_intelligence::monitor::tests::diagnostic_probes_report_unexercised_layers_as_missing ... ok
+test network_intelligence::api_intelligence::monitor::tests::diagnostic_probes_map_each_measured_layer_to_its_test ... ok
+test network_intelligence::api_intelligence::monitor::tests::diagnostic_probes_classify_http_status_instead_of_transport_failure ... ok
+test network_intelligence::api_intelligence::monitor_loop::tests::is_retryable_excludes_auth_and_rate_limit ... ok
+test network_intelligence::api_intelligence::monitor::tests::host_port_parses_https ... ok
+test network_intelligence::api_intelligence::monitor::tests::host_port_parses_http_custom_port ... ok
+test network_intelligence::api_intelligence::registry::tests::health_check_event_reports_the_measurement ... ok
+test network_intelligence::api_intelligence::monitor::tests::nani_021_probe_client_bypasses_the_system_proxy ... ok
+test network_intelligence::api_intelligence::monitor::tests::nani_021_infers_proxy_when_tcp_fails_but_http_answers ... ok
+test network_intelligence::api_intelligence::monitor_loop::tests::recovery_actions_order_least_intrusive_first ... ok
+test network_intelligence::api_intelligence::registry::tests::failures_trip_breaker ... ok
+test network_intelligence::api_intelligence::monitor::tests::k1_helper_converts_ms_to_seconds ... ok
+test network_intelligence::api_intelligence::monitor::tests::nani_021_keeps_direct_when_layers_agree ... ok
+test network_intelligence::api_intelligence::monitor_loop::tests::retry_backoff_is_bounded_and_jittered ... ok
+test network_intelligence::api_intelligence::registry::tests::probe_emits_health_change ... ok
+test network_intelligence::api_intelligence::monitor::tests::k1_filtered_helper_uses_the_same_conversion ... ok
+test network_intelligence::api_intelligence::monitor::tests::k1_zero_elapsed_time_is_an_identity_predict ... ok
+test network_intelligence::api_intelligence::registry::tests::register_and_lookup ... ok
+test network_intelligence::api_intelligence::monitor::tests::k1_five_second_delta_preserves_the_posterior ... ok
+test network_intelligence::api_intelligence::monitor::tests::k1_millisecond_delta_would_erase_the_posterior ... ok
+test network_intelligence::api_intelligence::monitor::tests::classify_healthy_when_http_ok_and_tcp_ok ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 533 filtered out; finished in 0.41s
+
+     Running tests\navigation_webview.rs (E:\Code\Project\Vpn_app\src-tauri\target\debug\deps\navigation_webview-3af91f4dcad616fc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

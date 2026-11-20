@@ -1,0 +1,100 @@
+
+> netpulse@3.2.0 test:feed
+> node scripts/update-feed.test.mjs
+
+
+repository slug resolution
+  ok   parses an https GitHub URL
+  ok   parses a clone URL with .git
+  ok   parses a bare slug
+  ok   parses the package.json object form
+  ok   rejects a non-repo string
+  ok   env override wins over package.json
+  ok   NETPULSE_RELEASE_REPO=local selects the local feed
+  ok   the local feed endpoint is the complete sidecar URL
+  ok   the local artifact URL names the file in the query
+  ok   localEndpointForPort still rewrites for callers that need it
+  ok   package.json local marker selects the local feed
+  ok   clearLocalFeedMarker removes the marker
+  ok   after clearing, the configured repository drives the endpoint
+  ok   a placeholder repository is refused
+  ok   the refusal explains how to fix it
+
+endpoints and platform keys
+  ok   feed endpoint is the stable latest-manifest URL
+  ok   artifact URL is tag-pinned, not "latest"
+  ok   windows key is target-arch
+  ok   linux key is target-arch
+  ok   macOS arm64 key is target-arch
+
+manifest shape
+  ok   a raw minisign signature is encoded into the field (the plugin decodes it before parsing)
+  ok   an already-encoded .sig passes through unchanged
+  ok   manifest carries the version
+  ok   manifest keys platforms by target-arch
+  ok   manifest platform entry has url + signature
+  ok   an incomplete manifest is refused (version)
+  ok   an incomplete manifest is refused (artifactUrl)
+  ok   an incomplete manifest is refused (signature)
+  ok   an incomplete manifest is refused (platformKey)
+
+minisign verification (hand-built keys)
+  ok   a valid prehashed (ED) signature verifies
+  ok   a tampered artifact is rejected (prehashed (ED))
+  ok   an edited trusted comment is rejected (prehashed (ED))
+  ok   a different public key is rejected (prehashed (ED))
+  ok   the key-id mismatch names the cause (prehashed (ED))
+  ok   a valid legacy (Ed) signature verifies
+  ok   a tampered artifact is rejected (legacy (Ed))
+  ok   an edited trusted comment is rejected (legacy (Ed))
+  ok   a different public key is rejected (legacy (Ed))
+  ok   the key-id mismatch names the cause (legacy (Ed))
+  ok   an encrypted secret key is detected
+  ok   an unencrypted secret key is not
+  ok   a raw (non-base64-wrapped) key file is detected too
+  ok   the machine's real key is classified without prompting
+  ok   an unparseable signature is rejected, not thrown
+  ok   the parse failure says why
+  ok   the verified key id is the key file's
+  ok   decodePublicKey reads the "Ed" algorithm
+  ok   decodePublicKey exposes an 8-byte key id
+
+adversarial feed: corrupted manifest signature
+  ok   the corruption lands inside the signature payload line (not a comment)
+  ok   the corrupted field still parses as minisign text
+  ok   a corrupted manifest signature is REFUSED over the unmodified artifact
+  ok   the refusal is a cryptographic mismatch (not a parse failure)
+  ok   the same manifest WITHOUT the corruption verifies
+
+round-trip against the real Tauri signer
+  ok   the CLI generated a keypair
+  ok   the CLI produced a .sig beside the artifact
+  ok   the CLI .pub file decodes to minisign key text
+  ok   a real signer signature verifies
+  ok   the same signature rejects an edited artifact
+  ok   the manifest field is the CLI .sig content itself
+  ok   the manifest signature field round-trips to a valid signature
+
+the updater artifact archive
+  ok   single entry
+  ok   the entry is the installer itself
+  ok   the entry is STORED (method 0)
+  ok   the central directory agrees on the method
+  ok   no data descriptor (sizes are in the local header)
+  ok   stored size == installer size
+  ok   central-directory size agrees
+  ok   compressed size == uncompressed size
+  ok   the CRC in the local header is the installer CRC
+  ok   the CRC in the central directory agrees
+  ok   the stored bytes ARE the installer bytes
+  ok   the archive is exactly headers + payload
+  ok   the entry is a bare file name, not a path
+
+shipped configuration
+  ok   plugins.updater.pubkey is a real minisign public key (not a placeholder)
+  ok   exactly one endpoint is configured
+  ok   the endpoint is the local sidecar feed route
+  note  local private key needs a password — pair check skipped
+
+update-feed: 76/76 checks passed
+update-feed: all checks passed

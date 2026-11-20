@@ -174,7 +174,7 @@ function fmtRestartTime(unix: number | null): string {
 }
 
 export default function SystemHealthPage() {
-  const { phase, report, runtime, error, refresh } = useStartupHealth();
+  const { phase, report, runtime, runtimeError, error, refresh } = useStartupHealth();
   const toast = useToast();
   const [desktop, setDesktop] = useState<{ appVersion: string; os: string; arch: string } | null>(null);
   const [logTail, setLogTail] = useState<string[] | null>(null);
@@ -431,6 +431,12 @@ export default function SystemHealthPage() {
           ))}
         </CardBody>
       </Card>
+
+      {runtimeError && (
+        <div role="alert" className="mt-4 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-xs text-warn">
+          Runtime status could not be read: {runtimeError}. The values above may be stale; retry to refresh.
+        </div>
+      )}
 
       {/* Boot log tail */}
       <Card

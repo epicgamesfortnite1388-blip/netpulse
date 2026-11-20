@@ -1,0 +1,455 @@
+=== TIME ===
+2026-11-20T15:36:39Z
+=== BRANCH ===
+main
+=== HEAD ===
+2a9f82593537aee39f799f72816fb0f282f630ec
+=== HEAD DETAIL ===
+2a9f82593537aee39f799f72816fb0f282f630ec
+Abyss <radinshurideh@gmail.com>
+2026-11-17T20:47:47+03:30
+docs(nani): N1.2 deliverables — timestamp contract, atomic concurrency, verification semantics; registry 36->39 (K-1/K-2/K-3 tracked with evidence; NANI-022 accurate)
+=== RECENT HISTORY ===
+2a9f825 docs(nani): N1.2 deliverables — timestamp contract, atomic concurrency, verification semantics; registry 36->39 (K-1/K-2/K-3 tracked with evidence; NANI-022 accurate)
+d46ece9 fix(nani): N1.2 — timestamp contract boundary, K-2 stress proof, K-3 four-case verification semantics
+c7fe33b fix(nani): land N1-review conditions K-2 and K-3 in the investigation lifecycle
+0a3cce5 docs(nani): N1.1 deliverables — integration map, oracle evidence, conditions tracker; registry 33->36 (NANI-003 resolved; 020/021/022 registered)
+200de54 feat(nani): N1.1 — make the existing Bayesian engine the authoritative analysis path
+5b65737 test(e2e): align /nodes/export expectation with the deliberate 410 Gone retirement
+481f6b3 fix(nani): N0 — share the app registry and canonical event bus with investigations
+005de03 feat(ui): command-bar brand mark + dashboard command-center hero band
+f5bdc8b feat(ui): brand identity layer — aurora tokens, brand-gradient/glow utilities, BrandMark
+cc1ee99 docs(W0-1): record post-backup deltas and final three-commit state
+1fc8875 chore(recovery): preserve W0-1 in-flight deltas (release perf evidence + temp harness removal)
+624daef docs(W0-1): preservation deliverables + registry updates
+=== STAGED ===
+=== STATUS SHORT ALL ===
+ M NANI_ADVERSARIAL_TEST_REPORT.md
+ M apps/api/src/app.ts
+ M apps/api/src/routes/nani.ts
+ M apps/api/src/services/naniProbeAdapter.ts
+ M apps/api/src/services/naniService.ts
+ M apps/api/src/services/systemProxy.ts
+ M apps/api/test/naniRecoveryControls.test.ts
+ M apps/api/test/naniShadowAssessment.test.ts
+ M apps/web/src/app/AppShell.tsx
+ M apps/web/src/components/EngineBadge.tsx
+ M apps/web/src/components/ui/Badge.tsx
+ M apps/web/src/components/ui/Button.tsx
+ M apps/web/src/components/ui/Card.tsx
+ M apps/web/src/components/ui/Field.tsx
+ M apps/web/src/components/ui/Metric.tsx
+ M apps/web/src/components/ui/Segmented.tsx
+ M apps/web/src/components/ui/States.tsx
+ M apps/web/src/components/ui/Surface.tsx
+ M apps/web/src/components/ui/Switch.tsx
+ M apps/web/src/components/ui/Tabs.tsx
+ M apps/web/src/components/ui/Tooltip.tsx
+ M apps/web/src/features/account/AccountPage.tsx
+ M apps/web/src/features/copilot/CopilotPage.tsx
+ M apps/web/src/features/copilot/aiApi.ts
+ M apps/web/src/features/dashboard/DashboardPage.tsx
+ M apps/web/src/features/diagnostics/DiagnosticsPage.tsx
+ M apps/web/src/features/health/SystemHealthPage.tsx
+ M apps/web/src/features/map/LiveMapPage.tsx
+ M apps/web/src/features/nani/NaniPage.tsx
+ M apps/web/src/features/nani/hypothesisView.test.ts
+ M apps/web/src/features/nani/hypothesisView.ts
+ M apps/web/src/features/nani/naniApi.ts
+ M apps/web/src/features/nani/naniEvents.test.ts
+ M apps/web/src/features/nani/naniEvents.ts
+ M apps/web/src/features/nani/useNaniEvents.ts
+ M apps/web/src/features/nodes/NodeDetailPage.tsx
+ M apps/web/src/features/nodes/NodeExplorerPage.tsx
+ M apps/web/src/features/settings/SettingsPage.tsx
+ M apps/web/src/features/vpn/AdaptiveRecoveryCard.tsx
+ M apps/web/src/features/vpn/AetherCore.tsx
+ M apps/web/src/features/vpn/AetherSurface.tsx
+ M apps/web/src/features/vpn/AgentPathTrace.tsx
+ M apps/web/src/features/vpn/OverviewSurface.tsx
+ M apps/web/src/features/vpn/QuickConnectActivity.tsx
+ M apps/web/src/features/vpn/TunnelSurface.tsx
+ M apps/web/src/features/vpn/VpnPage.tsx
+ M apps/web/src/features/vpn/engineMeta.ts
+ M apps/web/src/lib/updater.ts
+ M apps/web/src/lib/useStartupHealth.ts
+ M apps/web/src/lib/ws.ts
+ M apps/web/src/main.tsx
+ M apps/web/src/styles/tokens.css
+ M apps/web/test/typeScale.test.ts
+ M package.json
+ M packages/shared/src/nani/events.ts
+ M packages/shared/src/nani/registry.ts
+ M scripts/e2e-desktop.mjs
+ M scripts/lib/updateFeed.mjs
+ M scripts/release.mjs
+ M scripts/update-feed.test.mjs
+ M scripts/verify-desktop-pipeline.mjs
+ M src-tauri/src/commands/nani.rs
+ M src-tauri/src/network_intelligence/api_intelligence/monitor.rs
+ M src-tauri/src/network_intelligence/api_intelligence/registry.rs
+ M src-tauri/src/network_intelligence/diagnosis.rs
+ M src-tauri/src/network_intelligence/evaluation.rs
+ M src-tauri/src/network_intelligence/events/mod.rs
+ M src-tauri/src/network_intelligence/foundation.rs
+ M src-tauri/src/network_intelligence/investigation.rs
+ M src-tauri/src/network_intelligence/persistence.rs
+ M src-tauri/src/network_intelligence/validation.rs
+?? .tmp-desktop-dev.log
+?? .workbuddy-ai/memory/2026-11-16.md
+?? .workbuddy-ai/memory/2026-11-20.md
+?? apps/api/test/naniEventContract.test.ts
+?? apps/api/test/naniProbeAdapterHttp.test.ts
+?? apps/api/test/naniProbeAdapterTls.test.ts
+?? apps/web/src/app/nav.ts
+?? apps/web/src/components/GlobalConnectionChip.tsx
+?? apps/web/src/components/PulseMark.tsx
+?? apps/web/src/components/ui/tabStyles.ts
+?? apps/web/src/features/connection/ConnectionDial.tsx
+?? apps/web/src/features/connection/ConnectionHero.tsx
+?? apps/web/src/features/connection/connectionState.ts
+?? apps/web/src/styles/identity.css
+?? apps/web/test/designPrimitives.test.tsx
+?? apps/web/test/recoveryRegressions.test.ts
+?? apps/web/vite.recovery.config.mjs
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_01_SCOPE_AND_BASELINE.md
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_02_CONFIRMED_DEFECTS_AND_FIXES.md
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_03_EVIDENCE_INTEGRITY.md
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_04_VERIFICATION_MATRIX.md
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_05_INDEPENDENT_REVIEW.md
+?? reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_06_FINAL_HANDOFF_AND_COMMIT_CANDIDATES.md
+?? reports/EXHAUSTIVE_AUDIT/api-egress-after-fix.log
+?? reports/EXHAUSTIVE_AUDIT/api-tests-after-nani-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/api-tests-final.log
+?? reports/EXHAUSTIVE_AUDIT/api-tls-path-tests.log
+?? reports/EXHAUSTIVE_AUDIT/api-typecheck-after-nani-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/build-final.log
+?? reports/EXHAUSTIVE_AUDIT/cargo-clippy-baseline.log
+?? reports/EXHAUSTIVE_AUDIT/commit-readiness-baseline-raw.log
+?? reports/EXHAUSTIVE_AUDIT/desktop-verify-after-scripts-fix.log
+?? reports/EXHAUSTIVE_AUDIT/feed-tests-after-scripts-fix.log
+?? reports/EXHAUSTIVE_AUDIT/full-workspace-tests-baseline.log
+?? reports/EXHAUSTIVE_AUDIT/full-workspace-tests-final.log
+?? reports/EXHAUSTIVE_AUDIT/lint-after-nani-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/lint-baseline.log
+?? reports/EXHAUSTIVE_AUDIT/lint-final.log
+?? reports/EXHAUSTIVE_AUDIT/pipeline-version-tests.log
+?? reports/EXHAUSTIVE_AUDIT/rust-full-after-exhaustive-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/rust-proxy-tests.log
+?? reports/EXHAUSTIVE_AUDIT/rust-tests-final.log
+?? reports/EXHAUSTIVE_AUDIT/ui-contract-final.log
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed.log
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/01-dashboard.png
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/03-nani-overview.png
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/07-nani-network.png
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/08-copilot.png
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/10-settings.png
+?? reports/EXHAUSTIVE_AUDIT/visual-data-backed/manifest.json
+?? reports/EXHAUSTIVE_AUDIT/web-after-proxy-fix.log
+?? reports/EXHAUSTIVE_AUDIT/web-full-after-exhaustive-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/web-tests-after-nani-fixes.log
+?? reports/EXHAUSTIVE_AUDIT/web-tests-final.log
+?? reports/EXHAUSTIVE_AUDIT/web-typecheck-after-nani-fixes.log
+?? reports/FINAL_UI_BASELINE.md
+?? reports/FINAL_UI_FINAL_HANDOFF.md
+?? reports/FINAL_UI_FINDINGS_REGISTRY.md
+?? reports/FINAL_UI_FIX_REPORT.md
+?? reports/FINAL_UI_FORENSIC_REVIEW.md
+?? reports/FINAL_UI_INDEPENDENT_REVIEW.md
+?? reports/FINAL_UI_PERFORMANCE_REPORT.md
+?? reports/FINAL_UI_RECOVERY_01_BASELINE.md
+?? reports/FINAL_UI_RECOVERY_02_P1_ROOT_CAUSE_ANALYSIS.md
+?? reports/FINAL_UI_RECOVERY_03_P1_FIX_REPORT.md
+?? reports/FINAL_UI_RECOVERY_04_C1_C7_CLOSURE.md
+?? reports/FINAL_UI_RECOVERY_05_EVIDENCE_INTEGRITY.md
+?? reports/FINAL_UI_RECOVERY_06_RUST_STABILITY.md
+?? reports/FINAL_UI_RECOVERY_07_BUILD_VERIFICATION.md
+?? reports/FINAL_UI_RECOVERY_08_VISUAL_VERIFICATION.md
+?? reports/FINAL_UI_RECOVERY_09_REGRESSION_TESTS.md
+?? reports/FINAL_UI_RECOVERY_10_REMAINING_FINDINGS.md
+?? reports/FINAL_UI_RECOVERY_11_KIM_INDEPENDENT_REVIEW.md
+?? reports/FINAL_UI_RECOVERY_12_FINAL_HANDOFF.md
+?? reports/FINAL_UI_REGRESSION_REPORT.md
+?? reports/FINAL_UI_ROOT_CAUSE_ANALYSIS.md
+?? reports/FINAL_UI_SECURITY_RELIABILITY_REPORT.md
+?? reports/FINAL_UI_TEST_REPORT.md
+?? reports/FINAL_UI_VISUAL_VERIFICATION.md
+?? reports/FINAL_UI_visual/config.json
+?? reports/FINAL_UI_visual/final-01-dashboard-1440-dark.png
+?? reports/FINAL_UI_visual/final-02-dashboard-1280x720.png
+?? reports/FINAL_UI_visual/final-03-dashboard-narrow-800.png
+?? reports/FINAL_UI_visual/final-04-dashboard-light.png
+?? reports/FINAL_UI_visual/final-05-vpn-1280x720.png
+?? reports/FINAL_UI_visual/final-06-nani-1440.png
+?? reports/FINAL_UI_visual/final-07-nani-1280x720.png
+?? reports/FINAL_UI_visual/final-08-settings-1280.png
+?? reports/FINAL_UI_visual/final-09-copilot-1280.png
+?? reports/FINAL_UI_visual/final-10-dashboard-1920.png
+?? reports/FINAL_UI_visual/final-manifest.json
+?? reports/FINAL_UI_visual_recovery/build-final.log
+?? reports/FINAL_UI_visual_recovery/config.json
+?? reports/FINAL_UI_visual_recovery/config2.json
+?? reports/FINAL_UI_visual_recovery/rec-01-dashboard-connection-hero.png
+?? reports/FINAL_UI_visual_recovery/rec-02-settings-general.png
+?? reports/FINAL_UI_visual_recovery/rec-03-settings-network-clicked.png
+?? reports/FINAL_UI_visual_recovery/rec-04-settings-platform.png
+?? reports/FINAL_UI_visual_recovery/rec-05-copilot-empty.png
+?? reports/FINAL_UI_visual_recovery/rec-06-nani.png
+?? reports/FINAL_UI_visual_recovery/rec-07-dashboard-narrow.png
+?? reports/FINAL_UI_visual_recovery/rec-08-copilot-light.png
+?? reports/FINAL_UI_visual_recovery/rec-manifest.json
+?? reports/FINAL_UI_visual_recovery/rust-final-2.log
+?? reports/FINAL_UI_visual_recovery/rust-final.log
+?? reports/FINAL_UI_visual_recovery/rust-n0-isolated.log
+?? reports/FINAL_UI_visual_recovery/ui-contract-final.log
+?? reports/FINAL_UI_visual_recovery/v2-01-dashboard-connection-hero.png
+?? reports/FINAL_UI_visual_recovery/v2-02-settings-general.png
+?? reports/FINAL_UI_visual_recovery/v2-03-settings-network.png
+?? reports/FINAL_UI_visual_recovery/v2-04-settings-platform.png
+?? reports/FINAL_UI_visual_recovery/v2-05-copilot-empty.png
+?? reports/FINAL_UI_visual_recovery/v2-06-nani.png
+?? reports/FINAL_UI_visual_recovery/v2-07-dashboard-narrow.png
+?? reports/FINAL_UI_visual_recovery/v2-08-copilot-light.png
+?? reports/FINAL_UI_visual_recovery/v2-manifest.json
+?? reports/FINAL_UI_visual_recovery/web-tests-final.log
+?? reports/FINAL_UI_visual_recovery/web-typecheck-final.log
+?? reports/N0_REVIEW_01_INDEPENDENT_CODE_REVIEW.md
+?? reports/N1_2_REVIEW_01_REPOSITORY_AND_COMMIT_FORENSICS.md
+?? reports/N1_2_REVIEW_02_ARCHITECTURE_AND_CALLER_AUDIT.md
+?? reports/N1_2_REVIEW_03_K1_TIMESTAMP_FORENSIC_AUDIT.md
+?? reports/N1_2_REVIEW_04_K2_CONCURRENCY_FORENSIC_AUDIT.md
+?? reports/N1_2_REVIEW_05_K3_VERIFICATION_SEMANTICS_AUDIT.md
+?? reports/N1_2_REVIEW_06_BAYESIAN_AND_REGRESSION_INTEGRITY.md
+?? reports/N1_2_REVIEW_07_INDEPENDENT_TEST_REPRODUCTION.md
+?? reports/N1_2_REVIEW_08_ADVERSARIAL_FINDINGS.md
+?? reports/N1_2_REVIEW_09_PERFORMANCE_AUDIT.md
+?? reports/N1_2_REVIEW_10_DOCUMENTATION_AND_FINDINGS_AUDIT.md
+?? reports/N1_2_REVIEW_FINAL_INDEPENDENT_DECISION.md
+?? reports/N1_REVIEW_01_INDEPENDENT_CODE_REVIEW.md
+?? reports/NANI_AUDIT_00_REPOSITORY_BASELINE.md
+?? reports/NANI_AUDIT_01_ACTUAL_ARCHITECTURE_AND_CALL_GRAPH.md
+?? reports/NANI_AUDIT_02_INVESTIGATION_EXECUTION_AUDIT.md
+?? reports/NANI_AUDIT_03_PROBE_AND_EVIDENCE_AUDIT.md
+?? reports/NANI_AUDIT_04_MATHEMATICAL_INTELLIGENCE_AUDIT.md
+?? reports/NANI_AUDIT_05_REPORTING_AND_PERSISTENCE_AUDIT.md
+?? reports/NANI_AUDIT_06_COPILOT_LLM_BACKEND_AUDIT.md
+?? reports/NANI_AUDIT_07_COPILOT_AI_ARCHITECTURE.md
+?? reports/NANI_AUDIT_08_FRONTEND_BACKEND_INTEGRATION.md
+?? reports/NANI_AUDIT_09_END_TO_END_TEST_MATRIX.md
+?? reports/NANI_AUDIT_10_CRITICAL_GAP_REGISTER.md
+?? reports/NANI_AUDIT_11_RECOVERY_ROADMAP.md
+?? reports/NANI_AUDIT_12_FINAL_SYSTEM_VERDICT.md
+?? reports/UI_DESIGN_2_01_CURRENT_STATE_AUDIT.md
+?? reports/UI_DESIGN_2_02_DESIGN_DIRECTION.md
+?? reports/UI_DESIGN_2_03_DESIGN_SYSTEM.md
+?? reports/UI_DESIGN_2_04_SCREEN_SPECIFICATIONS.md
+?? reports/UI_DESIGN_2_05_COMPONENT_AUDIT.md
+?? reports/UI_DESIGN_2_06_INTERACTION_MOTION.md
+?? reports/UI_DESIGN_2_07_IMPLEMENTATION_REPORT.md
+?? reports/UI_DESIGN_2_08_VISUAL_QA.md
+?? reports/UI_DESIGN_2_09_ACCESSIBILITY_PERFORMANCE.md
+?? reports/UI_DESIGN_2_10_REGRESSION_REPORT.md
+?? reports/UI_MASTER_01_FORENSIC_AUDIT.md
+?? reports/UI_MASTER_02_DESIGN_SYSTEM.md
+?? reports/UI_MASTER_03_APPLICATION_SHELL.md
+?? reports/UI_MASTER_04_DASHBOARD_DESIGN.md
+?? reports/UI_MASTER_05_INVESTIGATION_EXPERIENCE.md
+?? reports/UI_MASTER_06_EVIDENCE_AND_VISUALIZATION.md
+?? reports/UI_MASTER_07_CONFIGURATION_UX.md
+?? reports/UI_MASTER_08_COPILOT_UX.md
+?? reports/UI_MASTER_09_MOTION_AND_MICROINTERACTIONS.md
+?? reports/UI_MASTER_10_ACCESSIBILITY.md
+?? reports/UI_MASTER_11_FRONTEND_PERFORMANCE.md
+?? reports/UI_MASTER_12_VISUAL_REGRESSION.md
+?? reports/UI_MASTER_13_FINAL_DESIGN_AUDIT.md
+?? reports/UI_MASTER_FINAL_DELIVERY.md
+?? reports/UI_REVIEW_00_REPOSITORY_BASELINE.md
+?? reports/UI_REVIEW_01_FRONTEND_ARCHITECTURE_MAP.md
+?? reports/UI_REVIEW_02_SCREEN_AND_FEATURE_INVENTORY.md
+?? reports/UI_REVIEW_03_BACKEND_CONTRACT_REGISTER.md
+?? reports/UI_REVIEW_04_CONNECTION_STATE_TRUTH_AUDIT.md
+?? reports/UI_REVIEW_05_FRONTEND_PERFORMANCE_AUDIT.md
+?? reports/UI_REVIEW_06_SECURITY_AND_RELIABILITY_AUDIT.md
+?? reports/UI_REVIEW_07_UI_REDESIGN_ENGINEERING_CONTRACT.md
+?? reports/UI_REVIEW_08_REGRESSION_TEST_PLAN.md
+?? reports/UI_REVIEW_09_RISK_REGISTER.md
+?? reports/UI_REVIEW_10_FINAL_READINESS_REPORT.md
+?? reports/clean-install/01-health-check-after-clean-install.png
+?? reports/nani-health-success/01-overview-success.png
+?? reports/nani-health-success/02-network-intel-after-success.png
+?? reports/nani-hypothesis-view/01-hypotheses-before-probe.png
+?? reports/nani-hypothesis-view/02-hypotheses-after-probe.png
+?? reports/nani-network-empty/01-network-before.png
+?? reports/nani-network-empty/02-network-after-failed-check.png
+?? reports/nani-recovery-planner/01-recovery-tab.png
+?? reports/nani-recovery-planner/02-plan.png
+?? reports/nani-recovery-planner/03-confirmation.png
+?? reports/nani-recovery-planner/04-reset-confirm.png
+?? reports/nani-recovery-planner/05-after-reset.png
+?? reports/nani-recovery-planner/06-ready-plan.png
+?? reports/nani-recovery-planner/07-confirmation-gate.png
+?? reports/nani-recovery-planner/08-after-cancel.png
+?? reports/nani-recovery-planner/09-recorded-step.png
+?? reports/nani-recovery-planner/10-after-reset.png
+?? reports/nani-release/00-launch.png
+?? reports/nani-release/01-overview.png
+?? reports/nani-release/02-live-investigation.png
+?? reports/nani-release/03-hypotheses.png
+?? reports/nani-release/04-evidence.png
+?? reports/nani-release/05-network-intel.png
+?? reports/nani-release/06-learning.png
+?? reports/nani-release/07-history.png
+?? reports/nani-release/08-settings.png
+?? reports/nani-release/09-health-check.png
+?? reports/nani-release/10-network-after-check.png
+?? reports/nani-rollback/01-known-good-established.png
+?? reports/nani-rollback/02-rollback-confirmation.png
+?? reports/nani-rollback/03-rollback-applied.png
+?? reports/nani-screens/01-launch.png
+?? reports/nani-screens/02-overview.png
+?? reports/nani-screens/03-live-investigation.png
+?? reports/nani-screens/04-ai-workspace.png
+?? reports/nani-screens/05-hypotheses.png
+?? reports/nani-screens/06-evidence.png
+?? reports/nani-screens/07-network-intel.png
+?? reports/nani-screens/08-learning.png
+?? reports/nani-screens/09-history.png
+?? reports/nani-screens/10-settings.png
+?? reports/nani-screens/11-health-check.png
+?? reports/nani-screens/12-workspace-message.png
+?? reports/nani-screens/13-workspace-persisted.png
+?? reports/nani-screens/14-overview-narrow.png
+?? reports/nani-screens/15-workspace-narrow.png
+?? reports/nani-screens/16-recovery.png
+?? reports/nani-screens/17-recovery-plan.png
+?? reports/nani-screens/18-recovery-confirm.png
+?? reports/nani-screens/_palette.png
+?? reports/nani-screens/nani-overview.png
+?? reports/release-3.2.0/01-installed-overview.png
+?? reports/release-3.2.0/02-installed-hypotheses.png
+?? reports/ui-transformation/screenshots/before-01-dashboard.png
+?? reports/ui-transformation/screenshots/before-02-dashboard-light.png
+?? reports/ui-transformation/screenshots/before-03-vpn.png
+?? reports/ui-transformation/screenshots/before-04-servers.png
+?? reports/ui-transformation/screenshots/before-05-nodes.png
+?? reports/ui-transformation/screenshots/before-06-nani.png
+?? reports/ui-transformation/screenshots/before-07-diagnostics.png
+?? reports/ui-transformation/screenshots/before-08-settings.png
+?? reports/ui-transformation/screenshots/before-09-account.png
+?? reports/ui-transformation/screenshots/before-10-health.png
+?? reports/ui-transformation/screenshots/before-manifest.json
+?? reports/ui-transformation/tools/before.json
+?? reports/ui-transformation/tools/cdp.mjs
+?? scripts/assert-ui-contract.mjs
+?? scripts/lib/webDistVersion.mjs
+?? scripts/ui-capture.mjs
+?? scripts/ui-probe.mjs
+?? scripts/unify-palette.mjs
+?? scripts/verify-desktop-pipeline.test.mjs
+=== WORKTREE DIFF STAT ===
+warning: in the working copy of 'NANI_ADVERSARIAL_TEST_REPORT.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/api/test/naniRecoveryControls.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/api/test/naniShadowAssessment.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/components/ui/Card.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/components/ui/Segmented.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/components/ui/Switch.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/components/ui/Tabs.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/copilot/CopilotPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/map/LiveMapPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/NaniPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/hypothesisView.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/hypothesisView.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/naniApi.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/naniEvents.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/naniEvents.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/nani/useNaniEvents.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/vpn/AetherCore.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/vpn/AgentPathTrace.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/features/vpn/QuickConnectActivity.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/main.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/test/typeScale.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/lib/updateFeed.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/update-feed.test.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/commands/nani.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/network_intelligence/evaluation.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/network_intelligence/foundation.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/network_intelligence/persistence.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/network_intelligence/validation.rs', LF will be replaced by CRLF the next time Git touches it
+ NANI_ADVERSARIAL_TEST_REPORT.md                    |  77 +++
+ apps/api/src/app.ts                                |  10 +-
+ apps/api/src/routes/nani.ts                        |  10 +-
+ apps/api/src/services/naniProbeAdapter.ts          | 189 ++++--
+ apps/api/src/services/naniService.ts               | 162 +++--
+ apps/api/src/services/systemProxy.ts               |  15 +-
+ apps/api/test/naniRecoveryControls.test.ts         |   2 +-
+ apps/api/test/naniShadowAssessment.test.ts         |   6 +-
+ apps/web/src/app/AppShell.tsx                      | 697 +++++++--------------
+ apps/web/src/components/EngineBadge.tsx            |  14 +-
+ apps/web/src/components/ui/Badge.tsx               |   2 +-
+ apps/web/src/components/ui/Button.tsx              |   8 +-
+ apps/web/src/components/ui/Card.tsx                |  10 +-
+ apps/web/src/components/ui/Field.tsx               |  30 +-
+ apps/web/src/components/ui/Metric.tsx              |  18 +-
+ apps/web/src/components/ui/Segmented.tsx           |  22 +-
+ apps/web/src/components/ui/States.tsx              |  15 +-
+ apps/web/src/components/ui/Surface.tsx             |  26 +-
+ apps/web/src/components/ui/Switch.tsx              |   4 +-
+ apps/web/src/components/ui/Tabs.tsx                |  28 +-
+ apps/web/src/components/ui/Tooltip.tsx             |   4 +-
+ apps/web/src/features/account/AccountPage.tsx      |   2 +-
+ apps/web/src/features/copilot/CopilotPage.tsx      |  89 ++-
+ apps/web/src/features/copilot/aiApi.ts             |   3 +
+ apps/web/src/features/dashboard/DashboardPage.tsx  | 194 ++++--
+ .../src/features/diagnostics/DiagnosticsPage.tsx   |   8 +-
+ apps/web/src/features/health/SystemHealthPage.tsx  |   8 +-
+ apps/web/src/features/map/LiveMapPage.tsx          |  13 +-
+ apps/web/src/features/nani/NaniPage.tsx            | 277 ++++----
+ apps/web/src/features/nani/hypothesisView.test.ts  |  42 +-
+ apps/web/src/features/nani/hypothesisView.ts       |  42 ++
+ apps/web/src/features/nani/naniApi.ts              |  10 +-
+ apps/web/src/features/nani/naniEvents.test.ts      |  17 +
+ apps/web/src/features/nani/naniEvents.ts           |  79 ++-
+ apps/web/src/features/nani/useNaniEvents.ts        |   8 +
+ apps/web/src/features/nodes/NodeDetailPage.tsx     |   1 +
+ apps/web/src/features/nodes/NodeExplorerPage.tsx   |  16 +-
+ apps/web/src/features/settings/SettingsPage.tsx    | 137 ++--
+ apps/web/src/features/vpn/AdaptiveRecoveryCard.tsx |  20 +-
+ apps/web/src/features/vpn/AetherCore.tsx           |   8 +-
+ apps/web/src/features/vpn/AetherSurface.tsx        |  32 +-
+ apps/web/src/features/vpn/AgentPathTrace.tsx       |  28 +-
+ apps/web/src/features/vpn/OverviewSurface.tsx      |   6 +-
+ apps/web/src/features/vpn/QuickConnectActivity.tsx |  58 +-
+ apps/web/src/features/vpn/TunnelSurface.tsx        |   2 +-
+ apps/web/src/features/vpn/VpnPage.tsx              |  10 +-
+ apps/web/src/features/vpn/engineMeta.ts            |  16 +-
+ apps/web/src/lib/updater.ts                        |  18 +-
+ apps/web/src/lib/useStartupHealth.ts               | 100 +--
+ apps/web/src/lib/ws.ts                             |  11 +-
+ apps/web/src/main.tsx                              |   3 +
+ apps/web/src/styles/tokens.css                     |  15 +
+ apps/web/test/typeScale.test.ts                    |  54 ++
+ package.json                                       |   2 +
+ packages/shared/src/nani/events.ts                 |  21 +
+ packages/shared/src/nani/registry.ts               |  44 +-
+ scripts/e2e-desktop.mjs                            |  10 +-
+ scripts/lib/updateFeed.mjs                         |   8 +
+ scripts/release.mjs                                |  10 +-
+ scripts/update-feed.test.mjs                       |  21 +
+ scripts/verify-desktop-pipeline.mjs                |  14 +
+ src-tauri/src/commands/nani.rs                     |  57 +-
+ .../api_intelligence/monitor.rs                    |  60 +-
+ .../api_intelligence/registry.rs                   |  75 +++
+ src-tauri/src/network_intelligence/diagnosis.rs    | 240 ++++++-
+ src-tauri/src/network_intelligence/evaluation.rs   | 183 +++++-
+ src-tauri/src/network_intelligence/events/mod.rs   |  14 +
+ src-tauri/src/network_intelligence/foundation.rs   | 101 ++-
+ .../src/network_intelligence/investigation.rs      |  74 ++-
+ src-tauri/src/network_intelligence/persistence.rs  |  67 ++
+ src-tauri/src/network_intelligence/validation.rs   | 326 ++++------
+ 71 files changed, 2628 insertions(+), 1375 deletions(-)
+=== INDEX DIFF CACHED ===
+=== UPSTREAM ===
+## main...origin/main [ahead 14]
+ M NANI_ADVERSARIAL_TEST_REPORT.md
+ M apps/api/src/app.ts

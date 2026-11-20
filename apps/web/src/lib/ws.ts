@@ -53,7 +53,16 @@ export function subscribeTest(
       // SameSite=strict and browsers cannot attach Authorization headers to
       // WebSocket handshakes). Mint one via the authenticated API first.
       const { ticket } = await api.post<{ ticket: string; expiresInMs: number }>('/ws/ticket');
-      ws = new WebSocket(`${t.wsBase}/api/v1/ws?ticket=${encodeURIComponent(ticket)}`);
+      // F-29: cleanup may have run while the ticket request was in flight.
+      // Recheck before creating the socket, otherwise we build a socket that
+      // nobody will ever close (the cleanup already ran).
+      if (cancelled || closed) return;
+      const socket = new WebSocket(`${t.wsBase}/api/v1/ws?ticket=${encodeURIComponent(ticket)}`);
+      if (cancelled || closed) {
+        socket.close();
+        return;
+      }
+      ws = socket;
     } catch {
       return;
     }

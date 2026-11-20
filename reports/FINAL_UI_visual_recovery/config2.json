@@ -1,0 +1,18 @@
+{
+  "port": 9452,
+  "base": "http://127.0.0.1:5175",
+  "out": "E:/Code/Project/Vpn_app/reports/FINAL_UI_visual_recovery",
+  "prefix": "v2",
+  "width": 1440,
+  "height": 900,
+  "shots": [
+    { "name": "01-dashboard-connection-hero", "path": "/", "wait": 3200, "theme": "dark" },
+    { "name": "02-settings-general", "path": "/settings?tab=general", "wait": 3000, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "03-settings-network", "path": "/settings?tab=network", "wait": 3000, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "04-settings-platform", "path": "/settings?tab=platform", "wait": 3000, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "05-copilot-empty", "path": "/copilot", "wait": 3000, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "06-nani", "path": "/nani", "wait": 3200, "theme": "dark", "width": 1280, "height": 720 },
+    { "name": "07-dashboard-narrow", "path": "/", "wait": 2800, "theme": "dark", "width": 800, "height": 900 },
+    { "name": "08-copilot-light", "path": "/copilot", "wait": 2800, "theme": "light", "width": 1280, "height": 720 }
+  ]
+}

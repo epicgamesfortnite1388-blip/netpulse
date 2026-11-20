@@ -1,0 +1,95 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "width": 1440,
+  "height": 900,
+  "scale": 1,
+  "theme": "default",
+  "typeScale": "default",
+  "shots": [
+    {
+      "id": "01-dashboard",
+      "label": "Dashboard",
+      "route": "/",
+      "file": "E:\\Code\\Project\\Vpn_app\\reports\\EXHAUSTIVE_AUDIT\\visual-data-backed\\01-dashboard.png",
+      "title": "NetPulse — Network Intelligence",
+      "scrollW": 1138,
+      "clientW": 1138,
+      "scrollH": 1831,
+      "clientH": 1831,
+      "docScrollW": 1440,
+      "docClientW": 1440,
+      "h1": [
+        "Dashboard"
+      ],
+      "rootFont": "16px"
+    },
+    {
+      "id": "03-nani-overview",
+      "label": "NANI overview",
+      "route": "/nani",
+      "file": "E:\\Code\\Project\\Vpn_app\\reports\\EXHAUSTIVE_AUDIT\\visual-data-backed\\03-nani-overview.png",
+      "title": "NetPulse — Network Intelligence",
+      "scrollW": 1138,
+      "clientW": 1138,
+      "scrollH": 1077,
+      "clientH": 1077,
+      "docScrollW": 1440,
+      "docClientW": 1440,
+      "h1": [
+        "NANI"
+      ],
+      "rootFont": "16px"
+    },
+    {
+      "id": "07-nani-network",
+      "label": "NANI network",
+      "route": "/nani",
+      "file": "E:\\Code\\Project\\Vpn_app\\reports\\EXHAUSTIVE_AUDIT\\visual-data-backed\\07-nani-network.png",
+      "title": "NetPulse — Network Intelligence",
+      "scrollW": 1138,
+      "clientW": 1138,
+      "scrollH": 842,
+      "clientH": 842,
+      "docScrollW": 1440,
+      "docClientW": 1440,
+      "h1": [
+        "NANI"
+      ],
+      "rootFont": "16px"
+    },
+    {
+      "id": "08-copilot",
+      "label": "Copilot",
+      "route": "/copilot",
+      "file": "E:\\Code\\Project\\Vpn_app\\reports\\EXHAUSTIVE_AUDIT\\visual-data-backed\\08-copilot.png",
+      "title": "NetPulse — Network Intelligence",
+      "scrollW": 1138,
+      "clientW": 1138,
+      "scrollH": 842,
+      "clientH": 842,
+      "docScrollW": 1440,
+      "docClientW": 1440,
+      "h1": [
+        "Copilot"
+      ],
+      "rootFont": "16px"
+    },
+    {
+      "id": "10-settings",
+      "label": "Settings",
+      "route": "/settings",
+      "file": "E:\\Code\\Project\\Vpn_app\\reports\\EXHAUSTIVE_AUDIT\\visual-data-backed\\10-settings.png",
+      "title": "NetPulse — Network Intelligence",
+      "scrollW": 1138,
+      "clientW": 1138,
+      "scrollH": 842,
+      "clientH": 842,
+      "docScrollW": 1440,
+      "docClientW": 1440,
+      "h1": [
+        "Settings"
+      ],
+      "rootFont": "16px"
+    }
+  ]
+}

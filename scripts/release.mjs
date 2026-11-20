@@ -22,7 +22,8 @@
  *
  * `--repo` is the one-step activation of the auto-update feed: it writes the
  * slug into the root package.json `repository` field (the single source the
- * endpoint is stamped from) and the updater endpoint follows in the same run.
+ * endpoint is stamped from), clears any `netpulse.releaseFeed: "local"` marker,
+ * and the updater endpoint follows in the same run.
  *
  * Run automatically at the start of `npm run desktop:build`.
  */
@@ -51,15 +52,18 @@ if (repoIdx !== -1) {
       console.log('[release] package.json netpulse.releaseFeed -> local (sidecar-served update feed)');
     }
   } else {
-    const { parseRepoSlug, assertUsableSlug, FeedConfigError } = await import('./lib/updateFeed.mjs');
+    const { parseRepoSlug, assertUsableSlug, clearLocalFeedMarker, FeedConfigError } = await import('./lib/updateFeed.mjs');
     try {
       const slug = assertUsableSlug(parseRepoSlug(raw), '--repo');
       const rootPkgPath = path.join(root, 'package.json');
       const rootPkg = readJson(rootPkgPath);
-      if (parseRepoSlug(rootPkg.repository) !== slug) {
+      const slugChanged = parseRepoSlug(rootPkg.repository) !== slug;
+      const markerCleared = clearLocalFeedMarker(rootPkg);
+      if (slugChanged || markerCleared) {
         rootPkg.repository = `https://github.com/${slug}`;
         writeJson(rootPkgPath, rootPkg);
         console.log(`[release] package.json repository -> https://github.com/${slug}`);
+        if (markerCleared) console.log('[release] package.json netpulse.releaseFeed marker cleared');
       }
     } catch (err) {
       if (!(err instanceof FeedConfigError)) throw err;

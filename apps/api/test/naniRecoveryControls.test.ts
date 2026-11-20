@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/services/naniProbeAdapter', () => ({
-  runDiagnosticTest: vi.fn(async (_c: unknown, _d: unknown, test: { id: string }) => ({
+  runDiagnosticTest: vi.fn(async (_c: unknown, test: { id: string }) => ({
     testId: test.id,
     outcome: 'success',
     at: Date.now(),

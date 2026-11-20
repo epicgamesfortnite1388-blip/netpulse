@@ -30,6 +30,14 @@ export class FeedConfigError extends Error {
   }
 }
 
+/** Remove the offline-feed marker so a configured repository can drive the endpoint. */
+export function clearLocalFeedMarker(pkg) {
+  if (!pkg?.netpulse || pkg.netpulse.releaseFeed === undefined) return false;
+  delete pkg.netpulse.releaseFeed;
+  if (Object.keys(pkg.netpulse).length === 0) delete pkg.netpulse;
+  return true;
+}
+
 /**
  * Pull a `owner/repo` slug out of a GitHub URL, an `owner/repo` string, or a
  * package.json `repository` value (string or `{ url }`).

@@ -22,9 +22,13 @@ export function EmptyState({
   // whose first heading was an h2 read h1 -> h3 with nothing between.
   const Tag = headingTag(useHeadingLevel());
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/50 px-6 py-14 text-center">
+    // Tone, not a second border. Most empty states sit inside a Card, and a
+    // bordered block inside a bordered card reads as a box that failed to load.
+    // The inset tone separates it from the card's surface without drawing a
+    // second rectangle, and on a page with no card it still reads as a region.
+    <div className="flex flex-col items-center justify-center rounded-[var(--np-r-3)] bg-surface-2/40 px-6 py-12 text-center">
       {icon && (
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-surface-2 text-accent">
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-surface text-accent">
           {icon}
         </div>
       )}
@@ -42,7 +46,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   // "Try again" is a button you press regardless of what the error says.
   const canRetry = retry != null && isRetryableError(error);
   return (
-    <div className="flex flex-col items-start gap-3 rounded-xl border border-danger/30 bg-danger/5 px-5 py-4">
+    <div role="alert" className="flex flex-col items-start gap-3 rounded-xl border border-danger/30 bg-danger/5 px-5 py-4">
       <div className="flex items-start gap-2.5">
         <AlertCircle size={16} className="mt-0.5 shrink-0 text-danger" />
         <div>
@@ -110,10 +114,11 @@ export function PageSkeleton() {
 }
 
 export function LoadingState({ label = 'Loading' }: { label?: string }) {
+  const text = label.endsWith('…') ? label : `${label}…`;
   return (
-    <div className="flex items-center justify-center gap-2.5 rounded-xl border border-line bg-surface/50 px-6 py-14 text-sm text-muted">
+    <div className="flex items-center justify-center gap-2.5 rounded-[var(--np-r-3)] bg-surface-2/40 px-6 py-12 text-sm text-muted">
       <Loader2 size={15} className="animate-spin text-accent" />
-      {label}…
+      {text}
     </div>
   );
 }

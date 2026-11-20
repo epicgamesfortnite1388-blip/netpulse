@@ -14,6 +14,9 @@ import { TooltipProvider } from '@/components/ui/Tooltip';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import './styles/tokens.css';
+// The "Signal / Instrument" identity. Imported last so its semantic token
+// overrides repaint every existing screen without touching their markup.
+import './styles/identity.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

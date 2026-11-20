@@ -1,0 +1,12 @@
+START 2026-11-20T16:01:32Z
+CMD: npm --prefix E:/Code/Project/Vpn_app run test:pipeline
+
+> netpulse@3.2.0 test:pipeline
+> node scripts/verify-desktop-pipeline.test.mjs
+
+  ok   an unrelated framework version does not satisfy the gate
+  ok   the injected appVersion binding satisfies the gate
+  ok   a different conf version does not match the same stale dist
+desktop-pipeline-version: 3/3 checks passed
+EXIT=0
+END 2026-11-20T16:01:33Z

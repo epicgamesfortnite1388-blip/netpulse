@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/services/naniProbeAdapter', () => ({
-  runDiagnosticTest: vi.fn(async (_controller: unknown, _dns: unknown, test: { id: string }) => ({
+  runDiagnosticTest: vi.fn(async (_controller: unknown, test: { id: string }) => ({
     testId: test.id,
     outcome: 'success',
     at: Date.now(),
@@ -26,12 +26,12 @@ function service() {
     provider: 'test-provider',
     endpoint: 'provider.example:443',
     authType: 'none',
-    healthCheck: 'https-get',
+    healthCheck: 'http-get',
     timeoutMs: 1_000,
     directPermitted: true,
     autoRecoveryPermitted: true,
     dependsOn: [],
-  } as any);
+  });
   return { nani, bus, events, log };
 }
 

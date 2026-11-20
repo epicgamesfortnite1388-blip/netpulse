@@ -19,6 +19,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findBuiltVersionAsset } from './lib/webDistVersion.mjs';
 
 // --require-signature: additionally verify the built exe carries an
 // Authenticode signature (set by desktop:package; cross-platform).
@@ -82,6 +83,19 @@ if (conf) {
   const webIndex = path.join(webDist, 'index.html');
   check('web dist index.html exists', fs.existsSync(webIndex));
   check('frontendDist exists', fs.existsSync(path.join(root, 'src-tauri', conf.build?.frontendDist ?? '')));
+
+  // __APP_VERSION__ is replaced at build time by the root version, which
+  // release.mjs keeps equal to tauri.conf.version. A stale dist that still
+  // contains an older version must fail this gate instead of passing on file
+  // existence alone.
+  const versionAsset = findBuiltVersionAsset(path.join(webDist, 'assets'), conf.version);
+  check(
+    'web dist references the tauri.conf version',
+    versionAsset !== null,
+    versionAsset
+      ? `${versionAsset} contains appVersion:"${conf.version}"`
+      : `no built JS asset contains appVersion:"${conf.version}"`,
+  );
 }
 
 /* ----------------- 4. authenticode signature (optional gate) --------------- */

@@ -91,7 +91,11 @@ fn probe_tcp(host: &str, port: u16, timeout: Duration) -> (LayerResult, Option<f
 
 /// HTTP/TLS + application probe via reqwest (verifies TLS automatically for https).
 fn probe_http(app: &ApiEntry, timeout: Duration) -> (LayerResult, LayerResult, Option<u16>, Option<f64>) {
+    // NANI-021: the system proxy must never turn an unreachable target into a
+    // "Healthy" direct measurement. This is separate from updater_feed.rs,
+    // which intentionally keeps the proxy for remote GitHub endpoints.
     let client = match reqwest::blocking::Client::builder()
+        .no_proxy()
         .timeout(timeout)
         .build()
     {
@@ -125,6 +129,19 @@ fn probe_http(app: &ApiEntry, timeout: Duration) -> (LayerResult, LayerResult, O
             };
             (http_layer, if tls_failed { LayerResult::Failed } else { LayerResult::Unknown }, None, Some(latency))
         }
+    }
+}
+
+/// NANI-021: an HTTP success that contradicts the direct TCP result is not a
+/// direct measurement. Label it as inferred proxy traffic so no UI can present
+/// it as a verified direct path.
+fn inferred_route(tcp: LayerResult, http: LayerResult, status: Option<u16>) -> RouteKind {
+    let http_ok = matches!(http, LayerResult::Ok)
+        && status.map(|s| (200..=399).contains(&s)).unwrap_or(false);
+    if matches!(tcp, LayerResult::Failed) && http_ok {
+        RouteKind::Upstream("system-proxy-inferred".into())
+    } else {
+        RouteKind::Direct
     }
 }
 
@@ -167,10 +184,20 @@ pub fn probe_api(entry: &ApiEntry, _state: Option<&ApiState>) -> ProbeOutcomeRec
         tcp_ok: Some(matches!(tcp_result, LayerResult::Ok)),
         dns_ok: Some(matches!(dns_result, LayerResult::Ok)),
     };
-    let category = classify(inputs);
+    let route = inferred_route(tcp_result, http_result, status);
+    let category = if matches!(route, RouteKind::Upstream(_)) {
+        // The direct leg failed while HTTP answered: the route is untrusted.
+        FailureCategory::TransportFailure
+    } else {
+        classify(inputs)
+    };
 
     // Overall health: combine layer results.
-    let health = if status.map(|s| (200..=399).contains(&s)).unwrap_or(false)
+    let health = if matches!(route, RouteKind::Upstream(_)) {
+        // HTTP answered but the direct TCP leg failed: the result cannot be a
+        // verified healthy direct measurement.
+        Health::Unknown
+    } else if status.map(|s| (200..=399).contains(&s)).unwrap_or(false)
         && matches!(tcp_result, LayerResult::Ok)
     {
         Health::Healthy
@@ -216,7 +243,7 @@ pub fn probe_api(entry: &ApiEntry, _state: Option<&ApiState>) -> ProbeOutcomeRec
         api_id: entry.api_id.clone(),
         health,
         category,
-        route: RouteKind::Direct,
+        route,
         layers,
         latency_ms: http_latency.or(tcp_latency),
     }
@@ -489,6 +516,33 @@ mod tests {
         ]));
         assert_eq!(probes[0].outcome, ProbeOutcome::Failure);
         assert_eq!(probes[1].outcome, ProbeOutcome::Missing);
+    }
+
+    #[test]
+    fn nani_021_infers_proxy_when_tcp_fails_but_http_answers() {
+        let route = inferred_route(LayerResult::Failed, LayerResult::Ok, Some(200));
+        assert_eq!(route, RouteKind::Upstream("system-proxy-inferred".into()));
+    }
+
+    #[test]
+    fn nani_021_keeps_direct_when_layers_agree() {
+        assert_eq!(
+            inferred_route(LayerResult::Ok, LayerResult::Ok, Some(200)),
+            RouteKind::Direct
+        );
+        assert_eq!(
+            inferred_route(LayerResult::Failed, LayerResult::Failed, None),
+            RouteKind::Direct
+        );
+    }
+
+    #[test]
+    fn nani_021_probe_client_bypasses_the_system_proxy() {
+        let src = include_str!("monitor.rs");
+        assert!(
+            src.contains(".no_proxy()"),
+            "NANI health probes must not inherit HTTP(S)_PROXY"
+        );
     }
 
     #[test]

@@ -7,11 +7,11 @@ type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-accent-soft text-accent-strong border border-accent/40 hover:bg-accent/20 hover:border-accent/60',
+    'bg-accent text-on-accent border border-transparent hover:bg-accent-strong disabled:hover:bg-accent',
   secondary:
-    'bg-surface-2 text-text border border-line hover:border-line-strong hover:bg-elevated',
+    'bg-surface-2 text-text border border-line hover:border-line-strong hover:bg-surface-3',
   ghost: 'bg-transparent text-muted border border-transparent hover:text-text hover:bg-surface-2',
-  danger: 'bg-danger/10 text-danger border border-danger/40 hover:bg-danger/20',
+  danger: 'bg-danger text-white border border-transparent hover:brightness-110',
 };
 
 const SIZES: Record<Size, string> = {
@@ -42,7 +42,7 @@ export function Button({
       // the button give under the cursor without the row shifting. Colour,
       // border and shadow animate; the transform is instantaneous in, eased out
       // — a springy press-release on a 32px-high button reads as a wobble.
-      className={`inline-flex items-center justify-center rounded-lg font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-accent/60 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 motion-reduce:transform-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 motion-reduce:transform-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       disabled={disabled || loading}
       {...rest}
     >

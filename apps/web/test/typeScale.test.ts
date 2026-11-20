@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(import.meta.dirname, '..');
 const SRC = join(ROOT, 'src');
 const TOKENS = join(SRC, 'styles', 'tokens.css');
+const IDENTITY = join(SRC, 'styles', 'identity.css');
 const SETTINGS_MODEL = join(ROOT, '..', '..', 'packages', 'shared', 'src', 'models', 'settings.ts');
 
 /** Every .tsx under src, so a new page cannot opt out silently. */
@@ -80,6 +81,59 @@ describe('type scale tokens', () => {
     expect(declared.length).toBeGreaterThan(0);
     const unscaled = declared.filter((t) => !/var\(--type-scale\)/.test(t.raw)).map((t) => t.name);
     expect(unscaled, `not multiplied by --type-scale: ${unscaled.join(', ')}`).toEqual([]);
+  });
+});
+
+/**
+ * The `np-*` identity classes are hand-written CSS, so the TSX scan above never
+ * sees them. That let eight `font-size: <literal>px` rules sit in identity.css
+ * that were invisible to the Text-size preference: a user at 125% got 12px
+ * labels on a 15px page. This scans the stylesheets instead of the components.
+ */
+function unscaledFontSizes(css: string): string[] {
+  const offenders: string[] = [];
+  for (const m of css.matchAll(/font-size:\s*([^;]+);/g)) {
+    const value = m[1].trim();
+    // `inherit`/`1em` and anything multiplied by the preference are fine.
+    if (/var\(--type-scale\)/.test(value)) continue;
+    if (/^(inherit|unset|initial)$/.test(value)) continue;
+    // The @theme ramp itself is checked separately, above.
+    if (value.startsWith('calc(') && /rem|em/.test(value)) continue;
+    offenders.push(value);
+  }
+  return offenders;
+}
+
+describe('stylesheet type sizes', () => {
+  it('keeps every identity.css size on the type-scale ramp', () => {
+    const offenders = unscaledFontSizes(readFileSync(IDENTITY, 'utf8'));
+    expect(
+      offenders,
+      `these font sizes ignore the Text-size preference — use calc(<rem> * var(--type-scale)):\n${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('declares no fixed px size in either stylesheet', () => {
+    const offenders: string[] = [];
+    for (const [name, file] of [
+      ['tokens.css', TOKENS],
+      ['identity.css', IDENTITY],
+    ] as const) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/font-size:\s*([\d.]+)px/g)) {
+        offenders.push(`${name}: font-size: ${m[1]}px`);
+      }
+    }
+    expect(offenders, `use the --text-* ramp instead:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('never sets a stylesheet size below the 12px floor at 1x', () => {
+    const offenders: string[] = [];
+    const css = readFileSync(IDENTITY, 'utf8');
+    for (const m of css.matchAll(/font-size:\s*calc\(\s*([\d.]+)rem/g)) {
+      const px = Number(m[1]) * 16;
+      if (px < 12) offenders.push(`identity.css: calc(${m[1]}rem) = ${px}px`);
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
   });
 });
 

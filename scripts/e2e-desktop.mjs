@@ -126,7 +126,7 @@ async function run() {
   // A real public target is allowed through and executes (result may fail if
   // offline — the contract is 200 with an honest measurement record).
   const pingPublic = await api('POST', '/ping-test', { target: '1.1.1.1', count: 2, timeoutMs: 3000 });
-  check('public target ping executes', pingPublic.status === 200 || pingPublic.status >= 500, `status=${pingPublic.status}`);
+  check('public target ping executes', pingPublic.status === 200, `status=${pingPublic.status}`);
 
   // ---------- nodes ----------
   const nodesEmpty = await api('GET', '/nodes?limit=10');
@@ -176,16 +176,16 @@ async function run() {
 
   // ---------- speed / diagnostics ----------
   const speed = await api('POST', '/speed/run', { durationSeconds: 2 });
-  check('speed run executes', speed.status === 200 || speed.status === 202 || speed.status >= 500, `status=${speed.status}`);
+  check('speed run executes', speed.status === 200 || speed.status === 202, `status=${speed.status}`);
 
   const speedHist = await api('GET', '/speed/history?limit=5');
   check('speed history listed', speedHist.status === 200, `status=${speedHist.status}`);
 
   const diag = await api('POST', '/diagnostics/mtu', {});
-  check('mtu diagnostic runs', diag.status === 200 || diag.status === 202 || diag.status >= 500, `status=${diag.status}`);
+  check('mtu diagnostic runs', diag.status === 200 || diag.status === 202, `status=${diag.status}`);
 
   const cgnat = await api('POST', '/diagnostics/cgnat', {});
-  check('cgnat diagnostic runs', cgnat.status === 200 || cgnat.status === 202 || cgnat.status >= 500, `status=${cgnat.status}`);
+  check('cgnat diagnostic runs', cgnat.status === 200 || cgnat.status === 202, `status=${cgnat.status}`);
 
   // ---------- endpoints / test targets ----------
   const endpoints = await api('GET', '/test-endpoints');
@@ -201,7 +201,7 @@ async function run() {
   const games2 = await api('GET', '/gaming/games');
   const firstGame = games2.json?.games?.[0]?.id ?? games2.json?.[0]?.id;
   const gTest = await api('POST', '/gaming/test', firstGame ? { gameId: firstGame } : {});
-  check('gaming test starts (async ok)', gTest.status === 200 || gTest.status === 202 || gTest.status >= 500, `status=${gTest.status}`);
+  check('gaming test starts (async ok)', gTest.status === 200 || gTest.status === 202, `status=${gTest.status}`);
   const gCompare = await api('GET', '/gaming/compare');
   check('gaming compare listed', gCompare.status === 200, `status=${gCompare.status}`);
 

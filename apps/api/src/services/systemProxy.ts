@@ -13,10 +13,20 @@ import { spawn } from 'node:child_process';
 
 const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
 
+/** Spawning can itself throw (EPERM under a restricted sandbox). Registry reads/writes are best effort. */
+function spawnSafe(command: string, args: string[], options: { windowsHide: boolean; shell: false; stdio?: 'ignore' }) {
+  try {
+    return spawn(command, args, options);
+  } catch {
+    return null;
+  }
+}
+
 function regQuery(value: string): Promise<string | null> {
   return new Promise((resolve) => {
     if (process.platform !== 'win32') return resolve(null);
-    const child = spawn('reg', ['query', REG_KEY, '/v', value], { windowsHide: true, shell: false });
+    const child = spawnSafe('reg', ['query', REG_KEY, '/v', value], { windowsHide: true, shell: false });
+    if (!child) return resolve(null);
     let out = '';
     child.stdout?.on('data', (c: Buffer) => { out += c.toString(); });
     child.on('error', () => resolve(null));
@@ -31,7 +41,8 @@ function regQuery(value: string): Promise<string | null> {
 function regPut(value: string, type: 'REG_DWORD' | 'REG_SZ', data: string): Promise<boolean> {
   return new Promise((resolve) => {
     if (process.platform !== 'win32') return resolve(false);
-    const child = spawn('reg', ['add', REG_KEY, '/v', value, '/t', type, '/d', data, '/f'], { windowsHide: true, shell: false });
+    const child = spawnSafe('reg', ['add', REG_KEY, '/v', value, '/t', type, '/d', data, '/f'], { windowsHide: true, shell: false });
+    if (!child) return resolve(false);
     child.on('error', () => resolve(false));
     child.on('close', (code) => resolve(code === 0));
   });

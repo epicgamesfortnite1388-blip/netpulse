@@ -76,12 +76,32 @@ export default function SettingsPage() {
   // update-check warning targets the update-history card). Unknown tab values
   // fall through to the default. The `card` param selects the target card on
   // that tab and is consumed once handled so it never re-triggers.
-  const [searchParams] = useSearchParams();
+  //
+  // The URL is the single source of truth for the selected section: `tab` is
+  // re-derived from `searchParams` on every render (including browser
+  // back/forward), and a tab click writes the same param back. The setter was
+  // previously discarded while `<Tabs value={tab}>` was controlled — so every
+  // click was a no-op and six of seven sections were reachable only by hand
+  // editing the URL (F-27). `replace` keeps tab switches out of history so
+  // Back leaves the page rather than stepping through seven tab states; the
+  // expected tab is still restored on Back/Forward because it lives in the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
   const VALID_TABS = ['general', 'network', 'diagnostics', 'optimization', 'vpn', 'automation', 'platform'] as const;
   const tabParam = searchParams.get('tab');
   const tab = VALID_TABS.includes((tabParam ?? '') as (typeof VALID_TABS)[number])
     ? (tabParam as (typeof VALID_TABS)[number])
     : 'general';
+  const selectTab = (value: string) => {
+    if (!(VALID_TABS as readonly string[]).includes(value)) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
   const scheduleQuery = useScheduleStatus();
   const scheduleStatus = scheduleQuery.data?.status;
   const gamesQuery = useQuery({
@@ -147,6 +167,7 @@ export default function SettingsPage() {
 
       <Tabs
         value={tab}
+        onValueChange={selectTab}
         items={[
           { value: 'general', label: 'General' },
           { value: 'network', label: 'Network' },
@@ -161,44 +182,46 @@ export default function SettingsPage() {
             Collapse all folds them together. */}
         <DisclosureToolbar className="-mt-3 mb-2" />
         <TabPanel value="general">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader title="General" />
-            <CardBody className="max-w-xl space-y-4">
-              <Field label="Theme">
-                <Select
-                  value={draft.general.theme}
-                  onChange={(e) => patch('general', { theme: e.target.value as AppSettings['general']['theme'] })}
-                >
-                  <option value="dark">Dark (default)</option>
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                </Select>
-              </Field>
-              <Field
-                label="Text size"
-                hint="Scales every text size in the app at once. Useful on high-DPI panels, or if the default type is too small to read comfortably."
-              >
-                <Select
-                  value={draft.general.typeScale}
-                  onChange={(e) => patch('general', { typeScale: e.target.value as AppSettings['general']['typeScale'] })}
-                >
-                  <option value="default">Default (100%)</option>
-                  <option value="large">Large (112%)</option>
-                  <option value="xl">Extra large (125%)</option>
-                </Select>
-              </Field>
-              <Field label="Language">
-                <Select value={draft.general.language} onChange={(e) => patch('general', { language: e.target.value })}>
-                  <option value="en">English</option>
-                </Select>
-              </Field>
-              <Field label="Units">
-                <Select value={draft.general.units} onChange={(e) => patch('general', { units: e.target.value as 'metric' | 'imperial' })}>
-                  <option value="metric">Metric</option>
-                  <option value="imperial">Imperial</option>
-                </Select>
-              </Field>
-              <div className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-4 py-3">
+            {/* Two columns, because the card is two columns wide. A single
+                400px column of selects inside a 1050px card left half the
+                surface empty and made a four-field form look unfinished. */}
+            <CardBody className="max-w-2xl">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Theme">
+                  <Select
+                    value={draft.general.theme}
+                    onChange={(e) => patch('general', { theme: e.target.value as AppSettings['general']['theme'] })}
+                  >
+                    <option value="dark">Dark (default)</option>
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                  </Select>
+                </Field>
+                <Field label="Text size" hint="Scales every text size in the app at once.">
+                  <Select
+                    value={draft.general.typeScale}
+                    onChange={(e) => patch('general', { typeScale: e.target.value as AppSettings['general']['typeScale'] })}
+                  >
+                    <option value="default">Default (100%)</option>
+                    <option value="large">Large (112%)</option>
+                    <option value="xl">Extra large (125%)</option>
+                  </Select>
+                </Field>
+                <Field label="Language">
+                  <Select value={draft.general.language} onChange={(e) => patch('general', { language: e.target.value })}>
+                    <option value="en">English</option>
+                  </Select>
+                </Field>
+                <Field label="Units">
+                  <Select value={draft.general.units} onChange={(e) => patch('general', { units: e.target.value as 'metric' | 'imperial' })}>
+                    <option value="metric">Metric</option>
+                    <option value="imperial">Imperial</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="mt-4 flex items-center justify-between rounded-lg bg-surface-2 px-4 py-3">
                 <div>
                   <div className="text-sm">Notifications</div>
                   <div className="text-xs text-faint">Toast notifications for finished tests and failures</div>
@@ -209,17 +232,19 @@ export default function SettingsPage() {
                   onCheckedChange={(v) => patch('general', { notifications: v })}
                 />
               </div>
-              <Button variant="primary" loading={saving} onClick={() => void save({ general: draft.general })}>
-                <Save size={14} /> Save general
-              </Button>
+              <div className="mt-4 border-t border-line pt-4">
+                <Button variant="primary" loading={saving} onClick={() => void save({ general: draft.general })}>
+                  <Save size={14} /> Save general
+                </Button>
+              </div>
             </CardBody>
           </Card>
         </TabPanel>
 
         <TabPanel value="network">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader title="Network" />
-            <CardBody className="max-w-xl space-y-4">
+            <CardBody className="max-w-2xl space-y-4">
               <Field label="IP preference" hint="Which address family tests should prefer">
                 <Select
                   value={draft.network.ipPreference}
@@ -284,9 +309,9 @@ export default function SettingsPage() {
         </TabPanel>
 
         <TabPanel value="diagnostics">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader title="Diagnostics" />
-            <CardBody className="max-w-xl space-y-4">
+            <CardBody className="max-w-2xl space-y-4">
               <Field label="Default test target">
                 <Input
                   value={draft.diagnostics.defaultTestTarget}
@@ -328,7 +353,7 @@ export default function SettingsPage() {
         </TabPanel>
 
         <TabPanel value="optimization">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader
               title="Scoring weights"
               subtitle="Applied to the route/endpoint/optimization scoring engine"
@@ -338,7 +363,7 @@ export default function SettingsPage() {
                 </span>
               }
             />
-            <CardBody className="max-w-xl">
+            <CardBody className="max-w-2xl">
               <SectionNote id="weights">
                 Weights must sum to 100. The engine only counts components that were actually measured and
                 renormalizes the rest.
@@ -371,9 +396,9 @@ export default function SettingsPage() {
         </TabPanel>
 
         <TabPanel value="vpn">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader title="VPN" subtitle="Behavior preferences for the VPN engine" />
-            <CardBody className="max-w-xl space-y-4">
+            <CardBody className="max-w-2xl space-y-4">
               <SectionNote id="vpn-behavior">
                 The kill switch applies to proxy-mode tunnels: when one routes the system proxy and drops,
                 non-bypassed traffic is fail-closed (pointed at a sink that answers nothing) instead of
@@ -434,12 +459,12 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
-          <Card className="mt-6">
+          <Card className="mt-6 max-w-3xl">
             <CardHeader
               title="Split tunnel"
               subtitle="Destinations that should not go through a public node"
             />
-            <CardBody className="max-w-xl space-y-4">
+            <CardBody className="max-w-2xl space-y-4">
               <SectionNote id="split-tunnel">
                 Applies to the proxy tunnel only — node tests always dial the node, or they would be measuring a
                 different path than the one they report. Turns on split-tunnel routing in the local core
@@ -542,12 +567,12 @@ export default function SettingsPage() {
         </TabPanel>
 
         <TabPanel value="platform">
-          <Card>
+          <Card className="max-w-3xl">
             <CardHeader
               title="Platform capabilities"
               subtitle="What this machine actually supports — no silent fallbacks"
             />
-            <CardBody className="max-w-xl">
+            <CardBody className="max-w-2xl">
               <SectionNote id="platform-caps">
                 Capabilities are detected live (a single ICMP probe against 1.1.1.1, VPN binary detection).
                 DoT works only when outbound TCP 853 is allowed by your network; DoH uses port 443.
@@ -666,7 +691,7 @@ function RecoveryCard() {
         title="Recovery"
         subtitle="Repair a wedged installation without losing data"
       />
-      <CardBody className="max-w-xl space-y-4">
+      <CardBody className="max-w-2xl space-y-4">
         <div className="rounded-lg border border-line bg-surface-2 p-4">
           <div className="text-sm font-medium">Safe Mode</div>
           <p className="mt-1 text-xs leading-relaxed text-faint">
@@ -718,7 +743,7 @@ function AutoTestPanel({
         title="Node auto-tester"
         subtitle="Bounded batches that keep imported node measurements current — never-validated nodes first, then stale-good, then unstable"
       />
-      <CardBody className="max-w-xl space-y-4">
+      <CardBody className="max-w-2xl space-y-4">
         <SectionNote id="auto-test">
           Runs cheap TCP reachability probes only — proxy tests (which launch a local
           engine) stay manual. Dead nodes unseen for 14 days are retired to the
@@ -859,7 +884,7 @@ function CapBadge({ state }: { state: string }) {
   const tone = state === 'supported' ? 'ok' : state === 'partial' ? 'warn' : state === 'requires-permission' ? 'warn' : 'neutral';
   return (
     <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-micro font-medium uppercase tracking-wide ${
+      className={`shrink-0 rounded-md border px-2 py-0.5 text-micro font-medium uppercase tracking-wide ${
         tone === 'ok'
           ? 'border-ok/30 bg-ok/10 text-ok'
           : tone === 'warn'

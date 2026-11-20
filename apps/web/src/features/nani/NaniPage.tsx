@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react';
 import {
   Activity,
   Brain,
@@ -32,13 +39,14 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { Input } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Notice } from '@/components/ui/Surface';
+import { TabPanel, Tabs } from '@/components/ui/Tabs';
 
 import {
   cancelInvestigation,
   explain,
   fetchDriftEvents,
   fetchHypothesisView,
-  fetchInvestigationStatus,
   fetchLearningStatus,
   fetchNaniStatus,
   isDesktopNani,
@@ -50,7 +58,7 @@ import {
   type NaniStatusDto,
   type NaniWebStatusDto,
 } from './naniApi';
-import { lastFailedHealthSignal, type NaniEvent, type NaniEventState } from './naniEvents';
+import { lastFailedHealthSignal, type NaniEventState } from './naniEvents';
 import {
   deleteConversation,
   loadConversations,
@@ -62,7 +70,7 @@ import {
   type NaniConversation,
   type NaniInvestigationRecord,
 } from './naniStore';
-import { formatNats, formatShift, toRows } from './hypothesisView';
+import { calibrationDisplay, formatNats, formatShift, toRows } from './hypothesisView';
 import { useNaniEvents } from './useNaniEvents';
 import { RecoveryControls } from './RecoveryControls';
 
@@ -99,11 +107,14 @@ function AiCore({ state }: { state: string }) {
   const active = !['Idle', 'Completed', 'Failed', 'Cancelled'].includes(state);
   return (
     <div className="relative mx-auto mb-7 flex h-40 w-40 items-center justify-center">
-      <div className={`absolute inset-0 rounded-full border-2 ${active ? 'animate-ping border-accent/40' : 'border-line'}`} />
+      <div className={`absolute inset-0 rounded-full border-2 ${active ? 'border-accent/40' : 'border-line'}`} />
       <div className={`absolute inset-4 rounded-full border ${active ? 'border-accent/60' : 'border-line'}`} />
       <div className={`flex h-20 w-20 items-center justify-center rounded-full ${active ? 'bg-accent/15' : 'bg-surface-2'}`}>
         <Brain size={32} className={active ? 'text-accent' : 'text-muted'} />
       </div>
+      {active && (
+        <div className="absolute inset-0 rounded-full border-2 border-accent/20 animate-pulse-dot" />
+      )}
       <div className="absolute -bottom-6 text-xs font-medium text-muted">{state}</div>
     </div>
   );
@@ -258,45 +269,62 @@ export function NaniPage() {
         description="NetPulse Adaptive Network Intelligence — observe, investigate, understand, improve."
       />
 
-      <div className="flex flex-wrap gap-1 border-b border-line pb-2">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              tab === t.id ? 'bg-accent text-accent-foreground' : 'text-muted hover:bg-surface-2 hover:text-text'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'overview' && (
-        <OverviewTab
-          events={events}
-          eventsAvailable={eventsAvailable}
-          desktop={desktop}
-          web={web}
-          statusError={statusError}
-          refreshStatus={refreshStatus}
-          checking={checking}
-          checkResult={checkResult}
-          checkError={checkError}
-          doHealthCheck={doHealthCheck}
-          setTab={setTab}
-        />
-      )}
-      {tab === 'live' && <LiveTab events={events} eventsAvailable={eventsAvailable} />}
-      {tab === 'recovery' && <RecoveryControls />}
-      {tab === 'workspace' && <WorkspaceTab events={events} setTab={setTab} />}
-      {tab === 'hypotheses' && <HypothesesTab events={events} />}
-      {tab === 'evidence' && <EvidenceTab events={events} />}
-      {tab === 'network' && <NetworkTab events={events} lastCheck={lastCheck} />}
-      {tab === 'learning' && <LearningTab learning={learning} drift={drift} />}
-      {tab === 'history' && <HistoryTab setTab={setTab} />}
-      {tab === 'settings' && <SettingsTab />}
+      {/* One tab language for the product. This bar used to be hand-rolled —
+          a bottom rule and a solid accent fill, unlike every other tab row in
+          the app — and carried its own copy of the APG roving-focus logic.
+          Radix already implements that model, so the shared `Tabs` primitive
+          gives the same keyboard behaviour with none of the duplicate code,
+          and NANI stops looking like a separate application. */}
+      <Tabs
+        items={TABS.map((t) => ({ value: t.id, label: t.label, icon: t.icon }))}
+        value={tab}
+        onValueChange={(v) => setTab(v as Tab)}
+        size="sm"
+        ariaLabel="NANI sections"
+      >
+        <TabPanel value="overview">
+          <OverviewTab
+            events={events}
+            eventsAvailable={eventsAvailable}
+            desktop={desktop}
+            web={web}
+            statusError={statusError}
+            refreshStatus={refreshStatus}
+            checking={checking}
+            checkResult={checkResult}
+            checkError={checkError}
+            doHealthCheck={doHealthCheck}
+            setTab={setTab}
+          />
+        </TabPanel>
+        <TabPanel value="live">
+          <LiveTab events={events} eventsAvailable={eventsAvailable} />
+        </TabPanel>
+        <TabPanel value="recovery">
+          <RecoveryControls />
+        </TabPanel>
+        <TabPanel value="workspace">
+          <WorkspaceTab events={events} setTab={setTab} />
+        </TabPanel>
+        <TabPanel value="hypotheses">
+          <HypothesesTab events={events} />
+        </TabPanel>
+        <TabPanel value="evidence">
+          <EvidenceTab events={events} />
+        </TabPanel>
+        <TabPanel value="network">
+          <NetworkTab events={events} lastCheck={lastCheck} />
+        </TabPanel>
+        <TabPanel value="learning">
+          <LearningTab learning={learning} drift={drift} />
+        </TabPanel>
+        <TabPanel value="history">
+          <HistoryTab setTab={setTab} />
+        </TabPanel>
+        <TabPanel value="settings">
+          <SettingsTab />
+        </TabPanel>
+      </Tabs>
     </div>
   );
 }
@@ -332,35 +360,35 @@ function OverviewTab({
 }) {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader title="AI activity" subtitle="Live engine state" />
-          <CardBody className="flex flex-col items-center gap-3 py-6">
+      {/* One engine card, not two.
+          "AI activity" and "Engine status" described the same engine from two
+          angles and sat side by side at 1/3 and 2/3, so the narrower one was
+          cramped and the wider one was two-thirds empty. Read together they are
+          one instrument: the orb is what the engine is doing, the right column
+          is what it reports and what you can do about it. */}
+      <Card>
+        <CardHeader
+          title="Engine"
+          subtitle="Authoritative Rust core / API — live state, not an inference"
+          actions={
+            <Button size="sm" variant="secondary" onClick={() => void refreshStatus()}>
+              <RefreshCw size={14} /> Refresh
+            </Button>
+          }
+        />
+        <CardBody className="grid gap-6 @container lg:grid-cols-[200px_minmax(0,1fr)] lg:items-center lg:gap-8">
+          <div className="flex flex-col items-center">
             <AiCore state={events.activity} />
-            <p className="text-center text-xs text-muted">{events.detail ?? 'No activity received yet'}</p>
-            <Badge tone={eventsAvailable ? 'ok' : 'neutral'}>
-              {eventsAvailable ? 'event stream connected' : 'event stream unavailable (web mode)'}
-            </Badge>
-          </CardBody>
-        </Card>
+            <p className="mt-1 text-center text-xs text-muted">{events.detail ?? 'No activity received yet'}</p>
+          </div>
 
-        <Card className="lg:col-span-2">
-          <CardHeader
-            title="Engine status"
-            subtitle="Authoritative Rust core / API"
-            actions={
-              <Button size="sm" variant="secondary" onClick={() => void refreshStatus()}>
-                <RefreshCw size={14} /> Refresh
-              </Button>
-            }
-          />
-          <CardBody className="space-y-3">
+          <div className="min-w-0 space-y-3">
             {statusError ? (
               <ErrorState error={new Error(statusError)} retry={() => void refreshStatus()} />
             ) : !desktop && !web ? (
               <LoadingState label="Reading NANI status" />
             ) : desktop ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 <Metric label="Healthy APIs" value={desktop.healthy_apis} />
                 <Metric label="Total APIs" value={desktop.total_apis} />
                 <Metric label="Events (seq)" value={desktop.seq} />
@@ -377,6 +405,16 @@ function OverviewTab({
               </div>
             )}
 
+            {/* The stream is a capability, not a status. As a badge it competed
+                with the engine's real state and read as a button; as a notice it
+                says what is missing and why, and stops there. */}
+            {!eventsAvailable && (
+              <Notice tone="info">
+                The live event stream is only exposed by the desktop application. This view shows engine
+                status without it.
+              </Notice>
+            )}
+
             <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
               <Button onClick={() => void doHealthCheck()} loading={checking} disabled={checking}>
                 <Play size={14} /> Run health check
@@ -384,9 +422,9 @@ function OverviewTab({
               {checkResult && <span className="text-xs text-ok">{checkResult}</span>}
               {checkError && <span className="text-xs text-danger">{checkError}</span>}
             </div>
-          </CardBody>
-        </Card>
-      </div>
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader title="What would you like NANI to investigate?" subtitle="Natural-language requests" />
@@ -405,7 +443,7 @@ function OverviewTab({
               <button
                 key={q}
                 onClick={() => setTab('workspace')}
-                className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-left text-xs text-muted hover:bg-accent/10 hover:text-text"
+                className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-left text-xs text-muted hover:bg-surface-3 hover:text-text"
               >
                 {q}
               </button>
@@ -428,12 +466,12 @@ function OverviewTab({
               }
             />
           ) : (
-            <ul className="space-y-1 font-mono text-xs text-muted">
+            <ul className="space-y-1 font-mono text-xs">
               {events.events.slice(-12).reverse().map((e) => (
                 <li key={e.eventId} className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                   <span className="text-faint">#{e.seq}</span>
-                  {e.type}
+                  <span className="text-muted">{e.type}</span>
                 </li>
               ))}
             </ul>
@@ -454,7 +492,11 @@ function OverviewTab({
 /* ------------------------------------------------------------------ */
 
 const PIPELINE: { key: string; label: string; match: (t: string) => boolean }[] = [
-  { key: 'observe', label: 'OBSERVE', match: (t) => t === 'TelemetryTick' || t === 'nani:health:updated' },
+  {
+    key: 'observe',
+    label: 'OBSERVE',
+    match: (t) => t === 'TelemetryTick' || t === 'HealthCheckCompleted' || t === 'nani:health:updated',
+  },
   { key: 'classify', label: 'CLASSIFY', match: (t) => t === 'FailureDetected' || t === 'ApiHealthChanged' },
   { key: 'hypothesize', label: 'HYPOTHESES', match: (t) => t === 'DiagnosisUpdated' || t === 'nani:diagnosis:completed' },
   { key: 'analyze', label: 'ANALYZE', match: (t) => t === 'DriftDetected' },
@@ -589,7 +631,7 @@ function LiveTab({ events, eventsAvailable }: { events: NaniEventState; eventsAv
                 <div
                   key={stage.key}
                   className={`rounded-lg border px-3 py-2 text-xs ${
-                    done ? 'border-ok/40 bg-ok/5 text-muted' : 'border-line bg-surface-2 text-faint'
+                    done ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line bg-surface-2 text-faint'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -636,10 +678,10 @@ function LiveTab({ events, eventsAvailable }: { events: NaniEventState; eventsAv
                 </Badge>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs text-muted">
-                <div><span className="font-mono">Observations</span><div>{active.observation_count}</div></div>
-                <div><span className="font-mono">Hypotheses</span><div>{active.hypothesis_count}</div></div>
-                <div><span className="font-mono">Confidence</span><div>{Math.round(active.confidence * 100)}%</div></div>
-                <div><span className="font-mono">Seq</span><div>{active.seq}</div></div>
+                <div><span className="font-mono">Observations</span><div className="text-text">{active.observation_count}</div></div>
+                <div><span className="font-mono">Hypotheses</span><div className="text-text">{active.hypothesis_count}</div></div>
+                <div><span className="font-mono">Confidence</span><div className="text-text">{(active.confidence * 100).toFixed(1)}%</div></div>
+                <div><span className="font-mono">Seq</span><div className="text-text">{active.seq}</div></div>
               </div>
               {active.top_hypothesis && <div className="mt-1 truncate text-text">{`Top: ${active.top_hypothesis}`}</div>}
               {active.result && <div className="mt-1 text-xs text-muted">{`Result: ${active.result}`}</div>}
@@ -661,12 +703,13 @@ function LiveTab({ events, eventsAvailable }: { events: NaniEventState; eventsAv
           {investigations.length === 0 ? (
             <EmptyState icon={<HistoryIcon size={20} />} title="No investigations" message="Start an investigation to see it here." />
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1" role="list">
               {investigations.map((inv) => (
                 <div
                   key={inv.id}
+                  role="listitem"
                   className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${
-                    activeId === inv.id ? 'bg-accent/15 border-accent/30' : 'border-line bg-surface-2 hover:bg-surface-3'
+                    activeId === inv.id ? 'bg-accent/10 border-accent/30' : 'border-line bg-surface-2 hover:bg-surface-3'
                   }`}
                 >
                   <div className="min-w-0">
@@ -691,12 +734,12 @@ function LiveTab({ events, eventsAvailable }: { events: NaniEventState; eventsAv
           {events.events.length === 0 ? (
             <EmptyState icon={<Activity size={20} />} title="No activity" message="Events appear as the engine works." />
           ) : (
-            <ul className="space-y-1 font-mono text-xs text-muted">
+            <ul className="space-y-1 font-mono text-xs">
               {events.events.slice().reverse().map((e) => (
                 <li key={e.eventId} className="flex items-center gap-2">
                   <span className="text-faint">#{e.seq}</span>
                   <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                  {e.type}
+                  <span className="text-muted">{e.type}</span>
                 </li>
               ))}
             </ul>
@@ -847,8 +890,8 @@ function WorkspaceTab({ events, setTab }: { events: NaniEventState; setTab: (t: 
             <div key={c.id} className="flex items-center gap-1">
               <button
                 onClick={() => setActiveId(c.id)}
-                className={`flex-1 truncate rounded px-2 py-1.5 text-left text-xs ${
-                  c.id === active.id ? 'bg-accent/15 text-text' : 'text-muted hover:bg-surface-2'
+                className={`flex-1 truncate rounded-md px-2 py-1.5 text-left text-xs ${
+                  c.id === active.id ? 'bg-accent/10 text-accent-strong border-l-2 border-accent' : 'text-muted hover:bg-surface-2'
                 }`}
               >
                 {c.title}
@@ -861,7 +904,7 @@ function WorkspaceTab({ events, setTab }: { events: NaniEventState; setTab: (t: 
         </CardBody>
       </Card>
 
-      <div className="flex h-[60vh] flex-col">
+      <div className="flex h-[calc(100vh-280px)] min-h-[300px] flex-col">
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto rounded-lg border border-line bg-surface-2 p-4">
           {active.messages.length === 0 && (
             <p className="text-sm text-muted">
@@ -871,8 +914,8 @@ function WorkspaceTab({ events, setTab }: { events: NaniEventState; setTab: (t: 
           {active.messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
-                  m.role === 'user' ? 'bg-accent text-accent-foreground' : m.error ? 'bg-danger/10 text-danger' : 'bg-surface border border-line text-text'
+                className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
+                  m.role === 'user' ? 'bg-accent text-on-accent' : m.error ? 'bg-danger/10 text-danger' : 'bg-surface border border-line text-text'
                 }`}
               >
                 <div className="whitespace-pre-wrap">{m.content}</div>
@@ -935,6 +978,7 @@ function HypothesesTab({ events }: { events: NaniEventState }) {
 
   const rows = useMemo(() => toRows(view?.hypotheses ?? []), [view]);
   const probe = view?.selected_probe ?? null;
+  const calibration = useMemo(() => (view ? calibrationDisplay(view) : null), [view]);
 
   return (
     <Card>
@@ -988,6 +1032,14 @@ function HypothesesTab({ events }: { events: NaniEventState }) {
                   MAP <span className="font-mono text-text">{view.map_label}</span>
                 </span>
               )}
+              {calibration && (
+                <span title={calibration.note}>
+                  {calibration.calibrated ? 'Calibrated confidence' : 'Confidence'}{' '}                  <span className="font-mono text-text">
+                    {(Math.max(0, Math.min(1, calibration.confidence)) * 100).toFixed(1)}%
+                  </span>
+                  <span className="ml-1 text-faint">({calibration.note})</span>
+                </span>
+              )}
               <span className="flex items-center gap-1">
                 bar = posterior ·<span className="inline-block h-2 w-0.5 bg-text" />= prior
               </span>
@@ -1019,7 +1071,7 @@ function HypothesesTab({ events }: { events: NaniEventState }) {
               </div>
               {probe ? (
                 <>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <div className="text-faint">Expected IG</div>
                       <div className="font-mono text-text">{formatNats(probe.expected_information_gain)}</div>
@@ -1028,12 +1080,7 @@ function HypothesesTab({ events }: { events: NaniEventState }) {
                       <div className="text-faint">Cost</div>
                       <div className="font-mono text-text">{probe.cost.toFixed(1)}</div>
                     </div>
-                    <div>
-                      <div className="text-faint">IG per unit cost</div>
-                      <div className="font-mono text-text">{probe.cost > 0 ? formatNats(probe.efficiency) : 'n/a'}</div>
-                    </div>
                   </div>
-                  <div className="mt-2 text-xs text-faint">{probe.reasoning}</div>
                 </>
               ) : (
                 <div className="mt-1 text-xs text-faint">
@@ -1086,7 +1133,8 @@ function EvidenceTab({ events }: { events: NaniEventState }) {
 /** The last health check this session ran, as the engine reported it. */
 interface LastHealthCheck {
   at: number;
-  healthy: number;
+  /** null when no health verdict was measured — never coerce attempts to healthy. */
+  healthy: number | null;
   total: number;
   raw: string;
 }
@@ -1094,18 +1142,21 @@ interface LastHealthCheck {
 /**
  * Read the healthy/total counts out of the engine's health-check result string.
  *
- * The desktop returns `health_check_complete: 0/1 healthy`. The web path runs
- * one check per registered API and reports no aggregate verdict, so the count of
- * checks is used rather than claiming a health value nobody measured.
+ * Only the desktop aggregate verdict (`health_check_complete: 0/1 healthy`) is
+ * a measured health value. The web path runs one check per registered API and
+ * returns NO aggregate verdict, so `healthy` must stay null there: substituting
+ * the attempt count (F-03) told users "N/N healthy" after failed checks.
  */
-function parseHealthCheckResult(raw: string, webChecked: number): LastHealthCheck {
+export function parseHealthCheckResult(raw: string, webChecked: number): LastHealthCheck {
   const match = raw.match(/(\d+)\s*\/\s*(\d+)\s+healthy/i);
   const healthy = match?.[1];
   const total = match?.[2];
   if (healthy !== undefined && total !== undefined) {
     return { at: Date.now(), healthy: Number(healthy), total: Number(total), raw };
   }
-  return { at: Date.now(), healthy: webChecked, total: webChecked, raw };
+  // No verdict was reported. Record that N checks were attempted without
+  // claiming any of them was healthy.
+  return { at: Date.now(), healthy: null, total: webChecked, raw };
 }
 
 function NetworkTab({ events, lastCheck }: { events: NaniEventState; lastCheck: LastHealthCheck | null }) {
@@ -1118,29 +1169,41 @@ function NetworkTab({ events, lastCheck }: { events: NaniEventState; lastCheck: 
         (e) =>
           e.type === 'nani:health:updated' ||
           e.type === 'ApiHealthChanged' ||
+          e.type === 'HealthCheckCompleted' ||
           e.type === 'TelemetryTick',
       ).length,
     [events.events],
   );
   const gap = useMemo(() => lastFailedHealthSignal(events.events), [events.events]);
-  const lastCheckFailed = lastCheck !== null && lastCheck.total > 0 && lastCheck.healthy < lastCheck.total;
+  const verdictText =
+    lastCheck && lastCheck.healthy !== null ? `${lastCheck.healthy}/${lastCheck.total} healthy` : null;
+  const lastCheckFailed =
+    lastCheck !== null && lastCheck.healthy !== null && lastCheck.healthy < lastCheck.total;
   const checkedAt = lastCheck ? new Date(lastCheck.at).toLocaleTimeString() : null;
   return (
     <Card>
       <CardHeader title="Network intelligence" subtitle="Measurements from real events" />
       <CardBody className="space-y-3">
         {health === 0 ? (
-          lastCheckFailed ? (
+          lastCheckFailed && verdictText ? (
             <EmptyState
               icon={<NetworkIcon size={20} />}
               title="Last health check failed before measuring"
-              message={`The check at ${checkedAt} reported ${lastCheck.healthy}/${lastCheck.total} healthy, so no latency, loss or jitter sample was produced. NANI charts only measurements it actually made — retry once the endpoint is reachable.`}
+              message={`The check at ${checkedAt} reported ${verdictText}, so no latency, loss or jitter sample was produced. NANI charts only measurements it actually made — retry once the endpoint is reachable.`}
             />
-          ) : lastCheck ? (
+          ) : lastCheck && verdictText ? (
             <EmptyState
               icon={<NetworkIcon size={20} />}
               title="Last check passed; no samples yet"
-              message={`The check at ${checkedAt} reported ${lastCheck.healthy}/${lastCheck.total} healthy, but no measurement event has arrived yet. Latency, loss and jitter appear as probes complete — nothing is synthesized in the meantime.`}
+              message={`The check at ${checkedAt} reported ${verdictText}, but no measurement event has arrived yet. Latency, loss and jitter appear as probes complete — nothing is synthesized in the meantime.`}
+            />
+          ) : lastCheck ? (
+            // F-03: web mode measured no health verdict. Say so plainly instead
+            // of inventing "N/N healthy" from the number of attempts.
+            <EmptyState
+              icon={<NetworkIcon size={20} />}
+              title="Checks attempted; verdict unavailable"
+              message={`${lastCheck.total} API check${lastCheck.total === 1 ? '' : 's'} were attempted at ${checkedAt}, but the backend reported no aggregate health verdict. NANI will not call an unmeasured result healthy — inspect the raw result below or run a desktop health check.`}
             />
           ) : gap ? (
             <EmptyState
@@ -1167,9 +1230,9 @@ function NetworkTab({ events, lastCheck }: { events: NaniEventState; lastCheck: 
             <span className="font-mono text-faint">{lastCheck.raw}</span>
           </div>
         )}
-        {lastCheck && !lastCheckFailed && health > 0 && (
+        {lastCheck && !lastCheckFailed && health > 0 && verdictText && (
           <p className="text-xs text-ok">
-            Last check at {checkedAt}: {lastCheck.healthy}/{lastCheck.total} healthy.
+            Last check at {checkedAt}: {verdictText}.
           </p>
         )}
         <p className="text-xs text-faint">

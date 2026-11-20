@@ -1,0 +1,110 @@
+
+> @netpulse/web@3.2.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/web[39m
+
+Not implemented: navigation to another Document
+Not implemented: navigation to another Document
+ [32m✓[39m test/externalNavigation.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 507[2mms[22m[39m
+ [32m✓[39m src/lib/transport.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 368[2mms[22m[39m
+   [32m✓[39m transport [2m(6)[22m
+     [33m[2m✓[22m[39m falls back to web transport without Tauri IPC[33m 332[2mms[22m[39m
+ [32m✓[39m test/noRawConfigSurface.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 569[2mms[22m[39m
+ [32m✓[39m src/lib/cloud/secureStore.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 498[2mms[22m[39m
+   [32m✓[39m secureStore [2m(5)[22m
+     [33m[2m✓[22m[39m protects writes and restores them across a restart (desktop)[33m 424[2mms[22m[39m
+ [32m✓[39m test/tunStatus.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 133[2mms[22m[39m
+ [32m✓[39m test/failureIntelligence.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 117[2mms[22m[39m
+ [32m✓[39m test/tokenRefs.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 431[2mms[22m[39m
+ [32m✓[39m test/externalUrlLink.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+ [32m✓[39m test/cloudTimeouts.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 104[2mms[22m[39m
+ [32m✓[39m test/profileCloudRestore.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 87[2mms[22m[39m
+ [32m✓[39m test/cloudEgress.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 141[2mms[22m[39m
+ [32m✓[39m test/cloudFeedbackOwnership.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 158[2mms[22m[39m
+ [32m✓[39m test/subscriptionView.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[33m 491[2mms[22m[39m
+ [32m✓[39m test/cloudSyncCompletion.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 178[2mms[22m[39m
+ [32m✓[39m src/features/nani/naniEvents.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+ [32m✓[39m test/agentPathRender.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 376[2mms[22m[39m
+ [32m✓[39m test/cloudSync.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 985[2mms[22m[39m
+   [32m✓[39m offline queue [2m(1)[22m
+     [33m[2m✓[22m[39m queues favorites and preferences with a bounded count[33m 348[2mms[22m[39m
+   [32m✓[39m E2E profile vault crypto [2m(3)[22m
+     [33m[2m✓[22m[39m binds blobs to account and profile via AAD[33m 331[2mms[22m[39m
+ [32m✓[39m test/recoveryRegressions.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 117[2mms[22m[39m
+ [32m✓[39m test/forgotPasswordCountdown.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 991[2mms[22m[39m
+   [32m✓[39m forgot password throttle [2m(2)[22m
+     [33m[2m✓[22m[39m counts the wait down and keeps the form disabled until it expires[33m 679[2mms[22m[39m
+ [32m✓[39m test/typeScale.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 191[2mms[22m[39m
+ [32m✓[39m test/needsAttention.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 266[2mms[22m[39m
+ [32m✓[39m test/confidenceRingGlyph.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 135[2mms[22m[39m
+ [32m✓[39m test/nodePins.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 113[2mms[22m[39m
+ [32m✓[39m test/quickConnect.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m test/provisionedRepair.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 249[2mms[22m[39m
+ [32m✓[39m test/nodeActionPolicy.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 180[2mms[22m[39m
+ [32m✓[39m test/apiErrorBody.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 132[2mms[22m[39m
+ [32m✓[39m test/cardStagger.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+ [32m✓[39m test/cloudRefreshRace.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m test/nodePicker.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 142[2mms[22m[39m
+ [32m✓[39m test/openExternal.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 151[2mms[22m[39m
+ [32m✓[39m test/mapGlobeAccuracy.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 108[2mms[22m[39m
+ [32m✓[39m test/mapRingPulse.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m test/errorStateRetry.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 107[2mms[22m[39m
+ [32m✓[39m test/updateHistoryPolicy.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 93[2mms[22m[39m
+ [32m✓[39m test/provisionProfiles.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 121[2mms[22m[39m
+ [32m✓[39m src/features/nani/hypothesisView.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m test/agentPath.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 176[2mms[22m[39m
+ [32m✓[39m test/mapConfidenceRing.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 88[2mms[22m[39m
+ [32m✓[39m test/cloudForgotPassword.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 210[2mms[22m[39m
+ [31m❯[39m test/mapClusterPerf.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 492[2mms[22m[39m
+   [31m❯[39m clustering performance [2m(3)[22m
+[31m     [31m×[31m clusters 5,000 nodes in under 100ms at far zoom[39m[33m 409[2mms[22m[39m
+     [32m✓[39m clusters 1,000 nodes in under 25ms at mid zoom[32m 1[2mms[22m[39m
+     [32m✓[39m close zoom is effectively free even at 5,000 nodes[32m 45[2mms[22m[39m
+ [32m✓[39m test/mapConfidenceFilter.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m test/tauriInvoke.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m test/disclosure.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 100[2mms[22m[39m
+ [32m✓[39m test/countdown.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+ [32m✓[39m test/startupPhase.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+ [32m✓[39m test/engineBadge.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m test/headingLevel.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m test/tunnelExitHint.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+ [32m✓[39m test/discoveryReport.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 147[2mms[22m[39m
+ [32m✓[39m test/updater.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 94[2mms[22m[39m
+ [32m✓[39m test/nodeHealthDisplay.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m test/geoStatus.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m test/vpnDecisionCards.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m test/mapDestinationGeo.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m test/mapClusterPerf.test.ts[2m > [22mclustering performance[2m > [22mclusters 5,000 nodes in under 100ms at far zoom
+[31m[1mAssertionError[22m: expected 213.93669999999838 to be less than 100[39m
+[36m [2m❯[22m test/mapClusterPerf.test.ts:[2m37:16[22m[39m
+    [90m 35|[39m     expect(out.length).toBeGreaterThan(0);
+    [90m 36|[39m     expect(out.length).toBeLessThan(5000);
+    [90m 37|[39m     expect(dt).toBeLessThan(100);
+    [90m   |[39m                [31m^[39m
+    [90m 38|[39m   });
+    [90m 39|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m54 passed[39m[22m[90m (55)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m524 passed[39m[22m[90m (525)[39m
+[2m   Start at [22m 17:40:23
+[2m   Duration [22m 59.15s[2m (environment 91%, import 5%, transform 2%, tests 1%, worker 1%)[22m
+
+[2mEnvironment [22m [33mjsdom was created 55 times[39m[2m · 812.33s total, 91% of tracked time[22m
+[2m            [22m [2mcreate it once per worker with [22m[33mpool: 'vmThreads'[39m[2m (keeps per-file isolation) or [22m[33misolate: false[39m[2m (shares it across files)[22m
+[2m            [22m [2mlearn more: https://vitest.dev/guide/improving-performance#test-environments[22m
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path E:\Code\Project\Vpn_app\apps\web
+npm error workspace @netpulse/web@3.2.0
+npm error location E:\Code\Project\Vpn_app\apps\web
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c vitest run

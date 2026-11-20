@@ -13,7 +13,7 @@ import pino from 'pino';
 
 import { normalizeBypass } from '@netpulse/shared';
 
-import type { ProxyEngineId } from '@netpulse/shared';
+import type { ApiRegistration, ProxyEngineId } from '@netpulse/shared';
 
 import { createAuth, ensureDaemonToken } from './auth';
 import { loadConfig } from './config';
@@ -614,7 +614,7 @@ export async function buildApp(opts: BuildOptions = {}) {
 
   // Register default providers from configuration (secrets referenced by key id,
   // never stored here). These are the APIs the desktop application depends on.
-  const defaultApis = [
+  const defaultApis: ApiRegistration[] = [
     {
       id: 'backend',
       provider: 'netpulse-backend',
@@ -634,7 +634,9 @@ export async function buildApp(opts: BuildOptions = {}) {
       endpoint: 'api.telegram.org:443',
       authType: 'bearer' as const,
       authKeyId: 'telegram-bot-token',
-      healthCheck: 'https-get' as const,
+      // `https-get` is not a HealthCheckMethod. An HTTPS endpoint is still an
+      // http-get probe; the TLS layer is selected separately by the adapter.
+      healthCheck: 'http-get',
       healthCheckPath: '/bot<token>/getMe',
       timeoutMs: 8_000,
       directPermitted: true,
@@ -643,7 +645,7 @@ export async function buildApp(opts: BuildOptions = {}) {
     },
   ];
   for (const api of defaultApis) {
-    nani.registerApi(api as any);
+    nani.registerApi(api);
   }
 
   // Advisory shadow health: assess configured providers on a timer without

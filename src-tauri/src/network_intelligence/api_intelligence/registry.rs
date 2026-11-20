@@ -82,6 +82,32 @@ pub struct ProbeOutcomeRecord {
     pub latency_ms: Option<f64>,
 }
 
+/// The event one completed health check produces for an API.
+///
+/// [`ApiRegistry::record_probe`] only emits `ApiHealthChanged` when the
+/// classification moved, so a check that confirms the previous verdict (the
+/// common case once the monitor loop has run) used to leave nothing in the
+/// event feed. This reports the measurement itself, which is what makes a
+/// manual check visible immediately.
+pub fn health_check_event(outcome: &ProbeOutcomeRecord) -> Event {
+    Event::HealthCheckCompleted {
+        api_id: outcome.api_id.clone(),
+        health: format!("{:?}", outcome.health),
+        category: format!("{:?}", outcome.category),
+        route: match &outcome.route {
+            RouteKind::Direct => "direct".to_string(),
+            RouteKind::Upstream(id) => format!("upstream:{id}"),
+        },
+        latency_ms: outcome.latency_ms,
+        healthy_layers: outcome
+            .layers
+            .iter()
+            .filter(|layer| layer.result == LayerResult::Ok)
+            .count(),
+        total_layers: outcome.layers.len(),
+    }
+}
+
 /// A permitted upstream route for an API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRoute {
@@ -365,6 +391,55 @@ impl Default for ApiRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_check_event_reports_the_measurement() {
+        let outcome = ProbeOutcomeRecord {
+            timestamp_ms: 1_700_000_000_000,
+            api_id: "api-1".into(),
+            health: Health::Healthy,
+            category: FailureCategory::Unknown,
+            route: RouteKind::Direct,
+            layers: vec![
+                HealthProbe {
+                    layer: "dns".into(),
+                    result: LayerResult::Ok,
+                    detail: None,
+                    latency_ms: Some(4.0),
+                },
+                HealthProbe {
+                    layer: "tcp".into(),
+                    result: LayerResult::Unknown,
+                    detail: None,
+                    latency_ms: None,
+                },
+            ],
+            latency_ms: Some(12.5),
+        };
+
+        let event = health_check_event(&outcome);
+        match event {
+            Event::HealthCheckCompleted {
+                api_id,
+                health,
+                route,
+                latency_ms,
+                healthy_layers,
+                total_layers,
+                ..
+            } => {
+                assert_eq!(api_id, "api-1");
+                assert_eq!(health, "Healthy");
+                assert_eq!(route, "direct");
+                assert_eq!(latency_ms, Some(12.5));
+                // Only a layer that actually passed counts as healthy; an
+                // untested layer is not a success.
+                assert_eq!(healthy_layers, 1);
+                assert_eq!(total_layers, 2);
+            }
+            other => panic!("expected HealthCheckCompleted, got {other:?}"),
+        }
+    }
 
     #[test]
     fn register_and_lookup() {

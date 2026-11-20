@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatNats, formatShift, toRows } from './hypothesisView';
+import { calibrationDisplay, formatNats, formatShift, toRows } from './hypothesisView';
 
 describe('toRows', () => {
   it('orders by posterior and keeps each prior paired with its hypothesis', () => {
@@ -33,6 +33,46 @@ describe('toRows', () => {
     ];
     toRows(input);
     expect(input[0]!.label).toBe('a');
+  });
+});
+
+describe('calibrationDisplay', () => {
+  const map = { label: 'dns', prior: 0.1, posterior: 0.62 };
+
+  it('never presents a self-derived map as calibrated confidence', () => {
+    const display = calibrationDisplay({
+      map_label: 'dns',
+      hypotheses: [map],
+      map_confidence_calibrated: 0.41,
+      calibration_samples: 42,
+    });
+    expect(display!.calibrated).toBe(false);
+    expect(display!.confidence).toBeCloseTo(0.62, 10);
+    expect(display!.note).toContain('not externally calibrated');
+    expect(display!.note).not.toContain('calibrated on');
+  });
+
+  it("falls back to the MAP's own posterior when no map is fitted", () => {
+    const display = calibrationDisplay({
+      map_label: 'dns',
+      hypotheses: [map],
+      map_confidence_calibrated: null,
+      calibration_samples: 5,
+    });
+    expect(display!.calibrated).toBe(false);
+    expect(display!.confidence).toBeCloseTo(0.62, 10);
+    expect(display!.note).toContain('5 internal consistency checks');
+  });
+
+  it('renders nothing without a MAP hypothesis', () => {
+    expect(
+      calibrationDisplay({
+        map_label: null,
+        hypotheses: [],
+        map_confidence_calibrated: null,
+        calibration_samples: 0,
+      }),
+    ).toBeNull();
   });
 });
 

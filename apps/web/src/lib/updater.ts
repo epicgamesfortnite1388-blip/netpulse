@@ -91,14 +91,18 @@ function recordUpdateEvent(input: RecordUpdateEventInput): void {
   });
 }
 
-/** Newest-first update history (empty on any failure — never a fake row). */
+/**
+ * Newest-first update history.
+ *
+ * F-32: a transport failure is THROWN, not converted to `[]`. The history card
+ * has a real error/retry branch that was dead code while every failure looked
+ * like "No update activity recorded yet". Internal best-effort callers already
+ * wrap this in try/catch, so they keep their previous behavior. An empty array
+ * now means the backend answered with an empty list — nothing is invented.
+ */
 export async function fetchUpdateHistory(limit = 100): Promise<UpdateHistoryEntry[]> {
-  try {
-    const out = await api.get<{ events: UpdateHistoryEntry[] }>(`/update-history?limit=${limit}`);
-    return Array.isArray(out?.events) ? out.events : [];
-  } catch {
-    return [];
-  }
+  const out = await api.get<{ events: UpdateHistoryEntry[] }>(`/update-history?limit=${limit}`);
+  return Array.isArray(out?.events) ? out.events : [];
 }
 
 /**

@@ -71,18 +71,22 @@ export interface HypothesisProbabilityDto {
 
 /** The diagnostic probe the engine would run next, with its expected gain. */
 export interface ProbeSelectionDto {
-  test_id: string;
   test_name: string;
   expected_information_gain: number;
   cost: number;
-  efficiency: number;
-  reasoning: string;
 }
 
 export interface HypothesisViewDto {
   hypotheses: HypothesisProbabilityDto[];
   entropy_nats: number;
   map_label: string | null;
+  /**
+   * `map_label`'s posterior after the isotonic map fitted on recorded outcomes.
+   * null when no map is fitted, so it doubles as the "is this calibrated" flag.
+   */
+  map_confidence_calibrated: number | null;
+  /** Real probe outcomes behind that map (0 = nothing recorded yet). */
+  calibration_samples: number;
   selected_probe: ProbeSelectionDto | null;
 }
 

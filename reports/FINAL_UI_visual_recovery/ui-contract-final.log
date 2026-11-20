@@ -1,0 +1,5 @@
+
+> netpulse@3.2.0 test:ui-contract
+> node scripts/assert-ui-contract.mjs
+
+✓ UI contract intact — 47/47 assertions passed (index-CRlbLKG2.css)

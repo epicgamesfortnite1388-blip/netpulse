@@ -1,0 +1,254 @@
+# EXHAUSTIVE_AUDIT_13 — Exact commit plan and final authorization checkpoint
+
+## Status
+
+**NO FILES WERE STAGED. NO COMMIT WAS CREATED. NO REMOTE OR PRODUCTION CHANGES WERE MADE.**
+
+This is a proposal only. It stops at the authorization checkpoint required by the user.
+
+## Proposed commit
+
+Title:
+
+```text
+fix(ui,nani,release): harden recovery, evidence, and release gates
+```
+
+Body:
+
+```text
+- Correct NANI HTTP/TLS probe behavior, path override handling, DNS reuse,
+  and socket cleanup.
+- Add typed recovery events and derive step/route kinds from planned recovery
+  steps instead of guessing them.
+- Restore Settings URL tabs, startup health invocation, connection hero,
+  Copilot empty-state behavior, updater failure propagation, and WebSocket
+  cancellation.
+- Harden release gates with local feed-marker clearing, an anchored built
+  version check, and strict e2e HTTP status assertions.
+- Add regression tests, UI contract checks, and evidence reports.
+- Exclude C3 math files and concurrent external UI work.
+```
+
+## Exact file count
+
+| Set | Count |
+|---|---:|
+| Official handoff candidates | 154 |
+| Held C3/dependency Rust files removed | -6 |
+| Include-ready handoff candidates | 148 |
+| New final-mission reports and evidence | +23 |
+| **Total proposed staged paths** | **171** |
+
+Do **not** use `git add -A`. Stage exactly the 171 paths below.
+
+## Exact staging list
+
+```text
+package.json
+apps/api/src/app.ts
+apps/api/src/routes/nani.ts
+apps/api/src/services/naniProbeAdapter.ts
+apps/api/src/services/naniService.ts
+apps/api/src/services/systemProxy.ts
+apps/api/test/naniEventContract.test.ts
+apps/api/test/naniProbeAdapterHttp.test.ts
+apps/api/test/naniProbeAdapterTls.test.ts
+apps/api/test/naniRecoveryControls.test.ts
+apps/api/test/naniShadowAssessment.test.ts
+apps/web/src/app/AppShell.tsx
+apps/web/src/app/nav.ts
+apps/web/src/components/GlobalConnectionChip.tsx
+apps/web/src/components/PulseMark.tsx
+apps/web/src/components/ui/Badge.tsx
+apps/web/src/components/ui/Button.tsx
+apps/web/src/components/ui/Card.tsx
+apps/web/src/components/ui/Field.tsx
+apps/web/src/components/ui/Metric.tsx
+apps/web/src/components/ui/Segmented.tsx
+apps/web/src/components/ui/States.tsx
+apps/web/src/components/ui/Surface.tsx
+apps/web/src/components/ui/Switch.tsx
+apps/web/src/components/ui/Tabs.tsx
+apps/web/src/components/ui/Tooltip.tsx
+apps/web/src/components/ui/tabStyles.ts
+apps/web/src/features/connection/ConnectionDial.tsx
+apps/web/src/features/connection/ConnectionHero.tsx
+apps/web/src/features/connection/connectionState.ts
+apps/web/src/features/copilot/CopilotPage.tsx
+apps/web/src/features/copilot/aiApi.ts
+apps/web/src/features/dashboard/DashboardPage.tsx
+apps/web/src/features/health/SystemHealthPage.tsx
+apps/web/src/features/nani/NaniPage.tsx
+apps/web/src/features/nani/hypothesisView.test.ts
+apps/web/src/features/nani/hypothesisView.ts
+apps/web/src/features/nani/naniApi.ts
+apps/web/src/features/nani/naniEvents.test.ts
+apps/web/src/features/nani/naniEvents.ts
+apps/web/src/features/nani/useNaniEvents.ts
+apps/web/src/features/settings/SettingsPage.tsx
+apps/web/src/features/vpn/AdaptiveRecoveryCard.tsx
+apps/web/src/lib/updater.ts
+apps/web/src/lib/useStartupHealth.ts
+apps/web/src/lib/ws.ts
+apps/web/src/main.tsx
+apps/web/src/styles/identity.css
+apps/web/src/styles/tokens.css
+apps/web/test/recoveryRegressions.test.ts
+apps/web/test/typeScale.test.ts
+apps/web/vite.recovery.config.mjs
+packages/shared/src/nani/events.ts
+packages/shared/src/nani/registry.ts
+scripts/assert-ui-contract.mjs
+scripts/e2e-desktop.mjs
+scripts/lib/updateFeed.mjs
+scripts/lib/webDistVersion.mjs
+scripts/release.mjs
+scripts/ui-capture.mjs
+scripts/ui-probe.mjs
+scripts/update-feed.test.mjs
+scripts/verify-desktop-pipeline.mjs
+scripts/verify-desktop-pipeline.test.mjs
+src-tauri/src/network_intelligence/api_intelligence/monitor.rs
+src-tauri/src/network_intelligence/api_intelligence/registry.rs
+src-tauri/src/network_intelligence/events/mod.rs
+src-tauri/src/network_intelligence/investigation.rs
+reports/FINAL_UI_RECOVERY_01_BASELINE.md
+reports/FINAL_UI_RECOVERY_02_P1_ROOT_CAUSE_ANALYSIS.md
+reports/FINAL_UI_RECOVERY_03_P1_FIX_REPORT.md
+reports/FINAL_UI_RECOVERY_04_C1_C7_CLOSURE.md
+reports/FINAL_UI_RECOVERY_05_EVIDENCE_INTEGRITY.md
+reports/FINAL_UI_RECOVERY_06_RUST_STABILITY.md
+reports/FINAL_UI_RECOVERY_07_BUILD_VERIFICATION.md
+reports/FINAL_UI_RECOVERY_08_VISUAL_VERIFICATION.md
+reports/FINAL_UI_RECOVERY_09_REGRESSION_TESTS.md
+reports/FINAL_UI_RECOVERY_10_REMAINING_FINDINGS.md
+reports/FINAL_UI_RECOVERY_11_KIM_INDEPENDENT_REVIEW.md
+reports/FINAL_UI_RECOVERY_12_FINAL_HANDOFF.md
+reports/UI_MASTER_02_DESIGN_SYSTEM.md
+reports/UI_MASTER_09_MOTION_AND_MICROINTERACTIONS.md
+reports/UI_MASTER_10_ACCESSIBILITY.md
+reports/UI_MASTER_11_FRONTEND_PERFORMANCE.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_01_SCOPE_AND_BASELINE.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_02_CONFIRMED_DEFECTS_AND_FIXES.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_03_EVIDENCE_INTEGRITY.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_04_VERIFICATION_MATRIX.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_05_INDEPENDENT_REVIEW.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_06_FINAL_HANDOFF_AND_COMMIT_CANDIDATES.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_07_REPOSITORY_BASELINE.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_08_SEVENTEEN_FIXES_VERIFICATION.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_09_COMPLETE_DIFF_REVIEW.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_10_CONCURRENT_WORK_PROTECTION.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_11_FINAL_TEST_REVALIDATION.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_12_KIM_COMMIT_READINESS_REVIEW.md
+reports/EXHAUSTIVE_AUDIT/EXHAUSTIVE_AUDIT_13_EXACT_COMMIT_PLAN.md
+reports/EXHAUSTIVE_AUDIT/api-egress-after-fix.log
+reports/EXHAUSTIVE_AUDIT/api-tests-after-nani-fixes.log
+reports/EXHAUSTIVE_AUDIT/api-tests-final.log
+reports/EXHAUSTIVE_AUDIT/api-tls-path-tests.log
+reports/EXHAUSTIVE_AUDIT/api-typecheck-after-nani-fixes.log
+reports/EXHAUSTIVE_AUDIT/build-final.log
+reports/EXHAUSTIVE_AUDIT/cargo-clippy-baseline.log
+reports/EXHAUSTIVE_AUDIT/desktop-verify-after-scripts-fix.log
+reports/EXHAUSTIVE_AUDIT/feed-tests-after-scripts-fix.log
+reports/EXHAUSTIVE_AUDIT/full-workspace-tests-baseline.log
+reports/EXHAUSTIVE_AUDIT/full-workspace-tests-final.log
+reports/EXHAUSTIVE_AUDIT/lint-after-nani-fixes.log
+reports/EXHAUSTIVE_AUDIT/lint-baseline.log
+reports/EXHAUSTIVE_AUDIT/lint-final.log
+reports/EXHAUSTIVE_AUDIT/pipeline-version-tests.log
+reports/EXHAUSTIVE_AUDIT/rust-full-after-exhaustive-fixes.log
+reports/EXHAUSTIVE_AUDIT/rust-proxy-tests.log
+reports/EXHAUSTIVE_AUDIT/rust-tests-final.log
+reports/EXHAUSTIVE_AUDIT/ui-contract-final.log
+reports/EXHAUSTIVE_AUDIT/visual-data-backed.log
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/01-dashboard.png
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/03-nani-overview.png
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/07-nani-network.png
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/08-copilot.png
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/10-settings.png
+reports/EXHAUSTIVE_AUDIT/visual-data-backed/manifest.json
+reports/EXHAUSTIVE_AUDIT/web-after-proxy-fix.log
+reports/EXHAUSTIVE_AUDIT/web-full-after-exhaustive-fixes.log
+reports/EXHAUSTIVE_AUDIT/web-tests-after-nani-fixes.log
+reports/EXHAUSTIVE_AUDIT/web-tests-final.log
+reports/EXHAUSTIVE_AUDIT/web-typecheck-after-nani-fixes.log
+reports/FINAL_UI_visual_recovery/build-final.log
+reports/FINAL_UI_visual_recovery/config.json
+reports/FINAL_UI_visual_recovery/config2.json
+reports/FINAL_UI_visual_recovery/rec-01-dashboard-connection-hero.png
+reports/FINAL_UI_visual_recovery/rec-02-settings-general.png
+reports/FINAL_UI_visual_recovery/rec-03-settings-network-clicked.png
+reports/FINAL_UI_visual_recovery/rec-04-settings-platform.png
+reports/FINAL_UI_visual_recovery/rec-05-copilot-empty.png
+reports/FINAL_UI_visual_recovery/rec-06-nani.png
+reports/FINAL_UI_visual_recovery/rec-07-dashboard-narrow.png
+reports/FINAL_UI_visual_recovery/rec-08-copilot-light.png
+reports/FINAL_UI_visual_recovery/rec-manifest.json
+reports/FINAL_UI_visual_recovery/rust-final-2.log
+reports/FINAL_UI_visual_recovery/rust-final.log
+reports/FINAL_UI_visual_recovery/rust-n0-isolated.log
+reports/FINAL_UI_visual_recovery/ui-contract-final.log
+reports/FINAL_UI_visual_recovery/v2-01-dashboard-connection-hero.png
+reports/FINAL_UI_visual_recovery/v2-02-settings-general.png
+reports/FINAL_UI_visual_recovery/v2-03-settings-network.png
+reports/FINAL_UI_visual_recovery/v2-04-settings-platform.png
+reports/FINAL_UI_visual_recovery/v2-05-copilot-empty.png
+reports/FINAL_UI_visual_recovery/v2-06-nani.png
+reports/FINAL_UI_visual_recovery/v2-07-dashboard-narrow.png
+reports/FINAL_UI_visual_recovery/v2-08-copilot-light.png
+reports/FINAL_UI_visual_recovery/v2-manifest.json
+reports/FINAL_UI_visual_recovery/web-tests-final.log
+reports/FINAL_UI_visual_recovery/web-typecheck-final.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-api-nani-focused.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-baseline-raw.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-build.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-desktop-verify.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-e2e-syntax.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-feed-tests.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-full-workspace-rerun.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-full-workspace.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-lint.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-pipeline-tests.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-rust-tests.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-typecheck.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-ui-contract.log
+reports/EXHAUSTIVE_AUDIT/commit-readiness-web-nani-focused.log
+reports/EXHAUSTIVE_AUDIT/map-cluster-isolated-reruns.log
+reports/EXHAUSTIVE_AUDIT/proposed-candidates-from-06.txt
+```
+
+## Held paths — do not stage
+
+- `src-tauri/src/commands/nani.rs`
+- `src-tauri/src/network_intelligence/diagnosis.rs`
+- `src-tauri/src/network_intelligence/evaluation.rs`
+- `src-tauri/src/network_intelligence/foundation.rs`
+- `src-tauri/src/network_intelligence/persistence.rs`
+- `src-tauri/src/network_intelligence/validation.rs`
+
+Reason: C3 math/calibration/likelihood work, or dependency on it. Requires separate explicit authorization.
+
+## Excluded paths — do not stage
+
+- Concurrent external UI work listed in report 10.
+- `NANI_ADVERSARIAL_TEST_REPORT.md`.
+- Pre-existing report corpora not listed above.
+- `.tmp-desktop-dev.log`, `.workbuddy-ai/`, generated dist/stage artifacts, and scratch files such as `apps/web/f1.txt`, `r1.json`, and similar.
+- Any local update-feed activation change. The checked-in marker remains `"releaseFeed": "local"`.
+
+## Post-authorization sequence
+
+Only after explicit user authorization:
+
+1. Verify `git diff --cached --name-only` contains exactly the 171 paths above.
+2. Verify the six held Rust files and all excluded paths are absent from the index.
+3. Create the commit with the title and body above.
+4. Do not push.
+5. Optionally rerun gates on a clean checkout of the staged tree; this was not done before authorization.
+
+## Final checkpoint
+
+The mission stops here.
+
+**NO FILES WERE STAGED. NO COMMIT WAS CREATED. NO REMOTE OR PRODUCTION CHANGES WERE MADE.**

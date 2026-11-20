@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Copy, Loader2, RotateCw, Send, Sparkles, Trash2 } from 'lucide-react';
+import { Copy, Loader2, RotateCw, Send, Sparkles, Trash2 } from 'lucide-react';
 
 import { useToast } from '@/components/Toaster';
 import { Button } from '@/components/ui/Button';
@@ -20,13 +20,15 @@ import { getAiStatus, streamAi, type AiMessage, type AiStatus } from './aiApi';
  * backend is unreachable the failure state is shown honestly.
  */
 
-const INITIAL_MESSAGE: AiMessage = {
-  id: crypto.randomUUID(),
-  role: 'assistant',
-  content:
-    "I'm NetPulse Copilot, your network intelligence assistant. I can help diagnose connection issues, analyze configuration profiles, explain protocols, recommend servers, and troubleshoot errors.\n\nWhat would you like to investigate today?",
-  createdAt: Date.now(),
-};
+/**
+ * No seeded assistant message.
+ *
+ * The page used to open with a canned "I'm NetPulse Copilot…" bubble that was
+ * styled, timestamped and copyable exactly like a model answer, and it was also
+ * the thing that made the empty-state hero and a message appear at once. The
+ * greeting belongs to the page, not to the transcript: a fresh conversation now
+ * has no messages, and the hero below is the greeting.
+ */
 
 const QUICK_QUESTIONS = [
   'Why is my connection slow?',
@@ -48,9 +50,9 @@ function MessageBubble({ message }: { message: AiMessage }) {
   return (
     <div className={`mb-4 flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[80%] rounded-xl px-4 py-3 ${
           isUser
-            ? 'rounded-tr-sm bg-accent text-accent-foreground'
+            ? 'rounded-tr-sm bg-accent text-on-accent'
             : 'rounded-tl-sm border border-line bg-surface text-text'
         }`}
       >
@@ -62,15 +64,28 @@ function MessageBubble({ message }: { message: AiMessage }) {
 }
 
 function AiStatusBadge({ status }: { status: AiStatus | null }) {
-  const healthy = status?.available === true;
+  // F-31: the Rust engine works with the local LLM disabled (it falls back to
+  // deterministic explanations). Tying the badge to `available` called a
+  // working assistant "Offline" and overstated deterministic rewrites as a
+  // model answer when it was on. Report what is actually true:
+  //   - status === null → not in the desktop app / status command unavailable
+  //   - available      → model answers available
+  //   - otherwise      → deterministic answers, no local model
+  const label =
+    status === null
+      ? 'Unavailable here'
+      : status.available
+        ? 'Local model ready'
+        : 'Deterministic answers';
+  const ok = status !== null && status.available;
   return (
     <div
       className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
-        healthy ? 'bg-green-500/10 text-green-500' : 'border border-line bg-surface text-faint'
+        ok ? 'bg-ok/10 text-ok border border-ok/30' : 'border border-line bg-surface text-faint'
       }`}
     >
-      <div className={`h-2 w-2 rounded-full ${healthy ? 'bg-green-500' : 'bg-muted'}`} />
-      {healthy ? 'AI Copilot Online' : 'Offline'}
+      <div className={`h-2 w-2 rounded-full ${ok ? 'bg-ok' : 'bg-muted'}`} />
+      {label}
     </div>
   );
 }
@@ -79,7 +94,7 @@ function QuickAction({ text, onClick }: { text: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text"
       onClick={onClick}
     >
       <Sparkles className="h-3 w-3 text-faint" />
@@ -89,7 +104,7 @@ function QuickAction({ text, onClick }: { text: string; onClick: () => void }) {
 }
 
 export function CopilotPage() {
-  const [messages, setMessages] = useState<AiMessage[]>([INITIAL_MESSAGE]);
+  const [messages, setMessages] = useState<AiMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +123,7 @@ export function CopilotPage() {
   }, []);
 
   const clearConversation = useCallback(() => {
-    setMessages([{ ...INITIAL_MESSAGE, id: crypto.randomUUID(), createdAt: Date.now() }]);
+    setMessages([]);
     setError(null);
     setStreaming(false);
     abortRef.current?.abort();
@@ -148,6 +163,12 @@ export function CopilotPage() {
           signal: controller.signal,
         });
       } catch (err) {
+        // A user pressing Stop is not a request failure: drop the empty
+        // assistant bubble and stay quiet rather than rendering an error.
+        if (controller.signal.aborted) {
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          return;
+        }
         const msg = err instanceof Error ? err.message : 'AI request failed';
         setError(msg);
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: msg } : m)));
@@ -181,32 +202,50 @@ export function CopilotPage() {
     abortRef.current = null;
   }, []);
 
-  const hasContent = messages.length > 1;
+  const hasContent = messages.length > 0;
+  // An empty conversation is exactly that: no messages. Comparing against a
+  // seeded id broke the moment the conversation was cleared, which is how the
+  // hero and a greeting bubble ended up on screen together.
+  const emptyConversation = messages.length === 0;
   const canRetry = hasContent && error != null && isRetryableError(new Error(error));
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    // The composer belongs at the bottom of the window, not under the last
+    // message. `h-full` did nothing because the content column's height is auto,
+    // so the page collapsed to its content and left the composer floating
+    // mid-screen with dead space beneath it.
+    <div className="flex min-h-[calc(100dvh-var(--np-topbar-h)-76px)] flex-col bg-bg">
       <PageHeader
         title="Copilot"
         description={
           aiStatus
             ? aiStatus.available
               ? `Local explanations — ${aiStatus.runtime} ready`
-              : `Local explanations — model unavailable (${aiStatus.message})`
-            : 'Local explanations — initializing…'
+              : // The backend types `message` as a string but omits it on some
+                // failure paths; without the fallback the header would read
+                // "model unavailable (undefined)".
+                `Deterministic explanations — no local model (${aiStatus.message || 'not configured'})`
+            : // Same word as the badge. "Initializing…" beside a badge that
+              // already says the model is unavailable is two answers to one
+              // question, and the reader has no way to tell which is current.
+              'Local explanations — availability not reported in this build'
         }
         actions={<AiStatusBadge status={aiStatus} />}
       />
 
-      <div className="flex-1 overflow-y-auto space-y-4 p-4 lg:p-6">
+      <div
+        className={`flex-1 overflow-y-auto p-4 lg:p-6 ${emptyConversation ? 'flex items-center justify-center' : 'space-y-4'}`}
+        role="log"
+        aria-live="polite"
+      >
         {streaming && messages[messages.length - 1]?.content === '' && (
           <div className="flex h-64 items-center justify-center">
             <LoadingState label="Copilot is thinking" />
           </div>
         )}
         {!streaming && error && <ErrorState error={new Error(error)} retry={canRetry ? retryLast : undefined} />}
-        {messages.length === 1 && messages[0]?.id === INITIAL_MESSAGE.id && (
-          <div className="flex flex-col items-center justify-center gap-4 py-8 text-center text-muted">
+        {emptyConversation && (
+          <div className="flex max-w-2xl flex-col items-center justify-center gap-4 text-center text-muted">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
               <Sparkles className="h-6 w-6" />
             </div>
@@ -222,7 +261,7 @@ export function CopilotPage() {
             </div>
           </div>
         )}
-        {messages.map((m) => (
+        {!emptyConversation && messages.map((m) => (
           <div key={m.id}>
             <MessageBubble message={m} />
             {m.role === 'assistant' && m.content !== '' && (

@@ -27,7 +27,7 @@ const RegisterApiBody = z.object({
   endpoint: z.string().trim().min(1).max(256),
   authType: z.enum(['none', 'bearer', 'api-key', 'oauth2', 'basic']),
   authKeyId: z.string().trim().min(1).max(64).optional(),
-  healthCheck: z.enum(['http-get', 'http-post', 'tcp-only', 'tls-only', 'custom']).optional(),
+  healthCheck: z.enum(['http-get', 'http-post', 'tcp-only', 'tls-only', 'custom']).default('http-get'),
   healthCheckPath: z.string().trim().max(128).optional(),
   timeoutMs: z.coerce.number().min(500).max(60_000).default(5_000),
   directPermitted: z.boolean().default(true),
@@ -136,7 +136,7 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
     const parsed = RegisterApiBody.safeParse(req.body);
     if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
     try {
-      nani.registerApi(parsed.data as any);
+      nani.registerApi(parsed.data);
       return { ok: true, apiId: parsed.data.id };
     } catch (err) {
       return replyApiError(reply, 500, 'registration_failed', err instanceof Error ? err.message : String(err));
@@ -158,7 +158,7 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
     const parsed = DiagnoseBody.safeParse(req.body);
     if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
     try {
-      const result = nani.diagnoseTarget(parsed.data.target, parsed.data.observations as any);
+      const result = nani.diagnoseTarget(parsed.data.target, parsed.data.observations);
       return { ok: true, ...result };
     } catch (err) {
       return replyApiError(reply, 500, 'diagnose_failed', err instanceof Error ? err.message : String(err));
@@ -169,7 +169,7 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
     const parsed = PlanRecoveryBody.safeParse(req.body);
     if (!parsed.success) return replyApiError(reply, 400, 'invalid_request', parsed.error.message);
     try {
-      const result = nani.planRecovery(parsed.data.apiId, parsed.data.routes as any, parsed.data.knownGoodRouteId ?? null);
+      const result = nani.planRecovery(parsed.data.apiId, parsed.data.routes, parsed.data.knownGoodRouteId ?? null);
       return { ok: true, ...result };
     } catch (err) {
       return replyApiError(reply, 500, 'plan_failed', err instanceof Error ? err.message : String(err));
@@ -185,7 +185,7 @@ export function registerNaniRoutes(app: FastifyInstance, ctx: AppContext): void 
         status: parsed.data.status,
         latencyMs: parsed.data.latencyMs ?? undefined,
         message: parsed.data.message,
-      } as any);
+      });
       return { ok: true, ...result };
     } catch (err) {
       return replyApiError(reply, 500, 'step_failed', err instanceof Error ? err.message : String(err));

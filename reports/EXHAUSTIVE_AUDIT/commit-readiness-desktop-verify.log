@@ -1,0 +1,27 @@
+START 2026-11-20T16:01:33Z
+CMD: npm --prefix E:/Code/Project/Vpn_app run desktop:verify
+
+> netpulse@3.2.0 desktop:verify
+> node scripts/verify-desktop-pipeline.mjs
+
+PASS  staged bundle exists
+PASS  staged portable node.exe exists
+PASS  staged package.json exists
+PASS  staged node_modules present
+PASS  tauri.conf.json parses
+PASS  resource staged: backend/ -> backend/
+PASS  resource staged: WebView2Loader.dll -> WebView2Loader.dll
+PASS  icon exists: icons/32x32.png
+PASS  icon exists: icons/128x128.png
+PASS  icon exists: icons/128x128@2x.png
+PASS  icon exists: icons/icon.ico
+PASS  web dist index.html exists
+PASS  frontendDist exists
+PASS  web dist references the tauri.conf version — index-BIyP9bzW.js contains appVersion:"3.2.0"
+PASS  sidecar boots on 127.0.0.1 — port 19083 (waited 1.6s)
+PASS  sidecar enforces bearer auth
+PASS  sidecar reported ready stage — [netpulse] boot stage=routes:ok | sidecar-ready port=19083 | {"level":30,"time":1795190494826,"pid":29168,"hostname":"Radin_PC","msg":"NetPulse desktop sidecar ready on 127.0.0.1:19083"}
+
+All desktop pipeline checks passed.
+EXIT=0
+END 2026-11-20T16:01:35Z

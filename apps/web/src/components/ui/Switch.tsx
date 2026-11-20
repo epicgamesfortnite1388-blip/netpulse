@@ -24,10 +24,10 @@ export function Switch({ checked, onCheckedChange, disabled = false, label }: Sw
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="relative h-5.5 w-10 shrink-0 rounded-full border border-line-strong transition-colors data-[state=checked]:border-accent/50 data-[state=checked]:bg-accent/30 data-[state=unchecked]:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+      className="relative shrink-0 rounded-full border border-line-strong transition-colors data-[state=checked]:border-accent/50 data-[state=checked]:bg-accent/30 data-[state=unchecked]:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
       style={{ height: 22, width: 40 }}
     >
-      <RSwitch.Thumb className="block h-4 w-4 translate-x-1 rounded-full bg-muted shadow transition-transform data-[state=checked]:translate-x-5 data-[state=checked]:bg-accent-strong" />
+      <RSwitch.Thumb className="block h-4 w-4 translate-x-[3px] rounded-full bg-muted shadow transition-transform data-[state=checked]:translate-x-[21px] data-[state=checked]:bg-accent-strong" />
     </RSwitch.Root>
   );
 }

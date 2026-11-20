@@ -1,0 +1,24 @@
+
+> @netpulse/api@3.2.0 test
+> vitest run egressThroughProxy socksEgress
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/api[39m
+
+(node:14728) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14728) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+ [32m✓[39m test/socksEgress.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 9220[2mms[22m[39m
+   [32m✓[39m SOCKS5 egress [2m(11)[22m
+     [33m[2m✓[22m[39m asks for the protocol default port when the URL names none[33m 5081[2mms[22m[39m
+     [33m[2m✓[22m[39m authenticates against a password-protected listener when given a username and password[33m 3190[2mms[22m[39m
+ [32m✓[39m test/egressThroughProxy.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 716[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m16 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 17:40:23
+[2m   Duration [22m 15.53s[2m (tests 80%, import 17%, transform 2%, worker 1%)[22m
+
+[2m    Isolate [22m [33m2 workers spawned[39m[2m · ~1.43s startup each (spawn + environment, per file)[22m
+[2m            [22m [2mat least ~1.43s faster with [22m[33misolate: false[39m[2m — reuses workers across files instead of one per file[22m
+

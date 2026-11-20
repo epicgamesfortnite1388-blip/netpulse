@@ -1,0 +1,4 @@
+
+> @netpulse/api@3.2.0 typecheck
+> tsc --noEmit
+

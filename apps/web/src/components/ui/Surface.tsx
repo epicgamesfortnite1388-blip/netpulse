@@ -4,9 +4,17 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { CollapsibleCard, useDisclosure, useDisclosureScopeName } from '@/components/ui/Disclosure';
 import { HeadingLevelProvider, headingTag, useHeadingLevel } from '@/components/ui/HeadingLevel';
 
-/** The engine hero's name, at whatever rank the surrounding surface sits at. */
-function EngineHeroHeading({ className, children }: { className?: string; children: ReactNode }) {
-  const Tag = headingTag(useHeadingLevel());
+/**
+ * The engine hero's name, at whatever rank the surrounding surface sits at.
+ *
+ * `headingTag` clamps to a minimum of h2, which is right for a hero nested under
+ * a page title — but NodeDetailPage *is* the page, and it had no h1 at all as a
+ * result. `pageTitle` opts that one caller back into h1.
+ */
+function EngineHeroHeading({ className, children, pageTitle }: { className?: string; children: ReactNode; pageTitle?: boolean }) {
+  const level = useHeadingLevel();
+  if (pageTitle) return <h1 className={className}>{children}</h1>;
+  const Tag = headingTag(level);
   return <Tag className={className}>{children}</Tag>;
 }
 
@@ -48,6 +56,7 @@ export function EngineHero({
   description,
   visual,
   footer,
+  pageTitle,
 }: {
   glyph: ReactNode;
   name: ReactNode;
@@ -58,16 +67,19 @@ export function EngineHero({
   /** Optional panel rendered to the right. */
   visual?: ReactNode;
   footer?: ReactNode;
+  /** Render `name` as the page's h1 — only when this hero is the page title. */
+  pageTitle?: boolean;
 }) {
   return (
     <div className="relative mb-5 overflow-hidden rounded-xl border border-line-strong bg-surface shadow-floating">
-      {/* soft directional glow; purely decorative */}
+      {/* soft directional glow; purely decorative, and drawn from the same two
+          hues the identity uses so it follows the theme */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-70"
         style={{
           background:
-            'radial-gradient(120% 130% at 6% -20%, rgba(34, 211, 238, 0.10), transparent 55%), radial-gradient(100% 120% at 96% -10%, rgba(168, 85, 247, 0.12), transparent 60%)',
+            'radial-gradient(120% 130% at 6% -20%, var(--color-accent-soft), transparent 55%), radial-gradient(100% 120% at 96% -10%, var(--color-aether-soft), transparent 60%)',
         }}
       />
       <div className={`relative grid gap-5 p-5 ${visual ? 'lg:grid-cols-[minmax(0,1fr)_minmax(300px,370px)] lg:items-center lg:gap-7' : ''}`}>
@@ -76,7 +88,7 @@ export function EngineHero({
             {glyph}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <EngineHeroHeading className="text-lg font-semibold tracking-tight">{name}</EngineHeroHeading>
+                <EngineHeroHeading pageTitle={pageTitle} className={`font-semibold tracking-tight ${pageTitle ? 'text-xl' : 'text-lg'}`}>{name}</EngineHeroHeading>
                 {badges}
               </div>
               <p className="mt-0.5 text-xs uppercase tracking-[0.14em] text-faint">{tagline}</p>
@@ -429,7 +441,7 @@ export function MetricStrip({ items, className = '' }: { items: MetricItem[]; cl
           <p className={`mt-1 truncate text-sm font-semibold ${item.mono ? 'metric-num' : ''} ${toneText(item.tone ?? 'default')}`}>
             {item.value}
           </p>
-          {item.hint && <p className="mt-0.5 truncate text-micro leading-snug text-faint">{item.hint}</p>}
+          {item.hint && <p className="mt-0.5 text-micro leading-snug text-faint">{item.hint}</p>}
         </div>
       ))}
     </div>

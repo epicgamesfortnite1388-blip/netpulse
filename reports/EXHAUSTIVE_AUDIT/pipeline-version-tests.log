@@ -1,0 +1,8 @@
+
+> netpulse@3.2.0 test:pipeline
+> node scripts/verify-desktop-pipeline.test.mjs
+
+  ok   an unrelated framework version does not satisfy the gate
+  ok   the injected appVersion binding satisfies the gate
+  ok   a different conf version does not match the same stale dist
+desktop-pipeline-version: 3/3 checks passed

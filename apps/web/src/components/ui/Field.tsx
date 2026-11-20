@@ -28,13 +28,19 @@ export function Field({
   htmlFor?: string;
   children: ReactNode;
 }) {
-  const caption = (
-    <>
-      <span className="mb-1.5 block text-mini font-medium text-text">{label}</span>
-      {hint && !error && <span className="mt-1 block text-xs text-faint">{hint}</span>}
-      {error && <span className="mt-1 block text-xs text-danger">{error}</span>}
-    </>
-  );
+  // Label, then the control, then the help text.
+  //
+  // The hint used to sit between the label and the control, which pushed that
+  // field's control down by a line. In a single column nobody noticed; the
+  // moment two fields share a row, the one with a hint sits 20px lower than its
+  // neighbour and the row looks broken. Help text below the control is also the
+  // convention users expect.
+  const labelEl = <span className="mb-1.5 block text-mini font-medium text-text">{label}</span>;
+  const help = error ? (
+    <span className="mt-1.5 block text-xs text-danger">{error}</span>
+  ) : hint ? (
+    <span className="mt-1.5 block text-xs text-faint">{hint}</span>
+  ) : null;
 
   // Explicit association: the label names ONE control and the controls are its
   // SIBLINGS, not its descendants. Keeping them inside would label every one of
@@ -43,17 +49,19 @@ export function Field({
     return (
       <div className="block">
         <label className="block" htmlFor={htmlFor}>
-          {caption}
+          {labelEl}
         </label>
         {children}
+        {help}
       </div>
     );
   }
 
   return (
     <label className="block">
-      {caption}
+      {labelEl}
       {children}
+      {help}
     </label>
   );
 }
@@ -61,7 +69,7 @@ export function Field({
 export function Input({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint transition-colors focus:border-accent/80 focus:outline-none disabled:opacity-40 ${className}`}
+      className={`h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text placeholder:text-faint transition-[border-color,box-shadow] focus:border-accent/60 focus:shadow-[0_0_0_1px_var(--color-accent)] focus:outline-none disabled:opacity-40 ${className}`}
       {...rest}
     />
   );
@@ -74,7 +82,7 @@ export function Select({
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={`h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text transition-colors focus:border-accent/80 focus:outline-none disabled:opacity-40 ${className}`}
+      className={`h-9 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-text transition-[border-color,box-shadow] focus:border-accent/60 focus:shadow-[0_0_0_1px_var(--color-accent)] focus:outline-none disabled:opacity-40 ${className}`}
       {...rest}
     >
       {children}

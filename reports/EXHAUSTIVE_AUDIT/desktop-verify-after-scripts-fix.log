@@ -1,0 +1,23 @@
+
+> netpulse@3.2.0 desktop:verify
+> node scripts/verify-desktop-pipeline.mjs
+
+PASS  staged bundle exists
+PASS  staged portable node.exe exists
+PASS  staged package.json exists
+PASS  staged node_modules present
+PASS  tauri.conf.json parses
+PASS  resource staged: backend/ -> backend/
+PASS  resource staged: WebView2Loader.dll -> WebView2Loader.dll
+PASS  icon exists: icons/32x32.png
+PASS  icon exists: icons/128x128.png
+PASS  icon exists: icons/128x128@2x.png
+PASS  icon exists: icons/icon.ico
+PASS  web dist index.html exists
+PASS  frontendDist exists
+PASS  web dist references the tauri.conf version — index-BzkYRm7R.js contains appVersion:"3.2.0"
+PASS  sidecar boots on 127.0.0.1 — port 18943 (waited 2.3s)
+PASS  sidecar enforces bearer auth
+PASS  sidecar reported ready stage — [netpulse] boot stage=routes:ok | sidecar-ready port=18943 | {"level":30,"time":1795188251592,"pid":26252,"hostname":"Radin_PC","msg":"NetPulse desktop sidecar ready on 127.0.0.1:18943"}
+
+All desktop pipeline checks passed.

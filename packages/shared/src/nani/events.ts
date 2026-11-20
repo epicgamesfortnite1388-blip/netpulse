@@ -31,6 +31,8 @@ export type NaniEventType =
   | 'nani:recovery:rollback:started'
   | 'nani:recovery:rollback:completed'
   | 'nani:recovery:rollback:failed'
+  | 'nani:recovery:rolledback'
+  | 'nani:recovery:reset'
   | 'nani:recovery:completed'
   | 'nani:recovery:exhausted'
   | 'nani:route:activated'
@@ -139,6 +141,23 @@ export interface NaniRecoveryRollbackEvent {
   message?: string;
 }
 
+/** Operator-requested state revert to the last verified route. */
+export interface NaniRecoveryRolledBackEvent {
+  recoveryId: string;
+  apiId: string;
+  routeId: string;
+  revertedStepId: string | null;
+  skippedStepIds: string[];
+  source: 'operator';
+}
+
+/** Operator discarded an exhausted/stuck plan without touching learned evidence. */
+export interface NaniRecoveryResetEvent {
+  apiId: string;
+  recoveryId: string;
+  cleared: boolean;
+}
+
 export interface NaniRecoveryCompleted {
   recoveryId: string;
   target: string;
@@ -234,6 +253,8 @@ export type NaniEventPayload =
   | NaniRecoveryPlanned
   | NaniRecoveryStepEvent
   | NaniRecoveryRollbackEvent
+  | NaniRecoveryRolledBackEvent
+  | NaniRecoveryResetEvent
   | NaniRecoveryCompleted
   | NaniRecoveryExhausted
   | NaniRouteActivated

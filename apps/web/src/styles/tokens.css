@@ -38,9 +38,18 @@
   /* Ink for text drawn ON a solid --color-accent fill (a selected checkmark).
    * White on the cyan accent measured 1.75:1; this measures 10.7:1. */
   --color-on-accent: #04161d;
+  /* Alias so `text-accent-foreground` / `bg-accent-foreground` resolve to the
+   * same ink as --color-on-accent. Many components were written against the
+   * Tailwind convention `<accent>-foreground`; without this alias those
+   * utilities silently resolve to nothing, making text on accent invisible. */
+  --color-accent-foreground: #04161d;
   --color-accent: #22d3ee;
   --color-accent-strong: #67e8f9;
   --color-accent-soft: rgba(34, 211, 238, 0.10);
+  /* A fourth surface tier used by hover states and interactive list rows. */
+  --color-surface-3: #1a2433;
+  /* Alias so `bg-background` resolves to the page background. */
+  --color-background: #05080d;
   --color-ok: #34d399;
   --color-warn: #fbbf24;
   --color-danger: #f87171;
@@ -314,6 +323,9 @@ html[data-theme='light'] {
   /* The accent fill is mid-cyan here, so the legible ink flips: white on the
    * light accent is 5.4:1, while no dark ink clears 4.5:1 on that fill. */
   --color-on-accent: #ffffff;
+  --color-accent-foreground: #ffffff;
+  --color-surface-3: #dfe5ec;
+  --color-background: #f4f6f9;
   --color-proto-sky: #0369a1;
   --color-proto-violet: #6d28d9;
   --color-proto-orange: #c2410c;
@@ -363,6 +375,9 @@ html[data-theme='light'] ::selection {
     --color-aether-soft: rgba(124, 58, 237, 0.10);
     --color-aether-line: rgba(124, 58, 237, 0.28);
     --color-on-accent: #ffffff;
+    --color-accent-foreground: #ffffff;
+    --color-surface-3: #dfe5ec;
+    --color-background: #f4f6f9;
     --color-proto-sky: #0369a1;
     --color-proto-violet: #6d28d9;
     --color-proto-orange: #c2410c;

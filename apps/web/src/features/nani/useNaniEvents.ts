@@ -8,6 +8,7 @@ import {
   emptyEventState,
   fromBusEvent,
   fromTauriEvent,
+  recordReplayGap,
   type NaniEvent,
   type NaniEventState,
 } from './naniEvents';
@@ -83,12 +84,19 @@ export function useNaniEvents(): { state: NaniEventState; available: boolean } {
         try {
           const since = lastSeqRef.current;
           const slice = await pollEvents(since > 0 ? since : undefined);
+          // F-07: the component may have unmounted while the IPC was in
+          // flight. Never ingest or register a timer after cancellation.
+          if (cancelled) return;
+          if (slice.gap) {
+            setState((prev) => recordReplayGap(prev));
+          }
           if (slice.events.length > 0) ingestRaw(slice.events);
         } catch {
           // Backend restarting; the next tick retries from the same cursor.
         }
       };
       await poll();
+      if (cancelled) return;
       const timer = setInterval(() => void poll(), POLL_MS);
       timersRef.current.push(timer);
     };

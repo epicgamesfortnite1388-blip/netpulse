@@ -1,0 +1,25 @@
+START 2026-11-20T16:01:35Z
+CMD: npm --prefix E:/Code/Project/Vpn_app run test --workspace @netpulse/api -- --run test/naniEventContract.test.ts test/naniProbeAdapterHttp.test.ts test/naniProbeAdapterTls.test.ts test/naniRecoveryControls.test.ts test/naniShadowAssessment.test.ts
+
+> @netpulse/api@3.2.0 test
+> vitest run --run test/naniEventContract.test.ts test/naniProbeAdapterHttp.test.ts test/naniProbeAdapterTls.test.ts test/naniRecoveryControls.test.ts test/naniShadowAssessment.test.ts
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/api[39m
+
+ [32m✓[39m test/naniProbeAdapterHttp.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m test/naniRecoveryControls.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m test/naniEventContract.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/naniShadowAssessment.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m test/naniProbeAdapterTls.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m25 passed[39m[22m[90m (25)[39m
+[2m   Start at [22m 19:31:36
+[2m   Duration [22m 1.20s[2m (import 76%, transform 11%, tests 10%, worker 3%)[22m
+
+[2m    Isolate [22m [33m5 workers spawned[39m[2m · ~100ms startup each (spawn + environment, per file)[22m
+[2m            [22m [2mat least ~402ms faster with [22m[33misolate: false[39m[2m — reuses workers across files instead of one per file[22m
+
+EXIT=0
+END 2026-11-20T16:01:38Z

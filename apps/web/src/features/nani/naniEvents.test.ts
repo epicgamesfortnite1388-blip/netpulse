@@ -163,6 +163,15 @@ describe('NANI event reducer', () => {
     expect(describeEvent('InvestigationCancelled', { investigation_id: 'inv-1', reason: 'user cancelled' })).toBe('Investigation cancelled: user cancelled');
     expect(describeEvent('InvestigationUpdated', { detail: 'progress' })).toBe('Investigation updated: progress');
   });
+
+  it('describes a completed health check from its measured verdict', () => {
+    expect(
+      describeEvent('HealthCheckCompleted', { api_id: 'netpulse-cloud', health: 'Healthy' }),
+    ).toBe('Health check Healthy for netpulse-cloud');
+    // No verdict in the payload must not invent one.
+    expect(describeEvent('HealthCheckCompleted', {})).toBe('Health check finished');
+    expect(activityForEvent('HealthCheckCompleted')).toBe('Observing');
+  });
 });
 
 describe('NANI investigation-derived views', () => {
@@ -273,6 +282,14 @@ describe('explaining an empty measurement view', () => {
       ev(2, 'nani:health:updated', { api_id: 'a' }),
     ];
     expect(lastFailedHealthSignal(events)).toBeNull();
+
+    // A completed check is observation resuming, whether or not the verdict
+    // moved (the desktop emits one per probed API).
+    const desktop = [
+      ev(1, 'CircuitBreakerTripped', { api_id: 'a' }),
+      ev(2, 'HealthCheckCompleted', { api_id: 'a', health: 'Healthy' }),
+    ];
+    expect(lastFailedHealthSignal(desktop)).toBeNull();
   });
 
   it('treats an exhausted recovery as a health failure', () => {

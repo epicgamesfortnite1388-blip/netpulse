@@ -89,6 +89,9 @@ export async function askAi(req: AiAskRequest): Promise<AiAskResponse> {
 export async function streamAi(req: AiStreamRequest): Promise<void> {
   if (req.signal?.aborted) throw new Error('NANI request aborted by caller');
   const res = await askAi({ question: req.question });
+  // F-30: Stop can be pressed while the IPC is in flight. Re-check after the
+  // await so an aborted request never delivers a delta to the conversation.
+  if (req.signal?.aborted) throw new Error('NANI request aborted by caller');
   if (res.kind === 'error') throw new Error(res.text);
   req.onDelta(res.text);
 }

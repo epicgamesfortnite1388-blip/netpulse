@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Brain, RotateCcw, ShieldAlert } from 'lucide-react';
+import { Brain, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
@@ -60,7 +60,13 @@ interface AdaptiveStatusDto {
     updatedAt: number;
   }>;
   strategies: AdaptiveStrategyRow[];
-  censorshipHint: { level: string; reason: string; dpiInferred: false } | null;
+  /**
+   * The shape the route actually returns (`censorshipHintOf` in
+   * @netpulse/shared). This was declared as `{ level, dpiInferred }` — fields
+   * that never existed on the wire — so the card could not tell a raised hint
+   * from a clear one and painted both in warning amber.
+   */
+  censorshipHint: { likely: boolean; reason: string; considered: number; distinctStrategies: number } | null;
   lastResetAt: number | null;
   updatedAt: number | null;
   manifest: { installed: { version: number; applied: string[]; refused: string[] } | null; previousVersion: number | null; keyId: string | null };
@@ -239,7 +245,15 @@ export function AdaptiveRecoveryCard({ nodeId }: { nodeId?: string | null }) {
 
       {/* ---------------- what it refuses to conclude ---------------- */}
       {status.censorshipHint ? (
-        <Notice tone="warn" className="mt-3" icon={<ShieldAlert size={13} />}>
+        // The hint carries both outcomes. "No failures at a common stage" is a
+        // reassuring result, and it used to render in warning amber with a
+        // warning shield — the one thing a diagnostic must not do is make a
+        // clear result look like a problem.
+        <Notice
+          tone={status.censorshipHint.likely ? 'warn' : 'info'}
+          className="mt-3"
+          icon={status.censorshipHint.likely ? <ShieldAlert size={13} /> : <ShieldCheck size={13} />}
+        >
           {status.censorshipHint.reason}
         </Notice>
       ) : (

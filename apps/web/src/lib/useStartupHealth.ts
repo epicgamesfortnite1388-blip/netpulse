@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '@/lib/api';
 import { phaseForFailedProbe } from '@/lib/startupPhase';
-import { resetTransport } from '@/lib/transport';
+import { resetTransport, tauriInvoke } from '@/lib/transport';
 
 /**
  * Startup / runtime health state machine.
@@ -52,17 +52,22 @@ export interface RuntimeStatus {
   log_rotation_cap_bytes: number;
 }
 
-type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-
 /** Fast retry cadence while starting/recovering (also the banner countdown). */
 const RETRY_INTERVAL_MS = 3_000;
 
-
-function invokeFn(): InvokeFn | null {
-  const w = window as unknown as { __TAURI__?: { invoke?: InvokeFn } };
-  return w.__TAURI__?.invoke ?? null;
-}
-
+/**
+ * Resolve the Tauri IPC command runner.
+ *
+ * F-28: this used to check only `window.__TAURI__?.invoke`. In a packaged Tauri
+ * v2 build the global bundle exposes `invoke` at `__TAURI_INTERNALS__.invoke`
+ * and `__TAURI__.core.invoke`, NOT at the top level — so every `runtime_status`
+ * call silently missed and the System Health page showed no sidecar data.
+ * `transport.ts` already owns the canonical v1/v2 resolver; reuse it instead
+ * of keeping a second, wrong detector here.
+ *
+ * Returns null in web mode (no IPC). A null here means "runtime unavailable",
+ * which is distinct from "command failed" — the latter is surfaced as an error.
+ */
 /**
  * Polls the backend health endpoint (every 30 s) and the Rust runtime status
  * (every 10 s). `phase` drives the startup banner; `report`/`runtime` drive
@@ -72,6 +77,8 @@ export function useStartupHealth(): {
   phase: StartupPhase;
   report: HealthReport | null;
   runtime: RuntimeStatus | null;
+  /** IPC failure when a desktop runtime was present but the command failed. */
+  runtimeError: string | null;
   error: string | null;
   refresh: () => void;
   /** Failed health attempts since the last success (0 when healthy). */
@@ -82,6 +89,7 @@ export function useStartupHealth(): {
   const [phase, setPhase] = useState<StartupPhase>('starting');
   const [report, setReport] = useState<HealthReport | null>(null);
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Completed failed health attempts since the last success. */
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -92,6 +100,44 @@ export function useStartupHealth(): {
   const timers = useRef<ReturnType<typeof setInterval>[]>([]);
   /** When this UI session started — the anchor for the startup grace window. */
   const bootAt = useRef(Date.now());
+  /** Guards every IPC callback: an unmounted hook must never call setState. */
+  const mounted = useRef(true);
+
+  /**
+   * Fetch Rust runtime status through the canonical transport resolver.
+   * A null result means "no desktop IPC (web mode)" — honest unavailability,
+   * never a failed request. A rejection is surfaced via `runtimeError` so a
+   * broken command cannot masquerade as "no data yet".
+   */
+  const pollRuntime = useCallback(() => {
+    const call = tauriInvoke<RuntimeStatus>('runtime_status');
+    if (!call) {
+      // Web mode: leave runtime null; there is no desktop runtime to report.
+      return;
+    }
+    void call
+      .then((s) => {
+        if (!mounted.current) return;
+        setRuntime(s as RuntimeStatus);
+        setRuntimeError(null);
+      })
+      .catch((err: unknown) => {
+        if (!mounted.current) return;
+        setRuntimeError(err instanceof Error ? err.message : String(err));
+      });
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    pollRuntime();
+    const t1 = setInterval(pollRuntime, 10_000);
+    timers.current.push(t1);
+    return () => {
+      mounted.current = false;
+      timers.current.forEach(clearInterval);
+      timers.current = [];
+    };
+  }, [pollRuntime]);
 
   const refresh = useCallback(() => {
     void (async () => {
@@ -127,23 +173,6 @@ export function useStartupHealth(): {
     })();
   }, []);
 
-  useEffect(() => {
-    const invoke = invokeFn();
-    const pollRuntime = () => {
-      if (!invoke) return;
-      void invoke('runtime_status')
-        .then((s) => setRuntime(s as RuntimeStatus))
-        .catch(() => undefined);
-    };
-    pollRuntime();
-    const t1 = setInterval(pollRuntime, 10_000);
-    timers.current.push(t1);
-    return () => {
-      timers.current.forEach(clearInterval);
-      timers.current = [];
-    };
-  }, []);
-
   // First probe of this session. `api.get` awaits the transport, and in the
   // desktop shell that call resolves only once the sidecar answers, so this
   // request is not racing backend start-up.
@@ -167,12 +196,8 @@ export function useStartupHealth(): {
   // System Health page update immediately after a sidecar respawn (the 10s
   // poll would eventually catch it, but the event makes it instant).
   useEffect(() => {
-    const invoke = invokeFn();
-    if (!invoke) return;
-    void invoke('runtime_status')
-      .then((s) => setRuntime(s as RuntimeStatus))
-      .catch(() => undefined);
-  }, [phase, retryAttempt]);
+    pollRuntime();
+  }, [pollRuntime, phase, retryAttempt]);
 
   // 1s countdown ticker while a retry is pending — drives the banner's
   // "reconnecting in Ns" label between actual health probes.
@@ -202,17 +227,12 @@ export function useStartupHealth(): {
       refresh();
       // Refresh the runtime status (port, restarts, last restart reason) so
       // the System Health page reflects the respawn immediately.
-      const invoke = invokeFn();
-      if (invoke) {
-        void invoke('runtime_status')
-          .then((s) => setRuntime(s as RuntimeStatus))
-          .catch(() => undefined);
-      }
+      pollRuntime();
     }).then((fn) => {
       unlisten = fn as (() => void) | null;
     });
     return () => { unlisten?.(); };
-  }, [refresh]);
+  }, [refresh, pollRuntime]);
 
-  return { phase, report, runtime, error, refresh, retryAttempt, secondsUntilRetry };
+  return { phase, report, runtime, runtimeError, error, refresh, retryAttempt, secondsUntilRetry };
 }

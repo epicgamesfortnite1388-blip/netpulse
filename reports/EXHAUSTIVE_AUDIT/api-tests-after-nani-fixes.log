@@ -1,0 +1,293 @@
+
+> @netpulse/api@3.2.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/api[39m
+
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-endpoint-i2t14u
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/nodeEndpointLeak.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 31041[2mms[22m[39m
+   [32m✓[39m search and geo-recheck responses are clean [2m(2)[22m
+     [33m[2m✓[22m[39m geo-recheck, which returns the refreshed node, carries no endpoint[33m 1283[2mms[22m[39m
+   [32m✓[39m stored rows are scrubbed before they reach a response [2m(5)[22m
+     [33m[2m✓[22m[39m POST /nodes/:id/test never returns the address it probed[33m 11249[2mms[22m[39m
+     [33m[2m✓[22m[39m POST /nodes/test-batch masks every per-node failure the same way[33m 16045[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-adaptive-cbwpGe
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/adaptiveConnect.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 26846[2mms[22m[39m
+   [32m✓[39m quick connect uses the adaptive order for the real dial [2m(7)[22m
+     [33m[2m✓[22m[39m never reports a tunnel as working from a started core alone[33m 24444[2mms[22m[39m
+(node:19960) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19960) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+ [32m✓[39m test/socksEgress.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 8208[2mms[22m[39m
+   [32m✓[39m SOCKS5 egress [2m(11)[22m
+     [33m[2m✓[22m[39m asks for the protocol default port when the URL names none[33m 5026[2mms[22m[39m
+     [33m[2m✓[22m[39m authenticates against a password-protected listener when given a username and password[33m 3033[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-registry-loyQ9k
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/nodeSourceRegistry.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 7977[2mms[22m[39m
+   [32m✓[39m fetchAndImportSource failure honesty [2m(2)[22m
+     [33m[2m✓[22m[39m records a failed fetch and imports nothing when a feed cannot be fetched[33m 3018[2mms[22m[39m
+     [33m[2m✓[22m[39m reports a failed fetch as a failure over the API, with no invented counts[33m 3023[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-vpn-prefs-YB82XS
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnPreferences.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 8359[2mms[22m[39m
+   [32m✓[39m autoConnect boot helper [2m(2)[22m
+     [33m[2m✓[22m[39m does nothing when the preference is off (no quick-connect run recorded)[33m 311[2mms[22m[39m
+     [33m[2m✓[22m[39m drives the REAL quick-connect path when enabled (run lands in history)[33m 6011[2mms[22m[39m
+ [32m✓[39m test/vaultKeychain.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 5812[2mms[22m[39m
+   [32m✓[39m Windows Credential Manager store [2m(2)[22m
+     [33m[2m✓[22m[39m round-trips a key through the real credential store[33m 2870[2mms[22m[39m
+     [33m[2m✓[22m[39m migrates an existing key file into the store and removes the file[33m 2866[2mms[22m[39m
+ [32m✓[39m test/selection.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 5288[2mms[22m[39m
+   [32m✓[39m SelectionService [2m(4)[22m
+     [33m[2m✓[22m[39m ranks the faster candidate first with a full recommendation[33m 709[2mms[22m[39m
+     [33m[2m✓[22m[39m renormalizes weights when only some components are measured[33m 395[2mms[22m[39m
+     [33m[2m✓[22m[39m reports unreachable candidates honestly with null score[33m 4087[2mms[22m[39m
+ [32m✓[39m test/proxyTunnel.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 4736[2mms[22m[39m
+   [32m✓[39m ProxyTunnelService [2m(8)[22m
+     [33m[2m✓[22m[39m flags down and reconnects (bounded) when the live core crashes[33m 2305[2mms[22m[39m
+   [32m✓[39m tunnel audit fixes [2m(3)[22m
+     [33m[2m✓[22m[39m a stop() issued while a restart is pending wins (no resurrection)[33m 2410[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-engines-YP5g21
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-nocores-zP2EjE
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/healthEngineHonesty.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 3229[2mms[22m[39m
+   [32m✓[39m engine reporting honesty [2m(3)[22m
+     [33m[2m✓[22m[39m still reports no engines when neither providers nor cores exist[33m 1246[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-session-EjqXtn
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-csrf-l5Rn45
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/sessionOriginGate.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 3226[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-retire-Jh6Vod
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/rawConfigRetirement.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2230[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-intake-n5iTmC
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/engineIntakeApi.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 2233[2mms[22m[39m
+ [32m✓[39m test/engineManager.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 2886[2mms[22m[39m
+   [32m✓[39m installEngine guards [2m(2)[22m
+     [33m[2m✓[22m[39m rejects an invalid version tag without any network fetch reaching the disk[33m 885[2mms[22m[39m
+     [33m[2m✓[22m[39m never writes into the cores dir on failure[33m 500[2mms[22m[39m
+   [32m✓[39m sing-box pinned digests (H2) [2m(3)[22m
+     [33m[2m✓[22m[39m refuses a download whose sha256 does not match the pin, before any binary lands[33m 489[2mms[22m[39m
+     [33m[2m✓[22m[39m installEngine on sing-box with an UNPINNED version refuses without falling back[33m 849[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-sources-in7DUg
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/sourcesApi.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1939[2mms[22m[39m
+ [32m✓[39m test/coreProcess.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 2302[2mms[22m[39m
+   [32m✓[39m spawnCoreProcess [2m(8)[22m
+     [33m[2m✓[22m[39m times out a core that stays alive without answering, and cleans it up[33m 931[2mms[22m[39m
+     [33m[2m✓[22m[39m uses the caller’s timeout sentence when one is given, so the hint survives[33m 927[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-env-cyRgvU
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/missionControl.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2141[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-cloudsync-wVsRW8
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/profileCloudSync.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2175[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-test-GdRjRv
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/app.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 2135[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-admin-GkVjkj
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/adminRights.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2206[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-cors-JYgea7
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/desktopCors.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2385[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-netlab-4CLl9k
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/netlab.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2002[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-vpnimp-xQ5eft
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnImportHardening.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 2054[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-unmeasured-kVPTCt
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/unmeasuredMeasurements.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1868[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-health-HNWlu2
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/health.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1934[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-gateway-api-5rm8d8
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnGatewayApi.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 2061[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-rotation-wBwZEL
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/provisionedCredentialRotation.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 2026[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-env-sLIzpz
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/missionOverdrive.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2039[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-handover-1UhV98
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/modeHandover.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2014[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-vpnroute-a0bgSE
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnRouteCompare.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1923[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-vpn-wvRe8P
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnLifecycle.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2036[2mms[22m[39m
+ [32m✓[39m test/geoScrubPage.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1973[2mms[22m[39m
+   [32m✓[39m boot geo scrub page query [2m(3)[22m
+     [33m[2m✓[22m[39m scrubs every poisoned row across pages and leaves no-geo rows untouched[33m 437[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-sec-KcC2rd
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/security.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1940[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-retention-20bbeP
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/retention.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1889[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-updh-a1qGB2
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/updateHistoryApi.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1944[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-env-wMXivx
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/apiErrorEnvelope.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 2008[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-egress-Eqjpmh
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/cloudEgressRoute.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 3156[2mms[22m[39m
+   [32m✓[39m POST /api/v1/cloud/egress [2m(6)[22m
+     [33m[2m✓[22m[39m resolves the client path against the cloud origin[33m 984[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:/tmp/np-launchsecret-test
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/launchSecret.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1587[2mms[22m[39m
+ [32m✓[39m test/nodeListQuery.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 1750[2mms[22m[39m
+ [32m✓[39m test/targetGuard.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 4027[2mms[22m[39m
+   [32m✓[39m resolveTarget [2m(5)[22m
+     [33m[2m✓[22m[39m rejects non-resolvable hostnames[33m 4004[2mms[22m[39m
+ [32m✓[39m test/aetherProvider.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 1164[2mms[22m[39m
+   [32m✓[39m socks5 client [2m(6)[22m
+     [33m[2m✓[22m[39m returns null when the body carries no IP[33m 1015[2mms[22m[39m
+ [32m✓[39m test/vpnService.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 1132[2mms[22m[39m
+   [32m✓[39m verifyConnect behavior [2m(6)[22m
+     [33m[2m✓[22m[39m keeps probing while the tunnel settles, and verifies once the route claims traffic[33m 415[2mms[22m[39m
+     [33m[2m✓[22m[39m marks failed when the public IP is unchanged[33m 621[2mms[22m[39m
+ [32m✓[39m test/mapSweep.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 1079[2mms[22m[39m
+   [32m✓[39m MapService.startSweep [2m(8)[22m
+     [33m[2m✓[22m[39m rejects a second sweep while one is running (429 sweep_busy)[33m 437[2mms[22m[39m
+ [32m✓[39m test/singboxProviderConnect.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 987[2mms[22m[39m
+   [32m✓[39m sing-box connect through the shared core-process owner [2m(6)[22m
+     [33m[2m✓[22m[39m starts the binary through the owner and keeps the credential config out of temp[33m 511[2mms[22m[39m
+ [32m✓[39m test/naniReadOnlyDiagnostics.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 584[2mms[22m[39m
+   [32m✓[39m GET /api/v1/nani/diagnostics/read-only [2m(2)[22m
+     [33m[2m✓[22m[39m returns 400 for a private target and never probes it[33m 562[2mms[22m[39m
+ [32m✓[39m test/tunGatewayHandle.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 783[2mms[22m[39m
+ [32m✓[39m test/naniRecoveryRollbackRoute.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 577[2mms[22m[39m
+   [32m✓[39m NANI recovery rollback routes [2m(4)[22m
+     [33m[2m✓[22m[39m GET /recovery/next forwards the known-good route[33m 555[2mms[22m[39m
+ [32m✓[39m test/egressThroughProxy.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 197[2mms[22m[39m
+ [32m✓[39m test/naniShadowHealthRoute.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 570[2mms[22m[39m
+   [32m✓[39m GET /api/v1/nani/health/shadow [2m(3)[22m
+     [33m[2m✓[22m[39m returns buffered shadow assessments beside live health[33m 560[2mms[22m[39m
+ [32m✓[39m test/importCredentialRefresh.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 529[2mms[22m[39m
+ [32m✓[39m test/vpnSelfTest.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 443[2mms[22m[39m
+   [32m✓[39m VpnSelfTestService [2m(11)[22m
+     [33m[2m✓[22m[39m reports unavailable when no engine is installed (environmental, not error)[33m 415[2mms[22m[39m
+ [32m✓[39m test/engineFundamentals.test.ts [2m([22m[2m53 tests[22m[2m)[22m[32m 200[2mms[22m[39m
+ [32m✓[39m test/nodeParsers.fuzz.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 235[2mms[22m[39m
+ [32m✓[39m test/tunClaim.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 212[2mms[22m[39m
+ [32m✓[39m test/proxyCores.test.ts [2m([22m[2m51 tests[22m[2m)[22m[32m 224[2mms[22m[39m
+ [32m✓[39m test/mapGeoHonesty.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 198[2mms[22m[39m
+ [32m✓[39m test/nodeVaultBackfill.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 186[2mms[22m[39m
+ [32m✓[39m test/elevationBroker.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 179[2mms[22m[39m
+ [32m✓[39m test/geoGuard.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 120[2mms[22m[39m
+ [32m✓[39m test/smartConnect.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 128[2mms[22m[39m
+ [32m✓[39m test/tunRelayTeardown.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 142[2mms[22m[39m
+ [32m✓[39m test/engineManagerApi.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 138[2mms[22m[39m
+ [32m✓[39m test/singboxManagedBinary.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 112[2mms[22m[39m
+ [32m✓[39m test/profileBundle.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 118[2mms[22m[39m
+ [32m✓[39m test/coreTempSweep.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 137[2mms[22m[39m
+ [32m✓[39m test/nodeDiscovery.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m test/bulkProbeRunner.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m test/tunGateway.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m test/proxyProbe.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m test/killSwitch.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m test/httpSemantics.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m test/coreProcessCallers.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32m✓[39m test/bulkCoreConfig.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m test/adaptiveEngine.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m test/whitednsService.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m test/agentPermissions.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m test/adversarial.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m test/nodeGeoService.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m test/schedule.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m test/mapPlausibility.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m test/dnsRecommendation.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m test/nodeScoringPolicy.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/naniRecoveryControls.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m test/nodeUriFormats.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m test/nodeLastEngine.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/vpnWatchdog.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m test/routeWiring.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m test/nodeLinkExport.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m test/cidrExpansion.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m test/gatewayMemory.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/cfProbe.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m test/vpnSplitTunnel.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/naniShadowHealthLoop.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m test/iran.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m test/optimizer.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m test/sourceUrlMask.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m test/nodeImportProvenance.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m test/nodeSchedulerRearm.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m test/tunnelDns.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/egressProxy.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m test/naniShadowAssessment.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/aetherDns.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/vpnHistory.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m test/mapService.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m test/pingParse.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m test/probeRetryOnce.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m test/naniEventContract.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m test/naniProbeAdapterHttp.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m test/redact.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/geoProviderOrder.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/nodeTestScheduler.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m test/naniHealthProbe.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m test/bus.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/routeHopMerge.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m test/vpnHardening.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m test/traceParse.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m test/systemProxyInvalidation.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m test/nodeTestLatency.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m117 passed[39m[22m[90m (117)[39m
+[2m      Tests [22m [1m[32m1269 passed[39m[22m[90m (1269)[39m
+[2m   Start at [22m 18:00:19
+[2m   Duration [22m 275.91s[2m (tests 71%, import 29%, transform 1%)[22m
+
+[2m    Isolate [22m [33m117 workers spawned[39m[2m · ~179ms startup each (spawn + environment, per file)[22m
+[2m            [22m [2mat least ~20.80s faster with [22m[33misolate: false[39m[2m — reuses workers across files instead of one per file[22m
+

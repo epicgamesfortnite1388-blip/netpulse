@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
-import { Gauge as GaugeIcon, Globe as Globe2Icon, Play, Sparkles, TriangleAlert, Zap } from 'lucide-react';
+import { Gauge as GaugeIcon, Globe as Globe2Icon, Network, Play, Sparkles, Activity, TriangleAlert, Route as RouteIcon, Shield as ShieldIcon, Flag as FlagIcon } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 import { BrandMark } from '@/components/BrandMark';
@@ -19,6 +19,8 @@ import { api } from '@/lib/api';
 import { timeAgo } from '@/lib/format';
 import { fetchLastCheckFailure } from '@/lib/updater';
 import { ConnectionCard, HealthBreakdown } from './ConnectionCard';
+import { ConnectionHero } from '@/features/connection/ConnectionHero';
+import { useConnection } from '@/features/connection/connectionState';
 import { deriveInsights, InsightsCard } from './InsightsCard';
 import { NeedsAttentionCard } from './NeedsAttentionCard';
 import { IranConnectivityWidget } from '@/features/iran/IranConnectivityWidget';
@@ -45,13 +47,46 @@ interface HistoryRow {
 const QUICK_ACTIONS = [
   { to: '/map', label: 'Live map', icon: <Globe2Icon size={14} /> },
   { to: '/diagnostics', label: 'Full test', icon: <Sparkles size={14} /> },
-  { to: '/speed-test', label: 'Speed test', icon: <Zap size={14} /> },
-  { to: '/dns', label: 'DNS test', icon: <Zap size={14} /> },
-  { to: '/routes', label: 'Route test', icon: <Zap size={14} /> },
-  { to: '/iran', label: 'Iran test', icon: <Zap size={14} /> },
-  { to: '/optimizer', label: 'Optimize', icon: <Zap size={14} /> },
-  { to: '/vpn', label: 'Connect VPN', icon: <Zap size={14} /> },
+  { to: '/speed-test', label: 'Speed test', icon: <Activity size={14} /> },
+  { to: '/dns', label: 'DNS test', icon: <Network size={14} /> },
+  { to: '/routes', label: 'Route test', icon: <RouteIcon size={14} /> },
+  { to: '/iran', label: 'Iran test', icon: <FlagIcon size={14} /> },
+  { to: '/optimizer', label: 'Optimize', icon: <GaugeIcon size={14} /> },
+  { to: '/vpn', label: 'Connect VPN', icon: <ShieldIcon size={14} /> },
 ];
+
+/**
+ * One supporting number in the command band.
+ *
+ * The unit only renders when there is a value. Printing "— ms" states a unit
+ * for a measurement that does not exist, and at 12px the em dash plus "ms"
+ * reads as the word "as" — which is how the band came to say "DNS —as".
+ * All four numbers share one size: the band's hierarchy is the verdict word,
+ * and four metrics at four different sizes made it read as a dashboard widget
+ * rather than an instrument readout.
+ */
+function HeroMetric({
+  label,
+  value,
+  unit,
+  tone = 'text-text',
+}: {
+  label: string;
+  value: number | string | null | undefined;
+  unit?: string;
+  tone?: string;
+}) {
+  const present = value != null && value !== '';
+  return (
+    <div>
+      <div className="text-micro uppercase tracking-[0.16em] text-faint">{label}</div>
+      <div className={`metric-num mt-1 text-xl font-medium leading-none ${present ? tone : 'text-faint'}`}>
+        {present ? value : '—'}
+        {present && unit && <span className="ml-1 text-micro font-normal text-faint">{unit}</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const statusQuery = useQuery({
@@ -78,6 +113,10 @@ export default function DashboardPage() {
   const lastCheckFail = lastCheckFailQuery.data ?? null;
 
   const navigate = useNavigate();
+  // F-05: the redesigned connection console is now the primary surface on the
+  // dashboard. It reads the same backend carriers as the legacy ConnectionCard
+  // through useConnection(); no connection state is computed in the UI.
+  const connection = useConnection();
 
   // latest persisted measurements for the dashboard metrics
   const speedHistoryQuery = useQuery({
@@ -147,23 +186,44 @@ export default function DashboardPage() {
   const lossStatus = lastPing == null ? 'idle' : lastPing.lossPct === 0 ? 'good' : lastPing.lossPct <= 2 ? 'warn' : 'bad';
 
   /*
-   * The hero band's live verdict. Derived only from state the page already
-   * fetches — never a fabricated "all good": loading, error, no-score and each
-   * score band are distinct, and the tone class is the same semantic colour the
-   * rest of the app uses, so the band can never disagree with the health card.
+   * The hero band's live verdict.
+   *
+   * The word comes from the backend's own label, and the colour from the same
+   * score bands the backend uses to produce it (>=85 Excellent, >=70 Good,
+   * >=50 Fair, else Poor). This band previously ran a second, different scale
+   * (>=80 Nominal, >=50 Degraded) and printed the backend label beside it as a
+   * hint — so a score of 75 read "Degraded Good", two verdicts at once, and the
+   * gauge below it said "Good" while the band said "Degraded". One scale now,
+   * defined where the score is computed; the hint is evidence, not a verdict.
    */
-  const healthScore = statusQuery.data?.health?.score ?? null;
+  const health = statusQuery.data?.health ?? null;
+  const healthScore = health?.score ?? null;
+  const measuredCount = health?.components?.filter((c) => c.measured).length ?? 0;
+  const totalCount = health?.components?.length ?? 0;
+  const bandWord =
+    healthScore == null
+      ? null
+      : healthScore >= 85
+        ? 'Excellent'
+        : healthScore >= 70
+          ? 'Good'
+          : healthScore >= 50
+            ? 'Fair'
+            : 'Poor';
+  const bandTone =
+    healthScore == null ? 'text-muted' : healthScore >= 70 ? 'text-ok' : healthScore >= 50 ? 'text-warn' : 'text-danger';
+
   const heroStatus = statusQuery.isLoading
     ? { word: 'Measuring', hint: 'Sampling the connection…', tone: 'text-muted' }
     : statusQuery.isError
       ? { word: 'Offline', hint: 'Backend unreachable', tone: 'text-danger' }
       : healthScore == null
         ? { word: 'Awaiting data', hint: 'Run a quick test to measure', tone: 'text-muted' }
-        : healthScore >= 80
-          ? { word: 'Nominal', hint: statusQuery.data?.health?.label ?? 'All measured components healthy', tone: 'text-ok' }
-          : healthScore >= 50
-            ? { word: 'Degraded', hint: statusQuery.data?.health?.label ?? 'Some components need attention', tone: 'text-warn' }
-            : { word: 'Critical', hint: statusQuery.data?.health?.label ?? 'Multiple components failing', tone: 'text-danger' };
+        : {
+            word: health?.label ?? bandWord ?? 'Measured',
+            hint: totalCount > 0 ? `Based on ${measuredCount} of ${totalCount} components` : 'Measured just now',
+            tone: bandTone,
+          };
 
   return (
     <DisclosureScope name="dashboard">
@@ -183,7 +243,7 @@ export default function DashboardPage() {
       {/* Command-center hero: the live verdict of the connection, at a glance.
           Values are the same ones the cards below render, so it can never
           disagree with them; the tone is the shared semantic colour. */}
-      <div className="surface-glass relative mb-6 overflow-hidden rounded-2xl">
+      <div className="np-panel relative mb-6 overflow-hidden">
         <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px hairline-brand" />
         <div className="flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
@@ -197,33 +257,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-end gap-x-7 gap-y-4">
-            <div>
-              <div className="text-micro uppercase tracking-[0.16em] text-faint">Health</div>
-              <div className={`metric-num text-3xl font-semibold leading-none ${heroStatus.tone}`}>
-                {healthScore ?? '—'}
-              </div>
-            </div>
-            <div>
-              <div className="text-micro uppercase tracking-[0.16em] text-faint">Ping</div>
-              <div className="metric-num text-xl font-medium leading-none text-text">
-                {lastPing?.avg ?? statusQuery.data?.latencyTcpMs ?? '—'}
-                <span className="ml-1 text-micro text-faint">ms</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-micro uppercase tracking-[0.16em] text-faint">DNS</div>
-              <div className="metric-num text-xl font-medium leading-none text-text">
-                {bestDnsMs ?? '—'}
-                <span className="ml-1 text-micro text-faint">ms</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-micro uppercase tracking-[0.16em] text-faint">Download</div>
-              <div className="metric-num text-xl font-medium leading-none text-text">
-                {lastDownload ?? '—'}
-                <span className="ml-1 text-micro text-faint">Mbps</span>
-              </div>
-            </div>
+            <HeroMetric label="Health" value={healthScore} tone={bandTone} />
+            <HeroMetric label="Ping" value={lastPing?.avg ?? statusQuery.data?.latencyTcpMs ?? null} unit="ms" />
+            <HeroMetric label="DNS" value={bestDnsMs} unit="ms" />
+            <HeroMetric label="Download" value={lastDownload} unit="Mbps" />
           </div>
         </div>
       </div>
@@ -256,12 +293,18 @@ export default function DashboardPage() {
 
       {statusQuery.data?.health && statusQuery.data.health.score != null ? (
         <div className="stagger space-y-6">
-          {/* health + connection */}
+          {/* Row 1 — the two answers to "is my connection healthy, and is the
+              tunnel sound?". They sit in their own row so the gauge card is
+              only as tall as the console it stands beside; previously it was
+              stretched to the height of a three-item column and carried ~400px
+              of empty space under the dial. */}
           <div className="stagger grid gap-5 lg:grid-cols-3">
-            <Card className="lg:col-span-1">
+            <Card className="flex flex-col lg:col-span-1">
               <CardHeader title="Network health" icon={<GaugeIcon size={15} />} />
-              <CardBody className="flex flex-col items-center">
-                <Gauge value={statusQuery.data.health.score} label={statusQuery.data.health.label ?? 'awaiting data'} size={190} />
+              <CardBody className="flex flex-1 flex-col">
+                <div className="flex flex-1 items-center justify-center">
+                  <Gauge value={statusQuery.data.health.score} label={statusQuery.data.health.label ?? 'awaiting data'} size={190} />
+                </div>
                 <p className="mt-3 text-center text-xs leading-relaxed text-faint">
                   {statusQuery.data.health.score == null
                     ? 'Score appears once latency data exists.'
@@ -275,17 +318,32 @@ export default function DashboardPage() {
               </CardBody>
             </Card>
 
-            <div className="space-y-5 lg:col-span-2">
-              <ConnectionCard status={statusQuery.data} />
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 xl:grid-cols-6">
-                <Metric label="Ping" value={lastPing?.avg ?? statusQuery.data.latencyTcpMs} unit="ms" status={pingStatus} hint={lastPing ? `ICMP avg to ${lastPing.target}` : 'Live TCP connect time to 1.1.1.1:443'} />
-                <Metric label="Jitter" value={lastPing?.jitterMs ?? null} unit="ms" status={jitterStatus} hint="Mean variation between successive replies (last ping run)" />
-                <Metric label="Packet loss" value={lastPing?.lossPct ?? null} unit="pct" status={lossStatus} hint="From the last ping run" />
-                <Metric label="Download" value={lastDownload} unit="mbps" status={lastDownload == null ? 'idle' : 'good'} hint={lastSpeed ? `Last speed test (${timeAgo(lastSpeed.startedAt)})` : 'Run a speed test to populate'} />
-                <Metric label="Upload" value={lastUpload} unit="mbps" status={lastUpload == null ? 'idle' : 'good'} hint="From the last speed test" />
-                <Metric label="DNS" value={bestDnsMs} unit="ms" status={bestDnsMs == null ? 'idle' : bestDnsMs <= 30 ? 'good' : bestDnsMs <= 80 ? 'warn' : 'bad'} hint={lastDns ? `Best resolver latency (last DNS test)` : 'Run a DNS test to populate'} />
-              </div>
+            <div className="lg:col-span-2">
+              <ConnectionHero state={connection} />
             </div>
+          </div>
+
+          {/* Row 2 — network facts beside the measurements they came from.
+              The six readouts used to run as a bare six-across strip under a
+              three-item column, which made them the widest thing on the page
+              and the smallest thing to read. */}
+          <div className="stagger grid gap-5 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <ConnectionCard status={statusQuery.data} />
+            </div>
+            <Card className="lg:col-span-1">
+              <CardHeader title="Measurements" subtitle="Last recorded run of each test" />
+              <CardBody>
+                <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                  <Metric label="Ping" value={lastPing?.avg ?? statusQuery.data.latencyTcpMs} unit="ms" status={pingStatus} hint={lastPing ? `ICMP avg to ${lastPing.target}` : 'Live TCP connect time to 1.1.1.1:443'} />
+                  <Metric label="Jitter" value={lastPing?.jitterMs ?? null} unit="ms" status={jitterStatus} hint="Mean variation between successive replies (last ping run)" />
+                  <Metric label="Packet loss" value={lastPing?.lossPct ?? null} unit="pct" status={lossStatus} hint="From the last ping run" />
+                  <Metric label="Download" value={lastDownload} unit="mbps" status={lastDownload == null ? 'idle' : 'good'} hint={lastSpeed ? `Last speed test (${timeAgo(lastSpeed.startedAt)})` : 'Run a speed test to populate'} />
+                  <Metric label="Upload" value={lastUpload} unit="mbps" status={lastUpload == null ? 'idle' : 'good'} hint="From the last speed test" />
+                  <Metric label="DNS" value={bestDnsMs} unit="ms" status={bestDnsMs == null ? 'idle' : bestDnsMs <= 30 ? 'good' : bestDnsMs <= 80 ? 'warn' : 'bad'} hint={lastDns ? `Best resolver latency (last DNS test)` : 'Run a DNS test to populate'} />
+                </div>
+              </CardBody>
+            </Card>
           </div>
 
           {/* iran connectivity widget */}
@@ -357,16 +415,16 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div>
-          <Card>
-            <CardBody className="flex items-center justify-center py-12 text-faint">
-              <div className="text-center">
-                <p className="text-sm">Health data not available yet.</p>
-                <p className="text-xs mt-1">Run a quick ping test or wait for the next status refresh.</p>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader title="Health data" subtitle="No measurements yet" />
+          <CardBody className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <GaugeIcon size={32} className="mx-auto mb-3 text-faint" />
+              <p className="text-sm text-muted">Health data not available yet.</p>
+              <p className="mt-1 text-xs text-faint">Run a quick ping test or wait for the next status refresh.</p>
+            </div>
+          </CardBody>
+        </Card>
       )
     }
     </DisclosureScope>
