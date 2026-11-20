@@ -375,6 +375,7 @@ export default function VpnPage() {
                         className="group flex w-auto shrink-0 items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text data-[state=active]:border-line-strong data-[state=active]:bg-surface data-[state=active]:text-text lg:w-full"
                       >
                         <span
+                          data-engine-glyph={item.id}
                           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${item.glyph} group-data-[state=active]:opacity-100 lg:opacity-80`}
                         >
                           <Icon size={13} />

@@ -210,7 +210,10 @@ export function OverviewSurface({ onOpen }: { onOpen: (s: VpnSurfaceId) => void 
               key={row.surface}
               onClick={() => onOpen(row.surface)}
               leading={
-                <span className={`flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-gradient-to-br ${row.glyph}`}>
+                <span
+                  data-engine-glyph={row.surface}
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-gradient-to-br ${row.glyph}`}
+                >
                   {row.icon}
                 </span>
               }

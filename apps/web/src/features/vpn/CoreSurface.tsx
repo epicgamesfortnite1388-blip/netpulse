@@ -68,7 +68,7 @@ export function CoreSurface({ engine, children }: { engine: ProxyEngineId; child
     <DisclosureScope name={`vpn:core-${engine}`} className="stagger animate-fade-up">
       <EngineHero
         glyph={
-          <EngineGlyph glyph={meta.glyph} size="lg">
+          <EngineGlyph glyph={meta.glyph} size="lg" engine={meta.id}>
             <Cpu size={24} />
           </EngineGlyph>
         }

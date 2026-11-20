@@ -35,10 +35,27 @@ import type { ReactNode } from 'react';
  */
 
 /** A gradient glyph tile holding a page/section icon. */
-export function EngineGlyph({ glyph, children, size = 'md' }: { glyph: string; children: ReactNode; size?: 'md' | 'lg' }) {
+export function EngineGlyph({
+  glyph,
+  children,
+  size = 'md',
+  engine,
+}: {
+  glyph: string;
+  children: ReactNode;
+  size?: 'md' | 'lg';
+  /**
+   * Engine identity, exposed so the colour audit can read the *computed* tint
+   * of each engine's glyph. "Distinct colour per engine" is a claim about the
+   * rendered DOM, and eight engines sharing one computed colour would not be
+   * visible in a screenshot.
+   */
+  engine?: string;
+}) {
   const dims = size === 'lg' ? 'h-14 w-14 text-2xl' : 'h-10 w-10 text-lg';
   return (
     <span
+      data-engine-glyph={engine}
       className={`relative flex shrink-0 items-center justify-center rounded-xl border border-line bg-gradient-to-br ${glyph} ${dims}`}
     >
       {children}
