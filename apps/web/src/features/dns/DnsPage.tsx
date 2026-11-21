@@ -275,8 +275,10 @@ export default function DnsPage() {
     try {
       await api.delete(`/dns/providers/custom/${encodeURIComponent(id)}`);
       setCustomList((prev) => prev.filter((r) => r.id !== `custom-${id}`));
-    } catch {
-      // keep row; next refresh reconciles
+    } catch (err) {
+      // DD-040: never swallow a failed DELETE — the row stays, so the user
+      // must be told why instead of seeing a removal that never persisted.
+      setCustomError(new Error(`Could not remove resolver "${id}": ${err instanceof Error ? err.message : String(err)}`));
     }
   }, []);
 
