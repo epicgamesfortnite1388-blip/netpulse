@@ -13,6 +13,7 @@ import {
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusDot } from '@/components/ui/StatusDot';
@@ -138,16 +139,18 @@ function VpnSelfTestCard() {
           </p>
           {last && !isRunning && <SelfTestBadge state={last.state} />}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-faint">
-          {last && <span>Checked {new Date(last.checkedAt).toLocaleTimeString()} · {last.tookMs} ms</span>}
-          {last && <span>Engines: {Object.entries(last.engines).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none detected'}</span>}
-          {last && <span>Profiles verified: {last.profilesChecked}</span>}
-          {last?.endpointsReachable != null && <span>Endpoints reachable: {last.endpointsReachable}</span>}
-          {sched?.enabled && sched.nextRunAt != null && !isRunning && (
-            <span>Auto every {sched.intervalMin}m · next {new Date(sched.nextRunAt).toLocaleTimeString()}</span>
-          )}
-          {sched && !sched.enabled && <span>Auto checks off — enable in Settings → Automation</span>}
-        </div>
+        <DetailGate required={3}>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-faint">
+            {last && <span>Checked {new Date(last.checkedAt).toLocaleTimeString()} · {last.tookMs} ms</span>}
+            {last && <span>Engines: {Object.entries(last.engines).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none detected'}</span>}
+            {last && <span>Profiles verified: {last.profilesChecked}</span>}
+            {last?.endpointsReachable != null && <span>Endpoints reachable: {last.endpointsReachable}</span>}
+            {sched?.enabled && sched.nextRunAt != null && !isRunning && (
+              <span>Auto every {sched.intervalMin}m · next {new Date(sched.nextRunAt).toLocaleTimeString()}</span>
+            )}
+            {sched && !sched.enabled && <span>Auto checks off — enable in Settings → Automation</span>}
+          </div>
+        </DetailGate>
         <div className="mt-3">
           <Button size="sm" variant="secondary" onClick={() => void runNow()} disabled={isRunning || data?.safeMode}>
             {isRunning ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />} Run self-test now
@@ -261,6 +264,27 @@ export default function SystemHealthPage() {
       setTimeout(refresh, 3000);
     });
 
+  // The health check's reset action performs the SAME confirmed, backed-up
+  // operation as Settings → Platform. It must not navigate to a control that
+  // sits behind a disclosure gate — that was still a dead end (Kim P2).
+  const doResetState = () =>
+    runAction('reset-state', async () => {
+      const call = tauriInvoke<string>('reset_app_state');
+      if (!call) {
+        toast('error', 'Reset App State is a desktop-app feature');
+        return;
+      }
+      const confirmed = window.confirm(
+        'Reset App State?\n\n' +
+          'All app data (history, settings, VPN profiles, node database) is MOVED into a timestamped backup folder — nothing is deleted. ' +
+          'The backend then restarts on a fresh database.',
+      );
+      if (!confirmed) return;
+      const backupDir = await call;
+      toast('ok', `State backed up${backupDir ? ` to ${backupDir}` : ''} — restarting…`);
+      setTimeout(() => window.location.reload(), 2500);
+    });
+
   const phaseLabel: Record<string, { text: string; tone: 'ok' | 'warn' | 'danger' | 'idle' }> = {
     starting: { text: 'Starting…', tone: 'idle' },
     checking: { text: 'Checking…', tone: 'warn' },
@@ -272,6 +296,7 @@ export default function SystemHealthPage() {
 
   return (
     <DisclosureScope name="health" className="stagger">
+      <DetailLevelProvider scope="health" defaultLevel={2} depth={4}>
       <PageHeader
         title="System Health"
         description="Live diagnostics for this installation — what is working, what is not, and what to do about it."
@@ -314,7 +339,10 @@ export default function SystemHealthPage() {
         </CardBody>
       </Card>
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {/* Scheduled VPN dry-run self-test */}
       <div className="mt-5">
@@ -349,9 +377,14 @@ export default function SystemHealthPage() {
                       size="sm"
                       variant="primary"
                       onClick={() => {
-                        if (c.action?.kind === 'repair-restart-backend') void doRestartBackend();
-                        else if (c.action?.kind === 'open-logs') void doOpenLogs();
-                        else toast('ok', c.action?.label ?? 'See System Health page');
+                        const kind = c.action?.kind;
+                        if (kind === 'repair-restart-backend') void doRestartBackend();
+                        else if (kind === 'open-logs') void doOpenLogs();
+                        else if (kind === 'repair-reset-state') void doResetState();
+                        else {
+                          // Never claim success for an action with no handler.
+                          toast('error', 'No automated repair available', c.action?.label ?? 'Open Settings to repair manually.');
+                        }
                       }}
                     >
                       <Wrench size={13} /> {c.action.label}
@@ -375,6 +408,7 @@ export default function SystemHealthPage() {
       </div>
 
       {/* Environment */}
+      <DetailGate required={3}>
       <Card
         className="mt-5"
         fold={{
@@ -405,9 +439,10 @@ export default function SystemHealthPage() {
                   ? `${fmtRestartTime(runtime.last_restart_at_unix)} — ${runtime.last_restart_reason}`
                   : 'none since this app started'
                 : '…',
+              4,
             ],
             ['Safe Mode', runtime ? (runtime.safe_mode ? 'ACTIVE' : 'off') : '…'],
-            ['Data directory', runtime?.data_dir ?? '…'],
+            ['Data directory', runtime?.data_dir ?? '…', 4],
             [
               'Log file',
               runtime
@@ -421,16 +456,20 @@ export default function SystemHealthPage() {
                   } / cap ${fmtBytes(runtime.log_rotation_cap_bytes)}`
                 : '…',
             ],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-lg border border-line bg-surface-2 px-4 py-2.5">
-              <div className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{k}</div>
-              <div className="mt-0.5 truncate font-mono text-xs text-muted" title={String(v)}>
-                {String(v)}
+          ].map(([k, v, level]) => {
+            const tile = (
+              <div className="rounded-lg border border-line bg-surface-2 px-4 py-2.5">
+                <div className="text-micro font-semibold uppercase tracking-[0.14em] text-faint">{k}</div>
+                <div className="mt-0.5 truncate font-mono text-xs text-muted" title={String(v)}>
+                  {String(v)}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+            return level === 4 ? <DetailGate key={k} required={4}>{tile}</DetailGate> : tile;
+          })}
         </CardBody>
       </Card>
+      </DetailGate>
 
       {runtimeError && (
         <div role="alert" className="mt-4 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-xs text-warn">
@@ -439,6 +478,7 @@ export default function SystemHealthPage() {
       )}
 
       {/* Boot log tail */}
+      <DetailGate required={4}>
       <Card
         className="mt-5"
         fold={{
@@ -463,6 +503,8 @@ export default function SystemHealthPage() {
           </pre>
         </CardBody>
       </Card>
+      </DetailGate>
+    </DetailLevelProvider>
     </DisclosureScope>
   );
 }

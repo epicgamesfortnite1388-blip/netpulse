@@ -7,6 +7,7 @@ import { Cloud, Download, Gauge, MapPin, Radar, ShieldCheck, ShieldX, Star, X } 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { Field } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -286,6 +287,7 @@ export default function CloudflarePage() {
 
   return (
     <DisclosureScope name="cloudflare">
+      <DetailLevelProvider scope="cloudflare" defaultLevel={2} depth={4}>
       <PageHeader
         title="Cloudflare endpoints"
         description="Find Cloudflare edge addresses, see which datacenter each one routes to, then validate the shortlist with a real download."
@@ -302,13 +304,18 @@ export default function CloudflarePage() {
           )
         }
       />
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
-      <FoldNote id="validation-method" label="What counts as a clean edge" className="mb-4">
-        A candidate is only listed as usable after it answers{' '}
-        <span className="font-mono">/cdn-cgi/trace</span>, survives an idle hold, and carries a real download. Candidates are
-        sampled on an even stride across each range, so Cloudflare&apos;s published /13s scan without touching every address.
-      </FoldNote>
+      <DetailGate required={3}>
+        <FoldNote id="validation-method" label="What counts as a clean edge" className="mb-4">
+          A candidate is only listed as usable after it answers{' '}
+          <span className="font-mono">/cdn-cgi/trace</span>, survives an idle hold, and carries a real download. Candidates are
+          sampled on an even stride across each range, so Cloudflare&apos;s published /13s scan without touching every address.
+        </FoldNote>
+      </DetailGate>
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card
@@ -376,12 +383,14 @@ export default function CloudflarePage() {
                   <Badge tone={scan.status === 'completed' ? 'ok' : scan.status === 'running' ? 'accent' : scan.status === 'error' ? 'danger' : 'neutral'}>
                     {scan.status}
                   </Badge>
-                  {filtered.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={exportCsv}>
-                      <Download size={12} />
-                      CSV
-                    </Button>
-                  )}
+                  <DetailGate required={3}>
+                    {filtered.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={exportCsv}>
+                        <Download size={12} />
+                        CSV
+                      </Button>
+                    )}
+                  </DetailGate>
                 </div>
               )
             }
@@ -397,22 +406,24 @@ export default function CloudflarePage() {
               </div>
             )}
 
-            {validating && (
-              <div className="mb-4 rounded-lg border border-accent/30 bg-accent/5 p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-2 font-medium text-accent">
-                    <Gauge size={13} className="animate-pulse" />
-                    Validating {Math.min(validatedCount, validationTarget)}/{validationTarget} shortlist endpoints — multi-try latency, DPI idle hold, then a real download through each edge
-                  </span>
-                  <button className="text-faint hover:text-danger" onClick={() => void cancelValidation()} title="Cancel validation">
-                    <X size={14} />
-                  </button>
+            <DetailGate required={3}>
+              {validating && (
+                <div className="mb-4 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 font-medium text-accent">
+                      <Gauge size={13} className="animate-pulse" />
+                      Validating {Math.min(validatedCount, validationTarget)}/{validationTarget} shortlist endpoints — multi-try latency, DPI idle hold, then a real download through each edge
+                    </span>
+                    <button className="text-faint hover:text-danger" onClick={() => void cancelValidation()} title="Cancel validation">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-2">
+                    <Progress value={validationTarget > 0 ? (validatedCount / validationTarget) * 100 : 0} />
+                  </div>
                 </div>
-                <div className="mt-2">
-                  <Progress value={validationTarget > 0 ? (validatedCount / validationTarget) * 100 : 0} />
-                </div>
-              </div>
-            )}
+              )}
+            </DetailGate>
             {validationError && <p className="mb-3 text-xs text-danger">{validationError}</p>}
 
             {!selectedId && (
@@ -457,15 +468,17 @@ export default function CloudflarePage() {
                   )}
                 </div>
 
-                {validatedCount > 0 && regionCounts.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-1.5">
-                    {regionCounts.slice(0, 8).map(([code, n]) => (
-                      <span key={code} title={coloLabel(code) ?? code} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-muted">
-                        {code} × {n}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <DetailGate required={4}>
+                  {validatedCount > 0 && regionCounts.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-1.5">
+                      {regionCounts.slice(0, 8).map(([code, n]) => (
+                        <span key={code} title={coloLabel(code) ?? code} className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-muted">
+                          {code} × {n}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </DetailGate>
 
                 <div className="mb-2 flex gap-1 text-micro">
                   {(['best', 'speed', 'region'] as const).map((key) => (
@@ -488,10 +501,14 @@ export default function CloudflarePage() {
                     <table className="w-full text-mini">
                       <thead className="sticky top-0 bg-surface-1">
                         <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-faint">
-                          <th className="py-2 pr-3 font-medium">Endpoint</th>
-                          <th className="py-2 pr-3 font-medium">Region</th>
-                          <th className="py-2 pr-3 text-right font-medium">RTT</th>
-                          <th className="py-2 pr-3 text-right font-medium">Loss</th>
+                          <DetailGate required={4}>
+                            <th className="py-2 pr-3 font-medium">Endpoint</th>
+                            <th className="py-2 pr-3 font-medium">Region</th>
+                          </DetailGate>
+                          <DetailGate required={3}>
+                            <th className="py-2 pr-3 text-right font-medium">RTT</th>
+                            <th className="py-2 pr-3 text-right font-medium">Loss</th>
+                          </DetailGate>
                           <th className="py-2 pr-3 text-right font-medium">↓ Mbps</th>
                           <th className="py-2 pr-3 font-medium">Verdict</th>
                           <th className="py-2 pr-3 text-right font-medium">Score</th>
@@ -504,17 +521,21 @@ export default function CloudflarePage() {
                           const rtt = c.validated ? c.tcpMs ?? c.tlsMs : c.tcpMs != null && c.tlsMs != null ? c.tcpMs + c.tlsMs : c.tcpMs ?? c.tlsMs;
                           return (
                             <tr key={c.id} className="border-b border-line/40 last:border-0">
-                              <td className="py-2 pr-3 font-mono">{c.endpoint}:{c.port}</td>
-                              <td className="py-2 pr-3 font-mono" title={regionLabel ?? undefined}>
-                                {c.colo ? <span className="text-accent">{regionLabel ?? c.colo}</span> : <span className="text-faint">—</span>}
-                              </td>
-                              <td className="py-2 pr-3 text-right font-mono text-muted">
-                                {rtt != null ? `${rtt.toFixed(0)} ms` : '—'}
-                                {c.jitterMs != null && <span className="ml-1 text-micro text-faint">±{c.jitterMs.toFixed(0)}</span>}
-                              </td>
-                              <td className="py-2 pr-3 text-right font-mono text-muted">
-                                {c.lossPct != null ? `${c.lossPct.toFixed(0)}%` : '—'}
-                              </td>
+                              <DetailGate required={4}>
+                                <td className="py-2 pr-3 font-mono">{c.endpoint}:{c.port}</td>
+                                <td className="py-2 pr-3 font-mono" title={regionLabel ?? undefined}>
+                                  {c.colo ? <span className="text-accent">{regionLabel ?? c.colo}</span> : <span className="text-faint">—</span>}
+                                </td>
+                              </DetailGate>
+                              <DetailGate required={3}>
+                                <td className="py-2 pr-3 text-right font-mono text-muted">
+                                  {rtt != null ? `${rtt.toFixed(0)} ms` : '—'}
+                                  {c.jitterMs != null && <span className="ml-1 text-micro text-faint">±{c.jitterMs.toFixed(0)}</span>}
+                                </td>
+                                <td className="py-2 pr-3 text-right font-mono text-muted">
+                                  {c.lossPct != null ? `${c.lossPct.toFixed(0)}%` : '—'}
+                                </td>
+                              </DetailGate>
                               <td className="py-2 pr-3 text-right font-mono">
                                 {c.downloadMbps != null ? (
                                   <span className={c.downloadMbps >= 5 ? 'text-ok' : 'text-warn'}>{c.downloadMbps.toFixed(1)}</span>
@@ -558,56 +579,61 @@ export default function CloudflarePage() {
                   </div>
                 )}
                 {scan.error && <p className="mt-3 text-xs text-danger">{scan.error}</p>}
-                <p className="mt-3 text-micro text-faint">
-                  Discovery marks TCP/TLS-reachable edges; the verdict needs validation. “Clean” means ≥2 of 3 probes succeeded, a
-                  Cloudflare colo answered, the TLS connection survived an idle hold, and a real download carried data — an edge that
-                  handshakes but cannot transfer is marked filtered.
-                </p>
+                <DetailGate required={3}>
+                  <p className="mt-3 text-micro text-faint">
+                    Discovery marks TCP/TLS-reachable edges; the verdict needs validation. “Clean” means ≥2 of 3 probes succeeded, a
+                    Cloudflare colo answered, the TLS connection survived an idle hold, and a real download carried data — an edge that
+                    handshakes but cannot transfer is marked filtered.
+                  </p>
+                </DetailGate>
               </>
             )}
           </CardBody>
         </Card>
       </div>
 
-      <Card
-        className="mt-5"
-        fold={{
-          id: 'scan-history',
-          defaultOpen: false,
-          summary: scansQuery.data ? `${scansQuery.data.scans.length} scan${scansQuery.data.scans.length === 1 ? '' : 's'} recorded` : 'loading history',
-        }}
-      >
-        <CardHeader title="Scan history" />
-        <CardBody>
-          {scansQuery.isLoading && <LoadingState label="Loading scans" />}
-          {scansQuery.data && scansQuery.data.scans.length === 0 && (
-            <p className="py-4 text-center text-sm text-faint">No scans recorded yet.</p>
-          )}
-          {scansQuery.data && scansQuery.data.scans.length > 0 && (
-            <ul className="space-y-1.5">
-              {scansQuery.data.scans.map((s) => (
-                <li key={s.id}>
-                  <button
-                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-mini hover:bg-surface-2 ${selectedId === s.id ? 'bg-surface-2' : ''}`}
-                    onClick={() => {
-                      setSelectedId(s.id);
-                      setValidatingId(null);
-                    }}
-                  >
-                    <span className="font-mono text-muted">
-                      {s.id.slice(0, 8)} · {s.alive}/{s.tested} alive
-                    </span>
-                    <span className="flex items-center gap-2 text-xs text-faint">
-                      <Badge tone={s.status === 'completed' ? 'ok' : s.status === 'running' ? 'accent' : 'neutral'}>{s.status}</Badge>
-                      {timeAgo(s.finishedAt ?? s.startedAt)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardBody>
-      </Card>
+      <DetailGate required={4}>
+        <Card
+          className="mt-5"
+          fold={{
+            id: 'scan-history',
+            defaultOpen: false,
+            summary: scansQuery.data ? `${scansQuery.data.scans.length} scan${scansQuery.data.scans.length === 1 ? '' : 's'} recorded` : 'loading history',
+          }}
+        >
+          <CardHeader title="Scan history" />
+          <CardBody>
+            {scansQuery.isLoading && <LoadingState label="Loading scans" />}
+            {scansQuery.data && scansQuery.data.scans.length === 0 && (
+              <p className="py-4 text-center text-sm text-faint">No scans recorded yet.</p>
+            )}
+            {scansQuery.data && scansQuery.data.scans.length > 0 && (
+              <ul className="space-y-1.5">
+                {scansQuery.data.scans.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-mini hover:bg-surface-2 ${selectedId === s.id ? 'bg-surface-2' : ''}`}
+                      onClick={() => {
+                        setSelectedId(s.id);
+                        setValidatingId(null);
+                      }}
+                    >
+                      <span className="font-mono text-muted">
+                        {s.id.slice(0, 8)} · {s.alive}/{s.tested} alive
+                      </span>
+                      <span className="flex items-center gap-2 text-xs text-faint">
+                        <Badge tone={s.status === 'completed' ? 'ok' : s.status === 'running' ? 'accent' : 'neutral'}>{s.status}</Badge>
+                        {timeAgo(s.finishedAt ?? s.startedAt)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      </DetailGate>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

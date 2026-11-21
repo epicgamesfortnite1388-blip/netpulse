@@ -34,4 +34,18 @@ export interface SpeedTestResult {
   downloadSamples: ThroughputSample[];
   uploadSamples: ThroughputSample[];
   error?: string;
+  /**
+   * Whether a VPN tunnel was routing traffic while this run executed, sampled
+   * at the start and again at the end. A run that straddles a connect (the
+   * state changed between the two samples) measures a MIX of direct and
+   * tunneled traffic — the numbers are real but their meaning needs this
+   * context; `connectedAtStart === connectedAtEnd === false` is a plain direct
+   * measurement, both true is measured through the tunnel. Omitted (never
+   * fabricated) when the tunnel state could not be sampled at all.
+   */
+  tunnel?: {
+    connectedAtStart: boolean;
+    connectedAtEnd: boolean;
+    providerId: string | null;
+  };
 }

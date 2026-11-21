@@ -3,6 +3,7 @@ import { Activity, RefreshCw, Satellite, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
+import { DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Select } from '@/components/ui/Field';
 import { DataList, DataRow, MetricStrip, Notice, Panel, Section } from '@/components/ui/Surface';
@@ -120,7 +121,10 @@ export default function MissionControlPage() {
   );
   const categories = [...new Set((snapshot?.activity ?? []).map((e) => e.category))].sort();
 
+  // Information-dense reporting page: default to Context (2) so the verdict,
+  // counts and subsystem ledger are present without the raw event log.
   return (
+    <DetailLevelProvider scope="mission" defaultLevel={2} depth={4}>
     <div>
       <PageHeader
         title="Mission Control"
@@ -137,6 +141,8 @@ export default function MissionControlPage() {
           </button>
         }
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       {query.isError && <ErrorState error={query.error} retry={() => void query.refetch()} />}
       {query.isLoading && <LoadingState label="Reading mission state" />}
@@ -180,6 +186,7 @@ export default function MissionControlPage() {
           <Section
             className="mt-6"
             title="Subsystem ledger"
+            detail={2}
             icon={<ShieldCheck size={15} />}
             subtitle="One row per subsystem. “Verified” only ever means a measurement in this process supports it; “not tested” means no evidence exists right now."
             actions={<Badge tone="neutral">{snapshot.subsystems.length} subsystems</Badge>}
@@ -209,6 +216,7 @@ export default function MissionControlPage() {
           {/* ----------------------------- adaptive ------------------------------ */}
           <Section
             title="Adaptive strategy selection"
+            detail={3}
             icon={<Satellite size={15} />}
             subtitle="Which installed core the engine would try first, on what evidence, and what it refuses to claim."
             actions={
@@ -305,6 +313,7 @@ export default function MissionControlPage() {
           {/* ------------------------------ activity ----------------------------- */}
           <Section
             title="Live mission activity"
+            detail={4}
             icon={<Activity size={15} />}
             subtitle="The app’s own event log — real state changes, test outcomes and warnings, newest first."
             actions={<Badge tone="neutral">{activity.length} of {snapshot.activity.length}</Badge>}
@@ -367,5 +376,6 @@ export default function MissionControlPage() {
         </>
       )}
     </div>
+    </DetailLevelProvider>
   );
 }

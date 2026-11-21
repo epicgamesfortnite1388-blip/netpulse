@@ -19,6 +19,7 @@ import { CloudOff, Copy, Download, LogOut, RefreshCw, ShieldCheck, Trash2, UserR
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { Field } from '@/components/ui/Field';
 import { useToast } from '@/components/Toaster';
 import { CloudError, cloudApi, cloudAuth, CLOUD_TIMEOUT } from '@/lib/cloud/client';
@@ -378,19 +379,21 @@ function EncryptedBackupCard() {
             data it protects. The cloud only ever receives ciphertext, so whoever runs that service — or anyone who steals its database — cannot
             read what is in it.
           </p>
-          <p className="text-xs text-muted">
-            <span className="font-medium text-text">What this does not protect against:</span> someone who can read this app&apos;s data
-            directory. The key sits beside the ciphertext, so anyone with access to this machine can open the backups too. This is a change from
-            earlier versions, where the browser derived a key and the cloud copy was unreadable even from here — that version could not restore a
-            config without decrypting it into the page first. Sealing now happens in the app instead, which is what lets restore import a config
-            without anyone seeing it, and the price is that <span className="font-medium text-text">sync is no longer end-to-end encrypted against your own
-            machine</span>.
-          </p>
-          <p className="text-xs text-muted">
-            <strong>Where the unlock step went:</strong> it is gone, not merely switched off. Sealing and restoring happen inside the app now, so there
-            is no in-browser key to enter — the old unlock field and button were removed along with the design they belonged to, and nothing on this
-            card asks for a key because nothing here needs one.
-          </p>
+          <DetailGate required={3}>
+            <p className="text-xs text-muted">
+              <span className="font-medium text-text">What this does not protect against:</span> someone who can read this app&apos;s data
+              directory. The key sits beside the ciphertext, so anyone with access to this machine can open the backups too. This is a change from
+              earlier versions, where the browser derived a key and the cloud copy was unreadable even from here — that version could not restore a
+              config without decrypting it into the page first. Sealing now happens in the app instead, which is what lets restore import a config
+              without anyone seeing it, and the price is that <span className="font-medium text-text">sync is no longer end-to-end encrypted against your own
+              machine</span>.
+            </p>
+            <p className="text-xs text-muted">
+              <strong>Where the unlock step went:</strong> it is gone, not merely switched off. Sealing and restoring happen inside the app now, so there
+              is no in-browser key to enter — the old unlock field and button were removed along with the design they belonged to, and nothing on this
+              card asks for a key because nothing here needs one.
+            </p>
+          </DetailGate>
           {rows === null && <p className="text-xs text-muted">Backups load on the next sync.</p>}
           {rows?.length === 0 && <p className="text-xs text-muted">No backups yet — run “Sync now”.</p>}
           {rows !== null && rows.length > 0 && (
@@ -548,7 +551,9 @@ function VpnProfilesCard() {
                   <Copy size={13} /> {copying === p.id ? 'Copying…' : 'Copy config'}
                 </Button>
               </div>
-              <pre className="mt-2 text-micro text-mono text-muted overflow-auto bg-surface-2 rounded p-2 break-all">{p.config}</pre>
+              <DetailGate required={4}>
+                <pre className="mt-2 text-micro text-mono text-muted overflow-auto bg-surface-2 rounded p-2 break-all">{p.config}</pre>
+              </DetailGate>
             </div>
           ))}
         </div>
@@ -642,6 +647,7 @@ function AccountDashboard() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      <DetailLevelControl />
       <Card>
         <CardHeader
           title="Profile"
@@ -748,9 +754,11 @@ function AccountDashboard() {
               <Button onClick={doSync} disabled={syncState.running}>
                 <RefreshCw size={14} /> {syncState.running ? 'Syncing…' : 'Sync now'}
               </Button>
-              <Button variant="ghost" onClick={() => { void navigator.clipboard.writeText(user.id); toast('ok', 'Account id copied'); }}>
-                <Copy size={14} /> Copy account id
-              </Button>
+              <DetailGate required={4}>
+                <Button variant="ghost" onClick={() => { void navigator.clipboard.writeText(user.id); toast('ok', 'Account id copied'); }}>
+                  <Copy size={14} /> Copy account id
+                </Button>
+              </DetailGate>
             </div>
           </div>
         </CardBody>
@@ -758,9 +766,13 @@ function AccountDashboard() {
 
       <EncryptedBackupCard />
 
-      <TelegramIntegrationCard />
+      <DetailGate required={3}>
+        <TelegramIntegrationCard />
+      </DetailGate>
 
-      <VpnProfilesCard />
+      <DetailGate required={3}>
+        <VpnProfilesCard />
+      </DetailGate>
 
       <Card fold={{ id: 'account-danger', defaultOpen: false, summary: 'irreversible account actions' }}>
         <CardHeader title="Danger zone" />
@@ -799,5 +811,11 @@ export default function AccountPage() {
   }, [init]);
 
   if (!ready) return null;
-  return session ? <AccountDashboard /> : <WelcomeGate />;
+  return session ? (
+    <DetailLevelProvider scope="account" defaultLevel={2} depth={4}>
+      <AccountDashboard />
+    </DetailLevelProvider>
+  ) : (
+    <WelcomeGate />
+  );
 }

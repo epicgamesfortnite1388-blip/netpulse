@@ -128,6 +128,16 @@ const updated = cargo.replace(
 if (updated !== cargo) {
   fs.writeFileSync(cargoPath, updated);
   console.log(`[release] src-tauri/Cargo.toml -> ${version}`);
+} else {
+  // No replacement happened: either the version was already correct, or the
+  // regex no-oped on a layout change. Verify the VERSION line itself, not
+  // an incidental occurrence of the string in a comment (Kim P3).
+  const packageBlock = cargo.match(/^\[package\]\r?\n([\s\S]*?)(?=^\[|\z)/m)?.[1] ?? '';
+  const stamped = packageBlock.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  if (stamped !== version) {
+    console.error(`[release] could not stamp Cargo.toml version ${version}: [package] layout changed (found ${stamped ?? 'no version line'}).`);
+    process.exit(1);
+  }
 }
 
 // Updater endpoint — derived, never hand-typed, so a release cannot advertise
@@ -146,8 +156,11 @@ try {
   }
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
-  console.warn(`[release] updater endpoint NOT stamped: ${message}`);
-  console.warn('[release] set NETPULSE_RELEASE_REPO=owner/repo (or "local") or package.json "repository" before a release.');
+  // A release with an unstamped/unverifiable feed endpoint is not releasable
+  // (DD-005); warn-only let the whole pipeline report success.
+  console.error(`[release] updater endpoint NOT stamped: ${message}`);
+  console.error('[release] set NETPULSE_RELEASE_REPO=owner/repo (or "local") or package.json "repository" before a release.');
+  process.exit(1);
 }
 
 console.log(`[release] canonical version: ${version}`);

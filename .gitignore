@@ -68,6 +68,11 @@ daemon-token
 # here, never commit it, and rotate any exposed value through the service.
 VPS-KEYS.txt
 
+# DD-060: an imported-conversation attachment committed a live SSH key and
+# passphrase (already present in published history — rotate/revoke through the
+# provider; untracking here prevents any NEW commit/tree from carrying it).
+.cloud-attachments/
+
 # Local live-proof harness token (harness-generated bearer token, never
 # committed; left over from a proof run until cleaned up).
 g4-boot-token.txt

@@ -16,10 +16,12 @@
  * The store's public API stays synchronous: values live in a
  * memory map that `primeSecureStore()` fills asynchronously at
  * startup (before the session store hydrates). Writes go to the
- * memory map immediately and to storage via fire-and-forget IPC;
- * a protection failure falls back to plaintext so a DPAPI hiccup
- * never locks the user out (availability over confidentiality,
- * matching the previous behavior).
+ * memory map immediately and to storage via fire-and-forget IPC.
+ * On desktop a protection failure NEVER falls back to plaintext: the
+ * value stays in memory for this session only and the failure is
+ * reported once, so a DPAPI hiccup cannot silently strip the
+ * user+machine binding from a refresh token or vault key. Web mode
+ * has no IPC and keeps its historical plaintext behavior.
  *
  * Legacy plaintext values written by older versions are read as
  * plaintext at prime time and re-encrypted on the next write —
@@ -129,6 +131,14 @@ export function secureGet(key: string): string | null {
   return null;
 }
 
+/** Warn once per key when desktop protection fails; never log the value. */
+const protectionWarnings = new Set<string>();
+function reportProtectionFailure(key: string): void {
+  if (protectionWarnings.has(key)) return;
+  protectionWarnings.add(key);
+  console.warn(`[secureStore] secret_protect failed for ${key}; value is memory-only for this session.`);
+}
+
 /**
  * Write a value: memory map immediately, storage protected via
  * DPAPI on desktop (fire-and-forget), plaintext on web.
@@ -146,9 +156,13 @@ export function secureSet(key: string, value: string): void {
       if (typeof blob === 'string') safeWrite(key, MARKER + blob);
     })
     .catch(() => {
-      // Protection unavailable: store plaintext rather than lose
-      // the session — the pre-DPAPI behavior, exactly.
-      safeWrite(key, value);
+      // Fail closed (DD-011): the in-memory copy keeps the current session
+      // usable, but a secret is never persisted in the clear. Only delete a
+      // stored value that is ACTUALLY plaintext — a transient IPC failure
+      // must not destroy a still-valid dpapi1: blob written earlier (Kim P2).
+      const stored = safeRead(key);
+      if (stored !== null && !stored.startsWith(MARKER)) safeRemove(key);
+      reportProtectionFailure(key);
     });
 }
 

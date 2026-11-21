@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
@@ -162,11 +163,15 @@ function RecommendationCard({ servers }: { servers: ServerRecord[] }) {
                     <span className="metric-num text-sm text-text">{r.score != null ? `${r.score}/100` : 'unreachable'}</span>
                   </div>
                   {r.reasons.length > 0 && (
-                    <ul className="mt-1 list-inside list-disc text-micro text-faint">
-                      {r.reasons.map((reason) => (
-                        <li key={reason}>{reason}</li>
-                      ))}
-                    </ul>
+                    /* Level 3: the per-candidate scoring rationale. The
+                       ranking, score and candidate name stay at every level. */
+                    <DetailGate required={3}>
+                      <ul className="mt-1 list-inside list-disc text-micro text-faint">
+                        {r.reasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    </DetailGate>
                   )}
                 </li>
               ))}
@@ -281,6 +286,7 @@ export default function ServersPage() {
 
   return (
     <DisclosureScope name="servers">
+      <DetailLevelProvider scope="servers" defaultLevel={2} depth={4}>
       <PageHeader
         title="Servers"
         description="VPS, VPN and diagnostic endpoints. Health is measured periodically with ping, TCP, loss and jitter probes."
@@ -295,7 +301,10 @@ export default function ServersPage() {
         }
       />
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {serversQuery.isError && <ErrorState error={serversQuery.error} retry={() => void serversQuery.refetch()} />}
       {serversQuery.isLoading && <LoadingState label="Loading servers" />}
@@ -333,18 +342,25 @@ export default function ServersPage() {
                         <StatusDot tone={latest ? STATUS_TONE[latest.status] : s.enabled ? 'idle' : 'offline'} pulse={monitorRunning === true} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">{s.name}</div>
-                          <div className="metric-num truncate text-xs text-faint">
-                            {s.host}
-                            {s.region ? ` · ${s.region}` : ''}
-                          </div>
+                          {/* Level 4: raw host / region provenance. The
+                              server name and status dot stay at every level. */}
+                          <DetailGate required={4}>
+                            <div className="metric-num truncate text-xs text-faint">
+                              {s.host}
+                              {s.region ? ` · ${s.region}` : ''}
+                            </div>
+                          </DetailGate>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="accent">{s.kind}</Badge>
                         {latest && <Badge tone={STATUS_TONE[latest.status]}>{latest.status}</Badge>}
-                        {s.tags.map((t) => (
-                          <Badge key={t} tone="neutral">{t}</Badge>
-                        ))}
+                        {/* Level 4: stored tags are raw metadata. */}
+                        <DetailGate required={4}>
+                          {s.tags.map((t) => (
+                            <Badge key={t} tone="neutral">{t}</Badge>
+                          ))}
+                        </DetailGate>
                       </div>
                     </div>
 
@@ -362,14 +378,20 @@ export default function ServersPage() {
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                      <span className="text-micro text-faint">
-                        {latest ? `Last check ${fmtDateTime(latest.checkedAt)}` : 'No health samples yet'}
-                      </span>
+                      {/* Level 4: the exact last-check timestamp. */}
+                      <DetailGate required={4}>
+                        <span className="text-micro text-faint">
+                          {latest ? `Last check ${fmtDateTime(latest.checkedAt)}` : 'No health samples yet'}
+                        </span>
+                      </DetailGate>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => void fetchHealth(s.id)}>
-                          <Activity size={13} />
-                          Samples
-                        </Button>
+                        {/* Level 3: fetching the stored health-sample series. */}
+                        <DetailGate required={3}>
+                          <Button variant="ghost" size="sm" onClick={() => void fetchHealth(s.id)}>
+                            <Activity size={13} />
+                            Samples
+                          </Button>
+                        </DetailGate>
                         <Button variant="ghost" size="sm" onClick={() => void checkNow(s.id)} loading={checkedIds[s.id]} disabled={checkedIds[s.id]}>
                           <RefreshCw size={13} />
                           Check now
@@ -386,6 +408,7 @@ export default function ServersPage() {
           </Card>
         </div>
       )}
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

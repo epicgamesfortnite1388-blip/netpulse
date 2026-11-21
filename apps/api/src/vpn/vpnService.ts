@@ -410,6 +410,47 @@ export function hasWgScriptDirectives(text: string): boolean {
   return /^\s*(PostUp|PostDown|PreUp|PreDown|SaveConfig)\s*=/im.test(text);
 }
 
+/**
+ * OpenVPN directives that can execute code, load native code, write an
+ * arbitrary path, or open a control socket. An imported profile is untrusted
+ * input (a subscription feed or a pasted config), and OpenVPN runs `up`/`down`
+ * hooks with the app user's privileges once `script-security` is enabled.
+ * Mirrors the WireGuard guard above: reject at IMPORT, never at connect.
+ *
+ * `config` is blocked because it includes another file, which would hide its
+ * directives from this check. Lines inside inline `<...>` blocks (CA, TLS
+ * auth, credentials) are data, not directives, and are skipped.
+ */
+const BLOCKED_OVPN_DIRECTIVES = new Set([
+  'plugin',
+  'script-security',
+  'up', 'up-pre', 'down', 'down-pre',
+  'route-up', 'route-pre-down', 'ipchange', 'tls-verify',
+  'auth-user-pass-verify', 'client-connect', 'client-disconnect',
+  'learn-address', 'dhcp-pre-release', 'dhcp-release', 'dhcp-renew',
+  'config',
+  'log', 'log-append', 'writepid',
+  'management', 'management-client-user', 'management-external-key',
+]);
+
+/** Return the forbidden directive found in an OpenVPN config, or null. */
+export function openVpnUnsafeDirective(text: string): string | null {
+  let inInlineBlock = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    // Inline PEM/credential blocks delimit themselves; their contents are data.
+    if (/^<\/?[a-z0-9_-]+>$/i.test(line)) {
+      inInlineBlock = !line.startsWith('</');
+      continue;
+    }
+    if (inInlineBlock || !line || line.startsWith('#') || line.startsWith(';')) continue;
+    // OpenVPN accepts long options with or without a leading `--`.
+    const token = line.replace(/^--/, '').split(/\s+/, 1)[0]!.toLowerCase();
+    if (BLOCKED_OVPN_DIRECTIVES.has(token)) return token;
+  }
+  return null;
+}
+
 /* --------------------------- wireguard helpers ---------------------------- */
 
 /**
@@ -823,6 +864,10 @@ export class OpenVpnProvider implements VpnProvider {
 
   async importProfile(input: VpnProfileInput): Promise<ImportedProfile> {
     if (input.protocol !== 'openvpn') throw vpnError(400, 'invalid_config', 'OpenVpnProvider accepts OpenVPN configurations only');
+    const unsafeDirective = openVpnUnsafeDirective(input.configText);
+    if (unsafeDirective) {
+      throw vpnError(400, 'invalid_config', `The configuration contains a side-effecting OpenVPN directive ("${unsafeDirective}") — scripts, plugins, arbitrary file writes and management sockets are not allowed`);
+    }
     if (!/<ca>|remote\s+/i.test(input.configText)) {
       throw vpnError(400, 'invalid_config', 'This does not look like an OpenVPN config (missing remote/CA block)');
     }
@@ -1641,7 +1686,26 @@ export class VpnRegistry {
   }
 
   async initAll(): Promise<void> {
-    await Promise.all([...this.providers.values()].map((p) => p.init().catch(() => undefined)));
+    /**
+     * Bounded bring-up: every provider init does live system probes
+     * (interface enumeration, binary discovery), and a wedged one must not
+     * delay `listen` past the desktop shell's bootstrap window
+     * (BOOTSTRAP_READY_TIMEOUT, src-tauri/src/sidecar.rs) — past it, the UI
+     * reports "Backend unreachable" for a process that is actually alive but
+     * stuck before its first route. Providers whose init hangs are skipped
+     * for this session (their `init().catch` already tolerates a thrown
+     * failure; the deadline only adds the hang case), and the same
+     * lazy-retry rules apply as for any other failed init.
+     */
+    const INIT_DEADLINE_MS = 10_000;
+    const deadline = new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, INIT_DEADLINE_MS);
+      t.unref?.();
+    });
+    await Promise.race([
+      Promise.all([...this.providers.values()].map((p) => p.init().catch(() => undefined))),
+      deadline,
+    ]);
   }
 }
 

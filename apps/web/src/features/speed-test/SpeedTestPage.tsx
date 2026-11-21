@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Metric } from '@/components/ui/Metric';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -91,6 +92,7 @@ export default function SpeedTestPage() {
 
   return (
     <DisclosureScope name="speed-test">
+      <DetailLevelProvider scope="speed-test" defaultLevel={2} depth={4}>
       <PageHeader
         title="Speed test"
         description="Real throughput measurement — streaming downloads and uploads against Cloudflare speed endpoints. No simulated numbers."
@@ -102,7 +104,10 @@ export default function SpeedTestPage() {
         }
       />
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {error && <ErrorState error={new Error(error)} retry={() => void runTest()} />}
 
@@ -119,18 +124,20 @@ export default function SpeedTestPage() {
         </Card>
       )}
 
-      {state.running && live.length > 0 && (
-        <Card className="mb-5" fold={{ id: 'live-throughput', summary: `${live.length} sample${live.length === 1 ? '' : 's'} so far` }}>
-          <CardHeader
-            title="Live throughput"
-            subtitle="Samples stream in as bytes arrive — nothing is interpolated"
-            actions={<Badge tone="accent">{liveNow != null ? `${liveNow.toFixed(1)} Mbps` : '…'}</Badge>}
-          />
-          <CardBody>
-            <LatencyChart data={live} height={160} />
-          </CardBody>
-        </Card>
-      )}
+      <DetailGate required={3}>
+        {state.running && live.length > 0 && (
+          <Card className="mb-5" fold={{ id: 'live-throughput', summary: `${live.length} sample${live.length === 1 ? '' : 's'} so far` }}>
+            <CardHeader
+              title="Live throughput"
+              subtitle="Samples stream in as bytes arrive — nothing is interpolated"
+              actions={<Badge tone="accent">{liveNow != null ? `${liveNow.toFixed(1)} Mbps` : '…'}</Badge>}
+            />
+            <CardBody>
+              <LatencyChart data={live} height={160} />
+            </CardBody>
+          </Card>
+        )}
+      </DetailGate>
 
       {result && (
         <div className="space-y-5">
@@ -143,27 +150,29 @@ export default function SpeedTestPage() {
             <Metric label="Packet loss" value={result.packetLoss} unit="pct" status={result.packetLoss == null ? 'idle' : result.packetLoss === 0 ? 'good' : result.packetLoss <= 2 ? 'warn' : 'bad'} />
           </div>
 
-          <Card
-            fold={{
-              id: 'throughput-samples',
-              defaultOpen: false,
-              summary: `${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples`,
-            }}
-          >
-            <CardHeader
-              title="Throughput samples"
-              subtitle={`${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples · server: ${result.server}`}
-              actions={<Badge tone="accent">{(result.durationMs / 1000).toFixed(0)}s window</Badge>}
-            />
-            <CardBody>
-              {samples.length > 0 ? (
-                <LatencyChart data={samples} height={180} />
-              ) : (
-                <p className="py-6 text-center text-sm text-faint">No throughput samples were collected — the measurement may have been blocked by this environment.</p>
-              )}
-              {result.error && <p className="mt-3 text-xs text-warn">{result.error}</p>}
-            </CardBody>
-          </Card>
+          <DetailGate required={3}>
+            <Card
+              fold={{
+                id: 'throughput-samples',
+                defaultOpen: false,
+                summary: `${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples`,
+              }}
+            >
+              <CardHeader
+                title="Throughput samples"
+                subtitle={`${result.downloadSamples.length} download + ${result.uploadSamples.length} upload samples · server: ${result.server}`}
+                actions={<Badge tone="accent">{(result.durationMs / 1000).toFixed(0)}s window</Badge>}
+              />
+              <CardBody>
+                {samples.length > 0 ? (
+                  <LatencyChart data={samples} height={180} />
+                ) : (
+                  <p className="py-6 text-center text-sm text-faint">No throughput samples were collected — the measurement may have been blocked by this environment.</p>
+                )}
+                {result.error && <p className="mt-3 text-xs text-warn">{result.error}</p>}
+              </CardBody>
+            </Card>
+          </DetailGate>
         </div>
       )}
 
@@ -177,13 +186,14 @@ export default function SpeedTestPage() {
         </Card>
       )}
 
-      <Card
-        fold={{
-          id: 'speed-history',
-          defaultOpen: false,
-          summary: historyQuery.data ? `${historyQuery.data.tests.length} test${historyQuery.data.tests.length === 1 ? '' : 's'} recorded` : 'loading history',
-        }}
-      >
+      <DetailGate required={4}>
+        <Card
+          fold={{
+            id: 'speed-history',
+            defaultOpen: false,
+            summary: historyQuery.data ? `${historyQuery.data.tests.length} test${historyQuery.data.tests.length === 1 ? '' : 's'} recorded` : 'loading history',
+          }}
+        >
         <CardHeader title="History" icon={<HistoryIcon size={15} />} actions={<Badge tone="neutral">{historyQuery.data?.tests.length ?? 0}</Badge>} />
         <CardBody>
           {historyQuery.isLoading && <LoadingState label="Loading history" />}
@@ -207,11 +217,13 @@ export default function SpeedTestPage() {
           )}
         </CardBody>
       </Card>
+      </DetailGate>
 
       <p className="mt-4 flex items-center gap-2 text-xs text-faint">
         <Activity size={12} />
         Throughput numbers derive from bytes actually received/sent over the measurement window.
       </p>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

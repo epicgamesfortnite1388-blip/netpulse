@@ -1,0 +1,111 @@
+
+> netpulse@3.2.0 test:signing
+> node scripts/signature-trust.test.mjs
+
+
+== signature trust classification ==
+  ok   CA-signed chain is trusted
+  ok   CA-signed chain does not warn SmartScreen
+  ok   CA-signed reason names the issuer
+  ok   self-signed chain is classified selfsigned
+  ok   self-signed chain is not trusted
+  ok   self-signed chain warns SmartScreen
+  ok   self-signed detection ignores case and spacing
+  ok   CA-signed but unknown root is untrusted-root
+  ok   untrusted-root warns SmartScreen
+  ok   tampered file is bad
+  ok   unsigned file is missing
+  ok   no observation at all is missing
+  ok   signature with no signer cert is missing
+  ok   an unverifiable signer with no issuer is never called trusted
+  ok   a Valid status with no issuer detail stays trusted (the OS verified the chain)
+  ok   smartScreenReport(trusted) states a SmartScreen outcome
+  ok   smartScreenReport(selfsigned) states a SmartScreen outcome
+  ok   smartScreenReport(untrusted-root) states a SmartScreen outcome
+  ok   smartScreenReport(bad) states a SmartScreen outcome
+  ok   smartScreenReport(missing) states a SmartScreen outcome
+  ok   the self-signed report names the real remedy
+
+== the signer output contract the gate parses ==
+  ok   parses the artifact name
+  ok   parses the Windows status
+  ok   parses the trust class
+  ok   ignores non-verify lines
+
+== signing identity resolution ==
+  ok   nothing configured resolves to route null
+  ok   thumbprint selects the store route
+  ok   an Azure route without its four values is refused
+  ok   the refusal names the endpoint variable
+  ok   a missing dlib is a hard error
+  ok   a complete Azure profile selects the token-free route
+  ok   generated metadata exists at the resolved path
+  ok   metadata carries the Trusted Signing endpoint
+  ok   metadata carries the account
+  ok   metadata carries the certificate profile
+  ok   signtool argv uses the dlib
+  ok   signtool argv passes the metadata file
+  ok   signtool argv stamps an RFC3161 timestamp
+  ok   signtool argv ends with the artifact
+  ok   a PFX with no password is a hard error, not "no identity"
+  ok   a PFX with a password file selects the pfx route
+  ok   the password is read and trimmed
+  ok   the resolved PFX path is absolute
+
+== signer CLI behavior (spawned for real) ==
+  ok   --optional still refuses a broken Azure profile
+  ok   the refusal explains what is missing
+  ok   the signer reports a trust class for a real file
+  ok   --require-trusted rejects a missing signature
+  ok   the strict failure states the SmartScreen consequence
+
+signature-trust: 48/48 checks passed
+signature-trust: all checks passed
+signing:0
+
+> netpulse@3.2.0 test:release
+> node scripts/release-distribution.test.mjs
+
+PASS  fresh install: boot + migrate — port=53363
+PASS  fresh install: API healthy — status=200
+PASS  fresh install: DB created in data dir
+PASS  fresh install: schema migrated — tables=43
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53363
+PASS  graceful close: clean-exit flag set — {"clean":true}
+PASS  version stamp: single canonical version — root=3.2.0 conf=3.2.0 staged=3.2.0 cargo=3.2.0
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53384
+PASS  upgrade: boot on existing DB — port=53395
+PASS  upgrade: settings preserved — theme=dark
+PASS  upgrade: stale VPN state reconciled — event found
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53395
+PASS  upgrade: migration journal sequential — entries=14
+PASS  corrupted DB: self-heal boot — recovered
+PASS  corrupted DB: API healthy after heal
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53422
+PASS  corrupted DB: broken file quarantined (not deleted) — netpulse.db,netpulse.db.corrupt-1795262927139,secrets,vpn-profiles
+PASS  offline: boot succeeds without network — port=53430
+PASS  offline: local history readable — status=200
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53430
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=53448
+[release-test] staging dir locked (AV/indexer); restaging in place instead
+PASS  reinstall: backend restaged — 3:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.22.2
+
+PASS  reinstall: boot after reinstall
+PASS  reinstall: user data survived — theme=light
+    [boot stderr] [netpulse] boot stage=db:ok | [netpulse] boot stage=schedulers:ok | [netpulse] boot stage=routes:ok | sidecar-ready port=63437
+
+18 passed, 0 failed
+release:0
+
+> netpulse@3.2.0 test:pipeline
+> node scripts/verify-desktop-pipeline.test.mjs
+
+  ok   an unrelated framework version does not satisfy the gate
+  ok   the injected appVersion binding satisfies the gate
+  ok   a different conf version does not match the same stale dist
+desktop-pipeline-version: 3/3 checks passed
+pipeline:0

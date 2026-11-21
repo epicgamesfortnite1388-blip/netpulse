@@ -8,6 +8,8 @@ import type { DbHandle } from '../db/client';
 import { speedTests } from '../db/schema';
 import type { TestsRepository } from '../db/repositories';
 import type { PlatformNetworkController } from '../providers/platform/types';
+import type { VpnRegistry } from '../vpn/vpnService';
+import { detectVpnState } from '../vpn/vpnState';
 import type { EventService } from './eventService';
 
 const SPEED_PROVIDERS = new Map<string, SpeedTestProvider>([
@@ -20,6 +22,8 @@ export interface SpeedServiceDeps {
   bus: RealtimeBus;
   db: DbHandle;
   controller: PlatformNetworkController;
+  /** Optional: when present, runs are annotated with the tunnel state they executed under. */
+  vpn?: VpnRegistry;
   log?: { warn(msg: string): void };
 }
 
@@ -87,6 +91,20 @@ export class SpeedService {
 
     tests.create(opts.testId, 'speed', { provider: req.provider ?? 'cloudflare', durationMs, downloadStreams, uploadStreams });
 
+    // Tunnel-state context, sampled at the start and again after the run: a
+    // test that straddles a connect measures a mix of direct and tunneled
+    // traffic, and without this annotation the number's meaning is silently
+    // ambiguous (the same honesty rule the DNS Lab and Gaming already apply).
+    const sampleTunnel = async () => {
+      if (!this.deps.vpn) return null;
+      try {
+        return await detectVpnState(this.deps.vpn);
+      } catch {
+        return null;
+      }
+    };
+    const tunnelStart = await sampleTunnel();
+
     try {
       publish(2, 'ping');
       const latency = await this.latencyStats(provider.pingTarget(req.family), 8, opts.signal, (pct) =>
@@ -110,6 +128,15 @@ export class SpeedService {
       });
 
       publish(99, 'finalize');
+      const tunnelEnd = await sampleTunnel();
+      const tunnel =
+        tunnelStart && tunnelEnd
+          ? {
+              connectedAtStart: tunnelStart.connected,
+              connectedAtEnd: tunnelEnd.connected,
+              providerId: (tunnelEnd.connected ? tunnelEnd.providerId : tunnelStart.providerId) ?? null,
+            }
+          : undefined;
       const result: SpeedTestResult = {
         downloadMbps: download.mbps,
         uploadMbps: upload.mbps,
@@ -125,6 +152,8 @@ export class SpeedService {
         downloadSamples: download.samples,
         uploadSamples: upload.samples,
         error: download.error ?? upload.error,
+        // Omitted entirely when neither sample succeeded — never a fabricated state.
+        tunnel,
       };
 
       this.deps.db.db.insert(speedTests)

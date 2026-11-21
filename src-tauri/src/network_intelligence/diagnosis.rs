@@ -542,7 +542,13 @@ const MAX_CORRELATION_HISTORY: usize = 32;
 
 /// A gap longer than this starts a new diagnostic window: evidence from an
 /// earlier incident must not discount probes taken hours later.
-const CORRELATION_WINDOW_MS: u64 = 5 * 60 * 1_000;
+///
+/// Unit: SECONDS, the same clock as [`ProbeResult::timestamp`] and the
+/// `predict` step. The canonical feeder (`observe_diagnostic_probes_matching`)
+/// converts measurement milliseconds to seconds at the boundary; comparing
+/// a seconds gap against a millisecond-valued constant would make the window
+/// 3.5 days instead of 5 minutes and keep stale evidence alive for hours.
+const CORRELATION_WINDOW_SECONDS: u64 = 5 * 60;
 
 impl DiagnosticEngine {
     /// Create a new engine with a uniform prior over all hypotheses.
@@ -644,7 +650,7 @@ impl DiagnosticEngine {
         // causal path; the first member of a cluster keeps full weight. A long
         // gap starts a new window, and repeating the same test over time is new
         // evidence rather than correlation.
-        if previous.is_some_and(|prev| result.timestamp.saturating_sub(prev) > CORRELATION_WINDOW_MS)
+        if previous.is_some_and(|prev| result.timestamp.saturating_sub(prev) > CORRELATION_WINDOW_SECONDS)
         {
             self.observation_history.clear();
         }
@@ -1257,13 +1263,16 @@ mod tests {
         e.observe(&ProbeResult {
             test: DiagnosticTest::TcpConnect,
             outcome: ProbeOutcome::Failure,
-            timestamp: 2_000,
+            // Ten seconds later: inside the same five-minute window.
+            timestamp: 1_010,
             source: "tcp".into(),
             cost: 1.0,
         });
         assert_eq!(e.observation_history.len(), 2);
 
-        let later = 2_000 + CORRELATION_WINDOW_MS + 1;
+        // Timestamps here are SECONDS (the canonical feeder converts ms at
+        // the boundary), so a five-minute gap is 300 — not 300_000.
+        let later = 1_010 + CORRELATION_WINDOW_SECONDS + 1;
         e.observe(&ProbeResult {
             test: DiagnosticTest::TlsHandshake,
             outcome: ProbeOutcome::Failure,
@@ -1275,6 +1284,45 @@ mod tests {
             e.observation_history,
             vec!["tls-handshake"],
             "a long gap must discard probes from the earlier incident"
+        );
+    }
+
+    #[test]
+    fn six_minute_gap_in_engine_seconds_resets_even_without_the_ms_feeder() {
+        // NANI-DD-01: the engine clock is SECONDS. A six-minute incident gap
+        // is 360, not 360_000. The old code compared that gap to the
+        // millisecond-valued 300_000 constant, so stale evidence from the
+        // previous incident kept discounting fresh probes for 3.5 days.
+        // This test calls `observe` directly with seconds so it pins the
+        // engine's own contract independently of the feeder conversion.
+        let mut e = DiagnosticEngine::new();
+        for (test, ts) in [
+            (DiagnosticTest::DnsResolve, 1_000_u64),
+            (DiagnosticTest::TcpConnect, 1_010),
+        ] {
+            let source = test.correlation_id().to_string();
+            e.observe(&ProbeResult {
+                test,
+                outcome: ProbeOutcome::Failure,
+                timestamp: ts,
+                source,
+                cost: 1.0,
+            });
+        }
+        assert_eq!(e.observation_history.len(), 2);
+
+        let six_minutes_later = 1_010 + 6 * 60;
+        e.observe(&ProbeResult {
+            test: DiagnosticTest::TlsHandshake,
+            outcome: ProbeOutcome::Failure,
+            timestamp: six_minutes_later,
+            source: "tls".into(),
+            cost: 1.0,
+        });
+        assert_eq!(
+            e.observation_history,
+            vec!["tls-handshake"],
+            "a six-minute (360-second) gap must start a fresh correlation window"
         );
     }
 

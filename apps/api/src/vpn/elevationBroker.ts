@@ -97,7 +97,13 @@ export class ElevationBroker {
    * built HERE from the materialized config path — callers pass no exe/args,
    * only what the sidecar itself staged.
    */
-  registerWireGuardInstall(input: { opId: string; configPath: string }): { opId: string; nonce: string; expiresAt: number } {
+  registerWireGuardInstall(input: { opId: string; nonce: string; configPath: string }): { opId: string; nonce: string; expiresAt: number } {
+    // The UI mints the nonce and forwards it through the Rust IPC bridge; the
+    // same value is required on /pending and /result. Accepting a server-minted
+    // nonce here made the bridge's fetch fail with nonce_mismatch (DD-049).
+    if (!/^[A-Za-z0-9]{16,128}$/.test(input.nonce)) {
+      throw badRequest('invalid_elevation_nonce', 'Elevation nonce must be 16-128 alphanumeric characters');
+    }
     if (process.platform !== 'win32') {
       throw badRequest('elevation_unsupported', 'Per-action elevation is only implemented on Windows');
     }
@@ -124,7 +130,7 @@ export class ElevationBroker {
 
     // Sweep first so a burst of ops cannot accumulate.
     this.sweep();
-    const nonce = crypto.randomBytes(24).toString('hex');
+    const nonce = input.nonce;
     const expiresAt = Date.now() + ELEVATION_TTL_MS;
     const opId = input.opId;
     this.pending.set(opId, {

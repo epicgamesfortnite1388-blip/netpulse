@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Progress } from '@/components/ui/Progress';
@@ -291,6 +292,7 @@ export default function IranConnectivityPage() {
 
   return (
     <DisclosureScope name="iran" className="space-y-5">
+      <DetailLevelProvider scope="iran" defaultLevel={2} depth={4}>
       <PageHeader
         title="Iran Connectivity"
         description="Measure, classify, compare and recommend — filtering is always an inference, never an assertion"
@@ -309,7 +311,10 @@ export default function IranConnectivityPage() {
           </div>
         }
       />
-      <DisclosureToolbar className="-mt-2" />
+      <div className="-mt-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {/* one-click runner */}
       <Card>
@@ -524,6 +529,7 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="services">
+          <DetailGate required={3}>
           <Card
             fold={{
               id: 'service-tests',
@@ -560,6 +566,7 @@ export default function IranConnectivityPage() {
               ))}
             </CardBody>
           </Card>
+          </DetailGate>
         </TabPanel>
 
         <TabPanel value="dns">
@@ -578,6 +585,7 @@ export default function IranConnectivityPage() {
               {activeCells.length === 0 ? (
                 <EmptyState title="No DNS measurements yet" message="Run the test to compare DNS behavior across connections." />
               ) : (
+                <DetailGate required={3}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -585,9 +593,11 @@ export default function IranConnectivityPage() {
                         <th className="px-2 py-2">Target</th>
                         <th className="px-2 py-2">Connection</th>
                         <th className="px-2 py-2">Resolver</th>
-                        <th className="px-2 py-2">A records</th>
-                        <th className="px-2 py-2">AAAA</th>
-                        <th className="px-2 py-2">CNAME</th>
+                        <DetailGate required={4}>
+                          <th className="px-2 py-2">A records</th>
+                          <th className="px-2 py-2">AAAA</th>
+                          <th className="px-2 py-2">CNAME</th>
+                        </DetailGate>
                         <th className="px-2 py-2">Latency</th>
                         <th className="px-2 py-2">NXDOMAIN</th>
                       </tr>
@@ -598,9 +608,11 @@ export default function IranConnectivityPage() {
                           <td className="px-2 py-1.5 font-medium text-text">{catalog?.categories.flatMap((c) => c.targets).find((t) => t.id === m.targetId)?.name ?? m.targetId}</td>
                           <td className="px-2 py-1.5 text-muted">{m.connectionName}</td>
                           <td className="px-2 py-1.5 text-muted">{m.dns!.resolver ?? 'system'}</td>
-                          <td className="px-2 py-1.5 font-mono text-xs text-text">{(m.dns!.a ?? []).join(', ') || '—'}</td>
-                          <td className="px-2 py-1.5 font-mono text-xs text-muted">{(m.dns!.aaaa ?? []).join(', ') || '—'}</td>
-                          <td className="px-2 py-1.5 font-mono text-xs text-muted">{(m.dns!.cname ?? []).join(', ') || '—'}</td>
+                          <DetailGate required={4}>
+                            <td className="px-2 py-1.5 font-mono text-xs text-text">{(m.dns!.a ?? []).join(', ') || '—'}</td>
+                            <td className="px-2 py-1.5 font-mono text-xs text-muted">{(m.dns!.aaaa ?? []).join(', ') || '—'}</td>
+                            <td className="px-2 py-1.5 font-mono text-xs text-muted">{(m.dns!.cname ?? []).join(', ') || '—'}</td>
+                          </DetailGate>
                           <td className="px-2 py-1.5 text-muted">{m.dns!.latencyMs ?? '—'} ms</td>
                           <td className="px-2 py-1.5">{m.dns!.nxdomain ? <Badge tone="warn">yes</Badge> : <Badge tone="ok">no</Badge>}</td>
                         </tr>
@@ -608,6 +620,7 @@ export default function IranConnectivityPage() {
                     </tbody>
                   </table>
                 </div>
+                </DetailGate>
               )}
               <p className="mt-3 text-xs text-muted">
                 A differing answer between resolvers can indicate DNS manipulation — or a CDN anycast selection. The DNS differential note in each measurement's evidence states the observation without declaring it censorship.
@@ -617,6 +630,7 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="filtering">
+          <DetailGate required={3}>
           <Card
             fold={{
               id: 'filtering-analysis',
@@ -642,12 +656,14 @@ export default function IranConnectivityPage() {
                       </div>
                     </div>
                     <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                      <div>
-                        <p className="text-micro font-semibold uppercase tracking-wide text-muted">Evidence</p>
-                        <ul className="mt-1 space-y-0.5 text-xs text-muted">
-                          {m.classification.evidence.map((e, i) => <li key={i}>• {e}</li>)}
-                        </ul>
-                      </div>
+                      <DetailGate required={4}>
+                        <div>
+                          <p className="text-micro font-semibold uppercase tracking-wide text-muted">Evidence</p>
+                          <ul className="mt-1 space-y-0.5 text-xs text-muted">
+                            {m.classification.evidence.map((e, i) => <li key={i}>• {e}</li>)}
+                          </ul>
+                        </div>
+                      </DetailGate>
                       <div>
                         <p className="text-micro font-semibold uppercase tracking-wide text-muted">Stages</p>
                         <div className="mt-1 flex flex-wrap gap-1">
@@ -669,6 +685,7 @@ export default function IranConnectivityPage() {
               )}
             </CardBody>
           </Card>
+          </DetailGate>
         </TabPanel>
 
         <TabPanel value="vpn">
@@ -744,6 +761,7 @@ export default function IranConnectivityPage() {
         </TabPanel>
 
         <TabPanel value="recommendations">
+          <DetailGate required={3}>
           <Card
             fold={{
               id: 'recommendations',
@@ -769,17 +787,21 @@ export default function IranConnectivityPage() {
                       <Badge tone="neutral">conf: {r.confidence}</Badge>
                     </div>
                   </div>
-                  <ul className="mt-2 space-y-0.5 text-xs text-muted">
-                    {r.evidence.map((e, i) => <li key={i}>• {e}</li>)}
-                  </ul>
+                  <DetailGate required={4}>
+                    <ul className="mt-2 space-y-0.5 text-xs text-muted">
+                      {r.evidence.map((e, i) => <li key={i}>• {e}</li>)}
+                    </ul>
+                  </DetailGate>
                 </div>
               ))}
             </CardBody>
           </Card>
+          </DetailGate>
         </TabPanel>
 
         <TabPanel value="history">
           {historyError != null && <div className="mb-4"><ErrorState error={historyError} retry={() => void loadHistory()} /></div>}
+          <DetailGate required={4}>
           <div className="grid gap-5 lg:grid-cols-2">
             <Card
               fold={{
@@ -831,8 +853,10 @@ export default function IranConnectivityPage() {
               </CardBody>
             </Card>
           </div>
+          </DetailGate>
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

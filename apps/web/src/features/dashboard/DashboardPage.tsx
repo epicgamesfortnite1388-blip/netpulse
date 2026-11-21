@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 import { Gauge as GaugeIcon, Globe as Globe2Icon, Network, Play, Sparkles, Activity, TriangleAlert, Route as RouteIcon, Shield as ShieldIcon, Flag as FlagIcon } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { BrandMark } from '@/components/BrandMark';
 import { Gauge } from '@/components/charts/Gauge';
@@ -415,9 +415,9 @@ export default function DashboardPage() {
               <CardHeader
                 title="Recent activity"
                 actions={
-                  <a href="/events" className="text-xs text-accent hover:underline">
+                  <Link to="/events" className="text-xs text-accent hover:underline">
                     View all
-                  </a>
+                  </Link>
                 }
               />
               <CardBody className="space-y-2">

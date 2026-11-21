@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, History as HistoryIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { StatusDot } from '@/components/ui/StatusDot';
@@ -75,20 +76,24 @@ function TestDetailView({ test }: { test: TestDetail }) {
   const payload = test.result ?? (test.summary as Record<string, unknown> | null);
   return (
     <div className="space-y-3 py-3">
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-faint">
-        <span>Status <span className="text-muted">{test.status}</span></span>
-        <span>Started <span className="text-muted">{fmtDateTime(test.startedAt)}</span></span>
-        {test.finishedAt != null && <span>Finished <span className="text-muted">{fmtDateTime(test.finishedAt)}</span></span>}
-        {test.error && <span className="text-danger">Error: {test.error}</span>}
-      </div>
-      {test.params && (
-        <div className="text-xs text-faint">
-          Params <span className="text-muted">{JSON.stringify(test.params)}</span>
+      <DetailGate required={3}>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-faint">
+          <span>Status <span className="text-muted">{test.status}</span></span>
+          <span>Started <span className="text-muted">{fmtDateTime(test.startedAt)}</span></span>
+          {test.finishedAt != null && <span>Finished <span className="text-muted">{fmtDateTime(test.finishedAt)}</span></span>}
+          {test.error && <span className="text-danger">Error: {test.error}</span>}
         </div>
-      )}
-      <pre className="max-h-80 overflow-auto rounded-lg border border-line bg-surface-2 p-3 text-micro leading-relaxed text-muted">
-        {JSON.stringify(payload ?? {}, null, 2)}
-      </pre>
+        {test.params && (
+          <div className="text-xs text-faint">
+            Params <span className="text-muted">{JSON.stringify(test.params)}</span>
+          </div>
+        )}
+      </DetailGate>
+      <DetailGate required={4}>
+        <pre className="max-h-80 overflow-auto rounded-lg border border-line bg-surface-2 p-3 text-micro leading-relaxed text-muted">
+          {JSON.stringify(payload ?? {}, null, 2)}
+        </pre>
+      </DetailGate>
     </div>
   );
 }
@@ -121,8 +126,10 @@ export default function HistoryPage() {
   const detail = selectedId != null ? detailQuery.data?.test ?? null : null;
 
   return (
+    <DetailLevelProvider scope="history" defaultLevel={2} depth={4}>
     <div>
       <PageHeader title="History" description="Every test you run is recorded here with its measured summary." />
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {RANGES.map((r) => (
@@ -206,5 +213,6 @@ export default function HistoryPage() {
         </Card>
       )}
     </div>
+    </DetailLevelProvider>
   );
 }

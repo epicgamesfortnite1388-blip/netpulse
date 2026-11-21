@@ -27,6 +27,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { IconButton } from '@/components/ui/IconButton';
@@ -620,6 +621,7 @@ export default function LiveMapPage() {
         title="Live map"
         description="Measured routes on real geography — every arc is a probe that ran, and every point states how confident its location is."
       />
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       {/* status strip */}
       <div className="flex flex-wrap items-center gap-2">
@@ -723,6 +725,7 @@ export default function LiveMapPage() {
           {/* Three controls share this field, so the label is bound to the host input by
               id rather than wrapping them: wrapping made the host inherit the
               whole group's text as its name and left the other two nameless. */}
+          <DetailGate required={4}>
             <Field label="Custom target" htmlFor="map-custom-host">
             <div className="flex items-center gap-1.5">
               <Input id="map-custom-host" value={customHost} onChange={(e) => setCustomHost(e.target.value)} placeholder="host or IP" className="h-8 w-44 text-xs" />
@@ -747,6 +750,7 @@ export default function LiveMapPage() {
               </Button>
             </div>
           </Field>
+          </DetailGate>
         </CardBody>
       </Card>
 
@@ -798,11 +802,13 @@ export default function LiveMapPage() {
                   />
                 </div>
               ) : null}
-              {playback && (
-                <div className="absolute right-3 top-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro text-faint backdrop-blur">
-                  Showing snapshot from <span className="text-muted">{timeAgo(playback.createdAt)}</span> — historical, not live
-                </div>
-              )}
+              <DetailGate required={3}>
+                {playback && (
+                  <div className="absolute right-3 top-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro text-faint backdrop-blur">
+                    Showing snapshot from <span className="text-muted">{timeAgo(playback.createdAt)}</span> — historical, not live
+                  </div>
+                )}
+              </DetailGate>
               <div className="absolute bottom-3 left-3 rounded-lg border border-line bg-bg/85 px-3 py-2 text-micro leading-relaxed text-faint backdrop-blur">
                 <span className="text-accent">●</span> measured · <span className="text-warn">●</span> through VPN · <span className="text-faint">●</span> historical
                 <br />
@@ -1010,6 +1016,7 @@ export default function LiveMapPage() {
                 </CardBody>
               </Card>
 
+              <DetailGate required={3}>
               <Card
                 fold={{
                   id: 'observed-route',
@@ -1029,7 +1036,7 @@ export default function LiveMapPage() {
                           <span className="flex min-w-0 items-center gap-2 font-mono text-micro">
                             <span className="text-faint">{h.hop}.</span>
                             <span className={h.ip ? 'text-text' : 'text-faint'}>
-                              {h.ip == null ? 'no response' : hidden ? maskIp(h.ip) : h.ip}
+                              {h.ip == null ? 'no response' : hidden ? maskIp(h.ip) : <DetailGate required={4}>{h.ip}</DetailGate>}
                             </span>
                           </span>
                           <span className="shrink-0 font-mono text-micro text-muted">{h.latencyMs != null ? `${h.latencyMs.toFixed(0)} ms` : '—'}</span>
@@ -1058,6 +1065,7 @@ export default function LiveMapPage() {
                   )}
                 </CardBody>
               </Card>
+              </DetailGate>
             </>
           )}
         </div>
@@ -1188,14 +1196,19 @@ export default function LiveMapPage() {
               ranked fastest-first. Results stream in live as they land.
             </p>
           )}
-          {sweep && (
-            <>
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-micro text-faint">
-                <span className={`h-1.5 w-1.5 rounded-full ${sweep.completed ? 'bg-ok' : 'animate-pulse bg-accent'}`} />
-                {sweep.completed ? `Completed in ${((sweep.durationMs ?? 0) / 1000).toFixed(1)}s ·` : 'Running…'}
-                {sweep.rows.length} result(s)
-                {sweep.sourceNote && <span className="text-faint">· {sweep.sourceNote}</span>}
-              </div>
+          <DetailGate required={3}>
+            {sweep && (
+              <>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-micro text-faint">
+                  <span className={`h-1.5 w-1.5 rounded-full ${sweep.completed ? 'bg-ok' : 'animate-pulse bg-accent'}`} />
+                  {sweep.completed ? `Completed in ${((sweep.durationMs ?? 0) / 1000).toFixed(1)}s ·` : 'Running…'}
+                  {sweep.rows.length} result(s)
+                  {sweep.sourceNote && (
+                    <DetailGate required={4}>
+                      <span className="text-faint">· {sweep.sourceNote}</span>
+                    </DetailGate>
+                  )}
+                </div>
               <div className="max-h-96 overflow-auto">
                 <table className="w-full text-micro">
                   <thead className="sticky top-0 bg-surface-1 text-left text-micro uppercase tracking-wider text-faint">
@@ -1239,6 +1252,7 @@ export default function LiveMapPage() {
               </div>
             </>
           )}
+          </DetailGate>
         </CardBody>
       </Card>
 
@@ -1271,9 +1285,10 @@ export default function LiveMapPage() {
             {connectionsQuery.data && !connectionsQuery.data.available && (
               <p className="text-xs text-faint">{connectionsQuery.data.reason ?? 'Not available on this platform.'}</p>
             )}
-            {connectionsQuery.data?.available && (
-              <div className="max-h-80 overflow-auto">
-                <table className="w-full text-micro">
+            <DetailGate required={3}>
+              {connectionsQuery.data?.available && (
+                <div className="max-h-80 overflow-auto">
+                  <table className="w-full text-micro">
                   <thead className="sticky top-0 bg-surface-1 text-left text-micro uppercase tracking-wider text-faint">
                     <tr>
                       <th className="py-1.5 pr-3 font-medium">Process</th>
@@ -1324,7 +1339,8 @@ export default function LiveMapPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )}
+            </DetailGate>
             {connectionsQuery.data?.available && connectionsQuery.data.rows.length === 0 && (
               <p className="text-xs text-faint">No established TCP connections observed.</p>
             )}
@@ -1386,7 +1402,12 @@ export default function LiveMapPage() {
     );
   }
 
-  return content;
+  return (
+    // Provider wraps the whole page (the control sits in the header row inside
+    // `content`; the playback notice is the page's structural gate, so depth
+    // is declared explicitly rather than derived from surface state).
+    <DetailLevelProvider scope="map" defaultLevel={2} depth={4}>{content}</DetailLevelProvider>
+  );
 }
 
 function Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {

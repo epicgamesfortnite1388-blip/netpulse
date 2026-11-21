@@ -43,6 +43,13 @@ export function useBackgroundTest<R>(testId: string | null): BackgroundTestState
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    // React state is not keyed by `testId`. Every id transition — including
+    // clearing it before a new POST (DiagnosticsPage/RoutesPage do exactly
+    // that) — is a new run, so the previous run's result and error must be
+    // dropped. Without this, a repeat run renders the OLD numbers as if they
+    // belonged to the new test, and a failed start leaves the last result on
+    // screen with no error explaining why.
+    setState({ pct: null, message: null, running: testId != null, result: null, error: null });
     if (testId == null) return;
     let settled = false;
     let lastResult: R | null = null;

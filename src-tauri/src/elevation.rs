@@ -14,13 +14,16 @@
 //!   1. UI asks the Node backend to connect → backend validates everything it
 //!      can (profile exists, keys decrypt, engine present) and, for an
 //!      operation that needs elevation, registers a PENDING operation and
-//!      returns `elevation_required` with `{ opId, bridgePort, nonce }`.
-//!   2. UI calls the Rust command `vpn_elevation_bridge { opId }`.
+//!      registers a PENDING operation bound to the UI-supplied nonce.
+//!   2. UI calls the Rust command `vpn_elevation_bridge { opId, nonce }`. The
+//!      nonce is minted by the UI and echoed both here and in the connect
+//!      request; it is NOT server-minted (DD-049).
 //!   3. Rust fetches `http://127.0.0.1:<sidecarPort>/api/v1/vpn/elevation/pending
-//!      ?opId=…` WITH the sidecar token (Rust generated it, never persisted)
-//!      and the sidecar answers `{ action, exe, args, nonce, configSha256 }`.
-//!      The sidecar REQUIRES the request to carry the nonce the UI received,
-//!      proving the bridge call chain started from the UI's opId, not a guess.
+//!      ?opId=…&nonce=…` WITH the sidecar token (Rust generated it, never
+//!      persisted) and the sidecar answers
+//!      `{ action, exe, args, nonce, configSha256 }`. The sidecar REQUIRES
+//!      the request to carry the same nonce the UI supplied, proving the
+//!      bridge call chain started from the UI's opId, not a guess.
 //!   4. Rust re-verifies the exact constraints locally, then launches WireGuard
 //!      elevated via ShellExecuteExW(SEE_MASK_DEFAULT, lpVerb="runas") — the
 //!      ONE UAC prompt for exactly this operation. The constraints:
@@ -91,12 +94,19 @@ struct ResultReport<'a> {
 /// `sidecar_port` is the loopback port of OUR OWN supervised child; `token`
 /// is the ephemeral token this process generated at spawn time. Both come
 /// from process memory — never from the webview.
-fn fetch_pending_op_blocking(sidecar_port: u16, token: &str, op_id: &str) -> Result<PendingOp, String> {
-    let url = format!(
-        "http://127.0.0.1:{port}/api/v1/vpn/elevation/pending?opId={op}",
+fn pending_op_url(sidecar_port: u16, op_id: &str, nonce: &str) -> String {
+    // The sidecar's pending route requires BOTH parameters; omitting the
+    // nonce returned 400 and made every elevated connect fail (DD-049).
+    format!(
+        "http://127.0.0.1:{port}/api/v1/vpn/elevation/pending?opId={op}&nonce={nonce}",
         port = sidecar_port,
         op = urlencode(op_id),
-    );
+        nonce = urlencode(nonce),
+    )
+}
+
+fn fetch_pending_op_blocking(sidecar_port: u16, token: &str, op_id: &str, nonce: &str) -> Result<PendingOp, String> {
+    let url = pending_op_url(sidecar_port, op_id, nonce);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         // Loopback only: the broker must never follow a redirect off-machine.
@@ -220,6 +230,24 @@ fn hex_encode(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+/// Render the validated argument vector as a `ShellExecuteExW` parameter
+/// string.
+///
+/// The shape is already validated to exactly
+/// `["/installtunnelservice", "<configPath>"]`. The config path lives inside
+/// the per-user app data dir, and a Windows profile name can contain spaces
+/// (`C:\Users\John Smith\AppData\...`); joined with bare spaces, WireGuard
+/// would receive a truncated first token as the tunnel file and the install
+/// would fail for exactly those users. The path argument is therefore always
+/// quoted — quoting is harmless for space-free paths and is what WireGuard's
+/// own installer expects.
+fn elevation_params(args: &[String]) -> String {
+    match args {
+        [flag, path] => format!("{flag} \"{}\"", path.replace('"', "")),
+        _ => args.join(" "),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,10 +509,16 @@ pub struct BridgeOutcome {
 pub async fn vpn_elevation_bridge(
     app: tauri::AppHandle,
     op_id: String,
+    nonce: String,
 ) -> Result<BridgeOutcome, String> {
     // Basic input discipline: op ids are UUIDs the sidecar minted.
     if op_id.is_empty() || op_id.len() > 64 || !op_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
         return Err("invalid opId".into());
+    }
+    // Same bounds the sidecar enforces on the query param. Rejecting here
+    // gives an honest IPC error instead of a 400 from the pending fetch.
+    if nonce.len() < 16 || nonce.len() > 128 || !nonce.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err("invalid nonce".into());
     }
 
     let data_dir = app
@@ -504,7 +538,7 @@ pub async fn vpn_elevation_bridge(
     };
 
     tauri::async_runtime::spawn_blocking(move || -> Result<BridgeOutcome, String> {
-        let op = match fetch_pending_op_blocking(port, &token, &op_id) {
+        let op = match fetch_pending_op_blocking(port, &token, &op_id, &nonce) {
             Ok(op) => op,
             Err(e) => {
                 log_error!("elevation: pending-op fetch failed: {e}");
@@ -523,7 +557,7 @@ pub async fn vpn_elevation_bridge(
             return Ok(BridgeOutcome { launched: false, declined: false, error: Some(e) });
         }
 
-        let params = op.args.join(" ");
+        let params = elevation_params(&op.args);
         log_info!("elevation: launching allowed tunnel install for op {op_id}");
         match shell_execute_elevated(&op.exe, &params) {
             Ok(()) => {
@@ -669,9 +703,65 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn elevation_params_quotes_the_config_path() {
+        // A profile path with spaces must survive as one argument — the
+        // pre-fix bare join turned it into two mangled tokens for users whose
+        // Windows profile name contains a space.
+        let args = vec![
+            "/installtunnelservice".to_string(),
+            "C:\\Users\\John Smith\\AppData\\Roaming\\netpulse\\tunnels\\wg.conf".to_string(),
+        ];
+        assert_eq!(
+            elevation_params(&args),
+            "/installtunnelservice \"C:\\Users\\John Smith\\AppData\\Roaming\\netpulse\\tunnels\\wg.conf\""
+        );
+        // Quoting stays correct for space-free paths too.
+        let args = vec!["/installtunnelservice".to_string(), "C:\\t\\wg.conf".to_string()];
+        assert_eq!(elevation_params(&args), "/installtunnelservice \"C:\\t\\wg.conf\"");
+    }
+
+    #[test]
+    fn elevation_params_strips_embedded_quotes_from_the_path() {
+        // The path came from a validated descriptor, but quoting an argument
+        // that itself contains a quote character would terminate the quoted
+        // region early; stripping is the safe canonical form here.
+        let args = vec!["/installtunnelservice".to_string(), "C:\\we\"ird\\wg.conf".to_string()];
+        assert_eq!(elevation_params(&args), "/installtunnelservice \"C:\\weird\\wg.conf\"");
+    }
+
+    #[test]
+    fn elevation_params_quotes_the_second_argument_for_any_two_arg_shape() {
+        // validate_op only lets the exact two-element install shape reach here,
+        // but the helper must not panic or misjoin if that contract ever
+        // widens. For any two-argument shape the second argument is quoted
+        // (harmless when it has no spaces — WireGuard accepts quoted values).
+        let args = vec!["/uninstalltunnelservice".to_string(), "netpulse-wg-x".to_string()];
+        assert_eq!(elevation_params(&args), "/uninstalltunnelservice \"netpulse-wg-x\"");
+        assert_eq!(elevation_params(&[]), "");
+        assert_eq!(elevation_params(&["/x".to_string()]), "/x");
+    }
+
+    #[test]
     fn urlencode_leaves_unreserved_and_escapes_the_rest() {
         assert_eq!(urlencode("abc-DEF_1.2~"), "abc-DEF_1.2~");
         assert_eq!(urlencode("a b/c?d"), "a%20b%2Fc%3Fd");
+    }
+
+    #[test]
+    fn pending_url_always_carries_the_nonce_the_sidecar_requires() {
+        // DD-049: the pending route rejects a request without `nonce`, so a
+        // URL built with only opId made every elevated connect fail. This
+        // pins the full contract at the one place it is constructed.
+        let url = pending_op_url(8787, "op-123", "a1b2c3d4e5f60718293a4b5c6d7e8f90");
+        assert_eq!(
+            url,
+            "http://127.0.0.1:8787/api/v1/vpn/elevation/pending?opId=op-123&nonce=a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        );
+        // Query values are encoded, so a malformed value cannot inject a
+        // second parameter into the request.
+        let encoded = pending_op_url(8787, "op id", "nonce&evil=1");
+        assert!(encoded.contains("opId=op%20id"));
+        assert!(encoded.contains("nonce=nonce%26evil%3D1"));
     }
 
     #[test]

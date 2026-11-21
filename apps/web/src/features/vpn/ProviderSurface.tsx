@@ -90,7 +90,7 @@ export function ProviderSurface({ providerId }: { providerId: ManagedProviderId 
         const bridgePromise = arm.run();
         const res = await api.post<{ status: VpnStatus; outcome?: string }>('/vpn/connect', {
           profileId,
-          elevation: { opId: arm.opId },
+          elevation: { opId: arm.opId, nonce: arm.nonce },
         });
         void bridgePromise.catch(() => undefined);
         return res;

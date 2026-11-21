@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { NodesNav } from '@/features/nodes/NodesChrome';
 import { EngineBadge as SharedEngineBadge, ENGINE_LABELS } from '@/components/EngineBadge';
@@ -360,6 +361,7 @@ export default function NodeExplorerPage() {
 
   return (
     <DisclosureScope name="nodes:explorer" className="stagger animate-fade-up">
+      <DetailLevelProvider scope="nodes:explorer" defaultLevel={2} depth={4}>
       <PageHeader
         title="Node Explorer"
         description={`Public proxy configs discovered from subscription sources, each attributable to the local core that last tested it.${
@@ -374,6 +376,8 @@ export default function NodeExplorerPage() {
           </>
         }
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <NodesNav />
       <DisclosureToolbar className="mb-2" />
@@ -402,6 +406,7 @@ export default function NodeExplorerPage() {
         title="Proxy cores"
         icon={<Cpu size={15} />}
         subtitle="Local cores that test nodes and carry the proxy tunnel"
+        detail={3}
         collapsible
         defaultOpen={false}
         id="proxy-cores"
@@ -564,6 +569,10 @@ export default function NodeExplorerPage() {
                 ))}
               </select>
             </Field>
+            {/* Level 3: sorting is a refinement of the list, not the filter
+                that decides which nodes are essential. The runtime tabs and
+                the field selects above stay available at every level. */}
+            <DetailGate required={3}>
             <Field label="Sort by">
               <select
                 value={sortField}
@@ -587,6 +596,7 @@ export default function NodeExplorerPage() {
                 {sortDir === 'asc' ? 'Ascending' : 'Descending'}
               </Button>
             </Field>
+            </DetailGate>
           </div>
         </Section>
       )}
@@ -768,6 +778,8 @@ export default function NodeExplorerPage() {
         </div>
       )}
 
+      {/* Level 4: raw provenance / how-to-read note. */}
+      <DetailGate required={4}>
       <FoldNote id="reading-values" label="How to read these numbers" className="mt-4">
         <span className="flex items-start gap-1.5">
           <TrendingUp size={12} className="mt-0.5 shrink-0" />
@@ -775,6 +787,8 @@ export default function NodeExplorerPage() {
           an em dash and &quot;never tested&quot; rather than a zero that would read as a fast result.
         </span>
       </FoldNote>
+      </DetailGate>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

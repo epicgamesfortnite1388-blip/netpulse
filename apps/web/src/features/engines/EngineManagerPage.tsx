@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -145,6 +146,7 @@ export default function EngineManagerPage() {
 
   return (
     <DisclosureScope name="engines">
+      <DetailLevelProvider scope="engines" defaultLevel={2} depth={4}>
       <PageHeader
         title="Engine Manager"
         description="The local cores that run proxy tests and tunnels. Installs come only from each project's official release CDN, are verified against the published digest where one exists, and are validated by running the binary before the update is reported as done."
@@ -157,6 +159,8 @@ export default function EngineManagerPage() {
           </Button>
         }
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <NodesNav />
       <DisclosureToolbar className="mb-2" />
@@ -174,13 +178,15 @@ export default function EngineManagerPage() {
           <span className="text-faint">(change it in Settings → VPN)</span>
         </span>
         {releases && (
-          <>
+          /* Level 4: the provenance of the freshness claim — when releases
+             were last checked, and whether that read was cached. */
+          <DetailGate required={4}>
             <span className="text-faint">·</span>
             <span>
               releases checked {timeAgo(releases.checkedAt)}
               {releases.cached ? ' (cached)' : ''}
             </span>
-          </>
+          </DetailGate>
         )}
       </div>
 
@@ -330,6 +336,9 @@ export default function EngineManagerPage() {
           </CardBody>
         </Card>
       )}
+      {/* Level 3: the update-method explainer is reference material, added
+          above the existing fold rather than replacing it. */}
+      <DetailGate required={3}>
       <Card
         className="mt-4"
       fold={{
@@ -359,6 +368,8 @@ export default function EngineManagerPage() {
           </p>
         </CardBody>
       </Card>
+      </DetailGate>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

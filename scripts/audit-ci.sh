@@ -21,10 +21,26 @@ run() {
 run "madge circular" npx madge --circular --extensions ts,tsx \
   packages/shared/src apps/api/src apps/web/src
 
-# 2. Exported-but-unused / dead public surface (ts-prune) per TS workspace
-run "ts-prune shared" npx ts-prune --project packages/shared/tsconfig.json --no-inspect
-run "ts-prune api" npx ts-prune --project apps/api/tsconfig.json --no-inspect
-run "ts-prune web" npx ts-prune --project apps/web/tsconfig.json --no-inspect
+# 2. Exported-but-unused / dead public surface (ts-prune) per TS workspace.
+# ts-prune exits 0 while REPORTING unused exports, so printing PASS here was
+# false-green (DD-004). Running it with --error, however, is permanently red
+# on this monorepo: cross-workspace re-exports and "used in module" types are
+# reported by every per-project invocation. It is therefore an honest
+# ADVISORY signal, never a gate — labeled as such, never as PASS.
+run_advisory() {
+  local label="$1"
+  shift
+  echo ""
+  echo "--- $label ---"
+  if "$@"; then
+    echo "ADVISORY (non-gating) $label — review the reported exports manually"
+  else
+    echo "ADVISORY (non-gating) $label — tool reported unused exports"
+  fi
+}
+run_advisory "ts-prune shared" npx ts-prune --project packages/shared/tsconfig.json --no-inspect
+run_advisory "ts-prune api" npx ts-prune --project apps/api/tsconfig.json --no-inspect
+run_advisory "ts-prune web" npx ts-prune --project apps/web/tsconfig.json --no-inspect
 
 # 3. Unused npm dependencies (JS/TS)
 run "depcheck" node scripts/audit-ci-depcheck.mjs

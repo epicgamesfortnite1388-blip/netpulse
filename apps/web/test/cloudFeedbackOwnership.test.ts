@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/lib/api';
 
+import type * as ApiModule from '@/lib/api';
+
 /**
  * The sync engine used to build its own ``cloud: ${err.code}`` string and show
  * THAT to the user, while calling classifySyncError only for its `offline`
@@ -18,7 +20,7 @@ import { ApiError } from '@/lib/api';
  */
 
 vi.mock('@/lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/api')>();
+  const actual = await importOriginal<typeof ApiModule>();
   return {
     ...actual,
     api: { ...actual.api, get: vi.fn(), post: vi.fn() },

@@ -5,6 +5,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { Field, Input } from '@/components/ui/Field';
@@ -155,9 +156,22 @@ export default function DnsPage() {
   const [deepBusy, setDeepBusy] = useState(false);
 
   const [leakId, setLeakId] = useState<string | null>(null);
+  const [leakSubmitError, setLeakSubmitError] = useState<unknown>(null);
   const leakRun = useBackgroundTest<DnsLeakResult>(leakId);
   const leak = leakRun.result;
   const leakRunning = leakRun.running;
+
+  const runLeakTest = async () => {
+    setLeakSubmitError(null);
+    try {
+      const res = await api.post<{ testId: string }>('/dns/leak-test');
+      setLeakId(res.testId);
+    } catch (err) {
+      // A failed POST must be visible: without this the button silently did
+      // nothing and the promise rejection escaped the event handler.
+      setLeakSubmitError(err);
+    }
+  };
 
   const [customForm, setCustomForm] = useState({ name: '', ipv4: '', ipv6: '', dohUrl: '', dotHost: '', dnssec: true });
   const [customList, setCustomList] = useState<DnsServerSpec[]>([]);
@@ -270,12 +284,17 @@ export default function DnsPage() {
 
   return (
     <DisclosureScope name="dns">
+      <DetailLevelProvider scope="dns" defaultLevel={2} depth={4}>
       <PageHeader
         title="DNS intelligence lab"
         description="Benchmark resolvers over UDP, DoH and DoT; verify DNSSEC; watch latency history; and get evidence-based resolver recommendations."
         actions={<ScheduleChip kind="dns" />}
       />
-      <DisclosureToolbar className="-mt-3 mb-2" />
+
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       <Tabs
         value={tab}
@@ -292,19 +311,21 @@ export default function DnsPage() {
         {/* ------------------------------ benchmark ------------------------------ */}
         <TabPanel value="benchmark">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="flex overflow-hidden rounded-lg border border-line">
-              {(['udp', 'both', 'doh', 'dot'] as Transport[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTransport(t)}
-                  className={`px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ${
-                    transport === t ? 'bg-accent-soft text-accent-strong' : 'bg-surface text-muted hover:text-text'
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+            <DetailGate required={3}>
+              <div className="flex overflow-hidden rounded-lg border border-line">
+                {(['udp', 'both', 'doh', 'dot'] as Transport[]).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTransport(t)}
+                    className={`px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ${
+                      transport === t ? 'bg-accent-soft text-accent-strong' : 'bg-surface text-muted hover:text-text'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </DetailGate>
             <Button variant="primary" onClick={runTest} loading={running}>
               <Play size={14} /> Run benchmark
             </Button>
@@ -352,7 +373,10 @@ export default function DnsPage() {
                     <CardHeader
                       title={g.name}
                       subtitle={g.description}
-                      actions={                        <ExternalUrlLink href={g.homepage} className="text-micro text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalUrlLink>
+                      actions={
+                        <DetailGate required={4}>
+                          <ExternalUrlLink href={g.homepage} className="text-micro text-faint underline decoration-line underline-offset-2 hover:text-muted">source</ExternalUrlLink>
+                        </DetailGate>
                       }
                     />
                     <CardBody className="space-y-1.5">
@@ -377,7 +401,9 @@ export default function DnsPage() {
                                 {r.dnssec && <Badge tone="ok">DNSSEC</Badge>}
                                 {!r.verified && <span className="italic">unverified</span>}
                               </div>
-                              {r.note && <div className="mt-0.5 text-micro text-faint">{r.note}</div>}
+                              <DetailGate required={4}>
+                                {r.note && <div className="mt-0.5 text-micro text-faint">{r.note}</div>}
+                              </DetailGate>
                               {r.skipBenchmarkReason && <div className="mt-0.5 text-micro text-muted">{r.skipBenchmarkReason}</div>}
                             </div>
                             <div
@@ -419,8 +445,10 @@ export default function DnsPage() {
                       <th className="px-3 py-2.5 font-medium">Resolver</th>
                       <th className="px-3 py-2.5 font-medium">Transport</th>
                       <th className="px-3 py-2.5 text-right font-medium">Avg</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Median</th>
-                      <th className="px-3 py-2.5 text-right font-medium">p95</th>
+                      <DetailGate required={3}>
+                        <th className="px-3 py-2.5 text-right font-medium">Median</th>
+                        <th className="px-3 py-2.5 text-right font-medium">p95</th>
+                      </DetailGate>
                       <th className="px-3 py-2.5 text-right font-medium">Jitter</th>
                       <th className="px-3 py-2.5 text-right font-medium">Answered</th>
                       <th className="px-3 py-2.5 text-right font-medium">Score</th>
@@ -437,8 +465,10 @@ export default function DnsPage() {
                           <td className="px-3 py-3 font-medium">{r.name}</td>
                           <td className="px-3 py-3 uppercase text-faint">{r.transport}</td>
                           <td className="px-3 py-3 text-right font-mono">{r.latencyAvgMs != null ? `${r.latencyAvgMs.toFixed(1)} ms` : '—'}</td>
-                          <td className="px-3 py-3 text-right font-mono text-muted">{r.latencyMedianMs != null ? `${r.latencyMedianMs.toFixed(1)} ms` : '—'}</td>
-                          <td className="px-3 py-3 text-right font-mono text-muted">{r.latencyP95Ms != null ? `${r.latencyP95Ms.toFixed(1)} ms` : '—'}</td>
+                          <DetailGate required={3}>
+                            <td className="px-3 py-3 text-right font-mono text-muted">{r.latencyMedianMs != null ? `${r.latencyMedianMs.toFixed(1)} ms` : '—'}</td>
+                            <td className="px-3 py-3 text-right font-mono text-muted">{r.latencyP95Ms != null ? `${r.latencyP95Ms.toFixed(1)} ms` : '—'}</td>
+                          </DetailGate>
                           <td className="px-3 py-3 text-right font-mono text-muted">{r.jitterMs != null ? `${r.jitterMs.toFixed(1)} ms` : '—'}</td>
                           <td className="px-3 py-3 text-right font-mono text-muted">
                             {r.ok}/{r.queries}
@@ -618,6 +648,12 @@ export default function DnsPage() {
 
         {/* ------------------------------ dnssec -------------------------------- */}
         <TabPanel value="dnssec">
+          {customError != null && (
+            <div className="mb-4">
+              <ErrorState error={customError} />
+            </div>
+          )}
+          <DetailGate required={3}>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <select
               value={deepSpecId}
@@ -637,12 +673,6 @@ export default function DnsPage() {
               <ShieldCheck size={14} /> Run deep DNSSEC check
             </Button>
           </div>
-
-          {customError != null && (
-            <div className="mb-4">
-              <ErrorState error={customError} />
-            </div>
-          )}
 
           {deep && (
             <Card className={deep.classification === 'validating' ? 'border-ok/40' : deep.classification === 'not-validating' ? 'border-danger/40' : ''}>
@@ -672,10 +702,12 @@ export default function DnsPage() {
               message="Queries the deliberately broken zone dnssec-failed.org (a validating resolver must SERVFAIL it) and watches the authenticated-data bit on a signed zone. Two signals, combined before classifying."
             />
           )}
+          </DetailGate>
         </TabPanel>
 
         {/* ------------------------------ custom -------------------------------- */}
         <TabPanel value="custom">
+          <DetailGate required={3}>
           <Card
             className="mb-5"
             fold={{ id: 'add-resolver', defaultOpen: false, summary: 'name, address and optional DoH/DoT — public addresses only' }}
@@ -737,15 +769,18 @@ export default function DnsPage() {
               ))}
             </CardBody>
           </Card>
+          </DetailGate>
         </TabPanel>
 
         {/* ------------------------------ leak ---------------------------------- */}
         <TabPanel value="leak">
           <div className="mb-5">
-            <Button variant="primary" onClick={() => api.post<{ testId: string }>('/dns/leak-test').then((r) => setLeakId(r.testId))} loading={leakRunning}>
+            <Button variant="primary" onClick={() => void runLeakTest()} loading={leakRunning}>
               <ShieldCheck size={14} /> Run leak test
             </Button>
           </div>
+
+          {leakSubmitError != null && <ErrorState error={leakSubmitError} retry={() => void runLeakTest()} />}
 
           {leak == null && !leakRunning && (
             <EmptyState
@@ -768,27 +803,30 @@ export default function DnsPage() {
                   </div>
                 </CardBody>
               </Card>
-              <Card>
-                <CardHeader title="Detected resolvers" subtitle="Egress identities from resolver-identification lookups" />
-                <CardBody>
-                  <ul className="space-y-3">
-                    {leak.resolvers.map((r, i) => (
-                      <li key={`${r.ip}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-                        <span className="font-mono text-text">{r.ip}</span>
-                        {r.hostname && <span className="text-xs text-muted">{r.hostname}</span>}
-                        <Badge tone={r.expected ? 'ok' : 'warn'} className="ml-auto">
-                          {r.expected ? 'expected' : 'unexpected'}
-                        </Badge>
-                      </li>
-                    ))}
-                    {leak.resolvers.length === 0 && <li className="text-sm text-muted">No system DNS servers could be enumerated on this platform.</li>}
-                  </ul>
-                </CardBody>
-              </Card>
+              <DetailGate required={4}>
+                <Card>
+                  <CardHeader title="Detected resolvers" subtitle="Egress identities from resolver-identification lookups" />
+                  <CardBody>
+                    <ul className="space-y-3">
+                      {leak.resolvers.map((r, i) => (
+                        <li key={`${r.ip}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+                          <span className="font-mono text-text">{r.ip}</span>
+                          {r.hostname && <span className="text-xs text-muted">{r.hostname}</span>}
+                          <Badge tone={r.expected ? 'ok' : 'warn'} className="ml-auto">
+                            {r.expected ? 'expected' : 'unexpected'}
+                          </Badge>
+                        </li>
+                      ))}
+                      {leak.resolvers.length === 0 && <li className="text-sm text-muted">No system DNS servers could be enumerated on this platform.</li>}
+                    </ul>
+                  </CardBody>
+                </Card>
+              </DetailGate>
             </div>
           )}
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

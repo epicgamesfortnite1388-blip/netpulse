@@ -7,6 +7,7 @@ import { LatencyChart } from '@/components/charts/LatencyChart';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { ExternalUrlLink } from '@/components/ui/ExternalUrlLink';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -204,6 +205,7 @@ export default function GamingPage() {
 
   return (
     <DisclosureScope name="gaming">
+      <DetailLevelProvider scope="gaming" defaultLevel={2} depth={4}>
       <PageHeader
         title="Gaming network intelligence"
         description="Measure reachability and latency to documented publisher service endpoints per region, rank your best regions, then monitor stability while you play."
@@ -257,7 +259,10 @@ export default function GamingPage() {
         </div>
       )}
 
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       <Tabs
         value={tab}
@@ -376,26 +381,30 @@ export default function GamingPage() {
                     />
                     <CardBody>
                       <p className="text-micro leading-relaxed text-muted">{r.reason}</p>
-                      <ul className="mt-3 space-y-1 border-t border-line/60 pt-2">
-                        {r.endpoints.map((e, i) => (
-                          <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-micro">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <span
-                                title={e.endpoint.source ? `Source: ${e.endpoint.source}${e.endpoint.note ? ` — ${e.endpoint.note}` : ''}` : undefined}
-                                className={e.endpoint.verified ? 'shrink-0 text-ok' : 'shrink-0 text-faint'}
-                              >
-                                {e.endpoint.verified ? '✓' : '?'}
+                      <DetailGate required={3}>
+                        <ul className="mt-3 space-y-1 border-t border-line/60 pt-2">
+                          {r.endpoints.map((e, i) => (
+                            <li key={i} className="flex flex-wrap items-center justify-between gap-2 text-micro">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span
+                                  title={e.endpoint.source ? `Source: ${e.endpoint.source}${e.endpoint.note ? ` — ${e.endpoint.note}` : ''}` : undefined}
+                                  className={e.endpoint.verified ? 'shrink-0 text-ok' : 'shrink-0 text-faint'}
+                                >
+                                  {e.endpoint.verified ? '✓' : '?'}
+                                </span>
+                                <DetailGate required={4}>
+                                  <span className="truncate font-mono text-text">{e.endpoint.hostname}</span>
+                                </DetailGate>
                               </span>
-                              <span className="truncate font-mono text-text">{e.endpoint.hostname}</span>
-                            </span>
-                            <span className="flex items-center gap-2 text-faint">
-                              {METHOD_LABEL[e.method] ?? e.method}
-                              {e.latencyMs != null && <span className="font-mono text-muted">{Math.round(e.latencyMs)} ms</span>}
-                              {e.reachability !== 'reachable' && e.error && <span className="text-faint">{e.error.slice(0, 40)}</span>}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                              <span className="flex items-center gap-2 text-faint">
+                                {METHOD_LABEL[e.method] ?? e.method}
+                                {e.latencyMs != null && <span className="font-mono text-muted">{Math.round(e.latencyMs)} ms</span>}
+                                {e.reachability !== 'reachable' && e.error && <span className="text-faint">{e.error.slice(0, 40)}</span>}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </DetailGate>
                       <p className="mt-1.5 text-micro leading-relaxed text-faint">
                         ✓ = verified against official documentation · ? = documented at time of writing, not re-verified today — hover for the source.
                       </p>
@@ -455,28 +464,32 @@ export default function GamingPage() {
                 </CardBody>
               </Card>
 
-              {sessionEvents.length > 0 && (
-                <Card
-                  fold={{
-                    id: 'session-events',
-                    summary: `${sessionEvents.length} event${sessionEvents.length === 1 ? '' : 's'} recorded this session`,
-                  }}
-                >
-                  <CardHeader title="Detected events" subtitle="Spikes, loss bursts and connectivity changes" />
-                  <CardBody>
-                    <ul className="space-y-2">
-                      {[...sessionEvents].reverse().map((ev, i) => (
-                        <li key={`${ev.ts}-${i}`} className="flex items-start gap-3 text-sm">
-                          <span className="mt-0.5 font-mono text-micro text-faint">
-                            {new Date(ev.ts).toLocaleTimeString()}
-                          </span>
-                          <span className="text-muted">{ev.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardBody>
-                </Card>
-              )}
+              <DetailGate required={3}>
+                {sessionEvents.length > 0 && (
+                  <Card
+                    fold={{
+                      id: 'session-events',
+                      summary: `${sessionEvents.length} event${sessionEvents.length === 1 ? '' : 's'} recorded this session`,
+                    }}
+                  >
+                    <CardHeader title="Detected events" subtitle="Spikes, loss bursts and connectivity changes" />
+                    <CardBody>
+                      <ul className="space-y-2">
+                        {[...sessionEvents].reverse().map((ev, i) => (
+                          <li key={`${ev.ts}-${i}`} className="flex items-start gap-3 text-sm">
+                            <span className="mt-0.5 font-mono text-micro text-faint">
+                              {new Date(ev.ts).toLocaleTimeString()}
+                            </span>
+                            <DetailGate required={4}>
+                              <span className="text-muted">{ev.message}</span>
+                            </DetailGate>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardBody>
+                  </Card>
+                )}
+              </DetailGate>
             </div>
           )}
         </TabPanel>
@@ -528,6 +541,7 @@ export default function GamingPage() {
           )}
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

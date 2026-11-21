@@ -1,0 +1,10 @@
+
+> @netpulse/api@3.2.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/api[39m
+
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-endpoint-m2CfAC
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok

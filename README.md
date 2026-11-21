@@ -20,7 +20,7 @@ of faking a result.
 | IP | Public IPv4/IPv6 intelligence: ASN, ISP, org, geo, reverse DNS, privacy indicators |
 | Routes | Traceroute (per-hop IP/hostname/latency/loss/ASN), route analysis, IPv4/IPv6 route comparison, history |
 | Cloudflare | Configured-CIDR-only endpoint scanner: discovery → TCP → TLS → HTTP validation → speed test → ranking, with favorites and export |
-| VPN | Proxy tunnel (xray / sing-box / v2ray) with verified exit IP, TUN mode, nested chaining, kill switch; provider abstraction (WireGuard, OpenVPN, sing-box, Aether) with encrypted secret vault; discovery profiles with honest per-attempt reports; engine manager with one-click updates from official releases |
+| VPN | Proxy tunnel (xray / hysteria / sing-box / v2ray) with verified exit IP, TUN mode, nested chaining, kill switch; provider abstraction (WireGuard, OpenVPN, sing-box, Aether) with encrypted secret vault; discovery profiles with honest per-attempt reports; engine manager with one-click updates from official releases |
 | Nodes | Node explorer over the full stored database (server-side paging/sort/filter), config intake (paste a vless/vmess/trojan/ss link → test → promote to an engine profile), share-link export, runtime attribution per measurement |
 | Servers & Health | VPS/VPN server/diagnostic endpoint inventory, health monitoring daemon, per-server metrics and history |
 | Optimizer | Candidate endpoint optimization runs with configurable scoring weights |
@@ -120,7 +120,9 @@ as a pass. Build the staged sidecar first with `npm run desktop:prepare` if
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — system design, layers, data flow
 - [FEATURE_AUDIT.md](./FEATURE_AUDIT.md) — feature-by-feature verification matrix (HTTP + webview layers)
 - [FEATURE_GAPS.md](./FEATURE_GAPS.md) — fixed gaps, honest unavailable states, scope limits
-- [API.md](./API.md) — full REST/WS surface
+- [API.md](./API.md) — REST/WS reference for the core measurement/VPN/node surfaces
+  (route families added later — /iran, /mission, /adaptive, /agent, /nani\*, /webrtc,
+  /whitedns, /update-feed, … — are documented in their feature docs and source)
 - [NETWORKING.md](./NETWORKING.md) — how measurements actually work, platform limits
 - [GAMING.md](./GAMING.md) — game catalog rules, ranking and scoring methodology
 - [VPN.md](./VPN.md) — VPN providers, profiles, secrets, kill-switch posture

@@ -6,6 +6,7 @@ import { Gauge, Play, Swords } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { EmptyState, ErrorState } from '@/components/ui/States';
 import { Progress } from '@/components/ui/Progress';
@@ -106,6 +107,7 @@ export default function OptimizerPage() {
 
   return (
     <DisclosureScope name="optimizer">
+      <DetailLevelProvider scope="optimizer" defaultLevel={2} depth={4}>
       <PageHeader
         title="Optimizer"
         description="Measure every candidate with the full probe battery, score them with the weighted engine and rank them. Weights are configurable in Settings."
@@ -116,7 +118,10 @@ export default function OptimizerPage() {
           </Button>
         }
       />
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       {running && (
         <Card className="mb-5">
@@ -151,7 +156,11 @@ export default function OptimizerPage() {
               <CardHeader title="Recommendation" icon={<Swords size={15} />} subtitle="Based on this run's live measurements and the configured weights" />
               <CardBody className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
                 <span className="text-lg font-semibold text-ok">{result.best.candidate.name}</span>
-                <span className="font-mono text-sm text-muted">{result.best.candidate.host}{result.best.candidate.port ? `:${result.best.candidate.port}` : ''}</span>
+                {/* Level 4: the raw host[:port] string. The name, score and
+                    measured ping/loss stay at every level. */}
+                <DetailGate required={4}>
+                  <span className="font-mono text-sm text-muted">{result.best.candidate.host}{result.best.candidate.port ? `:${result.best.candidate.port}` : ''}</span>
+                </DetailGate>
                 <Badge tone="ok">score {result.best.score ?? '—'}</Badge>
                 {result.best.metrics.pingAvgMs != null && <span className="text-xs text-faint">ping {result.best.metrics.pingAvgMs.toFixed(1)} ms</span>}
                 {result.best.metrics.lossPct != null && <span className="text-xs text-faint">loss {result.best.metrics.lossPct.toFixed(1)}%</span>}
@@ -180,7 +189,12 @@ export default function OptimizerPage() {
                     <tr key={r.candidate.id} className="border-b border-line/60 last:border-0">
                       <td className="px-5 py-3 font-mono text-faint">{r.rank}</td>
                       <td className="px-3 py-3 font-medium">{r.candidate.name}</td>
-                      <td className="px-3 py-3 font-mono text-xs text-muted">{r.candidate.host}{r.candidate.port ? `:${r.candidate.port}` : ''}</td>
+                      <td className="px-3 py-3 font-mono text-xs text-muted">
+                        {/* Level 4: raw host[:port]; rank, name and metrics stay. */}
+                        <DetailGate required={4}>
+                          {r.candidate.host}{r.candidate.port ? `:${r.candidate.port}` : ''}
+                        </DetailGate>
+                      </td>
                       <td className="px-3 py-3 text-right font-mono">{r.metrics.pingAvgMs != null ? `${r.metrics.pingAvgMs.toFixed(1)} ms` : '—'}</td>
                       <td className="px-3 py-3 text-right font-mono text-muted">{r.metrics.jitterMs != null ? `${r.metrics.jitterMs.toFixed(1)} ms` : '—'}</td>
                       <td className="px-3 py-3 text-right font-mono text-muted">{r.metrics.lossPct != null ? `${r.metrics.lossPct.toFixed(1)}%` : '—'}</td>
@@ -197,6 +211,9 @@ export default function OptimizerPage() {
         </div>
       )}
 
+      {/* Level 3: custom candidate entry is an advanced alternative to the
+          configured server list; the primary Run action stays at every level. */}
+      <DetailGate required={3}>
       <Card
         className="mt-5"
         fold={{
@@ -225,6 +242,8 @@ export default function OptimizerPage() {
           </Button>
         </CardBody>
       </Card>
+      </DetailGate>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

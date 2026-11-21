@@ -10,9 +10,9 @@ gaps (code signing, notarization) are marked honestly.
 - Toolchain: Rust stable-x86_64-pc-**windows-gnu** (user-scope rustup, no admin;
   the machine has no Visual Studio/MSVC Build Tools). Tauri CLI 2.11.4 via
   `npm i -D @tauri-apps/cli`. NSIS + WebView2 bootstrapper fetched by the CLI.
-- **Build from a space-free path**: `tauri-winres`/windres cannot handle the
-  space in `E:\Code\Project\Vpn app`. The pipeline therefore builds from a
-  space-free working copy (`C:\np-src`):
+- **Build from a space-free path**: `tauri-winres`/windres cannot handle a space
+  in the checkout path (e.g. `E:\Code\Project\Vpn app`). The pipeline therefore
+  builds from a space-free working copy (`C:\np-src`):
 
   ```powershell
   robocopy "E:\Code\Project\Vpn app" C:\np-src /E /XD target .git .data node_modules
@@ -24,7 +24,8 @@ gaps (code signing, notarization) are marked honestly.
 - Artifacts (copied back into `src-tauri/target/x86_64-pc-windows-gnu/release/`):
   `netpulse-desktop.exe` (5.9 MB) and
   `bundle/nsis/NetPulse_<version>_x64-setup.exe` (36 MB, NSIS, per-user;
-  name derived from `tauri.conf.json` — currently 0.2.2).
+  name derived from `tauri.conf.json` — version comes from `npm run release:version`,
+  currently 3.2.0).
 - Install test: `/S` silent install to `%LocalAppData%\NetPulse`, Desktop +
   Start-Menu shortcuts, working `uninstall.exe`, `WebView2Loader.dll` present.
 - Runtime test (from the installed shortcut, not dev): native window
@@ -90,7 +91,8 @@ never falls back to a system Node in packaged builds.
 ## 3. Test matrix (run before signing/shipping)
 
 ```bash
-npm test                 # 186 unit/integration tests (shared + api + web)
+npm test                 # vitest across workspaces (shared + api + web + worker);
+                         # ~190 test files / ~3,000 tests — see each suite's summary
 npm run lint             # eslint, exit 0
 npx tsc --noEmit -p apps/api/tsconfig.json
 npx tsc --noEmit -p apps/web/tsconfig.json
@@ -346,10 +348,10 @@ committed); in CI it belongs in secrets.
 
 ### Honest state of the runtime
 
-The feed and its verification are real. What is **not** yet built is the in-app
-call: nothing in `apps/web` invokes the updater plugin's `check()`, so the app
-cannot *prompt* about an update yet — it will keep running whatever version is
-installed.
+The feed and its verification are real, and the in-app caller exists:
+`apps/web/src/lib/updater.ts` wraps the updater plugin's `check()`
+(updater.ts:205/266) and `apps/web/src/features/settings/UpdateBanner.tsx`
+surfaces results in the UI. See DESKTOP.md for the check/install flow.
 
 Tauri v2 also has no runtime `plugins.updater.active` / `dialog` switch. The
 plugin's own config struct reads only `pubkey`, `endpoints`,
@@ -369,7 +371,9 @@ User data lives **outside** the install directory (`app_data_dir` on the OS):
 - VPN profiles & provider credentials
 - Settings (incl. schedules, theme, custom resolvers)
 - Node database / imported subscriptions
-- Daemon token (memory-only, regenerated each run — never on disk)
+- Daemon token (persisted at `DATA_DIR/daemon-token`, ≥32 hex chars, generated on
+  first run and reused after — `apps/api/src/auth.ts` `ensureDaemonToken`; in desktop
+  mode the sidecar additionally requires the shell-injected per-launch secret)
 
 Upgrade test: seed an old DB → boot the new bundle → all rows intact, migrations
 re-run idempotently. Corrupt-update test: truncated DB → quarantined

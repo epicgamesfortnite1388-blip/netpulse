@@ -42,7 +42,15 @@ const TYPE_SCALE = flag('type-scale', '');
 const SETTLE = Number(flag('settle', 900));
 // Theme and text size are backend settings, not localStorage, so they are
 // applied to <html> after load. This exercises the exact CSS the product uses.
-const DOM_THEME = flag('dom-theme', '');
+// Normalised to exactly 'light' or 'dark'. An earlier version only recognised
+// 'l' as light, so `--dom-theme light` silently set the dark theme and the
+// guard — comparing against the same wrong mapping — agreed with itself.
+const DOM_THEME_RAW = flag('dom-theme', '');
+const DOM_THEME = DOM_THEME_RAW === '' ? '' : /^(l|light)$/i.test(DOM_THEME_RAW) ? 'light' : /^(d|dark)$/i.test(DOM_THEME_RAW) ? 'dark' : null;
+if (DOM_THEME === null) {
+  process.stderr.write(`ui-capture: --dom-theme ${DOM_THEME_RAW} is not a theme. Use light or dark.\n`);
+  process.exit(1);
+}
 // The app keys the ramp off `<html data-type-scale>` with NAMED steps, not a
 // multiplier. An earlier version wrote the raw number here, matched no selector,
 // and produced a run of screenshots that were silently captured at 100%.
@@ -235,16 +243,29 @@ async function main() {
       await send('Page.navigate', { url: `${BASE}${shot.route}` });
       await sleep(SETTLE + 600);
 
-      if (DOM_THEME || DOM_SCALE) {
+      /**
+       * Apply the requested presentation to <html>.
+       *
+       * Called twice: once early so the interaction steps run against the right
+       * layout, and once immediately before the screenshot. The second call is
+       * not redundant — the app re-applies its own theme from settings on
+       * re-render, so a value set before a click can be reverted by the commit
+       * that click causes. Without the late re-apply, a run labelled "light"
+       * produced dark screenshots and only the manifest disagreed.
+       */
+      const applyPresentation = async () => {
+        if (!DOM_THEME && !DOM_SCALE) return;
         await send('Runtime.evaluate', {
           expression: `(() => {
             const de = document.documentElement;
-            ${DOM_THEME ? `de.dataset.theme = ${JSON.stringify(DOM_THEME === 'l' ? 'light' : 'dark')};` : ''}
+            ${DOM_THEME ? `de.dataset.theme = ${JSON.stringify(DOM_THEME)};` : ''}
             ${DOM_SCALE ? `de.dataset.typeScale = ${JSON.stringify(DOM_SCALE)};` : ''}
           })()`,
         });
         await sleep(400);
-      }
+      };
+
+      await applyPresentation();
 
       // Progressive-disclosure state. The level control is a radiogroup, so the
       // requested level is selected by index and then READ BACK — a screenshot
@@ -353,6 +374,11 @@ async function main() {
       // read-back below is treated as proof.
       await applyDetail({ strict: true });
 
+      // Re-apply the theme and text size last, for the reason in
+      // `applyPresentation`: the interactions above can trigger a re-render that
+      // restores the app's own preference.
+      await applyPresentation();
+
       // Read back what the page actually resolved, so a selector that matched
       // nothing shows up in the manifest instead of in a wrong screenshot.
       const applied = (await send('Runtime.evaluate', {
@@ -373,6 +399,12 @@ async function main() {
         })()`,
         returnByValue: true,
       })).result.value;
+      if (DOM_THEME && applied.theme !== DOM_THEME) {
+        process.stderr.write(
+          `ui-capture: theme ${DOM_THEME} did not apply on ${shot.route} (resolved ${applied.theme}) — refusing to label a screenshot with a theme it is not showing\n`,
+        );
+        process.exit(1);
+      }
       if (DOM_SCALE && applied.typeScale !== String(SCALE_STEPS[Number(DOM_SCALE_RAW)] === '' ? 1 : DOM_SCALE_RAW)) {
         process.stderr.write(`ui-capture: text scale did not apply (--type-scale resolved to ${applied.typeScale})\n`);
         process.exit(1);
@@ -403,6 +435,11 @@ async function main() {
             contentH: Math.round(contentH),
             docScrollW: de.scrollWidth, docClientW: de.clientWidth,
             h1: [...document.querySelectorAll('h1')].map(h => h.textContent.trim()).slice(0,3),
+            // How many tabs this page currently offers. On NANI the level
+            // decides the tab set, so this is the evidence that structural
+            // disclosure happened rather than a claim about it.
+            tabCount: document.querySelectorAll('[role="tablist"] [role="tab"]').length,
+            tabLabels: [...document.querySelectorAll('[role="tablist"] [role="tab"]')].map(t => t.textContent.trim()).slice(0, 12),
             rootFont: getComputedStyle(de).fontSize,
           };
         })()`,

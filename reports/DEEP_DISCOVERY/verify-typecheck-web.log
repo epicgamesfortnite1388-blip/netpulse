@@ -1,0 +1,5 @@
+
+> @netpulse/web@3.2.0 typecheck
+> tsc --noEmit
+
+TYPECHECK:0

@@ -23,7 +23,7 @@ serves both UI and API.
 | `DEMO_DATA` | `false` | Seed demo content (badged in UI; not real measurements) |
 | `LOG_LEVEL` | `info` | pino level |
 | `CORS_ORIGINS` | Vite dev origins | Only relevant for separate-frontend setups |
-| `SESSION_TTL_HOURS` | `168` | Session lifetime |
+| `SESSION_TTL_HOURS` | `12` | Session lifetime (browser cookie sessions, web/dev mode only) |
 
 ## Running as a service
 
@@ -39,8 +39,10 @@ serves both UI and API.
 - If you bind a non-loopback `HOST`, put TLS in front (reverse proxy) and restrict
   access (firewall/VPN). All data routes require auth, but active-probe endpoints are
   powerful by design — treat the API like a diagnostic console, not a public website.
-- Back up `DATA_DIR` to preserve history and VPN profiles; the vault key file must be
-  backed up together with vault data or secrets become unrecoverable.
+- Back up `DATA_DIR` to preserve history and VPN profiles. The vault encryption key
+  lives in the OS key store (Windows Credential Manager by default; a `vault.key`
+  file only when `NETPULSE_VAULT_KEY_FILE` is set — see VPN.md "Secret storage") —
+  back up whichever store you use, or secrets become unrecoverable.
 
 ## Upgrading
 

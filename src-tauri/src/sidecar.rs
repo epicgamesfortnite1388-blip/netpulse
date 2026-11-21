@@ -522,7 +522,18 @@ pub fn start_watchdog(app: &AppHandle) {
 /// Graceful shutdown of the sidecar.
 /// Invoked from the Tauri `RunEvent::Exit` hook in main.rs so tray Quit and
 /// every other exit path tears the sidecar down deterministically.
+///
+/// Order matters: stdin is the lifecycle channel, and the backend's
+/// stdin-EOF handler (apps/api/src/desktop-index.ts) runs the SAME graceful
+/// shutdown as SIGTERM — it stops managed tunnels and RESTORES the system
+/// proxy handoff before exiting. A bare `kill()` (TerminateProcess on
+/// Windows) bypasses all of that: the OS proxy keeps pointing at the dead
+/// loopback port until the next launch's boot recovery, leaving the machine
+/// without working proxy-honoring networking while the app is closed. So:
+/// close stdin first, give the backend a bounded window to finish its
+/// shutdown, and only then force-kill a backend that failed to exit.
 pub fn stop_sidecar(app: &AppHandle) {
+    const GRACEFUL_SHUTDOWN_BUDGET_MS: u64 = 6_000;
     let state = app.state::<SidecarState>();
     let mut inner = match state.inner.lock() {
         Ok(i) => i,
@@ -530,7 +541,28 @@ pub fn stop_sidecar(app: &AppHandle) {
     };
     inner.shutting_down = true;
     if let Some(child) = inner.child.as_mut() {
-        let _ = child.kill();
+        // Dropping the stdin handle closes the pipe: the backend sees EOF and
+        // runs its graceful shutdown (tunnel stop + system-proxy restore).
+        drop(child.stdin.take());
+        // Bounded wait for that shutdown to finish (std has no wait_timeout;
+        // a 100ms try_wait poll is exact enough for a 6s budget).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(GRACEFUL_SHUTDOWN_BUDGET_MS);
+        let exited = loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break true,
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        break false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(_) => break true,
+            }
+        };
+        if !exited {
+            log_warn!("sidecar did not exit within its graceful shutdown budget; force-killing");
+            let _ = child.kill();
+        }
         let _ = child.wait();
     }
     inner.child = None;

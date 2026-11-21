@@ -145,6 +145,29 @@ function isAdmin(roleRow: { role: string } | null | undefined): boolean {
   return roleRow?.role === 'admin';
 }
 
+/** Roles the upstream admin-AI service understands. */
+const AI_ROLES = ['support', 'admin', 'diagnostics', 'developer'] as const;
+export type AiRole = (typeof AI_ROLES)[number];
+
+/**
+ * The upstream `/admin/ai` service trusts the role this Worker asserts — it
+ * controls what the assistant is willing to disclose. A caller-controlled
+ * role therefore crosses a privilege boundary: any authenticated user could
+ * ask for `admin` and receive administrator-level answers. Resolve it from
+ * the verified session's D1 role instead. Non-admins are downgraded to
+ * `support` (rather than rejected) so the Copilot stays useful without
+ * becoming an entitlement bypass.
+ */
+export function resolveAiRole(requested: unknown, callerRole: string | null | undefined): AiRole {
+  const asked = typeof requested === 'string' && (AI_ROLES as readonly string[]).includes(requested)
+    ? (requested as AiRole)
+    : null;
+  const admin = callerRole === 'admin';
+  if (asked === 'admin' || asked === 'developer') return admin ? asked : 'support';
+  if (asked === 'diagnostics' || asked === 'support') return asked;
+  return admin ? 'admin' : 'support';
+}
+
 /**
  * Admin-only mutations are recorded in `admin_events` (the feed served by
  * /api/v1/admin/events), separate from the generic `audit_events` log. The
@@ -1251,9 +1274,8 @@ export default {
         if (typeof body.question !== 'string' || !body.question.trim()) {
           return fail(400, 'validation_error', 'question is required');
         }
-        const role = body.role && ['support', 'admin', 'diagnostics', 'developer'].includes(body.role)
-          ? body.role
-          : 'admin';
+        const callerRole = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+        const role = resolveAiRole(body.role, callerRole?.role);
         const userIdStr = String(userId ?? '');
         try {
           const upstream = await fetch(`${aiBase}/admin/ai`, {
@@ -1292,9 +1314,8 @@ export default {
         if (typeof body.question !== 'string' || !body.question.trim()) {
           return fail(400, 'validation_error', 'question is required');
         }
-        const role = body.role && ['support', 'admin', 'diagnostics', 'developer'].includes(body.role)
-          ? body.role
-          : 'admin';
+        const callerRole = await env.DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(userId).first<{ role: string }>();
+        const role = resolveAiRole(body.role, callerRole?.role);
         const userIdStr = String(userId ?? '');
         try {
           const upstream = await fetch(`${aiBase}/admin/ai/stream`, {

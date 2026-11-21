@@ -215,6 +215,12 @@ export function TelegramIntegrationCard() {
                 Telegram.
               </p>
             )}
+            {subs === null && (
+              <p className="text-muted">
+                Subscriptions could not be loaded (cloud unreachable). The last-known list is kept out of sight rather than shown as empty —
+                press Refresh Subscriptions to try again.
+              </p>
+            )}
             <div>
               <Button onClick={sync} disabled={syncing}>
                 <RefreshCw size={14} /> {syncing ? 'Syncing...' : 'Refresh Subscriptions'}

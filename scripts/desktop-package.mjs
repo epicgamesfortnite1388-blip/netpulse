@@ -49,6 +49,10 @@ const steps = [
     // release fail instead.
     name: 'release:feed',
     cmd: [process.execPath, [path.join(root, 'scripts', 'update-feed.mjs'), '--optional']],
+    // --optional is only safe for a keyless LOCAL dev feed. A release that
+    // reaches this step must fail if the signing key is missing instead of
+    // completing with a .zip but no .sig / latest.json (DD-001).
+    env: { NETPULSE_REQUIRE_UPDATER_FEED: '1' },
   },
   {
     name: 'post-install-bootstrap',

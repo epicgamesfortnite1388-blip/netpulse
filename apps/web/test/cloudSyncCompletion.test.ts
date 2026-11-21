@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as ApiModule from '@/lib/api';
+
 /**
  * A successful sync has to leave two marks: the `lastSyncAt` stamp the account
  * page renders, and that stamp being visible in React at all.
@@ -15,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 vi.mock('@/lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/api')>();
+  const actual = await importOriginal<typeof ApiModule>();
   return {
     ...actual,
     api: { ...actual.api, get: vi.fn(), post: vi.fn() },
@@ -24,7 +26,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 const { api } = await import('@/lib/api');
 const { lastSyncError, syncNow } = await import('@/lib/cloud/syncEngine');
-const { adoptAuthResponse, clearSession, initSession, useSessionStore } = await import('@/lib/cloud/sessionStore');
+const { adoptAuthResponse, clearSession, useSessionStore } = await import('@/lib/cloud/sessionStore');
 const { useCloudSession } = await import('@/lib/cloud/useCloudSession');
 
 const auth = {

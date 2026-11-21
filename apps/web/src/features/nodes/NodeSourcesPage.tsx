@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { Field } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -285,6 +286,7 @@ export default function NodeSourcesPage() {
 
   return (
     <DisclosureScope name="nodes:sources" className="animate-fade-up">
+      <DetailLevelProvider scope="nodes:sources" defaultLevel={2} depth={4}>
       <PageHeader
         title="Node Sources"
         description="Where your nodes come from, what tests them, and what counts as working."
@@ -295,6 +297,8 @@ export default function NodeSourcesPage() {
           </Button>
         }
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <NodesNav />
       <DisclosureToolbar className="mb-2" />
@@ -362,12 +366,16 @@ export default function NodeSourcesPage() {
                           </Badge>
                           {s.type && <span className="text-micro uppercase tracking-wide text-faint">{s.type}</span>}
                         </div>
-                        <p
-                          className="mt-0.5 truncate font-mono text-micro text-faint select-none"
-                          title="Subscription URLs are masked — a link that fetches every node in a source is the configuration, so the app never sends it to the client."
-                        >
-                          {s.urls[0]}
-                        </p>
+                        {/* Level 4: the masked URL is raw provenance. The
+                            source name, status and counts stay at every level. */}
+                        <DetailGate required={4}>
+                          <p
+                            className="mt-0.5 truncate font-mono text-micro text-faint select-none"
+                            title="Subscription URLs are masked — a link that fetches every node in a source is the configuration, so the app never sends it to the client."
+                          >
+                            {s.urls[0]}
+                          </p>
+                        </DetailGate>
                         {/* Four across needs xl: at 1024px a four-up grid left ~86px per cell,
                             which the labels overflowed. */}
                           <div className="mt-2 grid grid-cols-2 gap-1.5 xl:grid-cols-4">
@@ -420,6 +428,7 @@ export default function NodeSourcesPage() {
             title="Add a source"
             icon={<Plus size={15} />}
             subtitle="https URLs on public hosts only — private, loopback and metadata addresses are rejected"
+            detail={3}
             collapsible
             defaultOpen={false}
             id="add-source"
@@ -467,15 +476,19 @@ export default function NodeSourcesPage() {
             id="scanner"
             actions={
               <div className="flex flex-wrap gap-2">
+                {/* "Quick test" is the primary scan action and stays at every
+                    level; the alternate scanner kinds are advanced. */}
                 <Button variant="primary" size="sm" loading={scanning} onClick={() => void startScan('test')}>
                   <Radar size={12} /> Quick test
                 </Button>
-                <Button variant="ghost" size="sm" loading={scanning} onClick={() => void startScan('health-check')}>
-                  Health check
-                </Button>
-                <Button variant="ghost" size="sm" loading={scanning} onClick={() => void startScan('deep-test')}>
-                  Deep test
-                </Button>
+                <DetailGate required={3}>
+                  <Button variant="ghost" size="sm" loading={scanning} onClick={() => void startScan('health-check')}>
+                    Health check
+                  </Button>
+                  <Button variant="ghost" size="sm" loading={scanning} onClick={() => void startScan('deep-test')}>
+                    Deep test
+                  </Button>
+                </DetailGate>
               </div>
             }
           >
@@ -503,9 +516,11 @@ export default function NodeSourcesPage() {
                           <div className="min-w-0">
                             <div className="font-mono text-sm text-text">{j.kind}</div>
                             <div className="truncate text-micro text-faint">
-                              {j.id}
+                              {/* Level 4: the raw job id and backend error text.
+                                  The done/total progress counts stay at every level. */}
+                              <DetailGate required={4}>{j.id}</DetailGate>
                               {typeof j.done === 'number' && typeof j.total === 'number' ? ` · ${j.done}/${j.total}` : ''}
-                              {j.error ? ` · ${j.error}` : ''}
+                              {j.error && <DetailGate required={4}>{` · ${j.error}`}</DetailGate>}
                             </div>
                           </div>
                         </div>
@@ -559,7 +574,11 @@ export default function NodeSourcesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm text-text">{e.name}</div>
-                        <div className="truncate font-mono text-micro text-faint">{e.url}</div>
+                        {/* Level 4: the raw endpoint URL is provenance. The
+                            endpoint name and enabled/disabled badge stay. */}
+                        <DetailGate required={4}>
+                          <div className="truncate font-mono text-micro text-faint">{e.url}</div>
+                        </DetailGate>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Badge tone={e.enabled ? 'ok' : 'neutral'}>{e.enabled ? 'enabled' : 'disabled'}</Badge>
@@ -583,6 +602,7 @@ export default function NodeSourcesPage() {
           <Section
             title="Add an endpoint"
             icon={<Plus size={15} />}
+            detail={3}
             collapsible
             defaultOpen={false}
             id="add-endpoint"
@@ -619,6 +639,8 @@ export default function NodeSourcesPage() {
         </TabPanel>
       </Tabs>
 
+      {/* Level 3: the provenance / safety explainer. */}
+      <DetailGate required={3}>
       <FoldNote id="untrusted-input" label="Where these nodes come from, and why that is safe" className="mt-4">
         <span className="flex items-start gap-1.5">
           <Globe size={12} className="mt-0.5 shrink-0" />
@@ -627,6 +649,8 @@ export default function NodeSourcesPage() {
           by the local cores.
         </span>
       </FoldNote>
+      </DetailGate>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

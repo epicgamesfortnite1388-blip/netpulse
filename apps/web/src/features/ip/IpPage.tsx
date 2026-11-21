@@ -6,6 +6,7 @@ import { Globe, Info, MapPin, Server, ShieldAlert, ShieldCheck } from 'lucide-re
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingState } from '@/components/ui/States';
@@ -69,18 +70,22 @@ function FamilyCard({ family, query }: { family: IpFamily; query: ReturnType<typ
             <Row label="Country" value={info.countryCode ? `${info.country ?? ''} (${info.countryCode})` : info.country} />
             <Row label="Region" value={info.region} />
             <Row label="City" value={info.city} />
-            <Row label="Timezone" value={info.timezone} />
-            <Row
-              label="Coordinates"
-              value={
-                info.latitude != null && info.longitude != null
-                  ? `${info.latitude.toFixed(3)}, ${info.longitude.toFixed(3)}`
-                  : null
-              }
-            />
+            <DetailGate required={3}>
+              <Row label="Timezone" value={info.timezone} />
+              <Row
+                label="Coordinates"
+                value={
+                  info.latitude != null && info.longitude != null
+                    ? `${info.latitude.toFixed(3)}, ${info.longitude.toFixed(3)}`
+                    : null
+                }
+              />
+            </DetailGate>
             <Row label="Reverse DNS" value={info.reverseDns} />
             <Row label="CF edge" value={info.edgeLocation} />
-            <Row label="Sources" value={info.sources.join(' + ')} />
+            <DetailGate required={4}>
+              <Row label="Sources" value={info.sources.join(' + ')} />
+            </DetailGate>
           </div>
         )}
       </CardBody>
@@ -217,20 +222,22 @@ function WebrtcLeakCard() {
               <Badge tone="neutral">{result.candidateCount} candidate(s)</Badge>
               {result.leakedCount > 0 && <Badge tone="danger">{result.leakedCount} not matching public IPs</Badge>}
             </div>
-            {result.leaked.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {result.leaked.map((ip) => (
-                  <code key={ip} className="rounded border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-text">
-                    {ip}
-                  </code>
-                ))}
-              </div>
-            )}
-            {result.publicIps.length > 0 && (
-              <div className="text-xs text-faint">
-                Public IPs compared against: {result.publicIps.join(', ')}
-              </div>
-            )}
+            <DetailGate required={4}>
+              {result.leaked.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {result.leaked.map((ip) => (
+                    <code key={ip} className="rounded border border-line bg-surface-2 px-2 py-0.5 font-mono text-micro text-text">
+                      {ip}
+                    </code>
+                  ))}
+                </div>
+              )}
+              {result.publicIps.length > 0 && (
+                <div className="text-xs text-faint">
+                  Public IPs compared against: {result.publicIps.join(', ')}
+                </div>
+              )}
+            </DetailGate>
           </div>
         )}
       </CardBody>
@@ -244,11 +251,15 @@ export default function IpPage() {
 
   return (
     <DisclosureScope name="ip">
+      <DetailLevelProvider scope="ip" defaultLevel={2} depth={4}>
       <PageHeader
         title="IP intelligence"
         description="Your public addresses, network operator and geolocation — measured, with sources shown."
       />
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <FamilyCard family={4} query={v4} />
@@ -257,22 +268,24 @@ export default function IpPage() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <WebrtcLeakCard />
-        <Card
-          fold={{ id: 'ip-reputation', defaultOpen: false, summary: 'unknown — no reputation provider configured yet' }}
-        >
-          <CardHeader title="IP reputation" icon={<Server size={15} />} />
-          <CardBody>
-            <div className="flex items-start gap-2.5 text-sm text-muted">
-              <Info size={15} className="mt-0.5 shrink-0 text-accent" />
-              <p className="leading-relaxed">
-                No reputation providers are configured yet, so your IP's reputation is
-                <strong className="text-text"> unknown</strong> — not "clean", just untested. Reputation
-                providers (abuse databases, blocklists) can be registered in the provider architecture without
-                touching the rest of the app.
-              </p>
-            </div>
-          </CardBody>
-        </Card>
+        <DetailGate required={3}>
+          <Card
+            fold={{ id: 'ip-reputation', defaultOpen: false, summary: 'unknown — no reputation provider configured yet' }}
+          >
+            <CardHeader title="IP reputation" icon={<Server size={15} />} />
+            <CardBody>
+              <div className="flex items-start gap-2.5 text-sm text-muted">
+                <Info size={15} className="mt-0.5 shrink-0 text-accent" />
+                <p className="leading-relaxed">
+                  No reputation providers are configured yet, so your IP's reputation is
+                  <strong className="text-text"> unknown</strong> — not "clean", just untested. Reputation
+                  providers (abuse databases, blocklists) can be registered in the provider architecture without
+                  touching the rest of the app.
+                </p>
+              </div>
+            </CardBody>
+          </Card>
+        </DetailGate>
 
         <Card fold={{ id: 'location-note', defaultOpen: false, summary: 'geolocation is ISP registry data, city-level at best' }}>
           <CardHeader title="Location privacy note" icon={<MapPin size={15} />} />
@@ -288,6 +301,7 @@ export default function IpPage() {
           </CardBody>
         </Card>
       </div>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

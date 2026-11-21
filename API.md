@@ -147,7 +147,7 @@ system route.
 | POST | `/vpn/elevation/result?opId=&nonce=` | Rust elevation bridge: report the UAC launch outcome (Bearer + nonce gated) |
 | GET | `/nodes` | Node list `{ limit, offset, protocol, country, asn, status, transport, security, freshness, favorite, search, engine, minScore, maxLatency, minReliability, sortField, sortDir }`. `total` is a COUNT of the stored rows matching the filters, and `offset` pages over all of them (filters, search and sorting run in SQL, not over one response). A response carries at most 2000 rows. Sorting puts rows without the sorted measurement last in both directions, and a `sortField=engine` response groups xray → sing-box → v2ray → never-tested. `search` matches host/remark/protocol/ASN/ISP/city/country/fingerprint/stored IP text |
 | GET | `/nodes/stats` | Node database totals + protocol/country/transport breakdowns, each a COUNT over the stored rows |
-| GET | `/nodes/engines` | Local proxy-core availability (xray / sing-box): installed, path, protocols, which engine proxy tests will use. Cores are found on `PATH` or dropped into `<dataDir>/cores/` (or `NETPULSE_CORES_DIR`) |
+| GET | `/nodes/engines` | Local proxy-core availability (xray / hysteria / sing-box / v2ray): installed, path, protocols, which engine proxy tests will use. Cores are found on `PATH` or dropped into `<dataDir>/cores/` (or `NETPULSE_CORES_DIR`) |
 | POST | `/cloudflare/scan` | Start a Cloudflare endpoint scan. CIDRs /8–/32 accepted; large published ranges (e.g. the default `104.16.0.0/13`, `172.64.0.0/13`) are sampled on an even stride up to `maxCandidates`; private/reserved bases rejected |
 | GET | `/sources` | Public node sources (built-ins seeded into the DB at boot; DB is authoritative). Built-in catalog: 11 v2ray-flavoured subscription lists (`All_Configs_Sub.txt`-style), each with the per-source counts it really returned. Every source also carries `redistributionPermission` — `discovery-only` (default: may be fetched and tested, never shipped), `redistribution-allowed` (explicit grant) or `prohibited` (its licence is incompatible with redistribution) — derived from the source registry, never stored |
 | POST | `/sources` | Add a custom source `{ name, urls[] }` (https public hosts only) |
@@ -157,7 +157,9 @@ system route.
 
 ## WebSocket
 
-`WS /api/v1/ws?testId=<id>` — authenticated. Messages:
+`WS /api/v1/ws?testId=<id>` — authenticated. First mint a single-use ticket with
+`POST /api/v1/ws/ticket` (30s TTL, loopback session required — see SECURITY.md),
+then pass it as the `?ticket=` query parameter on the socket URL. Messages:
 
 ```json
 { "type": "test:progress", "testId": "…", "task": "download", "pct": 42 }
@@ -187,7 +189,7 @@ returns `{ dns, gaming, vpn }` with `enabled`, `running`, `lastRunAt`, `lastResu
 ### Proxy tunnel, gateway memory and discovery
 
 The proxy tunnel (`services/proxyTunnel.ts`) keeps one long-lived local core
-(xray / sing-box / v2ray) alive with the node's real secret from the vault and
+(xray / hysteria / sing-box / v2ray) alive with the node's real secret from the vault and
 reports `active` only after a trace fetched **through** it yields an `ip=` line —
 the exit IP shown anywhere in the app is read from that trace, never assumed. A
 core crash flips state to `down` and triggers a bounded auto-reconnect (3 tries,

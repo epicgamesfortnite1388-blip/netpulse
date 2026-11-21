@@ -48,7 +48,14 @@ const ImportSchema = z.object({
 const ConnectSchema = z.object({
   profileId: z.string().min(1).max(64),
   /** Desktop flow: drive the per-action UAC prompt through the Rust bridge. */
-  elevation: z.object({ opId: z.string().min(1).max(64) }).optional(),
+  elevation: z
+    .object({
+      opId: z.string().min(1).max(64),
+      // Minted by the UI and echoed through the Rust IPC bridge. The broker
+      // requires this exact value before handing out a descriptor.
+      nonce: z.string().regex(/^[A-Za-z0-9]{16,128}$/, 'invalid elevation nonce'),
+    })
+    .optional(),
 });
 
 /** Promote a stored node into an engine profile.
@@ -194,7 +201,7 @@ function replaceProfilesNamed(ctx: AppContext, providerId: ImportProviderId, nam
   return doomed.length;
 }
 
-async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, opId: string) {
+async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, opId: string, nonce: string) {
   const profile = ctx.vpn.getProfile(profileId);
   if (!profile) throw new AppError(404, 'not_found', 'Profile not found');
   if (profile.providerId !== 'wireguard') {
@@ -207,7 +214,7 @@ async function runElevatedWireGuardConnect(ctx: AppContext, profileId: string, o
     throw badRequest('elevation_unsupported', 'The WireGuard provider does not support the elevation flow in this build');
   }
   const stagedConfigPath = wg.prepareElevatedConnect(profile);
-  ctx.elevationBroker.registerWireGuardInstall({ opId, configPath: stagedConfigPath });
+  ctx.elevationBroker.registerWireGuardInstall({ opId, nonce, configPath: stagedConfigPath });
   ctx.repos.vpnProfiles.touch(profile.id);
   try {
     const outcome = await ctx.elevationBroker.wait(opId);
@@ -699,7 +706,12 @@ export function registerVpnRoutes(app: FastifyInstance, ctx: AppContext): void {
         // install runs, and nothing else may transition meanwhile.
         const result = await serializeVpnOp(async () => {
           await stopTunnelForEngine(ctx);
-          return runElevatedWireGuardConnect(ctx, parsed.data.profileId, parsed.data.elevation!.opId);
+          return runElevatedWireGuardConnect(
+            ctx,
+            parsed.data.profileId,
+            parsed.data.elevation!.opId,
+            parsed.data.elevation!.nonce,
+          );
         });
         ctx.services.events.record('info', 'vpn', `Connected VPN profile "${profile.name}" (elevated)`);
         return { status: publicStatus(result.status), outcome: result.outcome };

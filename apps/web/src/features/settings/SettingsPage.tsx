@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router';
 
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar, FoldNote } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -163,6 +164,10 @@ export default function SettingsPage() {
 
   return (
     <DisclosureScope name="settings">
+      {/* Every form control and Save action stays ungated — settings are the
+          primary task here. Only the platform capability list, recovery
+          actions and raw update history sit behind the deeper levels. */}
+      <DetailLevelProvider scope="settings" defaultLevel={2} depth={4}>
       <PageHeader title="Settings" description="Defaults for tests, scoring and future VPN behavior. Additional sections are added as modules ship." />
 
       <Tabs
@@ -180,7 +185,10 @@ export default function SettingsPage() {
       >
         {/* One scope for the whole page: every explanation below folds, and
             Collapse all folds them together. */}
-        <DisclosureToolbar className="-mt-3 mb-2" />
+        <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+          <DetailLevelControl />
+          <DisclosureToolbar />
+        </div>
         <TabPanel value="general">
           <Card className="max-w-3xl">
             <CardHeader title="General" />
@@ -567,6 +575,7 @@ export default function SettingsPage() {
         </TabPanel>
 
         <TabPanel value="platform">
+          <DetailGate required={3}>
           <Card className="max-w-3xl">
             <CardHeader
               title="Platform capabilities"
@@ -630,8 +639,10 @@ export default function SettingsPage() {
           <div className="mt-6">
             <RecoveryCard />
           </div>
+          </DetailGate>
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

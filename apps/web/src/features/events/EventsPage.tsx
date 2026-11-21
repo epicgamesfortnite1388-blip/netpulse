@@ -3,6 +3,7 @@ import { Radio } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Select } from '@/components/ui/Field';
 import { LoadingState, ErrorState } from '@/components/ui/States';
@@ -43,11 +44,13 @@ export default function EventsPage() {
   });
 
   return (
+    <DetailLevelProvider scope="events" defaultLevel={2} depth={4}>
     <div>
       <PageHeader
         title="Events"
         description="Technical event log — every diagnostic action, state change and warning, in order."
       />
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <div className="mb-4 flex flex-wrap gap-3">
         <div className="w-44">
@@ -102,5 +105,6 @@ export default function EventsPage() {
         </Card>
       )}
     </div>
+    </DetailLevelProvider>
   );
 }

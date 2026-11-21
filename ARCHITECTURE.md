@@ -74,6 +74,9 @@ context `main.rs` does not have.
 | `status.rs` | The runtime-status snapshot the System Health page polls — an aggregator, owning nothing itself, and forbidden from inventing good news | `sidecar`, `paths`, `safe_mode`, `logging` |
 | `diagnostics.rs` | Redacted log tail and the exported JSON diagnostic report (the second secret filter) | `paths`, `status`, `logging` |
 | `os_open.rs` | The only two places the webview can make the OS act: reveal a path inside the app's own directories, open an https URL — both allow-listed, both without a shell in the chain | `tauri::Url`, `logging` |
+| `commands/` | Grouped Tauri IPC commands: `nani.rs` exposes the NANI engine surface (status, investigations, learning/personalization, event polling, math introspection) over `network_intelligence` state | `network_intelligence`, `logging` |
+| `dpapi.rs` | Windows DPAPI wrapper behind the `secret_protect`/`secret_unprotect` commands — how the webview's secure store encrypts at rest | `logging` |
+| `network_intelligence/` | The NANI subsystem (~35 files): deterministic Bayesian diagnosis (`bayesian`), causal reasoning, drift/changepoint detection, recovery planning, probe selection, evidence normalization, persistence (bounded journals + calibration storage), the external-API monitor loop, and the context watchdog's collector — see the NANI_*.md reports for the mathematical contracts | `paths`, `logging` |
 | `main.rs` | Process assembly and the IPC surface: the bootstrap handshake, the cross-module repair/reset commands, and the `setup` / window-event / run-loop wiring | all of the above |
 
 Five rules hold this together:

@@ -25,6 +25,7 @@ import { healthMetricItems, nodeRates } from './nodeHealthDisplay';
 import { Gauge } from '@/components/charts/Gauge';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { DataList, DataRow, EngineGlyph, EngineHero, MetricStrip, Notice, Panel, Section } from '@/components/ui/Surface';
@@ -390,7 +391,11 @@ export default function NodeDetailPage() {
               </p>
             )}
             {dx?.action && <p className="mt-0.5 text-xs text-muted">{dx.action}</p>}
-            <p className="mt-0.5 break-all font-mono text-micro text-faint">{testResult.error}</p>
+            {/* Level 4: the raw error string. The diagnosis category and
+                recommended action above stay at every level. */}
+            <DetailGate required={4}>
+              <p className="mt-0.5 break-all font-mono text-micro text-faint">{testResult.error}</p>
+            </DetailGate>
           </div>
         );
       })()}
@@ -399,7 +404,9 @@ export default function NodeDetailPage() {
 
   return (
     <DisclosureScope name="node-detail" className="stagger animate-fade-up">
+      <DetailLevelProvider scope="node-detail" defaultLevel={2} depth={4}>
       <NodesNav current={node.label} />
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <EngineHero
         pageTitle
@@ -505,7 +512,11 @@ export default function NodeDetailPage() {
                   <DetailItem label="Allow insecure" value={node.allowInsecure ? 'Yes' : 'No'} />
                   <DetailItem label="Addresses" value={<HiddenField reason="the node's resolved IPs identify where it runs" />} mono />
                   <DetailItem label="Sources" value={node.sourceCount} mono />
-                  <DetailItem label="Fingerprint" value={`${node.canonicalFingerprint.slice(0, 16)}…`} mono />
+                  {/* Level 4: the raw fingerprint fragment is provenance, not
+                      a dial-in fact. */}
+                  <DetailGate required={4}>
+                    <DetailItem label="Fingerprint" value={`${node.canonicalFingerprint.slice(0, 16)}…`} mono />
+                  </DetailGate>
                 </DetailGrid>
               </Section>
 
@@ -540,6 +551,7 @@ export default function NodeDetailPage() {
               <Section
                 collapsible
                 id="scoring"
+                detail={3}
                 defaultOpen={false}
                 summary="How this node's score, health and freshness are derived"
                 title="Scoring & lifecycle"
@@ -560,6 +572,7 @@ export default function NodeDetailPage() {
               <Section
                 collapsible
                 id="runtime"
+                detail={3}
                 defaultOpen={false}
                 summary="Which local core runs this node's probes, and how to change it"
                 title="Measurement runtime"
@@ -638,6 +651,7 @@ export default function NodeDetailPage() {
             collapsible
             pinned
             id="history"
+            detail={4}
             defaultOpen
             badge={<Badge tone={tests.length > 0 ? 'neutral' : 'warn'}>{tests.length} probes</Badge>}
             summary={`${tests.length} recorded probe(s), newest first`}
@@ -688,6 +702,7 @@ export default function NodeDetailPage() {
           <Section
             collapsible
             id="outcomes"
+            detail={3}
             defaultOpen={false}
             summary="Success, failure and latency spread across all recorded probes"
             title="Outcome breakdown"
@@ -723,6 +738,7 @@ export default function NodeDetailPage() {
           </Section>
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }

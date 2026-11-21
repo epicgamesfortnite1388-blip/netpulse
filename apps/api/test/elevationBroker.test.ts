@@ -17,6 +17,9 @@ import type { Logger } from '../src/logger';
 
 const tmpDirs: string[] = [];
 
+/** The nonce is minted by the UI and echoed through Rust (DD-049). */
+const TEST_NONCE = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
 function makeDataDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'np-elev-'));
   tmpDirs.push(dir);
@@ -47,9 +50,14 @@ describe('ElevationBroker', () => {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, '[Interface]\nPrivateKey = AAA');
 
-    const reg = broker.registerWireGuardInstall({ opId: crypto.randomUUID(), configPath });
+    const reg = broker.registerWireGuardInstall({ opId: crypto.randomUUID(), nonce: TEST_NONCE, configPath });
     const descriptor = broker.fetchForBridge(reg.opId, reg.nonce);
 
+    // DD-049: the nonce the UI minted and Rust echoed must be the one the
+    // broker binds to, not a freshly server-minted value the bridge never saw.
+    expect(reg.nonce).toBe(TEST_NONCE);
+    expect(descriptor.nonce).toBe(TEST_NONCE);
+    expect(broker.fetchForBridge(reg.opId, TEST_NONCE).nonce).toBe(TEST_NONCE);
     expect(descriptor.action).toBe('wireguard-install-tunnel');
     expect(descriptor.exe).toMatch(/wireguard\.exe$/i);
     expect(descriptor.args[0]).toBe('/installtunnelservice');
@@ -63,7 +71,7 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-1', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-1', nonce: TEST_NONCE, configPath });
 
     expect(() => broker.fetchForBridge(reg.opId, null)).toThrow();
     expect(() => broker.fetchForBridge(reg.opId, '0'.repeat(48))).toThrow(/nonce/i);
@@ -81,8 +89,8 @@ describe('ElevationBroker', () => {
     const outside = path.join(os.tmpdir(), 'evil.conf');
     fs.writeFileSync(outside, 'x');
     try {
-      expect(() => broker.registerWireGuardInstall({ opId: 'op-2', configPath: outside })).toThrow(/outside/i);
-      expect(() => broker.registerWireGuardInstall({ opId: 'op-3', configPath: 'relative/path.txt' })).toThrow();
+      expect(() => broker.registerWireGuardInstall({ opId: 'op-2', nonce: TEST_NONCE, configPath: outside })).toThrow(/outside/i);
+      expect(() => broker.registerWireGuardInstall({ opId: 'op-3', nonce: TEST_NONCE, configPath: 'relative/path.txt' })).toThrow();
     } finally {
       fs.rmSync(outside, { force: true });
     }
@@ -97,14 +105,14 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    expect(() => broker.registerWireGuardInstall({ opId: 'op-4', configPath })).toThrow(/WireGuard is not installed/i);
+    expect(() => broker.registerWireGuardInstall({ opId: 'op-4', nonce: TEST_NONCE, configPath })).toThrow(/WireGuard is not installed/i);
   });
 
   it('wait() honors a custom timeout and reports expiry honestly', async () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    broker.registerWireGuardInstall({ opId: 'op-5', configPath });
+    broker.registerWireGuardInstall({ opId: 'op-5', nonce: TEST_NONCE, configPath });
     const waitPromise = broker.wait('op-5', 50);
     await expect(waitPromise).resolves.toMatchObject({ ok: false, declined: false, source: 'expired' });
     // the op is gone afterwards
@@ -115,12 +123,12 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-5b', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-5b', nonce: TEST_NONCE, configPath });
     const waitPromise = broker.wait(reg.opId);
     // Force expiry, then trigger a sweep via a second registration.
     (broker as unknown as { pending: Map<string, { expiresAt: number }> }).pending.get(reg.opId)!.expiresAt = Date.now() - 1;
     fs.writeFileSync(configPath, 'x2');
-    broker.registerWireGuardInstall({ opId: 'op-5c', configPath });
+    broker.registerWireGuardInstall({ opId: 'op-5c', nonce: TEST_NONCE, configPath });
     await expect(waitPromise).resolves.toMatchObject({ ok: false, declined: false, source: 'expired' });
     // expired ops cannot be fetched by the bridge even with the right nonce
     expect(() => broker.fetchForBridge(reg.opId, reg.nonce)).toThrow(/pending|expired/i);
@@ -130,7 +138,7 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-6', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-6', nonce: TEST_NONCE, configPath });
     const waitPromise = broker.wait(reg.opId);
 
     expect(broker.resolveFromBridge(reg.opId, reg.nonce, { ok: true, error: null })).toBe(true);
@@ -143,7 +151,7 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-7', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-7', nonce: TEST_NONCE, configPath });
     const waitPromise = broker.wait(reg.opId);
 
     expect(broker.resolveFromBridge(reg.opId, 'wrong-nonce-wrong-nonce', { ok: true, error: null })).toBe(false);
@@ -156,7 +164,7 @@ describe('ElevationBroker', () => {
     const { broker, dataDir } = makeBroker();
     const configPath = path.join(dataDir, 'a.conf');
     fs.writeFileSync(configPath, 'x');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-8', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-8', nonce: TEST_NONCE, configPath });
     const waitPromise = broker.wait(reg.opId);
     broker.resolveFromBridge(reg.opId, reg.nonce, { ok: false, error: 'ELEVATION_DECLINED: The user declined the elevation prompt' });
     await expect(waitPromise).resolves.toMatchObject({ ok: false, declined: true });
@@ -167,7 +175,7 @@ describe('ElevationBroker', () => {
     const configPath = path.join(dataDir, 'vpn-profiles', 'tmp', 'netpulse-wg-y.conf');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, 'version-1');
-    const reg = broker.registerWireGuardInstall({ opId: 'op-9', configPath });
+    const reg = broker.registerWireGuardInstall({ opId: 'op-9', nonce: TEST_NONCE, configPath });
     const hash1 = broker.fetchForBridge(reg.opId, reg.nonce).configSha256;
     fs.writeFileSync(configPath, 'version-2-with-more-content');
     broker.refreshDescriptorHash(reg.opId, reg.nonce);

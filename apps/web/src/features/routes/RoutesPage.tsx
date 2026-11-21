@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Info, Play, RefreshCw, Route as RouteIcon,
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { DisclosureScope, DisclosureToolbar } from '@/components/ui/Disclosure';
 import { Field, Input, Select } from '@/components/ui/Field';
 import { Metric } from '@/components/ui/Metric';
@@ -58,18 +59,22 @@ function HopRow({ hop, isLast }: { hop: TraceResult['hops'][number]; isLast: boo
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className={`font-mono text-mini ${hop.ip ? 'text-text' : 'text-faint'}`}>
-            {hop.ip ?? 'no response'}
-          </span>
+          <DetailGate required={4}>
+            <span className={`font-mono text-mini ${hop.ip ? 'text-text' : 'text-faint'}`}>
+              {hop.ip ?? 'no response'}
+            </span>
+          </DetailGate>
           {hop.hostname && <span className="truncate text-xs text-muted">{hop.hostname}</span>}
           <span className={`ml-auto font-mono text-mini ${unresponsive ? 'text-faint' : 'text-text'}`}>
             {fmtMs(hop.latencyMs)}
           </span>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-micro text-faint">
-          {hop.org && <span className="truncate">{hop.org}</span>}
-          {hop.asn != null && <span className="font-mono">AS{hop.asn}</span>}
-          {hop.country && <span>{hop.country}</span>}
+          <DetailGate required={3}>
+            {hop.org && <span className="truncate">{hop.org}</span>}
+            {hop.asn != null && <span className="font-mono">AS{hop.asn}</span>}
+            {hop.country && <span>{hop.country}</span>}
+          </DetailGate>
           {(hop.packetLoss ?? 0) > 0 && <span className="text-warn">{fmtPct(hop.packetLoss)} probes timed out</span>}
           {unresponsive && <span>ICMP filtered or deprioritized — not proof of loss</span>}
         </div>
@@ -154,12 +159,17 @@ export default function RoutesPage() {
   const [vpnLoading, setVpnLoading] = useState(false);
   const [vpnError, setVpnError] = useState<string | null>(null);
 
-  const loadVpnCompare = useCallback(async (t: string) => {
-    if (!t.trim()) return;
+  // A stored node is passed as `nodeId`, never as an address: the server
+  // resolves it so a private endpoint is never echoed into the webview.
+  const loadVpnCompare = useCallback(async (value: string, byNodeId = false) => {
+    if (!value.trim()) return;
     setVpnLoading(true);
     setVpnError(null);
     try {
-      const res = await api.get<VpnRouteCompareResult>(`/route-compare/vpn?target=${encodeURIComponent(t.trim())}`);
+      const query = byNodeId
+        ? `nodeId=${encodeURIComponent(value.trim())}`
+        : `target=${encodeURIComponent(value.trim())}`;
+      const res = await api.get<VpnRouteCompareResult>(`/route-compare/vpn?${query}`);
       setVpnResult(res);
     } catch (e) {
       setVpnError(e instanceof Error ? e.message : String(e));
@@ -171,12 +181,17 @@ export default function RoutesPage() {
 
   // Pull a default target from the newest stored trace so the tab is never empty.
   useEffect(() => {
-    // Deep link from Node detail: /routes?tab=vpn-compare&target=<host>
+    // Deep link from Node detail: /routes?tab=vpn-compare&nodeId=<id>.
+    // A raw host may still arrive as `target=<host>` from other surfaces.
     const deepTarget = searchParams.get('target');
+    const deepNodeId = searchParams.get('nodeId');
     const deepTab = searchParams.get('tab');
     if (deepTab === 'vpn-compare') {
-      if (deepTarget) setVpnTarget(deepTarget);
-      void loadVpnCompare(deepTarget ?? vpnTarget);
+      if (deepNodeId) void loadVpnCompare(deepNodeId, true);
+      else if (deepTarget) {
+        setVpnTarget(deepTarget);
+        void loadVpnCompare(deepTarget);
+      } else void loadVpnCompare(vpnTarget);
       setSearchParams({}, { replace: true });
       return;
     }
@@ -195,11 +210,15 @@ export default function RoutesPage() {
 
   return (
     <DisclosureScope name="routes">
+      <DetailLevelProvider scope="routes" defaultLevel={2} depth={4}>
       <PageHeader
         title="Route checker"
         description="Traceroute with per-hop ASN enrichment, honest loss analysis and route scoring."
       />
-      <DisclosureToolbar className="-mt-3 mb-2" />
+      <div className="-mt-3 mb-2 flex flex-wrap items-center justify-between gap-3">
+        <DetailLevelControl />
+        <DisclosureToolbar />
+      </div>
 
       <Tabs
         value={tab}
@@ -283,6 +302,7 @@ export default function RoutesPage() {
               </Card>
 
               <div className="space-y-5">
+                <DetailGate required={3}>
                 <Card
                   fold={{
                     id: 'analysis',
@@ -304,6 +324,7 @@ export default function RoutesPage() {
                     ))}
                   </CardBody>
                 </Card>
+              </DetailGate>
 
                 <Card
                   fold={{
@@ -437,6 +458,7 @@ export default function RoutesPage() {
           {vpnResult && <VpnCompareView result={vpnResult} />}
         </TabPanel>
       </Tabs>
+      </DetailLevelProvider>
     </DisclosureScope>
   );
 }
@@ -456,14 +478,16 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
 
   return (
     <div>
-      {result.note && (
-        <Card className="mb-5">
-          <CardBody className="flex items-start gap-2.5 text-mini leading-relaxed text-muted">
-            <Info size={15} className="mt-0.5 shrink-0 text-accent" />
-            <span>{result.note}</span>
-          </CardBody>
-        </Card>
-      )}
+      <DetailGate required={4}>
+        {result.note && (
+          <Card className="mb-5">
+            <CardBody className="flex items-start gap-2.5 text-mini leading-relaxed text-muted">
+              <Info size={15} className="mt-0.5 shrink-0 text-accent" />
+              <span>{result.note}</span>
+            </CardBody>
+          </Card>
+        )}
+      </DetailGate>
 
       {result.deltas && (
         <Card className="mb-5" fold={{ id: 'vpn-deltas', pinned: true }}>
@@ -494,7 +518,9 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
               />
               <Metric label="Score" value={result.deltas.scoreDelta} hint="Route-score difference (positive = VPN better)" />
             </div>
-            {result.deltas.reason && <p className="mt-3 text-mini text-muted">{result.deltas.reason}</p>}
+            <DetailGate required={4}>
+              {result.deltas.reason && <p className="mt-3 text-mini text-muted">{result.deltas.reason}</p>}
+            </DetailGate>
           </CardBody>
         </Card>
       )}
@@ -528,7 +554,12 @@ function VpnCompareView({ result }: { result: VpnRouteCompareResult }) {
             >
               <CardHeader
                 title={title}
-                subtitle={`Traced ${fmtDateTime(side.startedAt)} · ${side.trace.totalHops} hops`}
+                subtitle={
+                  <>
+                    <DetailGate required={4}>Traced {fmtDateTime(side.startedAt)} · </DetailGate>
+                    {side.trace.totalHops} hops
+                  </>
+                }
                 actions={
                   <Badge tone={side.vpn.connected ? 'ok' : undefined}>
                     {vpnTagLabel(side)}

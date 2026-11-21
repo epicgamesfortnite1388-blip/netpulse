@@ -3,6 +3,7 @@ import { Copy, Loader2, RotateCw, Send, Sparkles, Trash2 } from 'lucide-react';
 
 import { useToast } from '@/components/Toaster';
 import { Button } from '@/components/ui/Button';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { Field, Input } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ErrorState, LoadingState } from '@/components/ui/States';
@@ -57,7 +58,9 @@ function MessageBubble({ message }: { message: AiMessage }) {
         }`}
       >
         <div className="whitespace-pre-wrap break-words text-sm">{message.content}</div>
-        <div className="mt-1 text-micro text-faint">{formatTimestamp(message.createdAt)}</div>
+        <DetailGate required={4}>
+          <div className="mt-1 text-micro text-faint">{formatTimestamp(message.createdAt)}</div>
+        </DetailGate>
       </div>
     </div>
   );
@@ -214,6 +217,7 @@ export function CopilotPage() {
     // message. `h-full` did nothing because the content column's height is auto,
     // so the page collapsed to its content and left the composer floating
     // mid-screen with dead space beneath it.
+    <DetailLevelProvider scope="copilot" defaultLevel={2} depth={4}>
     <div className="flex min-h-[calc(100dvh-var(--np-topbar-h)-76px)] flex-col bg-bg">
       <PageHeader
         title="Copilot"
@@ -232,6 +236,8 @@ export function CopilotPage() {
         }
         actions={<AiStatusBadge status={aiStatus} />}
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       <div
         className={`flex-1 overflow-y-auto p-4 lg:p-6 ${emptyConversation ? 'flex items-center justify-center' : 'space-y-4'}`}
@@ -265,15 +271,17 @@ export function CopilotPage() {
           <div key={m.id}>
             <MessageBubble message={m} />
             {m.role === 'assistant' && m.content !== '' && (
-              <div className="mt-1 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void navigator.clipboard.writeText(m.content)}
-                >
-                  <Copy size={12} /> Copy
-                </Button>
-              </div>
+              <DetailGate required={3}>
+                <div className="mt-1 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void navigator.clipboard.writeText(m.content)}
+                  >
+                    <Copy size={12} /> Copy
+                  </Button>
+                </div>
+              </DetailGate>
             )}
           </div>
         ))}
@@ -302,18 +310,23 @@ export function CopilotPage() {
             </Button>
           )}
           {hasContent && !streaming && (
-            <Button type="button" size="sm" variant="ghost" onClick={clearConversation}>
-              <Trash2 size={12} /> Clear
-            </Button>
+            <DetailGate required={3}>
+              <Button type="button" size="sm" variant="ghost" onClick={clearConversation}>
+                <Trash2 size={12} /> Clear
+              </Button>
+            </DetailGate>
           )}
           {hasContent && !streaming && canRetry && (
-            <Button type="button" size="sm" variant="ghost" onClick={retryLast}>
-              <RotateCw size={12} /> Retry
-            </Button>
+            <DetailGate required={3}>
+              <Button type="button" size="sm" variant="ghost" onClick={retryLast}>
+                <RotateCw size={12} /> Retry
+              </Button>
+            </DetailGate>
           )}
         </form>
       </div>
     </div>
+    </DetailLevelProvider>
   );
 }
 

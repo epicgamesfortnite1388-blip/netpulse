@@ -13,6 +13,7 @@ import {
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
+import { DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Field';
 import { DataList, DataRow, MetricStrip, Notice, Panel, Section } from '@/components/ui/Surface';
@@ -259,7 +260,10 @@ export default function OverdrivePage() {
 
   const busy = overdrive.isFetching || live.isFetching;
 
+  // Information-dense reporting page: default to Context (2) so the measured
+  // summary stays visible while raw timelines, paths and event logs stay back.
   return (
+    <DetailLevelProvider scope="overdrive" defaultLevel={2} depth={4}>
     <div>
       <PageHeader
         title="Mission Overdrive"
@@ -279,6 +283,8 @@ export default function OverdrivePage() {
           </button>
         }
       />
+
+      <div className="-mt-3 mb-2"><DetailLevelControl /></div>
 
       {overdrive.isError && <ErrorState error={overdrive.error} retry={() => void overdrive.refetch()} />}
       {overdrive.isLoading && <LoadingState label="Reading measured evidence" />}
@@ -342,6 +348,7 @@ export default function OverdrivePage() {
                 <div className="grid gap-5 lg:grid-cols-2">
                   <Section
                     title="Iran-ready ledger"
+                    detail={2}
                     icon={<ShieldCheck size={15} />}
                     subtitle="Parsed from the authoritative roadmap. The page never upgrades a status."
                   >
@@ -369,6 +376,7 @@ export default function OverdrivePage() {
 
                     <Section
                       title="Evidence timeline"
+                      detail={3}
                       icon={<GitBranch size={15} />}
                       subtitle="Artifact timestamps only — no authored events."
                       actions={<Badge tone="neutral">{snapshot.timeline.length}</Badge>}
@@ -397,6 +405,7 @@ export default function OverdrivePage() {
               <TabPanel value="evidence">
                 <Section
                   title="Measured artifacts"
+                  detail={2}
                   icon={<FlaskConical size={15} />}
                   subtitle="Each card is one run. Numbers are quoted from the artifact, caveats are the ones that run recorded."
                   actions={<Badge tone="neutral">{snapshot.evidence.length} rows</Badge>}
@@ -452,6 +461,7 @@ export default function OverdrivePage() {
               <TabPanel value="research">
                 <Section
                   title="Research registry"
+                  detail={3}
                   icon={<BookOpen size={15} />}
                   subtitle={snapshot.research.note}
                   actions={
@@ -513,6 +523,7 @@ export default function OverdrivePage() {
               <TabPanel value="adaptive">
                 <Section
                   title="Adaptive strategy selection"
+                  detail={3}
                   icon={<Satellite size={15} />}
                   subtitle="Deterministic ranking over this machine's own recorded outcomes — not a learned claim about censorship."
                   actions={
@@ -607,6 +618,7 @@ export default function OverdrivePage() {
                 <Section
                   className="mt-5"
                   title="Recent activity"
+                  detail={4}
                   icon={<Activity size={15} />}
                   subtitle="The application's own event log — real state changes and outcomes."
                   actions={<Badge tone="neutral">{snapshot.activity.length}</Badge>}
@@ -739,5 +751,6 @@ export default function OverdrivePage() {
         </>
       )}
     </div>
+    </DetailLevelProvider>
   );
 }

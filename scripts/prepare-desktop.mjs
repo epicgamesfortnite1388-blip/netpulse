@@ -97,8 +97,21 @@ for (const dep of depsToCopy) {
 const launcherScript = path.join(root, 'scripts', 'build-backend-sea.mjs');
 if (fs.existsSync(launcherScript)) {
   const res = spawnSync(process.execPath, [launcherScript], { stdio: 'inherit' });
+  if (res.error) {
+    console.error(`[desktop-prepare] portable runtime bundling could not start: ${res.error.message}`);
+    process.exit(1);
+  }
   if (res.status !== 0) {
-    console.warn('[desktop-prepare] portable runtime bundling failed; supervisor falls back to system node.');
+    // The supervisor's system-node fallback is a development convenience, not
+    // a shippable artifact. A plain `desktop:prepare` must not report success
+    // with a runtime-less backend (DD-003); opting in is explicit and visible.
+    if (process.env.NETPULSE_ALLOW_SYSTEM_NODE_FALLBACK === '1') {
+      console.warn('[desktop-prepare] portable runtime bundling failed; system-node fallback explicitly allowed.');
+    } else {
+      console.error('[desktop-prepare] portable runtime bundling failed; refusing to stage a runtime-less backend.');
+      console.error('[desktop-prepare] set NETPULSE_ALLOW_SYSTEM_NODE_FALLBACK=1 only for local development.');
+      process.exit(res.status ?? 1);
+    }
   }
 }
 

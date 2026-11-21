@@ -1,0 +1,38 @@
+
+> @netpulse/api@3.2.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mE:/Code/Project/Vpn_app/apps/api[39m
+
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-endpoint-tYMvFf
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/nodeEndpointLeak.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 35194[2mms[22m[39m
+   [32m✓[39m search and geo-recheck responses are clean [2m(2)[22m
+     [33m[2m✓[22m[39m geo-recheck, which returns the refreshed node, carries no endpoint[33m 1384[2mms[22m[39m
+   [32m✓[39m stored rows are scrubbed before they reach a response [2m(5)[22m
+     [33m[2m✓[22m[39m POST /nodes/:id/test never returns the address it probed[33m 11477[2mms[22m[39m
+     [33m[2m✓[22m[39m POST /nodes/test-batch masks every per-node failure the same way[33m 16080[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-adaptive-FXe86i
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/adaptiveConnect.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 30028[2mms[22m[39m
+   [32m✓[39m quick connect uses the adaptive order for the real dial [2m(7)[22m
+     [33m[2m✓[22m[39m never reports a tunnel as working from a started core alone[33m 22843[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-registry-349Uks
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/nodeSourceRegistry.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 10185[2mms[22m[39m
+   [32m✓[39m fetchAndImportSource failure honesty [2m(2)[22m
+     [33m[2m✓[22m[39m records a failed fetch and imports nothing when a feed cannot be fetched[33m 3023[2mms[22m[39m
+     [33m[2m✓[22m[39m reports a failed fetch as a failure over the API, with no invented counts[33m 3071[2mms[22m[39m
+[netpulse] boot stage=config:ok safeMode=false dataDir=C:\Users\RADIN\AppData\Local\Temp\netpulse-vpn-prefs-Kv8TqG
+[netpulse] boot stage=db:ok
+[netpulse] boot stage=routes:ok
+ [32m✓[39m test/vpnPreferences.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 19535[2mms[22m[39m
+   [32m✓[39m autoSelectServer gate [2m(2)[22m
+     [33m[2m✓[22m[39m on (default): auto:true passes the gate and reports the honest no-candidates state[33m 323[2mms[22m[39m
+   [32m✓[39m autoConnect boot helper [2m(2)[22m
+     [33m[2m✓[22m[39m does nothing when the preference is off (no quick-connect run recorded)[33m 425[2mms[22m[39m
+     [33m[2m✓[22m[39m drives the REAL quick-connect path when enabled (run lands in history)[33m 6076[2mms[22m[39m
