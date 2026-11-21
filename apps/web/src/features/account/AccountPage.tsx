@@ -755,7 +755,14 @@ function AccountDashboard() {
                 <RefreshCw size={14} /> {syncState.running ? 'Syncing…' : 'Sync now'}
               </Button>
               <DetailGate required={4}>
-                <Button variant="ghost" onClick={() => { void navigator.clipboard.writeText(user.id); toast('ok', 'Account id copied'); }}>
+                <Button variant="ghost" onClick={() => { void (async () => {
+                  try {
+                    await navigator.clipboard.writeText(user.id);
+                    toast('ok', 'Account id copied');
+                  } catch {
+                    toast('error', 'Could not copy account id', 'Clipboard access was denied. Select and copy the id manually.');
+                  }
+                })(); }}>
                   <Copy size={14} /> Copy account id
                 </Button>
               </DetailGate>

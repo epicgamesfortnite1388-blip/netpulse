@@ -48,6 +48,16 @@ export default function SpeedTestPage() {
   const state = useBackgroundTest<SpeedTestResult>(testId);
   const result = state.result;
 
+  // DD-037: the old refetch fired at POST time (~8s before the result), so
+  // the finished test never appeared in history until a manual reload.
+  const historyInvalidatedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (result && testId && historyInvalidatedFor.current !== testId) {
+      historyInvalidatedFor.current = testId;
+      void historyQuery.refetch();
+    }
+  }, [result, testId]);
+
   // live throughput samples stream in via test:progress extras ({ mbps })
   const [live, setLive] = useState<{ t: number; ms: number }[]>([]);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -74,7 +84,7 @@ export default function SpeedTestPage() {
     try {
       const res = await api.post<{ testId: string }>('/speed/run', { durationMs: 8_000 });
       setTestId(res.testId);
-      void historyQuery.refetch();
+      // History is refreshed when the RESULT lands (effect above), not here.
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Speed test failed to start');
     }
