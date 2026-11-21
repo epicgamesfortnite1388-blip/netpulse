@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 import { Globe, Info, MapPin, Server, ShieldAlert, ShieldCheck } from 'lucide-react';
@@ -179,6 +179,13 @@ function WebrtcLeakCard() {
     } finally {
       setRunning(false);
     }
+  }, []);
+
+  // DD-041: leaving the page mid-check used to leak the peer connection and
+  // its 4s gathering timer. Clean up on unmount regardless of check state.
+  useEffect(() => () => {
+    pcRef.current?.close();
+    pcRef.current = null;
   }, []);
 
   return (

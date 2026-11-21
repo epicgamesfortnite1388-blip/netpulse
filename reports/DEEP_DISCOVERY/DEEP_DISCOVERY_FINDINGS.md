@@ -103,3 +103,17 @@ Kim found three defects in this agent's own cycle-2 fixes; all corrected and re-
 | `secureSet` catch removed a still-valid `dpapi1:` blob on a transient IPC failure | Only removes a stored value that is actually plaintext (`!startsWith(MARKER)`); added regression test | `secureStore.ts:158-165`; `secureStoreFailClosed.test.ts` 4/4 pass |
 | Build-gate Cargo assertion was satisfiable by an incidental version string in a comment | Now parses the `[package]` block before comparing | `scripts/release.mjs`; `test:build-gates` 10/10 |
 | `release.mjs` `updated.includes(...)` could be satisfied by another section | Scoped to the `[package]` block | `node scripts/release.mjs` → canonical version 3.2.0, no unwanted file changes |
+
+## Cycle 5 — P2/P3 follow-through (2026-11-21 16:16–16:30)
+
+| ID | Sev | Finding | Fix | Verification |
+|---|---|---|---|---|
+| DD-012 | P3 | Concurrent first-time provisions could clobber the winning WireGuard secret: read-then-upsert generated two different values, `ON CONFLICT SET secret=excluded.secret` let the loser win, and the loser's config bore a secret the reconciler would never publish | `cloud/worker/src/vpn-users.ts` — get-or-create is now ONE atomic `INSERT ... ON CONFLICT DO UPDATE SET status/updated_at RETURNING secret`; no schema change, no production data touched. Conflict preserves the persisted secret and returns it. | `cloud/worker/test/vpnCredentialRace.test.ts` 2/0; worker typecheck PASS; mutation (restore old SQL) FAILS the race test |
+| DD-042 | P2 | NANI accuracy test printed per-condition counts but gated only aggregate accuracy/Brier; two 0/20 blind spots stayed green | `evaluation.rs` — added `KNOWN_BLIND_SPOTS` allowlist; any 0/score condition NOT on the list now fails the test, and known ones emit a `KNOWN LIMITATION` line. No Bayesian math or likelihood change. | `cargo test nani_beats_fixed_first_failure_rule` PASS with both limitations printed; mutation (remove one allowlist entry) FAILS with `UNDOCUMENTED blind spot` |
+| DD-063 | P3 | EventsPage's Detail control rendered but every option was inert | `EventsPage.tsx` — raw event message gated at required=2, relative timestamp at required=3 | web typecheck PASS |
+| DD-064 | P3 | Account id copy toasted success on clipboard rejection | `AccountPage.tsx` — awaited `writeText` in try/catch; success toast only on resolve, honest error otherwise | web typecheck PASS |
+| DD-037 | P3 | Speed history refetched at POST time (~8s early); finished test never appeared until manual reload | `SpeedTestPage.tsx` — history invalidated when `result` lands, once per testId; removed premature refetch | web typecheck PASS; web suite running |
+| DD-040 | P3 | DNS custom-resolver DELETE failure was swallowed; row stayed with no feedback | `DnsPage.tsx` — surfaces the error through `setCustomError` | web typecheck PASS |
+| DD-041 | P3 | Leaving IpPage mid WebRTC check leaked the peer connection and 4s timer | `IpPage.tsx` — unmount effect closes `pcRef.current` | web typecheck PASS |
+
+No P0/P1 was introduced. All changes use exact-string edits; no destructive operations. These cycle-5 fixes were subsequently committed and pushed to `origin/main` by explicit operator authorization (commits `5f550bf`..`ba4e527`).
