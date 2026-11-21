@@ -3,7 +3,7 @@ import { Radio } from 'lucide-react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
+import { DetailGate, DetailLevelControl, DetailLevelProvider } from '@/components/ui/DetailLevel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Select } from '@/components/ui/Field';
 import { LoadingState, ErrorState } from '@/components/ui/States';
@@ -95,10 +95,14 @@ export default function EventsPage() {
                       {e.level}
                     </Badge>
                     <Badge tone="accent">{e.category}</Badge>
-                    <span className="text-mini text-text">{e.message}</span>
+                    <DetailGate required={2}>
+                      <span className="text-mini text-text">{e.message}</span>
+                    </DetailGate>
                   </div>
                 </div>
-                <span className="shrink-0 text-xs text-faint">{timeAgo(e.ts)}</span>
+                <DetailGate required={3}>
+                  <span className="shrink-0 text-xs text-faint">{timeAgo(e.ts)}</span>
+                </DetailGate>
               </div>
             ))}
           </CardBody>
