@@ -59,16 +59,21 @@ export async function ensureVpnCredential(db: D1Database, userId: string, protoc
 
   const secret = existing?.secret ?? newSecret(protocol);
   const t = Date.now();
-  await db
+  // DD-012: a concurrent first-time provision could clobber the winner's
+  // secret and hand out a config bearing the LOSING value. Make the
+  // get-or-create atomic: on conflict, keep the persisted secret (never
+  // overwrite it) and return what the reconciler will actually publish.
+  const row = await db
     .prepare(
       `INSERT INTO vpn_credentials (user_id, protocol, secret, status, created_at, updated_at)
        VALUES (?, ?, ?, 'active', ?, ?)
        ON CONFLICT(user_id, protocol) DO UPDATE SET
-         secret = excluded.secret, status = 'active', updated_at = excluded.updated_at`,
+         status = 'active', updated_at = excluded.updated_at
+       RETURNING secret`,
     )
     .bind(userId, protocol, secret, t, t)
-    .run();
-  return secret;
+    .first<{ secret: string }>();
+  return row?.secret ?? secret;
 }
 
 /**

@@ -40,6 +40,14 @@ const CONDITIONS: [(NetworkCondition, &str); 11] = [
     (NetworkCondition::ServerError, "server_failure"),
 ];
 
+/// Conditions the current likelihood table never ranks as the MAP diagnosis
+/// (NANI_ADVERSARIAL_TEST_REPORT.md:136-153). These are KNOWN LIMITATIONS, not
+/// fixed behavior. A zero-scoring condition outside this list fails the suite
+/// so a NEW silent blind spot cannot hide behind healthy aggregate accuracy.
+/// Update only alongside a documented, evidence-backed diagnosis change.
+#[cfg(test)]
+const KNOWN_BLIND_SPOTS: &[&str] = &["server_failure", "remote_endpoint"];
+
 fn probe_sequence() -> Vec<DiagnosticTest> {
     vec![
         DiagnosticTest::InterfaceCheck,
@@ -477,6 +485,24 @@ mod tests {
         );
         assert!(result.nani_accuracy > 0.5, "accuracy must exceed chance");
         assert!(result.brier < 0.25, "Brier {:.3} must beat a coin flip", result.brier);
+
+        // DD-042: aggregate accuracy alone stayed green while two conditions
+        // scored zero. Fail on ANY undocumented zero; declare known ones so
+        // the limitation is visible rather than silently passing.
+        for c in &result.per_condition {
+            if c.nani_correct == 0 {
+                assert!(
+                    KNOWN_BLIND_SPOTS.contains(&c.truth),
+                    "UNDOCUMENTED blind spot: '{}' scored 0/{} — declare it in KNOWN_BLIND_SPOTS with evidence or fix the diagnosis",
+                    c.truth,
+                    c.trials
+                );
+                eprintln!(
+                    "KNOWN LIMITATION: '{}' = 0/{} (aggregate accuracy still {:.3})",
+                    c.truth, c.trials, result.nani_accuracy
+                );
+            }
+        }
     }
 
     #[test]
