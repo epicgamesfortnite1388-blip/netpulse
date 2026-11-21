@@ -88,6 +88,14 @@
 - [x] Final adversarial audit (Kim)
 - [x] Deliverables 00–17
 
+### Cycle 4 — Commit and push (operator-authorized, 2026-11-21)
+- Operator explicitly authorized commit and push (overriding the original mission boundary). No deploy, history rewrite or force-push authorization was given and none was performed.
+- Verified the P0 secret (DD-060) is **already** in published history at `origin/main` commit `76133c5`; pushing therefore did not newly expose it. Added `.cloud-attachments/` to `.gitignore` and untracked the 14 MB blob (file preserved on disk) so the new tree no longer carries it. Rotation/revocation through the provider remains an owner action.
+- Staged 114 paths explicitly (`git add -u` on tracked files + explicit new paths), excluding the unrelated nested `Trading bot/` git repo. Verified no private-key material in the staged tree or added diff lines.
+- Pushed three commits: `5f550bf` (all fixes, tests, 20 reports, P0 untracking), `3a84297` (concurrent DD-012 atomic credential fix + DD-042 blind-spot guard), `9a5c8d8` (DD-012 concurrency regression test).
+- Final state: `main` in sync with `origin/main` (0 ahead / 0 behind); only `?? "Trading bot/"` remains untracked (pre-existing, separate repo).
+- Verification after each concurrent change: worker provision 17/0, Rust evaluation 6/0, worker credential-race 2/0.
+
 ---
 
 ## Cycle 4 — Resumption and completion (2026-11-21 16:08–16:20 local)

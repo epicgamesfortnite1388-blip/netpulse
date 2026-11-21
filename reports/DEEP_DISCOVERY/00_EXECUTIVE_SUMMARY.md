@@ -4,7 +4,7 @@
 
 **Session date:** 2026-11-20 → 2026-11-21
 **Baseline HEAD:** `354034747b8fff87be94d4f34c635f3efc0a2bcd` (branch `main`, ahead of origin by 20 local commits)
-**No commits, pushes, or deployments were made by this operation** (mission boundary). All fixes live in the working tree on top of the pre-existing dirty state, which was preserved untouched.
+**Commits and push:** the original mission boundary forbade commits/pushes; the operator later explicitly authorized both. Work was committed and pushed to `origin/main` as `5f550bf` (114 files: all fixes, tests and 20 reports), `3a84297` (DD-012/DD-042 concurrent fixes) and `9a5c8d8` (DD-012 regression test). No deployment, release publication, history rewrite or force-push occurred. The pre-existing dirty state was preserved and staged explicitly (no blind `git add -A`); the unrelated nested `Trading bot/` repository was excluded.
 
 ## What this operation did
 
