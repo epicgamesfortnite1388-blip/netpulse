@@ -63,3 +63,18 @@ The two contended failures were again exclusively `evaluation::tests::benchmarks
 The following corrections were applied AFTER the earlier gate table above and are covered by this supplement: `audit-ci.sh` advisory labeling (Kim P2), `SystemHealthPage` inline confirmed reset (Kim P2), `secureStore` transient-failure preservation (Kim P2 + 4th regression test), `[package]`-scoped Cargo version check (Kim P3), and removal of the no-op replace in `build-gate-honesty.test.mjs`. See `15_INDEPENDENT_KIM_REVIEW.md`.
 
 **Final verdict (supplement):** all available local gates green on a stable, uncontended run; no P1 remains open; DD-060 (committed credential) remains BLOCKED pending owner action explicitly outside mission scope.
+
+## Supplement 2 — Cycle 5 verification (P2/P3 follow-through)
+
+| Gate | Command | Result | Log |
+|---|---|---|---|
+| Rust | `cargo test --manifest-path src-tauri/Cargo.toml` | **560 passed / 0 failed / 2 ignored** (13.58 s) | `cycle5-rust.log` |
+| Web | `npm run test -w @netpulse/web -- --run` | **61 files / 599 passed / 4 skipped / 0 failed** | `cycle5-web.log` |
+| Worker targeted | `vitest run test/vpnCredentialRace.test.ts` | **2 tests pass** | — |
+| Worker typecheck | `npm run typecheck -w @netpulse/cloud-worker` | PASS | — |
+
+Mutation verification (cycle 5):
+- DD-012: restoring the old `ON CONFLICT SET secret=excluded.secret` SQL makes the concurrent-provision test FAIL (`expected a toBe b`) — test detects the race.
+- DD-042: removing `remote_endpoint` from `KNOWN_BLIND_SPOTS` makes the accuracy test FAIL with `UNDOCUMENTED blind spot: 'remote_endpoint' scored 0/20` — test detects the false-green.
+
+No Bayesian math or likelihood value was changed; no production D1 data or schema was touched. The two P2/P3 fixes are local, reversible, and mutation-verified.

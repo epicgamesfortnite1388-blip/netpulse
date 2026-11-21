@@ -77,3 +77,14 @@ Kim found three P2s and three P3 assertion weaknesses in cycle-2's own fixes. Al
 One **P0 remains BLOCKED by authorization**: a committed SSH private key in a tracked attachment (DD-060). Rotation and history rewriting require the repository owner; no key material is reproduced anywhere. No P1 is open. P2/P3/P4 residuals are listed in `17_REMAINING_RISKS_AND_LIMITATIONS.md`.
 
 Live VPN traffic, real WebView2, real installer and production integrations remain explicitly unverified — no process running was mistaken for a working tunnel, and no green mock for a verified integration.
+
+## Cycle 5 — final P2/P3 follow-through
+
+After the main operation, two remaining findings were resolved with evidence-backed, mutation-verified fixes:
+
+- **DD-012 (P3, provision race):** concurrent first-time provisions could hand out a config bearing the losing WireGuard secret. `ensureVpnCredential` now performs an atomic `INSERT ... ON CONFLICT DO UPDATE ... RETURNING secret` and returns the persisted value. Local D1 race test 2/0; mutation fails.
+- **DD-042 (P2, NANI false-green):** aggregate accuracy hid two 0/20 conditions. The test now fails on ANY undocumented zero and explicitly prints `KNOWN LIMITATION` for the two declared blind spots — no Bayesian math changed. Mutation fails.
+
+Five frontend P3s were also repaired: functional EventsPage detail gating, honest clipboard failure, speed-history invalidation on result, surfaced DNS DELETE errors, and WebRTC connection cleanup on unmount. Web typecheck and full suite (599/0) pass.
+
+Final uncontended gates: Rust **560/0/2**, Web **599/0**, API **1274/0**, Worker **130/0**, all four typechecks PASS, lint PASS, build-gates 10/10. **No P1 remains; no reproducible P2 can be safely fixed without an evidence-backed math change or production-data operation.** DD-060 (committed SSH key) remains BLOCKED pending owner action outside mission scope.

@@ -132,3 +132,17 @@ Kim independent adversarial review: no P0/P1 introduced; three P2 and three P3 d
 
 ### Deliverables state
 All 20 required files now exist in `reports/DEEP_DISCOVERY/`: 00–17 plus `DEEP_DISCOVERY_FINDINGS.md`, `DEEP_DISCOVERY_PROGRESS.md`, evidence logs. No empty placeholder reports.
+
+## Cycle 5 — P2/P3 follow-through (2026-11-21 16:16–16:35)
+
+Two read-only specialists re-investigated DD-042 (NANI false-green) and DD-012 (provision race); both produced mutation-verifiable fixes that respect the no-math-change and no-production-data boundaries.
+
+- **DD-012 FIXED:** `cloud/worker/src/vpn-users.ts` atomic `INSERT ... ON CONFLICT DO UPDATE ... RETURNING secret`. Concurrent provisions now converge on the persisted value. `cloud/worker/test/vpnCredentialRace.test.ts` 2/0; worker typecheck PASS; mutation confirmed failure.
+- **DD-042 FIXED:** `evaluation.rs` `KNOWN_BLIND_SPOTS` allowlist; undocumented zero-scoring conditions now fail the test; known ones print `KNOWN LIMITATION`. No Bayesian math changed. Mutation confirmed failure.
+- **DD-063/064/037/040/041 FIXED:** EventsPage detail gating now functional; clipboard success only on resolve; speed history invalidated when result lands; DNS DELETE errors surfaced; WebRTC peer connection closed on unmount. Web typecheck PASS.
+
+A concurrent editor added `useEffect` to IpPage's import while I was editing; final state verified consistent.
+
+Verification logs: `cycle5-rust.log`, `cycle5-web.log` (see 16_FINAL_SYSTEM_VERIFICATION for final verdict).
+
+Remaining: DD-060 P0 committed credential (BLOCKED, owner action); low-impact P4 residuals per 17. No P1 open, no reproducible P2 left that can be safely fixed without an evidence-backed math change or production-data operation.
